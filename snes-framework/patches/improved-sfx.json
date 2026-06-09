@@ -1,0 +1,99 @@
+{
+  "id": "improved-sfx",
+  "name": "Improved SFX",
+  "category": "Trisma - Improvements",
+  "description": "Replaces several irritating sound effects with gentler ones, and silences a couple.",
+  "attribution": "From \"No Crying, Improved SFX and Red Coins\" by Trisma (https://www.romhacking.net/hacks/3945/)",
+  "details": [
+    "Alarm (0x58 -> 0x57), mouse (0x75 -> 0x5A chirp), winding chain screech (-> 0x1B), silences the frying-pan dong while winding (0x2F); ice no longer screeches."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1",
+  "importedFrom": "Yoshi's Island (USA) - Only Improved SFX.ips",
+  "chunks": [
+    {
+      "offset": "0xAEB2",
+      "bytes": "1B"
+    },
+    {
+      "offset": "0xC279",
+      "bytes": "57"
+    },
+    {
+      "offset": "0x139FA",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x577E4",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x623A9",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x62463",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x6253C",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x62638",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x626CC",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x62739",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x62806",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x628F4",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x62AC8",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x62D02",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x63205",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x633E0",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x68D04",
+      "bytes": "0000EAEAEAEA"
+    },
+    {
+      "offset": "0x697D4",
+      "bytes": "1B"
+    },
+    {
+      "offset": "0x7902D",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x8BBC8",
+      "bytes": "5A"
+    },
+    {
+      "offset": "0x8C6C7",
+      "bytes": "5A"
+    }
+  ]
+}

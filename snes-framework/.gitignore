@@ -1,0 +1,94 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Extracted game assets — repopulate via the editor (Workshop → ROM → Extract).
+# Source-of-truth is the reference cart in reference/, not the repo.
+# ──────────────────────────────────────────────────────────────────────────────
+assets/yi/LevelData/*
+assets/yi/Graphics/*
+assets/yi/Graphics/SuperFX/*
+assets/yi/Tilemaps/*
+assets/yi/GarbageData/*
+assets/yi/SPC700/*
+!assets/**/.gitkeep
+
+# Editor-derived data (level-map.json, decoded icon tileset, palette dump).
+# Wiped and rewritten on every extract; never an asar input.
+editor-data/yi/*
+!editor-data/**/.gitkeep
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Build outputs and intermediate artifacts.
+# ──────────────────────────────────────────────────────────────────────────────
+build/*
+!build/.gitkeep
+
+# Intermediate .bin files emitted by asar phases and cleaned at end of build.
+# Listed here too in case a build is interrupted partway.
+yi/SuperFX/*.bin
+yi/SPC700/*.bin
+yi/Temp.txt
+yi/AsarScripts/TEMP.sfc
+yi/AsarScripts/TEMP*.asm
+yi/AsarScripts/TEMP*.txt
+
+# Built-in framework outputs landing outside build/ (defensive — never commit
+# ROMs anywhere; they're copyrighted).
+*.sfc
+*.smc
+!.gitkeep
+
+# Persistent extraction state written by extractAssets() — local to this checkout.
+.extraction-state.json
+
+# ──────────────────────────────────────────────────────────────────────────────
+# User-local content — never committed.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Copyrighted reference cart dumps.
+reference/*
+!reference/.gitkeep
+
+# Emulator state — would accumulate from playtesting against build outputs.
+*.srm
+*.sav
+*.state
+*.state.*
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Node / TypeScript.
+# ──────────────────────────────────────────────────────────────────────────────
+node_modules/
+*.tsbuildinfo
+
+# Log files from package managers.
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env overrides (commit .env.example if needed for documenting vars).
+.env
+.env.local
+.env.*.local
+
+# Test/coverage output.
+coverage/
+.nyc_output/
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Editor / IDE.
+# ──────────────────────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OS junk.
+# ──────────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

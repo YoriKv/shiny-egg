@@ -1,0 +1,21 @@
+packages:
+  - snes-framework
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
+  - esbuild
+# Fetch native binaries for BOTH the Windows runtime (Electron, app) and Linux
+# (WSL), so Vitest's rolldown binding resolves when tests run under WSL. Install
+# still happens from Windows (corepack pnpm) to keep the win32 binaries primary.
+supportedArchitectures:
+  os:
+    - win32
+    - linux
+  cpu:
+    - x64
+  libc:
+    - glibc

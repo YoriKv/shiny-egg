@@ -1,0 +1,71 @@
+appId: com.shinyegg.app
+productName: Shiny Egg
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.renderer.json}'
+  - '!snes-framework/**'
+  # `snes-framework` is a workspace dep symlinked into node_modules, so
+  # electron-builder would otherwise drag the WHOLE package in (and unpack it,
+  # since it contains asar.exe) — including the extract outputs
+  # (assets/build/editor-data/reference, ~80 MB). It's fully redundant: the
+  # engine TS is bundled into the main process (electron.vite.config externalize
+  # `exclude`), and its runtime inputs ship via `extraResources` →
+  # resources/snes-framework. The root-level `!snes-framework/**` above does NOT
+  # match this node_modules copy, so exclude it explicitly.
+  - '!node_modules/snes-framework/**'
+extraResources:
+  # The on-disk inputs asar.exe needs at runtime, plus the engine docs as
+  # bundled reference material. The framework's TS is bundled into the Electron
+  # main process; node config, license, extracted assets, build outputs, and
+  # reference carts do not ship.
+  - from: snes-framework/asar.exe
+    to: snes-framework/asar.exe
+  - from: snes-framework/global
+    to: snes-framework/global
+    filter:
+      - '**/*'
+  - from: snes-framework/yi
+    to: snes-framework/yi
+    filter:
+      - '**/*'
+      - '!**/*.sfc'
+      - '!**/*.smc'
+  # Engine/reference docs (markdown + the memory-map TSV) the asm comments
+  # cite. Not an asar build input — shipped read-only alongside yi/ so the
+  # `docs/*.md` references in the asm resolve to on-disk files.
+  - from: snes-framework/docs
+    to: snes-framework/docs
+    filter:
+      - '**/*'
+  # Built-in custom-patch repository (read-only; the editor lists + applies these).
+  - from: snes-framework/patches
+    to: snes-framework/patches
+    filter:
+      - '**/*'
+  - from: bizhawk-harness
+    to: bizhawk-harness
+    filter:
+      - '**/*'
+win:
+  executableName: shiny-egg
+  # Default name for win targets; nsis overrides below. The `zip` target packs
+  # the unpacked app (the same contents as dist/win-unpacked) → release artifact.
+  artifactName: ${name}-${version}-win.${ext}
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always

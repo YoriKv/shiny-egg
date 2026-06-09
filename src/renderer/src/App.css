@@ -1,0 +1,3540 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   Shiny Egg
+   Neutral cool-gray editor surface with one chartreuse accent. The gray is
+   chromatically neutral so palette swatches and game pixels read their own
+   colors accurately instead of being biased toward warm tones.
+   Aesthetic value comes from typography (Fraunces wordmark + JetBrains Mono)
+   and breathing room, not decoration.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --bg-base:        #0d0e10;
+  --bg-surface:     #16181b;
+  --bg-elevated:    #1d2024;
+  --bg-overlay:     #24272c;
+
+  --line:           #2a2e34;
+  --line-strong:    #3a3f47;
+  --line-faint:     #21252a;
+
+  --ink:            #e6e8ec;
+  --ink-2:          #9ca3ad;
+  --ink-3:          #6a7079;
+  --ink-4:          #3d424a;
+
+  --accent:         #d4e157;
+  --accent-soft:    #9caa3a;
+  --accent-glow:    rgba(212, 225, 87, 0.15);
+
+  --danger:         #e25a45;
+
+  --shadow-window:  0 12px 28px -12px rgba(0, 0, 0, 0.65);
+  --shadow-pop:     0 24px 48px -16px rgba(0, 0, 0, 0.7);
+
+  --font-mono:    'JetBrains Mono', 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+h3 { margin: 0; }
+
+/* ── App shell ─────────────────────────────────────────────────────────── */
+
+.se {
+  display: grid;
+  /* Toolbar row sizes to content — it was locked at 48px before, but
+     the layers cluster now wraps to a second row on narrow toolbars
+     (collision/exits/sprites/outlines/BG1/BG2/BG3 = 7 buttons) and the
+     wrapped row was getting clipped. The toolbar carries a `min-height`
+     so the single-row case still renders at the same 48px height. */
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Toolbar ───────────────────────────────────────────────────────────── */
+
+.se-toolbar {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Row 1 — brand · level menus · tools/layers · right-side ROM menu. Keeps the
+   original 4-column grid so its items never wrap to a new line. */
+.se-toolbar__row--primary {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  /* `min-height` keeps the row at its original 48px even when the layers
+     cluster wraps to two lines; `align-items: center` keeps the brand /
+     level menu / tools / right cluster vertically centered. */
+  min-height: 48px;
+}
+
+/* Row 2 — edit + emulator actions, left-aligned, separated by a hairline. */
+.se-toolbar__row--secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  min-height: 40px;
+  border-top: 1px solid var(--line);
+}
+.se-toolbar__row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Panel-toggle buttons, pushed to the right edge of row 2. */
+.se-toolbar__row-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* Pair the main level + sub-level menus into a single grid cell so the
+   toolbar's column count stays at 4 and items don't wrap to a second row. */
+.se-toolbar__levels {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.se-toolbar__tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  margin-left: 8px;
+}
+
+.se-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--ink-2);
+  border-radius: 3px;
+  transition: color 0.12s, background-color 0.12s;
+}
+.se-tool:hover {
+  color: var(--ink);
+  background: var(--bg-elevated);
+}
+.se-tool.is-active {
+  color: var(--bg-base);
+  background: var(--accent);
+}
+.se-tool--reopen {
+  width: auto;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-tool--reopen:hover {
+  color: var(--ink);
+}
+/* Disabled (e.g. a patches-panel action mid-request) → grayed, non-interactive. */
+.se-tool--reopen:disabled {
+  color: var(--ink-3);
+  opacity: 0.38;
+  cursor: default;
+}
+.se-tool--reopen:disabled:hover {
+  color: var(--ink-3);
+  background: none;
+}
+/* Panel already open → dimmed to show its state, but still clickable to close. */
+.se-tool--reopen.is-open {
+  color: var(--ink-3);
+  opacity: 0.55;
+}
+.se-tool--reopen.is-open:hover {
+  color: var(--ink);
+  opacity: 1;
+  background: var(--bg-elevated);
+}
+
+.se-bizhawk {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* ── Patches panel ──────────────────────────────────────────────────────── */
+.se-patches {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.se-patches--empty,
+.se-patches__empty {
+  color: var(--ink-3);
+  font-style: italic;
+  padding: 8px 2px;
+}
+.se-patches__section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  margin-top: 10px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--line);
+}
+.se-patches__section-title:first-child {
+  margin-top: 0;
+}
+.se-patches__group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-top: 8px;
+  padding: 1px 2px 0;
+}
+.se-patches__group:first-of-type .se-patches__group-title {
+  margin-top: 4px;
+}
+.se-patches__list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0;
+  display: flex;
+  flex-direction: column;
+}
+.se-patches__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+}
+.se-patches__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.se-patches__name {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.se-patches__meta {
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.se-patches__added {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--ink-3);
+}
+.se-patches__btn {
+  height: 22px;
+}
+.se-patches__x {
+  width: 20px;
+  height: 20px;
+  color: var(--ink-3);
+  border-radius: 3px;
+}
+.se-patches__x:hover:not(:disabled) {
+  color: #e06666;
+  background: var(--bg-elevated);
+}
+/* Keeps the reorder controls aligned on user-patch rows, which omit the delete X. */
+.se-patches__xspacer {
+  width: 20px;
+  flex: 0 0 auto;
+}
+
+/* Authoring help (collapsible): where the asm source + project symbols live. */
+.se-patches__help {
+  font-size: 11px;
+  margin: 4px 0;
+  border: 1px solid var(--line-faint);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.se-patches__help summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.se-patches__help-text {
+  margin: 6px 0;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+.se-patches__paths {
+  margin: 6px 0 2px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 8px;
+  align-items: center;
+}
+.se-patches__paths dt {
+  color: var(--ink-3);
+}
+.se-patches__paths dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.se-patches__path {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-patches__pathopen {
+  flex: 0 0 auto;
+  height: 18px;
+  padding: 0 7px;
+  background: none;
+  border: 1px solid var(--line-faint);
+  border-radius: 3px;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 10px;
+}
+.se-patches__pathopen:hover {
+  background: var(--bg-elevated);
+  color: var(--ink);
+}
+.se-patches__help-note {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--ink-3);
+}
+.se-patches__reorder {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.se-patches__move {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-3);
+  border-radius: 3px;
+  font-size: 9px;
+  line-height: 1;
+}
+.se-patches__move:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--bg-elevated);
+}
+.se-patches__order-hint {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--ink-3);
+  padding: 1px 2px 0;
+}
+.se-patches__poolsize {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 2px 0;
+}
+.se-patches__poolsize label {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.se-patches__poolsize input {
+  width: 52px;
+}
+.se-patches__poolsize-unit {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-patches__poolsize-hint {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--ink-3);
+  padding: 2px 2px 0;
+}
+.se-patches__top {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.se-patches__actions {
+  display: flex;
+  gap: 6px;
+}
+.se-patches__error {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #e06666;
+}
+.se-tool--bizhawk {
+  width: auto;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-tool--bizhawk:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--bg-elevated);
+}
+.se-tool--bizhawk:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.se-tool--save {
+  width: auto;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-tool--save:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--bg-elevated);
+}
+.se-tool--save:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.se-tool--save.is-dirty {
+  color: var(--accent);
+}
+.se-tool--save.is-dirty:hover {
+  color: var(--bg-base);
+  background: var(--accent);
+}
+
+/* Reset level — neutral by default, destructive (red) on hover. */
+.se-tool--reset {
+  width: auto;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-tool--reset:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--bg-elevated);
+}
+.se-tool--reset:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* Save / build blocker bar — a centred stack at the top of the stage. See
+   BlockerBar.tsx + lib/level-blockers.ts. */
+.se-blockers {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 80%;
+  /* No z-index: auto-z + DOM order (after the canvas, before the panels) keeps
+     this above the level visuals but below the floating panels (which carry a
+     positive inline z-index). */
+}
+.se-blocker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.se-blocker--error {
+  background: #5a1c1c;
+  color: #fff0f0;
+  border-color: #8a2c2c;
+}
+.se-blocker--warn {
+  background: #5a4a1c;
+  color: #fff6e0;
+  border-color: #8a772c;
+}
+.se-blocker__detail {
+  opacity: 0.8;
+}
+.se-blocker button {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Right-click context menu (ContextMenu.tsx). */
+.se-ctxmenu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.se-ctxmenu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 5px 10px;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.se-ctxmenu__item:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+.se-ctxmenu__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.se-ctxmenu__shortcut {
+  opacity: 0.6;
+  font-size: 11px;
+}
+.se-ctxmenu__item:hover:not(:disabled) .se-ctxmenu__shortcut {
+  opacity: 0.85;
+}
+
+/* Stream-index reorder slider popover (right-click → "Change paint order…") */
+.se-reorder {
+  position: fixed;
+  z-index: 2000;
+  width: 190px;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.se-reorder__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.se-reorder__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.se-reorder__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.se-reorder__slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.se-reorder__end {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  font-size: 10px;
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.se-reorder__end:hover {
+  color: var(--ink);
+  background: var(--bg-base);
+}
+
+.se-toolbar__divider {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background: var(--line);
+  margin: 0 4px;
+}
+
+.se-toolbar__layers {
+  /* Fixed 5-column grid intentionally splits the toggles into two functional
+     rows: row 1 = visual layers (sprites, BG1, BG2, BG3, backdrop), row 2 =
+     editing / overlay toggles (sprite editing, object editing, exits,
+     collision, grid). The first two editing toggles column-align under the
+     visual layer they pair with. */
+  display: grid;
+  grid-template-columns: repeat(5, auto);
+  gap: 1px;
+}
+/* Layer toggles: active = full-color icon, off = grayed out. */
+.se-tool--layer.is-active {
+  color: var(--ink);
+  background: transparent;
+}
+.se-tool--layer.is-active:hover {
+  background: var(--bg-elevated);
+}
+.se-tool--layer.is-off {
+  color: var(--ink-3);
+  opacity: 0.45;
+}
+.se-tool--layer.is-off:hover {
+  opacity: 0.8;
+  color: var(--ink-2);
+}
+
+.se-toolbar__right {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Stage ─────────────────────────────────────────────────────────────── */
+
+.se-stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+.se-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  overflow: hidden;
+  user-select: none;
+  background: #000;
+}
+.se-canvas.is-pickable {
+  cursor: pointer;
+}
+.se-canvas.is-panning {
+  cursor: grabbing;
+}
+/* After is-panning so the erase cursor wins during the sweep drag (both classes
+   are present then; equal specificity → later rule applies). Inline SVG eraser
+   (a white block with a pink band) with the hotspot at its bottom-centre contact
+   point; Chromium needs the SVG's explicit width/height to accept it as a
+   cursor. `cell` is the fallback if the data-URI cursor ever fails to load. */
+.se-canvas.is-erasing {
+  cursor:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><rect x='4' y='6' width='16' height='12' rx='2.5' fill='%23ffffff' stroke='%23161616' stroke-width='1.6'/><path d='M6.5 6 H17.5 A2.5 2.5 0 0 1 20 8.5 V11 H4 V8.5 A2.5 2.5 0 0 1 6.5 6 Z' fill='%23ff6f91' stroke='%23161616' stroke-width='1.6'/></svg>") 12 18,
+    cell;
+}
+/* Active shift-drag marquee — crosshair over the pan "grabbing" cursor (after
+   is-panning so it wins; both classes are present during the box drag). */
+.se-canvas.is-marquee {
+  cursor: crosshair;
+}
+/* Paint tool: a crosshair to place cell-corner heights precisely. */
+.se-canvas.is-painting {
+  cursor: crosshair;
+}
+
+/* ── Paint panel ─────────────────────────────────────────────────────────── */
+.se-paint {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+}
+.se-paint__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--se-muted, #9aa0a6);
+}
+.se-paint__warn {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #e0b341;
+}
+.se-paint__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.se-paint__row > span {
+  color: var(--se-muted, #9aa0a6);
+}
+.se-paint__row .se-props__select,
+.se-paint__row .se-props__num {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+.se-paint__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+.se-paint__count {
+  font-size: 11px;
+  color: var(--se-muted, #9aa0a6);
+}
+.se-canvas__el {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Pixel-art rendering: when the canvas's logical-pixel buffer is
+     scaled by the browser to fit the element's CSS size, use
+     nearest-neighbour instead of bilinear so SNES pixels stay crisp.
+     Pairs with `ctx.imageSmoothingEnabled = false` in Canvas.tsx
+     (which controls drawImage during the world-transform zoom). */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges; /* Firefox fallback */
+}
+
+.se-canvas__status {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  pointer-events: none;
+  background: rgba(13, 11, 9, 0.7);
+  padding: 4px 8px;
+  border-radius: 3px;
+}
+.se-canvas__status-warn {
+  color: #fbbf24; /* amber — "rebuild to refresh" hint, not an error */
+}
+
+/* Cursor level-coordinate readout — same chip as the status strip, mirrored to
+   the bottom-right corner. */
+.se-canvas__coords {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  pointer-events: none;
+  background: rgba(13, 11, 9, 0.7);
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums; /* digits don't jitter as coords change */
+}
+
+.se-canvas__reset {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.se-canvas__reset:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.se-canvas__message {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 14px 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--ink-2);
+  max-width: 460px;
+  text-align: center;
+  pointer-events: none;
+}
+.se-canvas__message.is-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.se-canvas__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+  color: var(--ink-3);
+  gap: 14px;
+  padding: 0 24px;
+}
+.se-canvas__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  max-width: 360px;
+}
+
+/* ── Floating window ───────────────────────────────────────────────────── */
+
+.se-window {
+  position: absolute;
+  background: var(--bg-surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow-window);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.se-window.is-dragging,
+.se-window.is-resizing {
+  user-select: none;
+  box-shadow: var(--shadow-pop);
+}
+
+.se-window__bar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  flex: 0 0 30px;
+  padding: 0 6px 0 12px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--line);
+  cursor: grab;
+  user-select: none;
+}
+.se-window__bar:active { cursor: grabbing; }
+
+.se-window__titlegroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.se-window__title {
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Help (?) affordance — small bordered circle, hugging the title. The "?" is
+   drawn as centered SVG text (FloatingWindow) so it sits on the glyph's optical
+   center rather than the line box. */
+.se-window__help {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  color: var(--ink-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  cursor: pointer;
+}
+/* Fill the button so the glyph centers on the button's center (the "?" is
+   centered inside the viewBox); default UA button padding would otherwise
+   shrink/offset the content box. */
+.se-window__help svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.se-window__help:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+  background: var(--bg-overlay);
+}
+
+.se-window__close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--ink-3);
+  border-radius: 3px;
+}
+.se-window__close:hover {
+  color: var(--ink);
+  background: var(--bg-overlay);
+}
+
+.se-window__body {
+  padding: 12px;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* SE corner resize grip — 14×14 diagonal-hatched square */
+.se-window__resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 50%, var(--line) 50% 60%, transparent 60% 75%, var(--line) 75% 85%, transparent 85%);
+  opacity: 0.5;
+  transition: opacity 0.1s;
+}
+.se-window__resize:hover,
+.se-window.is-resizing .se-window__resize {
+  opacity: 1;
+}
+
+/* Tiles palette body — live Map16 gallery (Phase 2.5) */
+.se-tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  min-height: 0;
+}
+.se-tiles__status {
+  font-size: 11px;
+  opacity: 0.7;
+  flex: 0 0 auto;
+}
+.se-tiles__canvas {
+  /* Map16 cells are 16×16 source pixels; let the canvas grow to fill the
+     panel and rely on the browser's image-rendering=pixelated for crisp
+     nearest-neighbor scaling. The canvas itself stays at native size
+     (set in TilesBody via canvas.width/height) — CSS just scales it up. */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #111;
+}
+.se-tiles__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+/* Shared panel tab bar — used by the Tiles and Strings panels. */
+.se-tabs {
+  display: inline-flex;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.se-tab {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.12s, background-color 0.12s, border-color 0.12s;
+}
+.se-tab:hover {
+  color: var(--ink);
+  background: var(--bg-elevated);
+}
+.se-tab.is-active {
+  color: var(--bg-base);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.se-tiles__page {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.se-tiles__page-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.12s, background-color 0.12s;
+}
+.se-tiles__page-btn:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--bg-elevated);
+}
+.se-tiles__page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.se-tiles__page-label {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  min-width: 36px;
+  text-align: center;
+}
+.se-tiles__page-label--prefix {
+  min-width: 0;
+  color: var(--ink-3);
+  margin-right: 2px;
+}
+.se-tiles__blocks {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+.se-tiles__block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 6px 8px;
+}
+.se-tiles__block--animated {
+  border-color: var(--accent);
+}
+.se-tiles__block--sprite-sheet {
+  background: transparent;
+  border-style: dashed;
+}
+.se-tiles__block-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.se-tiles__block-sublabel {
+  font-size: 10px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
+}
+.se-tiles__block-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: #111;
+  /* Display dimensions set inline per-block (= source pixels × 2). */
+}
+
+/* Palette body — 16×16 CGRAM swatch grid + hint line */
+.se-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.se-palette__section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+/* Tighten the gap between a section label and the grid that follows it
+ * — the panel-level gap is 6px which feels detached. */
+.se-palette__section-label + .se-palette__grid {
+  margin-top: -3px;
+}
+.se-palette__grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 1px;
+  /* Inset background shows through transparent swatches as a faint
+     checkerboard so transparent cells are visible without being noisy. */
+  background:
+    repeating-conic-gradient(
+      var(--line) 0% 25%,
+      transparent 0% 50%
+    ) 0 0 / 8px 8px;
+  padding: 1px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+.se-palette__cell {
+  aspect-ratio: 1;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: outline 0.08s, transform 0.08s;
+}
+.se-palette__cell:hover,
+.se-palette__cell:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+  transform: scale(1.6);
+  z-index: 1;
+  position: relative;
+}
+.se-palette__hint {
+  margin: 0;
+  font-size: 10px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+/* Palette editing aids: dim rows the level's tiles don't use; outline the
+ * selected object's rows. */
+.se-palette__cell.is-unused {
+  opacity: 0.22;
+}
+.se-palette__cell.is-sel {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  position: relative;
+  z-index: 1;
+}
+/* Palette-colour editing: the swatch being edited gets a bright ring; the
+ * footer holds the colour picker + the "global edit" warning. */
+.se-palette__cell.is-editing {
+  outline: 2px solid var(--ink);
+  outline-offset: -1px;
+  position: relative;
+  z-index: 2;
+}
+.se-palette__editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-elevated);
+}
+.se-palette__picker {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+.se-palette__editor-info {
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.se-palette__editor-dim {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.se-palette__editor-warn {
+  color: var(--ink-2);
+}
+/* Colour editor sits at the top of the panel (a swatch is always auto-selected);
+ * the Reset Color / Reset all toolbar at the bottom. */
+.se-palette__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+/* Palette Reset — neutral by default, destructive (red) on hover/confirm.
+ * Mirrors the toolbar's level Reset (.se-tool--reset). */
+.se-palette__reset-btn {
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 10px;
+  color: var(--ink-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.se-palette__reset-btn:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--bg-elevated);
+}
+.se-palette__reset-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.se-palette__reset-btn.is-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+/* Save — accent (primary) so it reads as the main action in the toolbar. */
+.se-palette__reset-btn.is-save:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.se-palette__reset-btn.is-save:hover:not(:disabled) {
+  color: var(--bg-base);
+  background: var(--accent);
+}
+.se-palette__reset-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--ink-2);
+}
+
+/* Tiles "Used in this level" view — the composite thumbnail with a transparent
+ * badge grid on top (coverage health + selection outline). */
+.se-tiles__status--warn {
+  color: var(--danger, #e06c6c);
+  opacity: 1;
+  font-weight: 600;
+}
+.se-tiles__empty {
+  font-size: 11px;
+  color: var(--ink-3);
+  padding: 12px 2px;
+}
+.se-tiles__used {
+  position: relative;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #111;
+}
+.se-tiles__used-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  pointer-events: none;
+}
+.se-tiles__used-grid {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+}
+.se-tiles__used-cell {
+  position: relative;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+}
+.se-tiles__used-cell:hover {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  z-index: 2;
+}
+.se-tiles__used-cell.se-cov--miss {
+  border-color: var(--danger, #e06c6c);
+}
+.se-tiles__used-cell.se-cov--anim {
+  border-color: #5aa0e0;
+}
+.se-tiles__used-cell.is-sel {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  z-index: 1;
+}
+.se-tiles__used-cell.is-overflow {
+  box-shadow: inset 0 0 0 1px #e0b24c;
+}
+.se-tiles__cov-badge {
+  position: absolute;
+  top: -1px;
+  right: 1px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+  pointer-events: none;
+}
+.se-cov--miss .se-tiles__cov-badge {
+  color: var(--danger, #e06c6c);
+}
+.se-cov--anim .se-tiles__cov-badge {
+  color: #8cc4ff;
+}
+
+/* ── Tiles · Header tab ─────────────────────────────────────────────────── */
+.se-hdr {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
+  font-size: 12px;
+}
+.se-hdr__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.se-hdr__h {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+/* Layer table (Layer · Tileset · Palette). */
+.se-hdr__table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.se-hdr__table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-4);
+  padding: 0 12px 4px 0;
+}
+.se-hdr__table td {
+  padding: 2px 12px 2px 0;
+  color: var(--ink);
+}
+.se-hdr__table td:first-child {
+  color: var(--ink-2);
+}
+.se-hdr__table th:not(:first-child),
+.se-hdr__table td:not(:first-child) {
+  font-variant-numeric: tabular-nums;
+}
+/* Scalar key/value list. */
+.se-hdr__kv {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.se-hdr__kv-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.se-hdr__kv-row dt {
+  color: var(--ink-2);
+}
+.se-hdr__kv-row dd {
+  margin: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* Loaded-gfx file groups. */
+.se-hdr__filegroup {
+  margin-top: 4px;
+}
+.se-hdr__filegroup-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 2px;
+}
+.se-hdr__filegroup-count {
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--ink-4);
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.se-hdr__files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.se-hdr__file {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1px 0;
+}
+.se-hdr__file-id {
+  color: var(--ink);
+}
+.se-hdr__file-meta {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.se-hdr__muted {
+  margin: 0;
+  color: var(--ink-3);
+}
+
+/* Strings body — editable asm string tables (level names, …) */
+.se-strings {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 6px;
+}
+
+.se-strings__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.se-strings__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.se-strings__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.se-strings__entry-name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.se-strings__entry-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.se-strings__line {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.se-strings__line:focus {
+  outline: none;
+  border-color: var(--accent-soft);
+}
+
+.se-strings__line.is-invalid {
+  border-color: var(--danger);
+}
+
+/* Message markup model: a multiline body of plain text + [token]s. */
+.se-strings__markup {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  resize: vertical;
+}
+
+.se-strings__markup:focus {
+  outline: none;
+  border-color: var(--accent-soft);
+}
+
+/* Collapsible glyph + control-code reference above the message list. */
+.se-strings__guide {
+  flex: 0 0 auto;
+  border: 1px solid var(--line-faint);
+  border-radius: 2px;
+  background: var(--bg-elevated);
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.se-strings__guide > summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 11px;
+  user-select: none;
+}
+
+.se-strings__guide[open] > summary {
+  margin-bottom: 6px;
+}
+
+.se-strings__guide-note {
+  margin: 0 0 8px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+
+.se-strings__guide-note code,
+.se-strings__guide-token {
+  font-family: var(--font-mono);
+  color: var(--accent-soft);
+}
+
+.se-strings__guide-group + .se-strings__guide-group {
+  margin-top: 8px;
+}
+
+.se-strings__guide-head {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+
+.se-strings__guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+}
+
+.se-strings__guide-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.se-strings__guide-token {
+  flex: 0 0 auto;
+}
+
+.se-strings__guide-label {
+  color: var(--ink-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.se-strings__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-faint);
+  font-size: 11px;
+}
+
+.se-strings__budget {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+}
+
+.se-strings__budget.is-over {
+  color: var(--danger);
+}
+
+.se-strings__warn {
+  color: var(--danger);
+}
+
+.se-strings__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.se-strings__save {
+  margin-left: auto;
+}
+
+/* World Map body (entrance-table editor) */
+.se-worldmap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.se-worldmap__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.se-worldmap__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.se-worldmap__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.se-worldmap__world {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  padding: 2px 0;
+  position: sticky;
+  top: 0;
+  background: var(--panel-bg, var(--bg-1));
+}
+
+.se-worldmap__slotgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.se-worldmap__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0;
+}
+
+/* Checkpoint (midway) sub-rows — indented + dimmed under their slot's entrance. */
+.se-worldmap__row--ckpt {
+  padding-left: 10px;
+  opacity: 0.85;
+}
+
+.se-worldmap__ckpt {
+  width: 60px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.se-worldmap__slot {
+  flex: 0 0 auto;
+  width: 44px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.se-worldmap__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.se-worldmap__cell {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.se-worldmap__cell--prog {
+  flex: 0 0 auto;
+}
+
+.se-worldmap__cell-label {
+  font-family: var(--font-mono);
+}
+
+.se-worldmap__jump {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--line-faint);
+  border-radius: 3px;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.se-worldmap__jump:hover {
+  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+  color: var(--ink-1);
+}
+
+.se-worldmap__rowbtn {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 1px solid var(--line-faint);
+  border-radius: 3px;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.se-worldmap__rowbtn:hover {
+  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+  color: var(--ink-1);
+}
+
+.se-worldmap__row--empty {
+  opacity: 0.6;
+}
+
+.se-worldmap__empty-label {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ink-3);
+}
+
+.se-worldmap__row .se-props__num {
+  /* Fit 3 digits (coords are 0–255 in decimal). border-box, so add the 12px of
+     padding+border to the ~3ch of content. */
+  width: calc(3ch + 16px);
+}
+
+.se-worldmap__cell--prog .se-props__select {
+  max-width: 150px;
+}
+
+.se-worldmap__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-faint);
+  font-size: 11px;
+}
+
+.se-worldmap__save {
+  margin-left: auto;
+}
+
+.se-worldmap__dirty {
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+/* Hierarchical nav: breadcrumb + world grid + detail headings */
+.se-worldmap__crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.se-worldmap__crumb {
+  background: none;
+  border: none;
+  padding: 1px 3px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--accent, var(--ink-1));
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.se-worldmap__crumb:disabled {
+  color: var(--ink-1);
+  cursor: default;
+}
+
+.se-worldmap__crumb:not(:disabled):hover {
+  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+}
+
+.se-worldmap__crumb.is-current {
+  color: var(--ink-1);
+  font-weight: 600;
+}
+
+.se-worldmap__crumb-sep {
+  color: var(--ink-3);
+}
+
+.se-worldmap__worlds {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.se-worldmap__world-btn {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel-2, rgba(127, 127, 127, 0.06));
+  border: 1px solid var(--line-faint);
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.se-worldmap__world-btn:hover {
+  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+}
+
+.se-worldmap__world-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.se-worldmap__world-count {
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.se-worldmap__slot-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 1px 2px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+  text-align: left;
+}
+
+.se-worldmap__slot-link:hover {
+  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+}
+
+.se-worldmap__detail-head {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 0;
+}
+
+.se-worldmap__subhead {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-faint);
+}
+
+/* Properties body */
+.se-props__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+  padding: 24px 12px;
+}
+.se-props__list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 6px 12px;
+  font-size: 11px;
+  align-items: baseline;
+}
+.se-props__list dt {
+  color: var(--ink-3);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.se-props__list dd {
+  margin: 0;
+  color: var(--ink);
+  word-break: break-word;
+}
+.se-props__list code {
+  background: var(--bg-elevated);
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-size: 10px;
+}
+/* Section divider spanning both grid columns (Level Header panel: Visual /
+   Gameplay). Spanning the full row keeps the 2-col dt/dd auto-flow aligned. */
+.se-props__list dt.se-props__section {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 10px;
+}
+.se-props__list dt.se-props__section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.se-props__section-note {
+  display: block;
+  margin-top: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-3);
+  font-size: 10px;
+}
+/* Two-column field layout (Level Header panel). Fields auto-flow as two
+   dt/dd pairs per row within each section; the section dividers already
+   span `1 / -1`, so each Visual/Gameplay group starts cleanly on its own
+   row. Labels are visually distinct (dim uppercase) from values, so a
+   single uniform column-gap still reads as two [label value] pairs. */
+.se-props__list--2col {
+  grid-template-columns: 64px minmax(0, 1fr) 64px minmax(0, 1fr);
+  column-gap: 16px;
+}
+.se-props__raw {
+  font-size: 10px;
+  color: var(--ink-2);
+  letter-spacing: 0.04em;
+}
+/* Editable numeric fields (position / size) in the Properties panel. */
+.se-props__fields {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.se-props__fields-sep {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.se-props__num {
+  width: 48px;
+  padding: 2px 5px;
+  font: inherit;
+  font-size: 12px;
+  text-align: right;
+  color: var(--ink);
+  background: var(--bg-base);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.se-props__num:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.se-props__num:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Dropdown widgets (enum / level-ref) — span the field cell rather than the
+   fixed 48px the numeric input uses, since labels are long. */
+.se-props__select {
+  flex: 1;
+  min-width: 0;
+  max-width: 150px;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--bg-base);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.se-props__select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.se-props__select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.se-props__field {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.se-props__hexprefix {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+/* ── Add-picker ──────────────────────────────────────────────────────────── */
+.se-picker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 6px;
+  padding: 8px;
+}
+.se-picker__search {
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg-base);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.se-picker__search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.se-picker__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.se-picker__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  text-align: left;
+  color: var(--ink-2);
+  border-radius: 3px;
+}
+.se-picker__row:hover {
+  color: var(--ink);
+  background: var(--bg-elevated);
+}
+.se-picker__row.is-armed {
+  color: var(--bg-base);
+  background: var(--accent);
+}
+.se-picker__row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.se-picker__row-id {
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-picker__row.is-armed .se-picker__row-id {
+  color: var(--bg-base);
+}
+.se-picker__hint {
+  font-size: 10px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+.se-canvas.is-placing {
+  cursor: crosshair;
+}
+.se-props__desc {
+  font-size: 10px;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+/* Multi-select Properties: one row per entity-type group (label + count). The
+ * list cell must be allowed to shrink (min-width: 0) so the label can ellipsis-
+ * truncate instead of wrapping to multiple lines / overflowing the grid track. */
+.se-props__count-list {
+  min-width: 0;
+}
+.se-props__count-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.se-props__count-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.se-props__count {
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+.se-props__id-kind {
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-right: 4px;
+}
+/* Category chip — one tone per category. Subtle, monochromatic-ish. */
+.se-props__cat {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  color: var(--ink-2);
+}
+.se-props__cat--terrain     { color: #c4a575; }
+.se-props__cat--slope       { color: #c4a575; }
+.se-props__cat--platform    { color: #d6b97a; }
+.se-props__cat--hazard      { color: #fbbf24; }
+.se-props__cat--water       { color: #60a5fa; }
+.se-props__cat--pipe        { color: #4ade80; }
+.se-props__cat--collectible { color: #fbbf24; }
+.se-props__cat--interactive { color: #22d3ee; }
+.se-props__cat--decoration  { color: #9ca3af; }
+.se-props__cat--command     { color: #ec4899; }
+.se-props__cat--enemy       { color: #ef4444; }
+.se-props__cat--item        { color: #fbbf24; }
+.se-props__cat--generator   { color: #a855f7; }
+.se-props__cat--boss        { color: #dc2626; }
+.se-props__cat--unknown     { color: var(--ink-3); }
+
+/* ── Level menu (toolbar dropdown) ─────────────────────────────────────── */
+
+.se-levelmenu {
+  position: relative;
+}
+
+.se-levelmenu__trigger {
+  display: inline-grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  min-width: 220px;
+  max-width: 340px;
+  padding: 0 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  transition: border-color 0.12s;
+}
+.se-levelmenu__trigger:hover { border-color: var(--line-strong); }
+.se-levelmenu__trigger.is-open { border-color: var(--accent); }
+
+.se-levelmenu__slot {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  text-transform: uppercase;
+  min-width: 28px;
+}
+.se-levelmenu__name {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-levelmenu__chevron {
+  color: var(--ink-3);
+  transition: transform 0.18s;
+}
+.se-levelmenu__trigger.is-open .se-levelmenu__chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.se-levelmenu__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 340px;
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+  z-index: 1000;
+  padding: 4px 0;
+  animation: se-fade-in 0.14s ease-out;
+}
+
+/* "Go to room by id" — sticky header inside the dropdown for jumping to any
+   data record, including rooms not listed in the catalog below. */
+.se-levelmenu__goto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-surface);
+}
+.se-levelmenu__gotolabel {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.se-levelmenu__gotoprefix {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-left: 2px;
+}
+.se-levelmenu__gotoinput {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  margin-left: -2px;
+  padding: 0 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  transition: border-color 0.12s;
+}
+.se-levelmenu__gotoinput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.se-levelmenu__gotoinput.is-error {
+  border-color: var(--danger);
+}
+.se-levelmenu__gotoinput::placeholder {
+  color: var(--ink-4);
+}
+
+.se-levelmenu__group + .se-levelmenu__group {
+  margin-top: 4px;
+}
+.se-levelmenu__grouphead {
+  padding: 8px 14px 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  z-index: 1;
+}
+
+.se-levelmenu__row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 14px;
+  text-align: left;
+  color: var(--ink);
+  font-size: 12px;
+  border-radius: 0;
+  transition: background-color 0.08s, color 0.08s;
+}
+.se-levelmenu__row:hover {
+  background: var(--bg-elevated);
+}
+/* Bonus / mini-game slots — catalogued but not editable. Dimmed + inert. */
+.se-levelmenu__row.is-nodata {
+  opacity: 0.5;
+  cursor: default;
+}
+.se-levelmenu__row.is-nodata:hover {
+  background: transparent;
+}
+.se-levelmenu__row.is-active {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+.se-levelmenu__row.is-active .se-levelmenu__rowslot,
+.se-levelmenu__row.is-active .se-levelmenu__rowid {
+  color: var(--bg-base);
+  opacity: 0.7;
+}
+
+.se-levelmenu__rowslot {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.se-levelmenu__rowname {
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-levelmenu__rowid {
+  font-size: 10px;
+  color: var(--ink-4);
+}
+
+/* ── Sub-level menu (sits to the right of the main level menu) ─────────── */
+
+.se-sublevelmenu {
+  position: relative;
+}
+
+.se-sublevelmenu__trigger {
+  display: inline-grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  min-width: 130px;
+  max-width: 220px;
+  padding: 0 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  transition: border-color 0.12s;
+}
+.se-sublevelmenu__trigger:hover { border-color: var(--line-strong); }
+.se-sublevelmenu__trigger.is-open { border-color: var(--accent); }
+.se-sublevelmenu__trigger.is-static {
+  /* No dropdown affordance — make it read as a static chip. */
+  cursor: default;
+  opacity: 0.85;
+}
+
+.se-sublevelmenu__tag {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.se-sublevelmenu__name {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-sublevelmenu__count {
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+}
+.se-sublevelmenu__chevron {
+  color: var(--ink-3);
+  transition: transform 0.18s;
+}
+.se-sublevelmenu__trigger.is-open .se-sublevelmenu__chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.se-sublevelmenu__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 280px;
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+  z-index: 1000;
+  padding: 4px 0;
+  animation: se-fade-in 0.14s ease-out;
+}
+
+.se-sublevelmenu__row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 14px;
+  text-align: left;
+  color: var(--ink);
+  font-size: 12px;
+  border-radius: 0;
+  transition: background-color 0.08s, color 0.08s;
+}
+.se-sublevelmenu__row:hover {
+  background: var(--bg-elevated);
+}
+.se-sublevelmenu__row.is-active {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+.se-sublevelmenu__row.is-active .se-sublevelmenu__rowtag,
+.se-sublevelmenu__row.is-active .se-sublevelmenu__rowid {
+  color: var(--bg-base);
+  opacity: 0.7;
+}
+
+.se-sublevelmenu__rowtag {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.se-sublevelmenu__rowname {
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-sublevelmenu__rowid {
+  font-size: 10px;
+  color: var(--ink-4);
+}
+
+/* ── ROM menu trigger ──────────────────────────────────────────────────── */
+
+.se-rommenu {
+  position: relative;
+}
+
+.se-rommenu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font-size: 12px;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.se-rommenu__trigger:hover {
+  border-color: var(--line-strong);
+}
+.se-rommenu__trigger.is-open {
+  border-color: var(--accent);
+}
+
+.se-rommenu__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-4);
+}
+.se-rommenu__dot.is-ready {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.se-rommenu__label {
+  letter-spacing: 0.01em;
+}
+
+.se-rommenu__spinner {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: se-spin 0.85s linear infinite;
+}
+@keyframes se-spin {
+  to { transform: rotate(360deg); }
+}
+
+.se-rommenu__chevron {
+  color: var(--ink-3);
+  transition: transform 0.18s;
+}
+.se-rommenu__trigger.is-open .se-rommenu__chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+/* ── ROM popover ───────────────────────────────────────────────────────── */
+
+.se-rommenu__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 360px;
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+  z-index: 1000;
+  animation: se-fade-in 0.14s ease-out;
+}
+@keyframes se-fade-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.se-pop__section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line-faint);
+}
+.se-pop__section:last-child { border-bottom: 0; }
+.se-pop__section--log { background: var(--bg-base); }
+
+.se-pop__h {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Status block */
+.se-pop__status {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.se-pop__status-main {
+  font-size: 13px;
+  color: var(--ink);
+}
+.se-pop__status-meta {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-pop__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* Drop zone */
+.se-drop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12px;
+  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+}
+.se-drop:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+.se-drop.is-over {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+.se-drop.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.se-drop svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Detection result */
+.se-detect {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  border-left: 2px solid var(--accent);
+  color: var(--ink-2);
+}
+.se-detect.is-bad {
+  border-left-color: var(--danger);
+  color: var(--ink-2);
+}
+.se-detect strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* Operations */
+.se-pop__ops {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.se-btn {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+}
+.se-btn:hover:not(:disabled) {
+  border-color: var(--ink-3);
+}
+.se-btn.is-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.se-btn.is-primary:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+/* Settings row (checkbox + label) inside a popover section */
+.se-pop__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+.se-pop__check input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.se-pop__check input[type='checkbox']:disabled {
+  cursor: progress;
+}
+.se-pop__check:hover {
+  color: var(--ink);
+}
+
+/* Log */
+.se-pop__log {
+  max-height: 160px;
+  overflow: auto;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.se-pop__logline {
+  padding: 2px 0;
+  word-break: break-word;
+}
+
+/* ── Project menu (left-toolbar variant of the popover) ─────────────────── */
+
+.se-projmenu__pop {
+  left: 0;
+  right: auto;
+  width: 300px;
+  padding: 4px 0;
+}
+/* The .se-pop__section padding/borders are tuned for the ROM popover; scope
+   them way down here so the project menu reads as compact as the level
+   dropdown (rows carry their own padding, container is 4px like the level pop). */
+.se-projmenu__pop .se-pop__section {
+  padding: 3px 6px;
+  border-bottom: 0;
+}
+.se-projmenu__pop .se-pop__h {
+  margin: 0;
+  padding: 6px 8px 2px;
+}
+/* Divider above the app-level Help/About section (below "Open folder"). */
+.se-projmenu__pop .se-projmenu__menu--divided {
+  margin-top: 4px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+}
+.se-projmenu__label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.se-projmenu__kicker {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+.se-projmenu__name {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.se-pop__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.se-proj {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background-color 0.12s;
+}
+.se-proj:hover:not(:disabled) {
+  border-color: var(--line);
+  color: var(--ink);
+}
+.se-proj.is-current {
+  background: var(--accent-glow);
+  color: var(--ink);
+}
+.se-proj__meta {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+/* File-menu style action rows (full-width, stacked). */
+.se-projmenu__menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.se-menuitem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+.se-menuitem:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--ink);
+}
+.se-menuitem:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.se-menuitem.is-primary {
+  color: var(--ink);
+}
+.se-projmenu__back {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  cursor: pointer;
+}
+.se-projmenu__back:hover {
+  color: var(--accent);
+}
+
+.se-projmenu__files {
+  max-height: 140px;
+  overflow: auto;
+}
+.se-projmenu__file {
+  font-size: 11px;
+  color: var(--ink-2);
+  padding: 2px 0;
+  word-break: break-all;
+}
+
+.se-projmenu__input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+}
+.se-projmenu__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.se-projmenu__hint {
+  margin: 6px 0 10px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-projmenu__status {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+.se-projmenu__warn {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
+/* ── Emulator-launch overlay ───────────────────────────────────────────────
+   Shown while a Launch / Test Level chain is in flight (App `emuBusy`). Covers
+   the whole app to block edits until the emulator is up; the backdrop captures
+   every click. Reuses the se-spin / se-fade-in keyframes. */
+.se-emu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  cursor: progress;
+  animation: se-fade-in 0.14s ease-out;
+}
+.se-emu-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  max-width: 60vw;
+  padding: 22px 26px;
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+}
+.se-emu-overlay__spinner {
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: se-spin 0.85s linear infinite;
+}
+.se-emu-overlay__title {
+  font-size: 13px;
+  color: var(--ink);
+}
+.se-emu-overlay__status {
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--ink-3);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Unsaved-changes modal ─────────────────────────────────────────────── */
+
+.se-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.se-modal {
+  width: 320px;
+  padding: 18px;
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop);
+}
+.se-modal__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.se-modal__body {
+  margin: 0 0 16px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.se-modal__error {
+  margin: -8px 0 14px;
+  font-size: 11px;
+  color: var(--danger);
+}
+.se-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.se-modal__actions .se-btn {
+  height: 32px;
+}
+
+/* Per-panel help dialog — wider than the confirm modals, with a scrollable
+   body for longer explanatory content. */
+.se-modal--help {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+}
+.se-help__body {
+  max-height: min(60vh, 460px);
+  margin: 0 0 16px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.se-help__body p {
+  margin: 0 0 10px;
+}
+.se-help__body p:last-child {
+  margin-bottom: 0;
+}
+.se-help__body b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* About page — shown in the help dialog's body. */
+.se-about__name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+.se-about__tagline {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.se-about__version {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-about p {
+  margin: 12px 0 0;
+}
+.se-about__thanks {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.se-about__thanks-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.se-about__thanks-intro {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.se-about__credits {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.se-about__credits li {
+  margin-top: 5px;
+}
+.se-about__credits b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.se-about__legal {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.se-btn.is-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.se-btn.is-danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--bg-base);
+}
+.se-projmenu__formrow {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Import-from-ROM dialog ────────────────────────────────────────────── */
+
+.se-modal--import {
+  width: 640px;
+  max-width: calc(100vw - 48px);
+}
+.se-import__body {
+  max-height: min(66vh, 540px);
+  margin: 0 0 14px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.se-import__intro p {
+  margin: 0 0 10px;
+}
+.se-import__intro code {
+  color: var(--ink);
+}
+.se-import__hint {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.se-import__error {
+  margin: 8px 0;
+  color: var(--danger);
+  font-size: 11px;
+}
+.se-import__warn {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-left: 2px solid #e0a23a;
+  border-radius: 3px;
+  color: #e0b15a;
+  font-size: 11px;
+}
+.se-import__file {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+.se-import__md5 {
+  color: var(--ink-3);
+  font-size: 10px;
+}
+.se-import__counts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+  color: var(--ink-2);
+}
+.se-import__pill {
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 10px;
+  border: 1px solid var(--line-strong);
+}
+.se-import__pill--full {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+.se-import__pill--raw {
+  color: #e0b15a;
+  border-color: #7a6326;
+}
+.se-import__pill--blocked {
+  color: var(--ink-3);
+}
+
+/* Re-identified memory locations (the anchor table). */
+.se-import__anchors {
+  margin: 6px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-base);
+}
+.se-import__anchors > summary {
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 11px;
+}
+.se-import__anchortable {
+  padding: 4px 8px 8px;
+}
+.se-import__anchorrow {
+  display: grid;
+  grid-template-columns: 1fr auto 90px 40px;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 0;
+  font-size: 11px;
+}
+.se-import__anchorname {
+  color: var(--ink-2);
+}
+.se-import__method {
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-import__method--vanilla-addr {
+  color: var(--accent-soft);
+}
+.se-import__method--unresolved {
+  color: var(--danger);
+}
+.se-import__addr {
+  color: var(--ink);
+  text-align: right;
+}
+.se-import__conf {
+  color: var(--ink-3);
+  text-align: right;
+}
+
+.se-import__selrow {
+  display: flex;
+  gap: 12px;
+  margin: 4px 0 6px;
+}
+.se-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-soft);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.se-linkbtn:hover {
+  color: var(--accent);
+}
+
+.se-import__list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.se-import__row {
+  display: grid;
+  grid-template-columns: 20px 52px 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line-faint);
+  font-size: 11px;
+}
+.se-import__row:last-child {
+  border-bottom: none;
+}
+.se-import__row.is-blocked {
+  opacity: 0.55;
+}
+.se-import__rowid {
+  color: var(--ink);
+}
+.se-import__rowname {
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-import__rowchg {
+  display: flex;
+  gap: 4px;
+}
+.se-import__chg {
+  color: var(--accent-soft);
+  font-size: 10px;
+}
+.se-import__rowcounts {
+  color: var(--ink-3);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.se-import__tag {
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 9px;
+  border: 1px solid var(--line-strong);
+}
+.se-import__tag--raw {
+  color: #e0b15a;
+  border-color: #7a6326;
+}
+.se-import__tag--blocked {
+  color: var(--ink-3);
+}
+.se-import__tag--warn {
+  color: #e0a23a;
+  border-color: #7a5e26;
+}
+.se-import__result {
+  margin-top: 10px;
+  color: var(--ink-2);
+}
+.se-import__result p {
+  margin: 0 0 4px;
+}
+
+/* Palette / level-name import categories. */
+.se-import__cats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+.se-import__cat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.se-import__cat.is-blocked {
+  opacity: 0.55;
+  cursor: default;
+}
+.se-import__catname {
+  color: var(--ink);
+  min-width: 110px;
+}
+.se-import__catinfo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+}
+
+/* ── Scrollbars ────────────────────────────────────────────────────────── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--ink-4); }
+
+/* ── Light mode ────────────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg-base:        #f4ede0;
+    --bg-surface:     #ece4d3;
+    --bg-elevated:    #e3dac8;
+    --bg-overlay:     #d8cfba;
+
+    --line:           #cdc3ad;
+    --line-strong:    #b3a88e;
+    --line-faint:     #ddd3bb;
+
+    --ink:            #1a1814;
+    --ink-2:          #4a4438;
+    --ink-3:          #82796a;
+    --ink-4:          #a89e85;
+
+    --accent:         #6f7c1e;
+    --accent-soft:    #95a235;
+    --accent-glow:    rgba(111, 124, 30, 0.15);
+
+    --danger:         #b04535;
+
+    --shadow-window:  0 8px 20px -8px rgba(0, 0, 0, 0.18);
+    --shadow-pop:     0 16px 36px -12px rgba(0, 0, 0, 0.25);
+
+    color-scheme: light;
+  }
+}
+
+/* ── Object finder (debug panel) ──────────────────────────────────────────── */
+
+.se-finder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+.se-finder__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.se-finder__cycle {
+  flex: 0 0 auto;
+  height: 26px;
+  min-width: 64px;
+  padding: 0 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  transition: border-color 0.12s;
+}
+.se-finder__cycle:hover { border-color: var(--line-strong); }
+.se-finder__prefix {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.se-finder__input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+.se-finder__input:focus { outline: none; border-color: var(--accent); }
+.se-finder__nav {
+  justify-content: space-between;
+}
+.se-finder__btn {
+  height: 26px;
+  padding: 0 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font-size: 12px;
+  transition: border-color 0.12s, color 0.12s;
+}
+.se-finder__btn:hover:not(:disabled) { border-color: var(--line-strong); }
+.se-finder__btn:disabled { color: var(--ink-4); cursor: default; }
+.se-finder__count {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.se-finder__current {
+  font-size: 11px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.se-finder__here { color: var(--accent); }
+
+/* ── Banks panel (read-only level-data byte-budget overview) ──────────────── */
+.se-banks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+  font-variant-numeric: tabular-nums;
+}
+.se-banks--empty {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.se-banks__pool {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.se-banks__pool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.se-banks__pool-id {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+.se-banks__pool-tag {
+  font-size: 10px;
+  color: var(--ink-4);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.se-banks__free {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-banks__free.is-over { color: var(--danger); font-weight: 600; }
+.se-banks__pool-sub {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-banks__levels {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.se-banks__jump {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 6px;
+  background: var(--bg-elevated);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s;
+}
+.se-banks__jump:hover { border-color: var(--line-strong); }
+.se-banks__jump.is-here { border-color: var(--accent); }
+.se-banks__level-id {
+  flex: 0 0 auto;
+  color: var(--ink-2);
+  letter-spacing: 0.04em;
+}
+.se-banks__level-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-banks__here { color: var(--accent); }
+.se-banks__level-bytes {
+  flex: 0 0 auto;
+  color: var(--ink-2);
+}
+
+/* Per-level migrate / de-couple controls + the Free-space section. */
+.se-banks__level {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.se-banks__level > .se-banks__jump { flex: 1; min-width: 0; }
+.se-banks__act {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  background: var(--bg-elevated);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.se-banks__act:hover:not(:disabled) { border-color: var(--line-strong); color: var(--ink); }
+.se-banks__act:disabled { opacity: 0.4; cursor: default; }
+.se-banks__act.is-on { color: var(--accent); border-color: var(--accent); }
+.se-banks__level.is-migrated > .se-banks__jump { opacity: 0.55; }
+.se-banks__region {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 6px;
+  border-left: 2px solid var(--line-strong);
+}
+.se-banks__region-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.se-banks__region-empty { font-style: italic; color: var(--ink-4); }

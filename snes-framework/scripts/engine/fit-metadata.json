@@ -1,0 +1,439 @@
+{
+  "generatedFrom": "sample scenarios (gen-fit-metadata.ts)",
+  "tilesets": [
+    {
+      "tileset": 1,
+      "name": "cave/grass",
+      "baseLevel": "0x0A",
+      "levelCount": 1,
+      "objects": [
+        {
+          "id": 1,
+          "name": "Ledge",
+          "category": "terrain",
+          "role": "floor"
+        },
+        {
+          "id": 4,
+          "name": "Gradual downwards slope, right",
+          "category": "slope",
+          "role": "slope",
+          "angle": "gradual",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "2:5"
+        },
+        {
+          "id": 5,
+          "name": "Gradual downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "gradual",
+          "dir": "downLeft",
+          "mirrorBySign": true,
+          "measured": "2:5"
+        },
+        {
+          "id": 6,
+          "name": "Downwards slope, right",
+          "category": "slope",
+          "role": "slope",
+          "angle": "normal",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "5:5"
+        },
+        {
+          "id": 7,
+          "name": "Downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "normal",
+          "dir": "downLeft",
+          "mirrorBySign": true,
+          "measured": "5:5"
+        }
+      ],
+      "roles": {
+        "floor": 1,
+        "slopes": {
+          "gradual": {
+            "downRight": 4,
+            "downLeft": 5,
+            "signOnly": false
+          },
+          "normal": {
+            "downRight": 6,
+            "downLeft": 7,
+            "signOnly": false
+          },
+          "steep": {
+            "downRight": 8,
+            "downLeft": 9,
+            "signOnly": false
+          }
+        }
+      }
+    },
+    {
+      "tileset": 7,
+      "name": "cave/grass",
+      "baseLevel": "0x01",
+      "levelCount": 2,
+      "objects": [
+        {
+          "id": 1,
+          "name": "Ledge",
+          "category": "terrain",
+          "role": "floor"
+        },
+        {
+          "id": 2,
+          "name": "Left edge of ledge",
+          "category": "terrain",
+          "role": "edgeLeft"
+        },
+        {
+          "id": 3,
+          "name": "Right edge of ledge",
+          "category": "terrain",
+          "role": "edgeRight"
+        },
+        {
+          "id": 4,
+          "name": "Gradual downwards slope, right",
+          "category": "slope",
+          "role": "slope",
+          "angle": "gradual",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "2:5"
+        },
+        {
+          "id": 5,
+          "name": "Gradual downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "gradual",
+          "dir": "downLeft",
+          "mirrorBySign": true,
+          "measured": "2:5"
+        },
+        {
+          "id": 6,
+          "name": "Downwards slope, right",
+          "category": "slope",
+          "role": "slope",
+          "angle": "normal",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "5:5"
+        },
+        {
+          "id": 7,
+          "name": "Downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "normal",
+          "dir": "downLeft",
+          "mirrorBySign": true,
+          "measured": "5:5"
+        },
+        {
+          "id": 20,
+          "name": "Cross section",
+          "category": "terrain",
+          "role": "cut"
+        },
+        {
+          "id": 89,
+          "name": "Gradual downwards slope in cross section, right",
+          "category": "slope",
+          "role": "interiorSlope",
+          "angle": "gradual",
+          "dir": "downRight",
+          "mirrorBySign": false,
+          "measured": "2:5"
+        },
+        {
+          "id": 97,
+          "name": "Gradual upwards slope, left",
+          "category": "slope",
+          "role": "interiorSlope"
+        },
+        {
+          "id": 98,
+          "name": "Upwards slope, left",
+          "category": "slope",
+          "role": "interiorSlope"
+        },
+        {
+          "id": 122,
+          "name": "Wall",
+          "category": "terrain",
+          "role": "cut"
+        },
+        {
+          "id": 123,
+          "name": "Diagonal wall",
+          "category": "terrain",
+          "role": "cut"
+        },
+        {
+          "id": 127,
+          "name": "Wall hole",
+          "category": "terrain",
+          "role": "hole"
+        }
+      ],
+      "roles": {
+        "floor": 1,
+        "edgeLeft": 2,
+        "edgeRight": 3,
+        "cut": 20,
+        "hole": 127,
+        "slopes": {
+          "gradual": {
+            "downRight": 4,
+            "downLeft": 5,
+            "signOnly": false
+          },
+          "normal": {
+            "downRight": 6,
+            "downLeft": 7,
+            "signOnly": false
+          },
+          "steep": {
+            "downRight": 8,
+            "downLeft": 9,
+            "signOnly": false
+          }
+        }
+      }
+    },
+    {
+      "tileset": 8,
+      "name": "lava cave",
+      "baseLevel": "0x3E",
+      "levelCount": 1,
+      "objects": [
+        {
+          "id": 1,
+          "name": "Ledge",
+          "category": "terrain",
+          "role": "floor"
+        },
+        {
+          "id": 3,
+          "name": "Right edge of ledge",
+          "category": "terrain",
+          "role": "edgeRight"
+        },
+        {
+          "id": 4,
+          "name": "Gradual downwards slope, right",
+          "category": "slope",
+          "role": "slope",
+          "angle": "gradual",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "2:5"
+        },
+        {
+          "id": 5,
+          "name": "Gradual downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "gradual",
+          "dir": "downLeft",
+          "mirrorBySign": true,
+          "measured": "2:5"
+        },
+        {
+          "id": 6,
+          "name": "Downwards slope, right",
+          "category": "slope",
+          "role": "slope",
+          "angle": "normal",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "5:5"
+        },
+        {
+          "id": 7,
+          "name": "Downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "normal",
+          "dir": "downLeft",
+          "mirrorBySign": true,
+          "measured": "5:5"
+        },
+        {
+          "id": 88,
+          "name": "Ceiling of ledge",
+          "category": "terrain",
+          "role": "ceiling"
+        },
+        {
+          "id": 95,
+          "name": "Upward gradual slope, right",
+          "category": "slope",
+          "role": "interiorSlope"
+        },
+        {
+          "id": 96,
+          "name": "Upwards slope, right",
+          "category": "slope",
+          "role": "interiorSlope"
+        },
+        {
+          "id": 97,
+          "name": "Gradual upwards slope, left",
+          "category": "slope",
+          "role": "interiorSlope"
+        },
+        {
+          "id": 98,
+          "name": "Upwards slope, left",
+          "category": "slope",
+          "role": "interiorSlope"
+        },
+        {
+          "id": 103,
+          "name": "Ground",
+          "category": "terrain",
+          "role": "ground"
+        }
+      ],
+      "roles": {
+        "floor": 1,
+        "ground": 103,
+        "edgeRight": 3,
+        "ceiling": 88,
+        "slopes": {
+          "gradual": {
+            "downRight": 4,
+            "downLeft": 5,
+            "signOnly": false
+          },
+          "normal": {
+            "downRight": 6,
+            "downLeft": 7,
+            "signOnly": false
+          },
+          "steep": {
+            "downRight": 8,
+            "downLeft": 9,
+            "signOnly": false
+          }
+        }
+      }
+    },
+    {
+      "tileset": 12,
+      "name": "flower garden",
+      "baseLevel": "0x00",
+      "levelCount": 1,
+      "objects": [
+        {
+          "id": 103,
+          "name": "Ground",
+          "category": "terrain",
+          "role": "ground"
+        },
+        {
+          "id": 228,
+          "name": "Flower garden ledge",
+          "category": "terrain",
+          "role": "floor"
+        },
+        {
+          "id": 229,
+          "name": "Flower garden gradual downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "gradual",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "2:5"
+        },
+        {
+          "id": 230,
+          "name": "Flower garden downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "normal",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "5:5"
+        },
+        {
+          "id": 231,
+          "name": "Flower garden steep downwards slope, left",
+          "category": "slope",
+          "role": "slope",
+          "angle": "steep",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "4:2"
+        },
+        {
+          "id": 232,
+          "name": "Flower garden gradual downwards slope, right",
+          "category": "slope",
+          "role": "slope",
+          "angle": "gradual",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "2:5"
+        },
+        {
+          "id": 234,
+          "name": "Flower garden steep downwards slope, right",
+          "category": "slope",
+          "role": "slope",
+          "angle": "steep",
+          "dir": "downRight",
+          "mirrorBySign": true,
+          "measured": "4:2"
+        },
+        {
+          "id": 235,
+          "name": "Flower garden edge, left",
+          "category": "terrain",
+          "role": "edgeLeft"
+        },
+        {
+          "id": 236,
+          "name": "Flower garden edge, right",
+          "category": "terrain",
+          "role": "edgeRight"
+        }
+      ],
+      "roles": {
+        "floor": 228,
+        "ground": 103,
+        "edgeLeft": 235,
+        "edgeRight": 236,
+        "slopes": {
+          "gradual": {
+            "downRight": 232,
+            "downLeft": 229,
+            "signOnly": false
+          },
+          "normal": {
+            "downRight": 233,
+            "downLeft": 230,
+            "signOnly": false
+          },
+          "steep": {
+            "downRight": 234,
+            "downLeft": 231,
+            "signOnly": false
+          }
+        }
+      }
+    }
+  ]
+}

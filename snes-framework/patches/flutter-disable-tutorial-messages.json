@@ -1,0 +1,22 @@
+{
+  "id": "flutter-disable-tutorial-messages",
+  "name": "Disable Tutorial Messages",
+  "category": "Flutter! - Skips and Speedups",
+  "description": "Suppresses the forced tutorial message boxes (the first-flower tutorial and the level-1 first-midpoint message).",
+  "attribution": "Extracted from the Flutter hack (https://www.romhacking.net/hacks/8972/)",
+  "details": [
+    "The first-flower tutorial sprite despawns without showing its box; the level-1 first-midpoint message no longer triggers."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1",
+  "chunks": [
+    {
+      "offset": "0x11419",
+      "bytes": "80"
+    },
+    {
+      "offset": "0x73534",
+      "bytes": "80"
+    }
+  ]
+}

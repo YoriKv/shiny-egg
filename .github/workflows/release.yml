@@ -1,0 +1,60 @@
+name: Release
+
+# Push a version tag (e.g. `v0.1.0`) to build the Windows app and publish a
+# GitHub Release with two artifacts:
+#   - shiny-egg-<version>-setup.exe  (NSIS installer)
+#   - shiny-egg-<version>-win.zip    (zipped portable app = win-unpacked contents)
+# A manual run (workflow_dispatch) just builds and uploads the artifacts to the
+# run (no release), handy for testing the build.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows app (NSIS installer + zip)
+        run: pnpm run build:win
+
+      # Tag push → publish a release with exactly the two artifacts.
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*-setup.exe
+            dist/*-win.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+      # Manual run → keep the artifacts on the workflow run for inspection.
+      - name: Upload build artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiny-egg-win
+          path: |
+            dist/*-setup.exe
+            dist/*-win.zip

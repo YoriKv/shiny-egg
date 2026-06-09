@@ -1,0 +1,27 @@
+{
+  "id": "red-coins",
+  "name": "Red Coins",
+  "category": "Trisma - Improvements",
+  "description": "Red Coins are now properly red.",
+  "attribution": "From \"No Crying, Improved SFX and Red Coins\" by Trisma (https://www.romhacking.net/hacks/3945/)",
+  "details": [
+    "Recolors the Red Coin OAM attributes."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1",
+  "importedFrom": "Yoshi's Island (USA) - Only Red Coins.ips",
+  "chunks": [
+    {
+      "offset": "0x66971",
+      "bytes": "80"
+    },
+    {
+      "offset": "0x669FE",
+      "bytes": "02"
+    },
+    {
+      "offset": "0x66A1B",
+      "bytes": "80"
+    }
+  ]
+}

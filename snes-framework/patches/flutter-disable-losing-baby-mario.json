@@ -1,0 +1,158 @@
+{
+  "id": "flutter-disable-losing-baby-mario",
+  "name": "Disable Losing Baby Mario",
+  "category": "Flutter! - Death Mechanics",
+  "description": "Yoshi never loses Baby Mario: the kidnap cutscene (Kamek / Bandit / Toady), the bubble float-away and re-mount, and the enemy-swallow cinematics (Wild Piranha, Spooky ghost, goal-ring and Grim-Leecher catches) are all neutralized. Normal deaths (pits, lava, spikes) still work.",
+  "attribution": "Extracted from the Flutter hack (https://www.romhacking.net/hacks/8972/)",
+  "details": [
+    "Across the lose/kidnap/respawn/catch routines (banks 02/04/05/06) the kidnap/catch actor is despawned, made invisible, and given no hitbox, and the SuperFX cinematic status flags are never set, so the lose-Baby-Mario and swallow cinematics never engage. The enemy-swallow cleanup is bundled in on purpose: with the lose sequence disabled, a swallow would otherwise leave Baby Mario stuck. The shared death-gamemode trigger at $04:F6D1 is deliberately LEFT INTACT (Flutter NOPs it, but that breaks every death since pits/lava/spikes route through the same trigger). Extracted from the Flutter hack (https://www.romhacking.net/hacks/8972/), minus Flutter's death-gamemode suppression."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1",
+  "chunks": [
+    {
+      "offset": "0x11A27",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x11A36",
+      "bytes": "EAEAEAEA"
+    },
+    {
+      "offset": "0x12B16",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x12B25",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x12BAE",
+      "bytes": "80"
+    },
+    {
+      "offset": "0x21F0E",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x21F1A",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x25C38",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x25C4F",
+      "bytes": "A9FF008DA274"
+    },
+    {
+      "offset": "0x2610E",
+      "bytes": "80"
+    },
+    {
+      "offset": "0x2A4DC",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x2A504",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x2A52B",
+      "bytes": "A9FFEAEA"
+    },
+    {
+      "offset": "0x2EA70",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x2EBD1",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x2EBEB",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x2EDAF",
+      "bytes": "FF090000"
+    },
+    {
+      "offset": "0x2EDCC",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x2EF57",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x33E9A",
+      "bytes": "9D0279A9FF008DA274EA8618ADB261090000"
+    },
+    {
+      "offset": "0x33F49",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x33F60",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x34071",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x34107",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x3438E",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x3439D",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x3441B",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x3443C",
+      "bytes": "FF090000"
+    },
+    {
+      "offset": "0x345AF",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x345B9",
+      "bytes": "FF090000"
+    },
+    {
+      "offset": "0x34AE2",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x34EB9",
+      "bytes": "00"
+    },
+    {
+      "offset": "0x34EE3",
+      "bytes": "FF090000"
+    },
+    {
+      "offset": "0x34F2F",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x34FDF",
+      "bytes": "FF"
+    },
+    {
+      "offset": "0x3512F",
+      "bytes": "FF8DB261A900"
+    }
+  ]
+}

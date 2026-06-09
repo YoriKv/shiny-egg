@@ -1,0 +1,15443 @@
+;#############################################################################################################
+;# yi/SuperFX/Banks/Bank0B.asm -- SuperFX/GSU-2 program bank $0B ($0B:8000-$0B:FFFF, ROM 64 KB).
+;#
+;# This bank is mostly DATA for the SuperFX player + rasterisers PLUS the long tail of
+;# per-rasteriser routines. The opening 256-byte tables at $0B:8000 / $0B:8100 are
+;# 16-bit pseudo-sin/cos tables (256 entries each, stored as little-endian byte pairs).
+;#
+;# Bank0B is the largest bank by file size (~15,400 lines) but most of that is data --
+;# ~1,200 anonymous CODE_/DATA_ labels, of which most are short helpers.
+;#
+;# Contents at a glance:
+;#   $0B:8000 DATA_wcos_table             -- 256-byte 16-bit cosine quadrant (1/4 turn)
+;#   $0B:8100 DATA_wsin_table             -- 1024-byte 16-bit sine (4 quadrants, full table)
+;#   $0B:8500 CODE_polar_proj_check       -- polar (angle, length) -> (x, y) projection + bound test
+;#   $0B:855B CODE_polar_to_xy_simple     -- short polar -> XY for simple effect velocity calcs
+;#   $0B:8500..$0B:FFFF              -- Code: per-rasteriser tail of the 32-px family,
+;#                                      pipe enter/exit variants, coin / kill / spike
+;#                                      surface-cross implementations, plus boss-specific
+;#                                      effect helpers (e.g. Hookbill OAM tail).
+;#
+;# See also:
+;#   chip/ys_mplay.asm   -- main player physics calculation
+;#   chip/ys_mplay0.asm  -- player physics continued
+;#   chip/ys_mplay3.asm  -- player physics continued
+;#   chip/ys_mpldt.asm   -- player data tables
+;#   chip/ys_mpldt0.asm  -- player data tables continued
+;#
+;# Cross-references:
+;#   Raidenthequick bank0B.asm                          -- parallel disassembly, anonymous
+;#                                                        labels with cart-address comments
+;#   yi/SuperFX/RoutinePointers.asm                    -- entry points exported to 65816
+;#   docs/mchip.md                            -- standalone SuperFX reference
+;#############################################################################################################
+
+%SuperFXBankStart(!FXBank0B)
+
+; -- 16-bit lookup tables at the head of the bank --
+; Two "wide" sin/cos tables (per the source naming, WCOS / WSIN). Both are
+; little-endian signed 16-bit entries. DATA_wcos_table spans $0B:8000..$0B:80FF
+; (256 bytes = 128 entries, one 1/4-turn quadrant). DATA_wsin_table spans
+; $0B:8100..$0B:84FF (1024 bytes = 512 entries, four quadrants worth) so the
+; consumers can index by raw angle without wrapping. SIN[a] == COS[a - 64].
+
+DATA_0B8000:
+DATA_wcos_table:                         ; 16-bit cosine quadrant (128 entries, low/high byte)
+	db $00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$FF,$00,$FF,$00
+	db $FF,$00,$FE,$00,$FE,$00,$FE,$00,$FD,$00,$FD,$00,$FC,$00,$FC,$00
+	db $FB,$00,$FA,$00,$FA,$00,$F9,$00,$F8,$00,$F8,$00,$F7,$00,$F6,$00
+	db $F5,$00,$F4,$00,$F3,$00,$F2,$00,$F1,$00,$F0,$00,$EF,$00,$EE,$00
+	db $ED,$00,$EB,$00,$EA,$00,$E9,$00,$E7,$00,$E6,$00,$E5,$00,$E3,$00
+	db $E2,$00,$E0,$00,$DF,$00,$DD,$00,$DC,$00,$DA,$00,$D8,$00,$D7,$00
+	db $D5,$00,$D3,$00,$D1,$00,$CF,$00,$CE,$00,$CC,$00,$CA,$00,$C8,$00
+	db $C6,$00,$C4,$00,$C2,$00,$C0,$00,$BE,$00,$BC,$00,$B9,$00,$B7,$00
+	db $B5,$00,$B3,$00,$B1,$00,$AE,$00,$AC,$00,$AA,$00,$A7,$00,$A5,$00
+	db $A2,$00,$A0,$00,$9D,$00,$9B,$00,$98,$00,$96,$00,$93,$00,$91,$00
+	db $8E,$00,$8C,$00,$89,$00,$86,$00,$84,$00,$81,$00,$7E,$00,$7B,$00
+	db $79,$00,$76,$00,$73,$00,$70,$00,$6D,$00,$6B,$00,$68,$00,$65,$00
+	db $62,$00,$5F,$00,$5C,$00,$59,$00,$56,$00,$53,$00,$50,$00,$4D,$00
+	db $4A,$00,$47,$00,$44,$00,$41,$00,$3E,$00,$3B,$00,$38,$00,$35,$00
+	db $32,$00,$2F,$00,$2C,$00,$29,$00,$26,$00,$22,$00,$1F,$00,$1C,$00
+	db $19,$00,$16,$00,$13,$00,$10,$00,$0D,$00,$09,$00,$06,$00,$03,$00
+
+DATA_0B8100:
+DATA_wsin_table:                         ; 16-bit sine (512 entries, 4-quadrant, low/high byte)
+	db $00,$00,$FD,$FF,$FA,$FF,$F7,$FF,$F3,$FF,$F0,$FF,$ED,$FF,$EA,$FF
+	db $E7,$FF,$E4,$FF,$E1,$FF,$DE,$FF,$DA,$FF,$D7,$FF,$D4,$FF,$D1,$FF
+	db $CE,$FF,$CB,$FF,$C8,$FF,$C5,$FF,$C2,$FF,$BF,$FF,$BC,$FF,$B9,$FF
+	db $B6,$FF,$B3,$FF,$B0,$FF,$AD,$FF,$AA,$FF,$A7,$FF,$A4,$FF,$A1,$FF
+	db $9E,$FF,$9B,$FF,$98,$FF,$95,$FF,$93,$FF,$90,$FF,$8D,$FF,$8A,$FF
+	db $87,$FF,$85,$FF,$82,$FF,$7F,$FF,$7C,$FF,$7A,$FF,$77,$FF,$74,$FF
+	db $72,$FF,$6F,$FF,$6D,$FF,$6A,$FF,$68,$FF,$65,$FF,$63,$FF,$60,$FF
+	db $5E,$FF,$5B,$FF,$59,$FF,$56,$FF,$54,$FF,$52,$FF,$4F,$FF,$4D,$FF
+	db $4B,$FF,$49,$FF,$47,$FF,$44,$FF,$42,$FF,$40,$FF,$3E,$FF,$3C,$FF
+	db $3A,$FF,$38,$FF,$36,$FF,$34,$FF,$32,$FF,$31,$FF,$2F,$FF,$2D,$FF
+	db $2B,$FF,$29,$FF,$28,$FF,$26,$FF,$24,$FF,$23,$FF,$21,$FF,$20,$FF
+	db $1E,$FF,$1D,$FF,$1B,$FF,$1A,$FF,$19,$FF,$17,$FF,$16,$FF,$15,$FF
+	db $13,$FF,$12,$FF,$11,$FF,$10,$FF,$0F,$FF,$0E,$FF,$0D,$FF,$0C,$FF
+	db $0B,$FF,$0A,$FF,$09,$FF,$08,$FF,$08,$FF,$07,$FF,$06,$FF,$06,$FF
+	db $05,$FF,$04,$FF,$04,$FF,$03,$FF,$03,$FF,$02,$FF,$02,$FF,$02,$FF
+	db $01,$FF,$01,$FF,$01,$FF,$00,$FF,$00,$FF,$00,$FF,$00,$FF,$00,$FF
+	db $00,$FF,$00,$FF,$00,$FF,$00,$FF,$00,$FF,$00,$FF,$01,$FF,$01,$FF
+	db $01,$FF,$02,$FF,$02,$FF,$02,$FF,$03,$FF,$03,$FF,$04,$FF,$04,$FF
+	db $05,$FF,$06,$FF,$06,$FF,$07,$FF,$08,$FF,$08,$FF,$09,$FF,$0A,$FF
+	db $0B,$FF,$0C,$FF,$0D,$FF,$0E,$FF,$0F,$FF,$10,$FF,$11,$FF,$12,$FF
+	db $13,$FF,$15,$FF,$16,$FF,$17,$FF,$19,$FF,$1A,$FF,$1B,$FF,$1D,$FF
+	db $1E,$FF,$20,$FF,$21,$FF,$23,$FF,$24,$FF,$26,$FF,$28,$FF,$29,$FF
+	db $2B,$FF,$2D,$FF,$2F,$FF,$31,$FF,$32,$FF,$34,$FF,$36,$FF,$38,$FF
+	db $3A,$FF,$3C,$FF,$3E,$FF,$40,$FF,$42,$FF,$44,$FF,$47,$FF,$49,$FF
+	db $4B,$FF,$4D,$FF,$4F,$FF,$52,$FF,$54,$FF,$56,$FF,$59,$FF,$5B,$FF
+	db $5E,$FF,$60,$FF,$63,$FF,$65,$FF,$68,$FF,$6A,$FF,$6D,$FF,$6F,$FF
+	db $72,$FF,$74,$FF,$77,$FF,$7A,$FF,$7C,$FF,$7F,$FF,$82,$FF,$85,$FF
+	db $87,$FF,$8A,$FF,$8D,$FF,$90,$FF,$93,$FF,$95,$FF,$98,$FF,$9B,$FF
+	db $9E,$FF,$A1,$FF,$A4,$FF,$A7,$FF,$AA,$FF,$AD,$FF,$B0,$FF,$B3,$FF
+	db $B6,$FF,$B9,$FF,$BC,$FF,$BF,$FF,$C2,$FF,$C5,$FF,$C8,$FF,$CB,$FF
+	db $CE,$FF,$D1,$FF,$D4,$FF,$D7,$FF,$DA,$FF,$DE,$FF,$E1,$FF,$E4,$FF
+	db $E7,$FF,$EA,$FF,$ED,$FF,$F0,$FF,$F3,$FF,$F7,$FF,$FA,$FF,$FD,$FF
+	db $00,$00,$03,$00,$06,$00,$09,$00,$0D,$00,$10,$00,$13,$00,$16,$00
+	db $19,$00,$1C,$00,$1F,$00,$22,$00,$26,$00,$29,$00,$2C,$00,$2F,$00
+	db $32,$00,$35,$00,$38,$00,$3B,$00,$3E,$00,$41,$00,$44,$00,$47,$00
+	db $4A,$00,$4D,$00,$50,$00,$53,$00,$56,$00,$59,$00,$5C,$00,$5F,$00
+	db $62,$00,$65,$00,$68,$00,$6B,$00,$6D,$00,$70,$00,$73,$00,$76,$00
+	db $79,$00,$7B,$00,$7E,$00,$81,$00,$84,$00,$86,$00,$89,$00,$8C,$00
+	db $8E,$00,$91,$00,$93,$00,$96,$00,$98,$00,$9B,$00,$9D,$00,$A0,$00
+	db $A2,$00,$A5,$00,$A7,$00,$AA,$00,$AC,$00,$AE,$00,$B1,$00,$B3,$00
+	db $B5,$00,$B7,$00,$B9,$00,$BC,$00,$BE,$00,$C0,$00,$C2,$00,$C4,$00
+	db $C6,$00,$C8,$00,$CA,$00,$CC,$00,$CE,$00,$CF,$00,$D1,$00,$D3,$00
+	db $D5,$00,$D7,$00,$D8,$00,$DA,$00,$DC,$00,$DD,$00,$DF,$00,$E0,$00
+	db $E2,$00,$E3,$00,$E5,$00,$E6,$00,$E7,$00,$E9,$00,$EA,$00,$EB,$00
+	db $ED,$00,$EE,$00,$EF,$00,$F0,$00,$F1,$00,$F2,$00,$F3,$00,$F4,$00
+	db $F5,$00,$F6,$00,$F7,$00,$F8,$00,$F8,$00,$F9,$00,$FA,$00,$FA,$00
+	db $FB,$00,$FC,$00,$FC,$00,$FD,$00,$FD,$00,$FE,$00,$FE,$00,$FE,$00
+	db $FF,$00,$FF,$00,$FF,$00,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01
+	db $00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$FF,$00,$FF,$00
+	db $FF,$00,$FE,$00,$FE,$00,$FE,$00,$FD,$00,$FD,$00,$FC,$00,$FC,$00
+	db $FB,$00,$FA,$00,$FA,$00,$F9,$00,$F8,$00,$F8,$00,$F7,$00,$F6,$00
+	db $F5,$00,$F4,$00,$F3,$00,$F2,$00,$F1,$00,$F0,$00,$EF,$00,$EE,$00
+	db $ED,$00,$EB,$00,$EA,$00,$E9,$00,$E7,$00,$E6,$00,$E5,$00,$E3,$00
+	db $E2,$00,$E0,$00,$DF,$00,$DD,$00,$DC,$00,$DA,$00,$D8,$00,$D7,$00
+	db $D5,$00,$D3,$00,$D1,$00,$CF,$00,$CE,$00,$CC,$00,$CA,$00,$C8,$00
+	db $C6,$00,$C4,$00,$C2,$00,$C0,$00,$BE,$00,$BC,$00,$B9,$00,$B7,$00
+	db $B5,$00,$B3,$00,$B1,$00,$AE,$00,$AC,$00,$AA,$00,$A7,$00,$A5,$00
+	db $A2,$00,$A0,$00,$9D,$00,$9B,$00,$98,$00,$96,$00,$93,$00,$91,$00
+	db $8E,$00,$8C,$00,$89,$00,$86,$00,$84,$00,$81,$00,$7E,$00,$7B,$00
+	db $79,$00,$76,$00,$73,$00,$70,$00,$6D,$00,$6B,$00,$68,$00,$65,$00
+	db $62,$00,$5F,$00,$5C,$00,$59,$00,$56,$00,$53,$00,$50,$00,$4D,$00
+	db $4A,$00,$47,$00,$44,$00,$41,$00,$3E,$00,$3B,$00,$38,$00,$35,$00
+	db $32,$00,$2F,$00,$2C,$00,$29,$00,$26,$00,$22,$00,$1F,$00,$1C,$00
+	db $19,$00,$16,$00,$13,$00,$10,$00,$0D,$00,$09,$00,$06,$00,$03,$00
+
+;---------------------------------------------------------------------------
+; CODE_polar_proj_check -- 2D polar-to-cartesian vector projection + check.
+; Reads sin[R9] and cos[R9] from Bank08's DATA_m_sin/DATA_m_cos tables (via cross-bank
+; ROMB), then FMULTs them against R4 (length) to get the rotated (x, y) delta
+; in R5/R10. Subtracts a check value (R7) and compares against a bound; sets
+; SMS($3E) = 1 (hit) or 0 (miss), storing the projected y at SMS($3C) on hit.
+; Used by Mode-7-driven boss aim / line-of-sight checks.
+;---------------------------------------------------------------------------
+
+CODE_0B8500:
+CODE_polar_proj_check:                   ; polar (angle R9, len R4) -> XY proj + bound test
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	IWT R0, #DATA_08AC18
+	TO R14
+	ADD R9
+	IWT R0, #DATA_08AB98
+	TO R10
+	ADD R9
+	GETB
+	INC R14
+	GETBH
+	MOVE R11, R0
+	MOVE R6, R4
+	TO R5
+	FMULT
+	MOVE R14, R10
+	GETB
+	INC R14
+	GETBH
+	MOVE R10, R0
+	MOVE R6, R1
+	FMULT
+	SUB R5
+	SUB R7
+	XOR R12
+	BPL CODE_0B8556 : SUB R0
+	MOVE R6, R4
+	FROM R11
+	FMULT
+	ADD R7
+	LOB
+	TO R6
+	SWAP
+	FROM R2
+	TO R3
+	FMULT
+	IBT R5, #$08
+	MOVE R6, R4
+	FROM R10
+	FMULT
+	SUB R3
+	MOVE R7, R0
+	MOVES R13, R13
+	BNE CODE_0B854C : NOP
+	SUB R8
+	ADD R5
+	WITH R5
+	ADD R5
+	CMP R5
+	BCS CODE_0B8556 : SUB R0
+CODE_0B854C:
+	SMS ($3C), R7
+	IBT R0, #$01
+	SMS ($3E), R0
+	STOP : NOP
+
+CODE_0B8556:
+	SMS ($3E), R0
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+; CODE_polar_to_xy_simple -- short polar-to-cartesian conversion.
+; Same trig-table read pattern as CODE_polar_proj_check but with no bound test --
+; just R1 := R2 * sin(R1) and R0 := R2 * cos(R1). Used by simpler effect
+; spawners that need a directional velocity from an angle/length pair.
+;---------------------------------------------------------------------------
+
+CODE_0B855B:
+CODE_polar_to_xy_simple:                 ; (angle R1, len R2) -> R1=R2*sin, R0=R2*cos
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	IWT R0, #DATA_08AC18
+	TO R14
+	ADD R1
+	IWT R0, #DATA_08AB98
+	TO R10
+	ADD R1
+	GETB
+	INC R14
+	GETBH
+	TO R1
+	FMULT
+	MOVE R14, R10
+	GETB
+	INC R14
+	GETBH
+	FMULT
+	STOP : NOP
+
+CODE_0B8578:
+	FMULT
+	ADD R7
+	SMS ($3C), R0
+	ADD R0
+	INC R0
+	SMS ($38), R0
+	MOVE R6, R9
+	FROM R1
+	FMULT
+	SMS ($36), R0
+	ADD R8
+	ADD R3
+	SMS ($3E), R0
+	ADD R0
+	INC R0
+	SMS ($3A), R0
+	STOP : NOP
+
+CODE_0B8595:
+	LINK #4
+	IWT R15, #CODE_0B859C : NOP
+	STOP : NOP
+
+CODE_0B859C:
+CODE_sincos_mult_rounded:                ; (R1 angle, R4 scalar) -> R1=R4*sin, R4=R4*cos (rounded mid)
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	IWT R0, #DATA_08AC18
+	TO R14
+	ADD R1
+	IWT R0, #DATA_08AB98
+	TO R2
+	ADD R1
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	IWT R3, #$0080
+	WITH R4
+	ADD R3
+	ADC #0
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R1
+	OR R4
+	MOVE R14, R2
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	WITH R4
+	ADD R3
+	ADC #0
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	JMP R11 : NOP
+
+CODE_0B85D0:
+CODE_sincos_proj_to_xy:                  ; (R1 angle) -> R8=sin*hi, R7=cos*hi; multiply against scratch ref
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	IWT R0, #DATA_08AC18
+	TO R14
+	ADD R1
+	IWT R0, #DATA_08AB98
+	TO R2
+	ADD R1
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R8
+	OR R4
+	MOVE R14, R2
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R7
+	OR R4
+	IWT R1, #$2200
+	FROM R9
+	TO R6
+	ADD R9
+	WITH R1
+	ADD R6
+	TO R6
+	LDW (R1)
+	FROM R7
+	TO R9
+	FMULT
+	FROM R8
+	TO R10
+	FMULT
+	STOP : NOP
+
+CODE_0B860A:
+CODE_thin_platform_physics:              ; SuperFX callee of ROUTINE_YI_NorSpr03E_ThinPlatform (FXCODE_0B860A)
+	IWT R11, #$0000
+	IBT R5, #$10
+	IBT R7, #$F8
+	FROM R2
+	AND R7
+	LSR
+	LSR
+	SMS ($20), R0
+	ADD R11
+	LDW (R0)
+	ADD R10
+	SUB R8
+	CMP R9
+	BPL CODE_0B8691 : NOP
+	ADD R9
+	BMI CODE_0B8691 : NOP
+	INC R1
+	LMS R0, ($20)
+	TO R10
+	AND #2
+	WITH R11
+	ADD R10
+	WITH R2
+	SUB R2
+	LMS R8, ($3C)
+	LMS R9, ($3E)
+	IBT R7, #$10
+	IBT R5, #$38
+	IBT R12, #$04
+	CACHE
+	MOVE R13, R15
+	MOVES R0, R3
+	BMI CODE_0B8646 : NOP
+	NOT
+	INC R0
+CODE_0B8646:
+	ADD R5
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	STW (R11)
+	WITH R3
+	ADD R7
+	MOVES R2, R2
+	BNE CODE_0B8658 : NOP
+	MOVE R6, R9
+CODE_0B8658:
+	FROM R2
+	SUB #2
+	BNE CODE_0B8660 : NOP
+	MOVE R6, R8
+CODE_0B8660:
+	WITH R11
+	ADD #4
+	LOOP : INC R2
+	FROM R10
+	SUB #0
+	BNE CODE_0B8693 : NOP
+	SUB R0
+	SMS ($010), R0
+	LMS R2, ($00)
+	LMS R3, ($04)
+	IWT R10, #$0008
+	IWT R11, #$0002
+	IBT R12, #$04
+	MOVE R13, R15
+	FROM R2
+	ADD R3
+	LSR
+	STB (R11)
+	MOVE R2, R3
+	TO R3
+	LDB (R10)
+	WITH R10
+	ADD #4
+	WITH R11
+	ADD #4
+	LOOP : NOP
+CODE_0B8691:
+	STOP : NOP
+
+CODE_0B8693:
+	IBT R2, #$00
+	LMS R3, ($02)
+	IWT R10, #$0006
+	IWT R11, #$0000
+	IBT R12, #$04
+	MOVE R13, R15
+	FROM R2
+	ADD R3
+	LSR
+	STB (R11)
+	MOVE R2, R3
+	TO R3
+	LDB (R10)
+	WITH R10
+	ADD #4
+	WITH R11
+	ADD #4
+	LOOP : NOP
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B86B6:
+CODE_mult16_rounded:                     ; (R0,R6) -> R0 = HI16((R0*R6)+rounded), 7-op primitive
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B86BF:
+	IWT R1, #$2200
+	WITH R6
+	ADD R6
+	WITH R1
+	ADD R6
+	TO R6
+	LDW (R1)
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	STOP : NOP
+
+CODE_0B86D1:
+	IWT R0, #$2200
+	ADD R2
+	TO R6
+	LDW (R0)
+	FROM R1
+	LSR
+	LSR
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	MOVE R6, R3
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	STOP : NOP
+
+CODE_0B86EC:
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	NOT
+	INC R0
+	ADD R2
+	ADD R1
+	SUB R3
+	STOP : NOP
+
+CODE_0B86FA:
+	IBT R0, #DATA_08AC18>>16
+	ROMB
+	IWT R0, #DATA_08AC18
+	TO R14
+	ADD R1
+	IWT R0, #DATA_08AB98
+	TO R10
+	ADD R1
+	GETB
+	INC R14
+	GETBH
+	MOVE R6, R5
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R6
+	OR R4
+	FROM R3
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R1
+	OR R4
+	MOVE R14, R10
+	GETB
+	INC R14
+	GETBH
+	MOVE R6, R5
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R6
+	OR R4
+	FROM R2
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	STOP : NOP
+
+CODE_0B8739:
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R6
+	OR R4
+	IWT R3, #$2200
+	FROM R2
+	ADD R2
+	ADD R3
+	LDW (R0)
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B8751:
+	ROMB
+	SMS ($02), R1
+	SMS ($04), R2
+	IWT R0, #$1362
+	ADD R10
+	LDW (R0)
+	MOVES R4, R0
+	BPL CODE_0B8765 : FROM R14
+	STOP : NOP
+
+CODE_0B8765:
+	ADD R8
+	TO R14
+	ADD R8
+	SMS ($48), R4
+	GETBS
+	INC R14
+	TO R3
+	ADD R12
+	GETBS
+	INC R14
+	TO R11
+	ADD R13
+	GETBS
+	INC R14
+	TO R5
+	ADD R12
+	GETBS
+	TO R9
+	ADD R13
+	FROM R5
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	SUB R5
+	ADD R1
+	SMS ($02), R0
+	FROM R3
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	SUB R3
+	TO R1
+	ADD R1
+	LMS R6, ($4C)
+	FROM R9
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	SUB R9
+	ADD R2
+	SMS ($04), R0
+	FROM R11
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	SUB R11
+	TO R2
+	ADD R2
+	LMS R4, ($48)
+	LMS R0, ($00)
+	ADD R7
+	TO R14
+	ADD R7
+	GETB
+	INC R14
+	TO R14
+	GETBH
+	IWT R0, #$1042
+	ADD R10
+	TO R3
+	LDB (R0)
+	FROM R8
+	ADD R8
+	ADD R0
+	MULT #8
+	XOR R3
+	TO R3
+	SWAP
+	IWT R0, #$1180
+	ADD R10
+	LDB (R0)
+	MULT #8
+	SMS ($00), R0
+	IWT R0, #$10E0
+	ADD R10
+	LDB (R0)
+	TO R10
+	SWAP
+	IBT R12, #$06
+	CACHE
+	MOVE R13, R15
+	GETBS
+	IWT R9, #$4000
+	WITH R9
+	AND R3
+	BEQ CODE_0B87F5 : INC R14
+	NOT
+	INC R0
+	IBT R9, #$08
+CODE_0B87F5:
+	TO R5
+	ADD R1
+	GETBS
+	IBT R8, #$00
+	MOVES R3, R3
+	BPL CODE_0B8804 : INC R14
+	NOT
+	INC R0
+	IBT R8, #$08
+CODE_0B8804:
+	TO R6
+	ADD R2
+	GETB
+	INC R14
+	GETBH
+	INC R14
+	TO R7
+	XOR R3
+	GETB
+	AND #2
+	BNE CODE_0B8818 : NOP
+	WITH R5
+	ADD R9
+	WITH R6
+	ADD R8
+CODE_0B8818:
+	GETBH
+	INC R14
+	FROM R5
+	STW (R4)
+	INC R4
+	INC R4
+	TO R5
+	XOR R10
+	FROM R6
+	STW (R4)
+	INC R4
+	INC R4
+	LMS R0, ($00)
+	ADD R7
+	STW (R4)
+	INC R4
+	INC R4
+	FROM R5
+	STW (R4)
+	FROM R12
+	SUB #4
+	BNE CODE_0B883F : INC R4
+	IBT R0, #$20
+	WITH R4
+	ADD R0
+	LMS R1, ($02)
+	LMS R2, ($04)
+CODE_0B883F:
+	LOOP : INC R4
+	STOP : NOP
+
+DATA_0B8843:
+	db $00,$00,$59,$00,$A7,$59,$A7,$00,$00,$00,$00,$00,$A7,$00,$59,$A7
+	db $59,$00,$00,$00,$59,$A7,$00,$00,$00,$00,$00,$59,$00,$A7,$00,$00
+	db $A7,$00,$59,$A7,$59,$00,$00,$00
+
+DATA_0B886B:
+	db $A7,$59,$00,$00,$00,$00,$00,$59,$00,$A7,$59,$A7,$00,$00,$00,$00
+	db $00,$A7,$00,$59,$00,$00,$59,$00,$A7,$A7,$59,$00,$00,$00,$59,$A7
+	db $00,$00,$00,$00,$00,$A7,$00,$59
+
+DATA_0B8893:
+	db $08,$04,$01,$00,$02,$04,$08,$02,$00,$01,$04,$08,$02,$00,$01,$08
+	db $04,$01,$00,$02,$01,$02,$04,$00,$08,$01,$02,$04,$00,$08,$04,$08
+	db $02,$00,$01,$08,$04,$01,$00,$02
+
+DATA_0B88BB:
+	db $81,$80,$01,$00,$00,$01,$00,$80,$00,$81,$80,$81,$00,$00,$01,$00
+	db $01,$81,$00,$80,$01,$00,$80,$00,$81,$81,$80,$01,$00,$00,$80,$81
+	db $00,$00,$01,$00,$01,$81,$00,$80
+
+DATA_0B88E3:
+	db $01,$0F,$0F,$00,$01,$0F,$01,$01,$00,$0F,$FF,$01,$0F,$00,$01,$0F
+	db $01,$FF,$00,$01,$01,$0F,$0F,$00,$01,$0F,$01,$01,$00,$0F,$FF,$01
+	db $0F,$00,$01,$0F,$01,$FF,$00,$01
+
+DATA_0B890B:
+	db $01,$0F,$01,$00,$0F,$0F,$01,$0F,$00,$01,$01,$0F,$FF,$00,$01,$01
+	db $FF,$0F,$00,$01,$01,$0F,$01,$00,$0F,$0F,$01,$0F,$00,$01,$01,$0F
+	db $FF,$00,$01,$01,$FF,$0F,$00,$01
+
+DATA_0B8933:
+	db $3E,$C2,$3E,$00,$C2,$3E,$C2,$3E,$00,$C2,$3E,$C2,$C2,$00,$3E,$C2
+	db $3E,$3E,$00,$C2
+
+DATA_0B8947:
+	db $C2,$3E,$3E,$00,$C2,$C2,$3E,$3E,$00,$C2,$3E,$C2,$3E,$00,$C2,$C2
+	db $3E,$C2,$00,$3E
+
+DATA_0B895B:
+	db $41,$40,$C0,$00,$C1,$41,$40,$C0,$00,$C1,$C0,$C1,$40,$00,$41,$C1
+	db $C0,$41,$00,$40
+
+DATA_0B896F:
+	db $01,$0F,$0F,$00,$01,$0F,$01,$01,$00,$0F,$00,$00,$0F,$00,$01,$0F
+	db $01,$00,$00,$00
+
+DATA_0B8983:
+	db $01,$0F,$01,$00,$0F,$0F,$01,$0F,$00,$01,$01,$0F,$00,$00,$01,$00
+	db $00,$0F,$00,$01
+
+DATA_0B8997:
+	db $0F,$00,$01,$00,$0E,$01,$0E,$0F,$00,$00
+
+DATA_0B89A1:
+	db $0E,$01,$0F,$00,$00,$00,$0F,$01,$00,$0E
+
+DATA_0B89AB:
+	db $00,$0F,$00,$00,$0F
+
+DATA_0B89B0:
+	db $0F,$00,$00,$00,$0F
+
+DATA_0B89B5:
+	db $70,$80,$80,$80,$80,$00,$02,$80,$80,$04,$01,$80,$80,$80,$80,$80
+	db $70,$80,$80,$80,$80,$07,$06,$80,$80,$05,$09,$80,$80,$80,$80,$80
+
+DATA_0B89D5:
+	db $00,$00,$FF,$00,$01,$FF,$01,$00,$00,$00
+
+DATA_0B89DF:
+	db $01,$FF,$00,$00,$00,$00,$00,$FF,$00,$01
+
+CODE_0B89E9:
+	IWT R0, #$1902
+	ADD R10
+	TO R1
+	LDW (R0)
+	IWT R0, #$0006
+	TO R5
+	ADD R1
+	SMS ($4A), R5
+	IBT R0, #$FF
+	SMS ($40), R0
+	SMS ($42), R0
+	IWT R0, #$1901
+	ADD R10
+	LDB (R0)
+	SMS ($018), R0
+	IWT R0, #$10E2
+	ADD R10
+	TO R7
+	LDW (R0)
+	IWT R0, #$1182
+	ADD R10
+	TO R8
+	LDW (R0)
+	IWT R0, #$1976
+	ADD R10
+	TO R9
+	LDW (R0)
+	SMS ($2E), R7
+	SMS ($30), R8
+	SMS ($32), R9
+	LINK #4
+	IWT R15, #CODE_0B8C44 : NOP
+	SUB R0
+	SMS ($42), R0
+	LMS R5, ($4A)
+	LMS R7, ($2E)
+	LMS R8, ($30)
+	LMS R9, ($32)
+	IWT R0, #$1900
+	ADD R10
+	TO R1
+	LDB (R0)
+	FROM R1
+	SEX
+	BPL CODE_0B8A46 : NOP
+	STOP : NOP
+
+CODE_0B8A46:
+	FROM R1
+	SUB #2
+	BEQ CODE_0B8A50 : NOP
+	IWT R15, #CODE_0B8B1B : NOP
+
+CODE_0B8A50:
+	IBT R0, #$01
+	SMS ($42), R0
+	IWT R0, #$1976
+	ADD R10
+	TO R1
+	LDW (R0)
+	IWT R0, #$E000
+	SMS ($06), R0
+	SMS ($08), R1
+	FROM R1
+	SUB R0
+	HIB
+	SMS ($0A), R0
+	IBT R4, #$40
+	AND R4
+	BNE CODE_0B8A97 : NOP
+	IBT R0, #$02
+	SMS ($42), R0
+	FROM R8
+	AND #15
+	SUB #8
+	BMI CODE_0B8A87+$01 : IBT R1, #$18
+	FROM R8
+	BIC #15
+	TO R8
+	OR #6
+	BRA CODE_0B8ABB : NOP
+
+CODE_0B8A87:
+	IBT R1, #$20
+	LMS R0, ($42)
+	INC R0
+	SBK
+	FROM R8
+	BIC #15
+	TO R8
+	OR #9
+	BRA CODE_0B8ABB : NOP
+
+CODE_0B8A97:
+	IBT R0, #$04
+	SMS ($42), R0
+	FROM R7
+	AND #15
+	SUB #8
+	BMI CODE_0B8AAE+$01 : IBT R1, #$08
+	FROM R7
+	BIC #15
+	TO R7
+	OR #6
+	BRA CODE_0B8ABB : NOP
+
+CODE_0B8AAE:
+	IBT R1, #$10
+	LMS R0, ($42)
+	INC R0
+	SBK
+	FROM R7
+	BIC #15
+	TO R7
+	OR #9
+CODE_0B8ABB:
+	IWT R0, #$10E2
+	ADD R10
+	FROM R7
+	STW (R0)
+	IWT R0, #$1182
+	ADD R10
+	FROM R8
+	STW (R0)
+	IWT R0, #$1976
+	ADD R10
+	FROM R9
+	STW (R0)
+	LMS R5, ($4A)
+	WITH R5
+	ADD R1
+	LINK #4
+	IWT R15, #CODE_0B8C44 : NOP
+	LMS R7, ($2E)
+	LMS R8, ($30)
+	LMS R9, ($32)
+	IWT R0, #$10E2
+	ADD R10
+	FROM R7
+	STW (R0)
+	IWT R0, #$1182
+	ADD R10
+	FROM R8
+	STW (R0)
+	IWT R0, #$1A36
+	ADD R10
+	TO R6
+	LDW (R0)
+	IWT R0, #$1A38
+	ADD R10
+	LDW (R0)
+	WITH R6
+	HIB
+	LOB
+	SWAP
+	TO R6
+	OR R6
+	LMS R5, ($01E)
+	FROM R5
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	TO R9
+	ADD R9
+	IWT R0, #$1976
+	ADD R10
+	FROM R9
+	STW (R0)
+	IBT R1, #$FF
+	IWT R0, #$1900
+	ADD R10
+	FROM R1
+	STB (R0)
+	STOP : NOP
+
+CODE_0B8B1B:
+	INC R0
+	BEQ CODE_0B8B62+$02 : NOP
+	IBT R0, #$10
+	SMS ($42), R0
+	WITH R9
+	NOT
+	INC R9
+	FROM R8
+	AND #15
+	SUB #8
+	BMI CODE_0B8B3E+$01 : IBT R1, #$18
+	LMS R0, ($42)
+	INC R0
+	SBK
+	FROM R8
+	BIC #15
+	TO R8
+	OR #6
+	BRA CODE_0B8B46 : NOP
+
+CODE_0B8B3E:
+	IBT R1, #$20
+	FROM R8
+	BIC #15
+	TO R8
+	OR #9
+CODE_0B8B46:
+	LINK #4
+	IWT R15, #CODE_0B8C05 : NOP
+	LMS R0, ($018)
+	SUB #6
+	BNE CODE_0B8B57 : NOP
+	IWT R15, #CODE_0B8BFA : NOP
+
+CODE_0B8B57:
+	IWT R3, #$8000
+	FROM R3
+	TO R9
+	SUB R9
+	FROM R7
+	AND #15
+	SUB #8
+CODE_0B8B62:
+	BMI CODE_0B8B75+$01 : IBT R1, #$08
+	LMS R0, ($42)
+	ADD #2
+	SBK
+	FROM R7
+	BIC #15
+	TO R7
+	OR #6
+	BRA CODE_0B8B83 : NOP
+
+CODE_0B8B75:
+	IBT R1, #$10
+	LMS R0, ($42)
+	ADD #4
+	SBK
+	FROM R7
+	BIC #15
+	TO R7
+	OR #9
+CODE_0B8B83:
+	LINK #4
+	IWT R15, #CODE_0B8C05 : NOP
+	IWT R0, #$1901
+	ADD R10
+	LDB (R0)
+	SUB #2
+	BPL CODE_0B8BFA : NOP
+	IWT R0, #$15E0
+	ADD R10
+	TO R5
+	LDW (R0)
+	FROM R5
+	HIB
+	DEC R0
+	BNE CODE_0B8BFA : NOP
+	IBT R0, #$40
+	SMS ($42), R0
+	FROM R5
+	SWAP
+	XOR #1
+	TO R5
+	SWAP
+	IWT R0, #$1A36
+	ADD R10
+	TO R6
+	LDW (R0)
+	IWT R0, #$1A38
+	ADD R10
+	LDW (R0)
+	WITH R6
+	HIB
+	LOB
+	SWAP
+	TO R6
+	OR R6
+	IWT R0, #$0180
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R6
+	OR R4
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	IWT R0, #DATA_08AB98
+	TO R14
+	ADD R5
+	IWT R0, #DATA_08AC18
+	TO R2
+	ADD R5
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R4
+	OR R4
+	IWT R0, #$1220
+	ADD R10
+	FROM R4
+	STW (R0)
+	MOVE R14, R2
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R4
+	OR R4
+	IWT R0, #$1222
+	ADD R10
+	FROM R4
+	STW (R0)
+CODE_0B8BFA:
+	IBT R1, #$FF
+	IWT R0, #$1900
+	ADD R10
+	FROM R1
+	STB (R0)
+	STOP : NOP
+
+CODE_0B8C05:
+	SMS ($6A), R11
+	IWT R0, #$10E2
+	ADD R10
+	FROM R7
+	STW (R0)
+	IWT R0, #$1182
+	ADD R10
+	FROM R8
+	STW (R0)
+	IWT R0, #$1976
+	ADD R10
+	FROM R9
+	STW (R0)
+	LMS R5, ($4A)
+	WITH R5
+	ADD R1
+	LINK #4
+	IWT R15, #CODE_0B8C44 : NOP
+	LMS R7, ($2E)
+	LMS R8, ($30)
+	LMS R9, ($32)
+	IWT R0, #$10E2
+	ADD R10
+	FROM R7
+	STW (R0)
+	IWT R0, #$1182
+	ADD R10
+	FROM R8
+	STW (R0)
+	IWT R0, #$1976
+	ADD R10
+	FROM R9
+	STW (R0)
+	LMS R11, ($6A)
+	JMP R11 : NOP
+
+CODE_0B8C44:
+	SMS ($60), R11
+	SUB R0
+	SMS ($44), R0
+	IBT R3, #$28
+	IWT R0, #$1542
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$8700
+	TO R2
+	HIB
+	TO R7
+	LDW (R5)
+	SMS ($4E), R7
+	FROM R7
+	HIB
+	SUB R2
+	BEQ CODE_0B8C65 : NOP
+	JMP R11 : NOP
+
+CODE_0B8C65:
+	IBT R0, #$01
+	SMS ($44), R0
+	IWT R0, #DATA_0B92AE>>16
+	ROMB
+	IWT R3, #DATA_0B92AE
+	FROM R7
+	LOB
+	ADD R0
+	TO R14
+	ADD R3
+	GETB
+	INC R14
+	TO R14
+	GETBH
+	GETB
+	MOVES R8, R0
+	BNE CODE_0B8C8F : INC R14
+	IBT R0, #$02
+	SMS ($44), R0
+	LINK #4
+	IWT R15, #CODE_0B8CC0 : NOP
+	BRA CODE_0B8CBB : NOP
+
+CODE_0B8C8F:
+	DEC R0
+	BNE CODE_0B8CA0 : NOP
+	IBT R0, #$03
+	SMS ($44), R0
+	LINK #4
+	IWT R15, #CODE_0B8EFB : NOP
+	BRA CODE_0B8CBB : NOP
+
+CODE_0B8CA0:
+	DEC R0
+	BNE CODE_0B8CB1 : NOP
+	IBT R0, #$04
+	SMS ($44), R0
+	LINK #4
+	IWT R15, #CODE_0B9027 : NOP
+	BRA CODE_0B8CBB : NOP
+
+CODE_0B8CB1:
+	IBT R0, #$05
+	SMS ($44), R0
+	LINK #4
+	IWT R15, #CODE_0B9218 : NOP
+CODE_0B8CBB:
+	LMS R11, ($60)
+	JMP R11 : NOP
+
+CODE_0B8CC0:
+	SUB R0
+	SMS ($40), R0
+	IWT R0, #$1900
+	ADD R10
+	TO R9
+	LDB (R0)
+	FROM R8
+	SUB R9
+	BEQ CODE_0B8CD6 : NOP
+CODE_0B8CD0:
+	IWT R15, #CODE_0B8DEA+$01 : ALT2
+
+CODE_0B8CD4:
+	IBT R11, #$31
+CODE_0B8CD6:
+	IBT R0, #$10
+	SMS ($40), R0
+	TO R3
+	GETB
+	IWT R0, #$1901
+	ADD R10
+	LDB (R0)
+	CMP R3
+	BNE CODE_0B8CD0 : NOP
+	IBT R0, #$11
+	SMS ($40), R0
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	LMS R1, ($01E)
+	IWT R0, #DATA_08AB98
+	TO R14
+	ADD R1
+	IWT R2, #$0100
+	SMS ($08), R1
+	FROM R1
+	LOB
+	TO R5
+	SEX
+	BPL CODE_0B8D09 : NOP
+	NOT
+	INC R0
+	ADD R2
+CODE_0B8D09:
+	SMS ($06), R0
+	IWT R2, #DATA_0BBA12
+	TO R2
+	ADD R2
+	SMS ($012), R1
+	IWT R0, #$10E1
+	ADD R10
+	TO R7
+	LDB (R0)
+	IWT R0, #$10E2
+	ADD R10
+	TO R8
+	LDW (R0)
+	SMS ($50), R8
+	FROM R8
+	LOB
+	SWAP
+	TO R7
+	OR R7
+	WITH R8
+	HIB
+	IWT R0, #$1A36
+	ADD R10
+	TO R6
+	LDW (R0)
+	IWT R0, #$1A38
+	ADD R10
+	LDW (R0)
+	SMS ($00), R0
+	WITH R6
+	HIB
+	LOB
+	SWAP
+	TO R6
+	OR R6
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	TO R3
+	SUB #0
+	BPL CODE_0B8D57 : WITH R7
+	SUB R3
+	WITH R8
+	ADC #0
+	BRA CODE_0B8D5D : WITH R8
+
+CODE_0B8D57:
+	SUB R3
+	BCS CODE_0B8D5D : WITH R8
+	DEC R8
+	WITH R8
+CODE_0B8D5D:
+	SWAP
+	FROM R7
+	HIB
+	TO R8
+	OR R8
+	IWT R0, #$10E2
+	ADD R10
+	FROM R8
+	STW (R0)
+	IWT R0, #$10E1
+	ADD R10
+	FROM R7
+	STB (R0)
+	LMS R0, ($50)
+	WITH R8
+	SUB R0
+	IBT R0, #CODE_0B8D5D>>16
+	ROMB
+	MOVE R14, R2
+	GETB
+	INC R14
+	GETBH
+	SMS ($0A), R0
+	MOVES R5, R5
+	BPL CODE_0B8D89 : WITH R0
+	NOT
+	INC R0
+	WITH R0
+CODE_0B8D89:
+	TO R6
+	SMS ($20), R8
+	SMS ($0C), R6
+	FROM R8
+	NOT
+	INC R0
+	TO R1
+	LMULT
+	SMS ($0E), R1
+	SMS ($010), R4
+	IWT R0, #$1181
+	ADD R10
+	TO R7
+	LDB (R0)
+	IWT R0, #$1182
+	ADD R10
+	TO R8
+	LDW (R0)
+	FROM R8
+	LOB
+	SWAP
+	TO R7
+	OR R7
+	WITH R8
+	HIB
+	MOVES R1, R1
+	BPL CODE_0B8DBD : WITH R7
+	ADD R4
+	BCS CODE_0B8DC2 : WITH R8
+	DEC R8
+	BRA CODE_0B8DC2 : WITH R8
+
+CODE_0B8DBD:
+	ADD R4
+	WITH R8
+	ADC #0
+	WITH R8
+CODE_0B8DC2:
+	SWAP
+	FROM R7
+	HIB
+	TO R8
+	OR R8
+	IWT R0, #$1182
+	ADD R10
+	FROM R8
+	STW (R0)
+	IWT R0, #$1181
+	ADD R10
+	FROM R7
+	STB (R0)
+	IBT R3, #$00
+	IWT R0, #$1542
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$1222
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$1220
+	ADD R10
+	FROM R3
+	STW (R0)
+	STOP : NOP
+
+CODE_0B8DEA:
+	SMS ($62), R11
+	LMS R0, ($40)
+	INC R0
+	SBK
+	TO R9
+	GETB
+	INC R14
+	SMS ($016), R9
+	SMS ($014), R8
+	LINK #4
+	IWT R15, #CODE_0B926E : NOP
+	IWT R0, #DATA_0B94EB
+	TO R14
+	ADD R9
+	TO R5
+	GETB
+	IBT R0, #DATA_0BBA12>>16
+	ROMB
+	IWT R1, #$0100
+	FROM R5
+	LOB
+	TO R2
+	SEX
+	BPL CODE_0B8E18 : NOP
+	NOT
+	INC R0
+	ADD R1
+CODE_0B8E18:
+	IWT R1, #DATA_0BBA12
+	TO R14
+	ADD R1
+	LMS R6, ($00)
+	FROM R9
+	AND #1
+	BNE CODE_0B8E27 : NOP
+	DEC R6
+CODE_0B8E27:
+	GETB
+	INC R14
+	GETBH
+	MOVES R2, R2
+	BPL CODE_0B8E32 : NOP
+	NOT
+	INC R0
+CODE_0B8E32:
+	LMULT
+	MOVE R8, R4
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R7
+	OR R4
+	SMS ($4E), R7
+	IWT R0, #$1900
+	ADD R10
+	LDB (R0)
+	ADD R0
+	SWAP
+	DEC R0
+	BEQ CODE_0B8E5F : NOP
+	LMS R3, ($02)
+	DEC R3
+	FROM R7
+	NOT
+	INC R0
+	SUB R3
+	ADD #4
+	SUB #8
+	BCC CODE_0B8E5F : NOP
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0B8E5F:
+	LMS R0, ($40)
+	INC R0
+	SBK
+	LMS R3, ($014)
+	IWT R0, #$1900
+	ADD R10
+	FROM R3
+	STB (R0)
+	LMS R3, ($016)
+	IWT R0, #$1901
+	ADD R10
+	FROM R3
+	STB (R0)
+	LMS R0, ($24)
+	WITH R3
+	SUB #6
+	BNE CODE_0B8E83 : NOP
+	SUB #2
+CODE_0B8E83:
+	ADD R7
+	TO R7
+	SUB #8
+	IWT R0, #$1182
+	ADD R10
+	FROM R7
+	STW (R0)
+	IWT R0, #$1181
+	ADD R10
+	FROM R8
+	STB (R0)
+	IWT R7, #$0100
+	LMS R0, ($016)
+	SUB #6
+	BEQ CODE_0B8EBC : NOP
+	LMS R0, ($018)
+	SUB #6
+	BEQ CODE_0B8EBC : NOP
+	LMS R0, ($42)
+	SUB #0
+	BMI CODE_0B8EBC : NOP
+	IWT R0, #$1976
+	ADD R10
+	LDW (R0)
+	HIB
+	ADD R0
+	AND R7
+	TO R5
+	OR R5
+	BRA CODE_0B8ED1 : NOP
+
+CODE_0B8EBC:
+	IWT R8, #$01FE
+	IWT R1, #$0080
+	IWT R0, #$1976
+	ADD R10
+	LDW (R0)
+	HIB
+	ADD R0
+	SUB R5
+	ADD R1
+	AND R8
+	SUB R7
+	BMI CODE_0B8ED1 : WITH R5
+	OR R7
+CODE_0B8ED1:
+	SMS ($01E), R5
+	FROM R5
+	LSR
+	TO R5
+	SWAP
+	IWT R0, #$1976
+	ADD R10
+	FROM R5
+	STW (R0)
+	IBT R1, #$00
+	IWT R0, #$10E1
+	ADD R10
+	FROM R1
+	STB (R0)
+	IWT R0, #$1542
+	ADD R10
+	FROM R1
+	STW (R0)
+	IWT R0, #$1222
+	ADD R10
+	FROM R1
+	STW (R0)
+	IWT R0, #$1220
+	ADD R10
+	FROM R1
+	STW (R0)
+	STOP : NOP
+
+CODE_0B8EFB:
+	SUB R0
+	SMS ($40), R0
+	IWT R0, #$1900
+	ADD R10
+	TO R9
+	LDB (R0)
+	FROM R8
+	SUB R9
+	BNE CODE_0B8F79 : NOP
+	IBT R0, #$10
+	SMS ($40), R0
+	IWT R0, #$1A36
+	ADD R10
+	TO R1
+	LDW (R0)
+	IWT R0, #$1A38
+	ADD R10
+	TO R2
+	LDW (R0)
+	WITH R1
+	HIB
+	FROM R2
+	LOB
+	SWAP
+	TO R1
+	OR R1
+	IWT R0, #$1181
+	ADD R10
+	TO R7
+	LDB (R0)
+	IWT R0, #$1182
+	ADD R10
+	TO R8
+	LDW (R0)
+	FROM R8
+	LOB
+	SWAP
+	TO R7
+	OR R7
+	WITH R8
+	HIB
+	IWT R0, #$1976
+	ADD R10
+	TO R9
+	LDW (R0)
+	MOVES R9, R9
+	BPL CODE_0B8F4A : WITH R7
+	SUB R1
+	BCS CODE_0B8F4F : WITH R8
+	DEC R8
+	BRA CODE_0B8F4F : WITH R8
+
+CODE_0B8F4A:
+	ADD R1
+	WITH R8
+	ADC #0
+	WITH R8
+CODE_0B8F4F:
+	LOB
+	WITH R8
+	SWAP
+	FROM R7
+	HIB
+	TO R8
+	OR R8
+	IWT R0, #$1182
+	ADD R10
+	FROM R8
+	STW (R0)
+	IWT R0, #$1181
+	ADD R10
+	FROM R7
+	STB (R0)
+	IBT R3, #$00
+	IWT R0, #$1542
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$1222
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$1220
+	ADD R10
+	FROM R3
+	STW (R0)
+	STOP : NOP
+
+CODE_0B8F79:
+	SMS ($62), R11
+	LMS R0, ($40)
+	INC R0
+	SBK
+	TO R9
+	GETB
+	INC R14
+	FROM R9
+	BIC #7
+	SMS ($016), R0
+	SMS ($014), R8
+	IWT R0, #$10E2
+	ADD R10
+	TO R9
+	LDW (R0)
+	IWT R0, #$1900
+	ADD R10
+	LDB (R0)
+	ADD R0
+	SWAP
+	DEC R0
+	BEQ CODE_0B8FAC : NOP
+	FROM R9
+	AND #15
+	SUB #8
+	BPL CODE_0B8FAC : NOP
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0B8FAC:
+	LMS R0, ($40)
+	INC R0
+	SBK
+	LMS R3, ($016)
+	IWT R0, #$1901
+	ADD R10
+	FROM R3
+	STB (R0)
+	LMS R3, ($014)
+	IWT R0, #$1900
+	ADD R10
+	FROM R3
+	STB (R0)
+	FROM R9
+	ADD #8
+	BIC #15
+	TO R3
+	SUB #8
+	IWT R0, #$10E2
+	ADD R10
+	FROM R3
+	STW (R0)
+	FROM R9
+	ADD #8
+	TO R9
+	AND #15
+	IWT R7, #$8000
+	IWT R0, #$1182
+	ADD R10
+	TO R8
+	LDW (R0)
+	FROM R8
+	AND #15
+	SUB #8
+	BPL CODE_0B8FEE : WITH R8
+	SUB R9
+	BRA CODE_0B8FEF : INC R7
+
+CODE_0B8FEE:
+	ADD R9
+CODE_0B8FEF:
+	FROM R7
+	SWAP
+	SMS ($01E), R0
+	LSR
+	TO R5
+	SWAP
+	IWT R0, #$1976
+	ADD R10
+	FROM R5
+	STW (R0)
+	IWT R0, #$1182
+	ADD R10
+	FROM R8
+	STW (R0)
+	IBT R1, #$00
+	IWT R0, #$10E1
+	ADD R10
+	FROM R1
+	STB (R0)
+	IWT R0, #$1181
+	ADD R10
+	FROM R1
+	STB (R0)
+	IWT R0, #$1542
+	ADD R10
+	FROM R1
+	STW (R0)
+	IWT R0, #$1222
+	ADD R10
+	FROM R1
+	STW (R0)
+	IWT R0, #$1220
+	ADD R10
+	FROM R1
+	STW (R0)
+	STOP : NOP
+
+CODE_0B9027:
+	SUB R0
+	SMS ($40), R0
+	IWT R0, #$1900
+	ADD R10
+	TO R9
+	LDB (R0)
+	FROM R8
+	SUB R9
+	BEQ CODE_0B903D : NOP
+CODE_0B9037:
+	IWT R15, #CODE_0B9086+$01 : ALT2
+
+CODE_0B903B:
+	IBT R11, #$31
+CODE_0B903D:
+	TO R3
+	GETB
+	FROM R3
+	TO R6
+	BIC #3
+	IWT R0, #$1901
+	ADD R10
+	LDB (R0)
+	CMP R6
+	BNE CODE_0B9037 : NOP
+	FROM R3
+	AND #3
+	SUB #3
+	BNE CODE_0B9057 : INC R14
+	INC R14
+CODE_0B9057:
+	LINK #4
+	IWT R15, #CODE_0B926E : NOP
+	FROM R6
+	LSR
+	LSR
+	BIC #7
+	TO R6
+	ADD #4
+	IWT R0, #DATA_0B94F2
+	TO R14
+	ADD R6
+	TO R3
+	GETB
+	LINK #4
+	IWT R15, #CODE_0B9186 : NOP
+	IBT R3, #$00
+	IWT R0, #$1542
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$1222
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$1220
+	ADD R10
+	FROM R3
+	STW (R0)
+	STOP : NOP
+
+CODE_0B9086:
+	SMS ($62), R11
+	LMS R0, ($40)
+	INC R0
+	SBK
+	TO R9
+	GETB
+	INC R14
+	FROM R9
+	BIC #3
+	SMS ($016), R0
+	SMS ($014), R8
+	FROM R9
+	AND #3
+	SUB #3
+	BNE CODE_0B90AB : NOP
+	TO R13
+	GETB
+	INC R14
+	SMS ($5A), R13
+	SMS ($58), R14
+CODE_0B90AB:
+	LINK #4
+	IWT R15, #CODE_0B926E : NOP
+	LMS R0, ($00)
+	MOVE R6, R0
+	LMULT
+	MOVE R11, R4
+	LMS R0, ($02)
+	MOVE R6, R0
+	LMULT
+	WITH R11
+	ADD R4
+	FROM R9
+	LSR
+	LSR
+	TO R3
+	BIC #7
+	IWT R0, #DATA_0B94F2
+	TO R14
+	ADD R3
+	IWT R0, #$1900
+	ADD R10
+	LDB (R0)
+	ADD R0
+	SWAP
+	DEC R0
+	BEQ CODE_0B90F0 : NOP
+	GETB
+	INC R14
+	GETBH
+	CMP R11
+	BPL CODE_0B90EB : INC R14
+	GETB
+	INC R14
+	GETBH
+	CMP R11
+	BPL CODE_0B90F3 : INC R14
+CODE_0B90EB:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0B90F0:
+	WITH R14
+	ADD #4
+CODE_0B90F3:
+	LMS R0, ($40)
+	INC R0
+	SBK
+	LMS R3, ($016)
+	IWT R0, #$1901
+	ADD R10
+	FROM R3
+	STB (R0)
+	LMS R3, ($014)
+	IWT R0, #$1900
+	ADD R10
+	FROM R3
+	STB (R0)
+	SMS ($5C), R14
+	LMS R0, ($00)
+	TO R1
+	NOT
+	INC R1
+	LMS R0, ($02)
+	TO R2
+	NOT
+	INC R2
+	IWT R0, #CODE_0BBC74
+	IBT R8, #CODE_0BBC74>>16
+	IBT R5, #CODE_0B9127>>16
+	MOVE R11, R15
+	LJMP R8 : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B9127:
+	IBT R0, #CODE_0B9127>>16
+	ROMB
+	LMS R14, ($5C)
+	TO R3
+	GETB
+	INC R14
+	IWT R4, #$4000
+	FROM R1
+	SWAP
+	TO R5
+	ADD R4
+	GETB
+	INC R14
+	TO R1
+	GETBH
+	IWT R0, #$1976
+	ADD R10
+	TO R7
+	LDW (R0)
+	FROM R5
+	SUB R7
+	ADD R4
+	BPL ADDR_0B9150 : NOP
+	FROM R5
+	ADD R4
+	TO R5
+	ADD R4
+	WITH R1
+	NOT
+	INC R1
+ADDR_0B9150:
+	SMS ($01E), R1
+	IWT R2, #$0100
+	MOVES R1, R1
+	BPL ADDR_0B915F : WITH R5
+	SUB R2
+	BRA ADDR_0B9160 : NOP
+
+ADDR_0B915F:
+	ADD R2
+ADDR_0B9160:
+	IWT R0, #$1976
+	ADD R10
+	FROM R5
+	STW (R0)
+	MOVE R1, R5
+	LMS R5, ($01E)
+	LINK #4
+	IWT R15, #CODE_0B91B0 : NOP
+	IBT R3, #$00
+	IWT R0, #$1542
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$1222
+	ADD R10
+	FROM R3
+	STW (R0)
+	IWT R0, #$1220
+	ADD R10
+	FROM R3
+	STW (R0)
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B9186:
+	IWT R0, #$1976
+	ADD R10
+	TO R1
+	LDW (R0)
+	IWT R0, #$1A36
+	ADD R10
+	TO R6
+	LDW (R0)
+	IWT R0, #$1A38
+	ADD R10
+	LDW (R0)
+	WITH R6
+	HIB
+	LOB
+	SWAP
+	TO R6
+	OR R6
+	LMS R5, ($01E)
+	FROM R5
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	TO R1
+	ADD R1
+	IWT R0, #$1976
+	ADD R10
+	FROM R1
+	STW (R0)
+CODE_0B91B0:
+	IWT R7, #$4000
+	MOVES R5, R5
+	BPL CODE_0B91BC : WITH R1
+	ADD R7
+	BRA CODE_0B91BD : NOP
+
+CODE_0B91BC:
+	SUB R7
+CODE_0B91BD:
+	FROM R1
+	LSR
+	LSR
+	LSR
+	LSR
+	LSR
+	LSR
+	TO R1
+	BIC #1
+	MOVE R6, R3
+	IBT R0, #DATA_0B8100>>16
+	ROMB
+	IWT R0, #DATA_0B8100
+	TO R14
+	ADD R1
+	IWT R0, #DATA_0B8000
+	TO R2
+	ADD R1
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	IWT R3, #$0080
+	WITH R4
+	ADD R3
+	ADC #0
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R1
+	OR R4
+	MOVE R14, R2
+	GETB
+	INC R14
+	GETBH
+	LMULT
+	WITH R4
+	ADD R3
+	ADC #0
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	ADD #8
+	LMS R3, ($22)
+	WITH R3
+	SUB R0
+	IWT R0, #$10E2
+	ADD R10
+	FROM R3
+	STW (R0)
+	LMS R3, ($24)
+	FROM R3
+	SUB R1
+	TO R3
+	SUB #8
+	IWT R0, #$1182
+	ADD R10
+	FROM R3
+	STW (R0)
+	JMP R11 : NOP
+
+CODE_0B9218:
+	IBT R0, #$02
+	SMS ($40), R0
+	IWT R0, #$10E2
+	ADD R10
+	LDW (R0)
+	TO R1
+	BIC #15
+	IWT R0, #$1182
+	ADD R10
+	LDW (R0)
+	TO R2
+	BIC #15
+	GETB
+	INC R14
+	TO R1
+	OR R1
+	GETB
+	OR R2
+	SBK
+	IWT R0, #$10E2
+	ADD R10
+	FROM R1
+	STW (R0)
+	IWT R3, #$0100
+	IWT R2, #$01FE
+	IWT R0, #$1900
+	ADD R10
+	TO R1
+	LDB (R0)
+	LMS R0, ($01E)
+	WITH R1
+	SUB #2
+	BPL CODE_0B9254 : NOP
+	ADD R3
+	BRA CODE_0B9256 : AND R2
+
+CODE_0B9254:
+	NOT
+	INC R0
+CODE_0B9256:
+	SMS ($01E), R0
+	IBT R3, #$03
+	IWT R0, #$1900
+	ADD R10
+	FROM R3
+	STB (R0)
+	IWT R3, #$8000
+	IWT R0, #$1976
+	ADD R10
+	LDW (R0)
+	ADD R3
+	SBK
+	STOP : NOP
+
+CODE_0B926E:
+	SMS ($64), R11
+	IWT R0, #$10E2
+	ADD R10
+	LDW (R0)
+	TO R7
+	ADD #8
+	FROM R7
+	TO R11
+	BIC #15
+	IWT R0, #$1182
+	ADD R10
+	LDW (R0)
+	TO R8
+	ADD #8
+	FROM R8
+	TO R12
+	BIC #15
+	GETBS
+	SUB #0
+	BMI CODE_0B9291 : INC R14
+	ADD R0
+CODE_0B9291:
+	ADD R11
+	SMS ($22), R0
+	SUB R7
+	SMS ($00), R0
+	GETBS
+	SUB #0
+	BMI CODE_0B92A1 : INC R14
+	ADD R0
+CODE_0B92A1:
+	ADD R12
+	SMS ($24), R0
+	SUB R8
+	SMS ($02), R0
+	LMS R11, ($64)
+	JMP R11 : NOP
+
+DATA_0B92AE:
+	dw DATA_0B936E,DATA_0B9372,DATA_0B9376,DATA_0B937A,DATA_0B937E,DATA_0B9382,DATA_0B9386,DATA_0B938A
+	dw DATA_0B938E,DATA_0B9392,DATA_0B9396,DATA_0B939A,DATA_0B939E,DATA_0B93A2,DATA_0B93A6,DATA_0B93AA
+	dw DATA_0B93AB,DATA_0B93B0,DATA_0B93B5,DATA_0B93BA,DATA_0B93BF,DATA_0B93C3,DATA_0B93C7,DATA_0B93CB
+	dw DATA_0B93CF,DATA_0B93D3,DATA_0B93D7,DATA_0B93DB,DATA_0B93DF,DATA_0B93E3,DATA_0B93E7,DATA_0B93EB
+	dw DATA_0B93EF,DATA_0B93F3,DATA_0B93F7,DATA_0B93FB,DATA_0B93FF,DATA_0B9403,DATA_0B9407,DATA_0B940B
+	dw DATA_0B940F,DATA_0B9413,DATA_0B9417,DATA_0B941B,DATA_0B941F,DATA_0B9423,DATA_0B9427,DATA_0B942B
+	dw DATA_0B942E,DATA_0B9432,DATA_0B9436,DATA_0B943A,DATA_0B943E,DATA_0B9442,DATA_0B9446,DATA_0B944A
+	dw DATA_0B944E,DATA_0B9452,DATA_0B9456,DATA_0B945A,DATA_0B945E,DATA_0B9462,DATA_0B9466,DATA_0B946A
+	dw DATA_0B946D,DATA_0B9471,DATA_0B9475,DATA_0B9479,DATA_0B947D,DATA_0B9481,DATA_0B9485,DATA_0B9489
+	dw DATA_0B948D,DATA_0B9491,DATA_0B9495,DATA_0B9499,DATA_0B949D,DATA_0B94A1,DATA_0B94A5,DATA_0B94A9
+	dw DATA_0B94AC,DATA_0B94B0,DATA_0B94B4,DATA_0B94B8,DATA_0B94BC,DATA_0B94C0,DATA_0B94C4,DATA_0B94C8
+	dw DATA_0B94CC,DATA_0B94D0,DATA_0B94D4,DATA_0B94D8,DATA_0B94DC,DATA_0B94E0,DATA_0B94E4,DATA_0B94E8
+
+DATA_0B936E:
+	db $00,$00,$00,$08
+
+DATA_0B9372:
+	db $00,$01,$08,$08
+
+DATA_0B9376:
+	db $00,$02,$F0,$08
+
+DATA_0B937A:
+	db $00,$02,$00,$08
+
+DATA_0B937E:
+	db $00,$03,$10,$08
+
+DATA_0B9382:
+	db $00,$03,$08,$08
+
+DATA_0B9386:
+	db $00,$04,$D0,$08
+
+DATA_0B938A:
+	db $00,$04,$E0,$08
+
+DATA_0B938E:
+	db $00,$04,$F0,$08
+
+DATA_0B9392:
+	db $00,$04,$00,$08
+
+DATA_0B9396:
+	db $00,$05,$20,$08
+
+DATA_0B939A:
+	db $00,$05,$18,$08
+
+DATA_0B939E:
+	db $00,$05,$10,$08
+
+DATA_0B93A2:
+	db $00,$05,$08,$08
+
+DATA_0B93A6:
+	db $00,$06,$00,$01
+
+DATA_0B93AA:
+	db $01
+
+DATA_0B93AB:
+	db $02,$03,$E0,$08,$08
+
+DATA_0B93B0:
+	db $02,$0B,$A0,$00,$08
+
+DATA_0B93B5:
+	db $02,$1B,$20,$08,$00
+
+DATA_0B93BA:
+	db $02,$13,$60,$00,$00
+
+DATA_0B93BF:
+	db $02,$20,$10,$10
+
+DATA_0B93C3:
+	db $02,$21,$08,$10
+
+DATA_0B93C7:
+	db $02,$2A,$00,$10
+
+DATA_0B93CB:
+	db $02,$28,$F0,$10
+
+DATA_0B93CF:
+	db $02,$22,$10,$08
+
+DATA_0B93D3:
+	db $02,$29,$F0,$08
+
+DATA_0B93D7:
+	db $02,$38,$10,$F0
+
+DATA_0B93DB:
+	db $02,$3A,$08,$F0
+
+DATA_0B93DF:
+	db $02,$31,$00,$F0
+
+DATA_0B93E3:
+	db $02,$30,$F0,$F0
+
+DATA_0B93E7:
+	db $02,$39,$10,$00
+
+DATA_0B93EB:
+	db $02,$32,$F0,$00
+
+DATA_0B93EF:
+	db $02,$40,$20,$40
+
+DATA_0B93F3:
+	db $02,$40,$18,$40
+
+DATA_0B93F7:
+	db $02,$40,$10,$40
+
+DATA_0B93FB:
+	db $02,$41,$08,$40
+
+DATA_0B93FF:
+	db $02,$40,$30,$38
+
+DATA_0B9403:
+	db $02,$40,$28,$38
+
+DATA_0B9407:
+	db $02,$40,$20,$38
+
+DATA_0B940B:
+	db $02,$40,$38,$30
+
+DATA_0B940F:
+	db $02,$40,$30,$30
+
+DATA_0B9413:
+	db $02,$40,$38,$28
+
+DATA_0B9417:
+	db $02,$40,$40,$20
+
+DATA_0B941B:
+	db $02,$40,$38,$20
+
+DATA_0B941F:
+	db $02,$40,$40,$18
+
+DATA_0B9423:
+	db $02,$40,$40,$10
+
+DATA_0B9427:
+	db $02,$42,$40,$08
+
+DATA_0B942B:
+	db $03,$08,$08
+
+DATA_0B942E:
+	db $02,$58,$20,$90
+
+DATA_0B9432:
+	db $02,$58,$18,$90
+
+DATA_0B9436:
+	db $02,$58,$10,$90
+
+DATA_0B943A:
+	db $02,$5A,$08,$90
+
+DATA_0B943E:
+	db $02,$58,$30,$A0
+
+DATA_0B9442:
+	db $02,$58,$28,$A0
+
+DATA_0B9446:
+	db $02,$58,$20,$A0
+
+DATA_0B944A:
+	db $02,$58,$38,$B0
+
+DATA_0B944E:
+	db $02,$58,$30,$B0
+
+DATA_0B9452:
+	db $02,$58,$38,$C0
+
+DATA_0B9456:
+	db $02,$58,$40,$D0
+
+DATA_0B945A:
+	db $02,$58,$38,$D0
+
+DATA_0B945E:
+	db $02,$58,$40,$E0
+
+DATA_0B9462:
+	db $02,$58,$40,$F0
+
+DATA_0B9466:
+	db $02,$59,$40,$00
+
+DATA_0B946A:
+	db $03,$07,$08
+
+DATA_0B946D:
+	db $02,$49,$90,$08
+
+DATA_0B9471:
+	db $02,$48,$90,$10
+
+DATA_0B9475:
+	db $02,$48,$90,$18
+
+DATA_0B9479:
+	db $02,$48,$A0,$20
+
+DATA_0B947D:
+	db $02,$48,$90,$20
+
+DATA_0B9481:
+	db $02,$48,$A0,$28
+
+DATA_0B9485:
+	db $02,$48,$B0,$30
+
+DATA_0B9489:
+	db $02,$48,$A0,$30
+
+DATA_0B948D:
+	db $02,$48,$D0,$38
+
+DATA_0B9491:
+	db $02,$48,$C0,$38
+
+DATA_0B9495:
+	db $02,$48,$B0,$38
+
+DATA_0B9499:
+	db $02,$4A,$00,$40
+
+DATA_0B949D:
+	db $02,$48,$F0,$40
+
+DATA_0B94A1:
+	db $02,$48,$E0,$40
+
+DATA_0B94A5:
+	db $02,$48,$D0,$40
+
+DATA_0B94A9:
+	db $03,$08,$08
+
+DATA_0B94AC:
+	db $02,$52,$90,$00
+
+DATA_0B94B0:
+	db $02,$50,$90,$F0
+
+DATA_0B94B4:
+	db $02,$50,$90,$E0
+
+DATA_0B94B8:
+	db $02,$50,$A0,$D0
+
+DATA_0B94BC:
+	db $02,$50,$90,$D0
+
+DATA_0B94C0:
+	db $02,$50,$A0,$C0
+
+DATA_0B94C4:
+	db $02,$50,$B0,$B0
+
+DATA_0B94C8:
+	db $02,$50,$A0,$B0
+
+DATA_0B94CC:
+	db $02,$50,$D0,$A0
+
+DATA_0B94D0:
+	db $02,$50,$C0,$A0
+
+DATA_0B94D4:
+	db $02,$50,$B0,$A0
+
+DATA_0B94D8:
+	db $02,$51,$00,$90
+
+DATA_0B94DC:
+	db $02,$50,$F0,$90
+
+DATA_0B94E0:
+	db $02,$50,$E0,$90
+
+DATA_0B94E4:
+	db $02,$50,$D0,$90
+
+DATA_0B94E8:
+	db $03,$08,$07
+
+DATA_0B94EB:
+	db $40,$C0,$26,$DA,$14,$EC,$00
+
+DATA_0B94F2:
+	db $A9,$00,$44,$01,$0F,$8F,$02,$00,$49,$03,$84,$04,$1F,$46,$01,$00
+	db $09,$3D,$04,$42,$7F,$51,$00,$00
+
+CODE_0B950A:
+	IWT R6, #$5500
+	TO R9
+	FMULT
+	IWT R10, #$01FE
+	IBT R6, #$F6
+	LINK #4
+	IWT R15, #CODE_0B859C : NOP
+	SMS ($20), R0
+	SMS ($22), R1
+	FROM R7
+	ADD R9
+	TO R1
+	AND R10
+	IBT R6, #$E2
+	LINK #4
+	IWT R15, #CODE_0B859C : NOP
+	SMS ($24), R0
+	SMS ($26), R1
+	FROM R5
+	SUB R9
+	TO R1
+	AND R10
+	IBT R6, #$CE
+	LINK #4
+	IWT R15, #CODE_0B859C : NOP
+	SMS ($28), R0
+	SMS ($2A), R1
+	MOVE R1, R5
+	IBT R6, #$BA
+	LINK #4
+	IWT R15, #CODE_0B859C : NOP
+	SMS ($2C), R0
+	SMS ($2E), R1
+	MOVES R8, R8
+	BEQ CODE_0B9565 : NOP
+	IWT R7, #$0020
+	IBT R12, #$04
+	CACHE
+	MOVE R13, R15
+	LDW (R7)
+	NOT
+	INC R0
+	WITH R7
+	ADD #4
+	LOOP : SBK
+CODE_0B9565:
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B9567:
+	IWT R0, #$1220
+	ADD R10
+	LDW (R0)
+	ADD R0
+	ADD R0
+	TO R6
+	ADD R0
+	IWT R3, #$2200
+	IWT R0, #$1A36
+	ADD R10
+	TO R1
+	LDW (R0)
+	FROM R1
+	LSR
+	LSR
+	BIC #1
+	ADD R3
+	LDW (R0)
+	LMULT
+	SUB #0
+	BPL CODE_0B9589 : NOP
+	NOT
+	INC R0
+CODE_0B9589:
+	DIV2
+	ADD R1
+	IWT R6, #$0FF8
+	CMP R6
+	BPL CODE_0B9595 : WITH R0
+	TO R6
+CODE_0B9595:
+	IWT R0, #$1A36
+	ADD R10
+	FROM R6
+	STW (R0)
+	MOVE R7, R6
+	IWT R0, #$12C0
+	ADD R10
+	LDW (R0)
+	ADD R0
+	ADD R0
+	TO R2
+	ADD R0
+	FROM R6
+	LSR
+	LSR
+	BIC #1
+	ADD R3
+	TO R6
+	LDW (R0)
+	IWT R0, #$1A38
+	ADD R10
+	TO R1
+	LDW (R0)
+	FROM R2
+	LMULT
+	FROM R1
+	SUB R4
+	SBK
+	FROM R7
+	LSR
+	LSR
+	TO R6
+	LSR
+	IBT R0, #$0C
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R1
+	OR R4
+	IWT R0, #$1BB6
+	ADD R10
+	FROM R1
+	STW (R0)
+	IWT R0, #$1BB8
+	ADD R10
+	FROM R1
+	STW (R0)
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+DATA_0B95D7:
+	db $F6,$FB,$24,$02,$02,$F6,$FB,$24,$02,$02,$FA,$E9,$24,$02,$02
+
+CODE_0B95E6:
+	FROM R8
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R8
+	OR R4
+	IWT R0, #$1680
+	ADD R10
+	TO R1
+	LDW (R0)
+	IWT R0, #$1682
+	ADD R10
+	TO R2
+	LDW (R0)
+	IWT R3, #$2000
+	IWT R0, #$1180
+	ADD R10
+	LDB (R0)
+	MULT #8
+	TO R3
+	ADD R3
+	IBT R0, #DATA_0B95D7>>16
+	ROMB
+	IWT R4, #DATA_0B95D7
+	IWT R0, #$1402
+	ADD R10
+	LDB (R0)
+	MULT #5
+	TO R14
+	ADD R4
+	IWT R0, #$1362
+	ADD R10
+	TO R4
+	LDW (R0)
+	GETBS
+	INC R14
+	ADD R1
+	STW (R4)
+	MOVE R1, R0
+	INC R4
+	INC R4
+	GETBS
+	INC R14
+	ADD R2
+	STW (R4)
+	MOVE R2, R0
+	INC R4
+	INC R4
+	GETB
+	INC R14
+	GETBH
+	INC R14
+	ADD R3
+	STW (R4)
+	INC R4
+	INC R4
+	GETB
+	INC R14
+	STW (R4)
+	INC R4
+	FROM R8
+	TO R9
+	ADD R8
+	WITH R2
+	ADD #8
+	IWT R0, #$1041
+	ADD R10
+	LDB (R0)
+	LSR
+	LSR
+	LSR
+	TO R12
+	SUB #7
+	BEQ CODE_0B969A : INC R4
+	IWT R0, #$0234
+	TO R7
+	ADD R3
+	CACHE
+	MOVE R13, R15
+	FROM R11
+	SUB #8
+	BMI CODE_0B966B : NOP
+	WITH R11
+	SUB #8
+	WITH R9
+	ADD R8
+	IBT R0, #$08
+	BRA CODE_0B9682 : NOP
+
+CODE_0B966B:
+	MOVE R5, R4
+	FROM R8
+	DIV2
+	DIV2
+	TO R6
+	DIV2
+	FROM R11
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	TO R9
+	ADD R9
+	MOVE R4, R5
+	FROM R11
+CODE_0B9682:
+	TO R2
+	ADD R2
+	FROM R9
+	HIB
+	SEX
+	TO R1
+	ADD R1
+	FROM R1
+	STW (R4)
+	INC R4
+	INC R4
+	FROM R2
+	STW (R4)
+	INC R4
+	INC R4
+	FROM R7
+	STW (R4)
+	INC R4
+	INC R4
+	SUB R0
+	STW (R4)
+	INC R4
+	LOOP : INC R4
+CODE_0B969A:
+	WITH R9
+	ADD R8
+	FROM R9
+	HIB
+	SEX
+	TO R1
+	ADD R1
+	WITH R2
+	ADD #8
+	WITH R1
+	SUB #7
+	FROM R1
+	STW (R4)
+	INC R4
+	INC R4
+	FROM R2
+	STW (R4)
+	INC R4
+	INC R4
+	IWT R0, #$0226
+	ADD R3
+	STW (R4)
+	INC R4
+	INC R4
+	IBT R0, #$02
+	STW (R4)
+	INC R4
+	INC R4
+	WITH R9
+	ADD R8
+	FROM R9
+	HIB
+	TO R9
+	SEX
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B96C3:
+	CACHE
+	IWT R1, #$2000
+	LMS R0, ($94)
+	SM ($1EEE), R0
+	OR R1
+	IWT R10, #$1EF2
+	IBT R12, #$20
+	MOVE R13, R15
+	STW (R10)
+	INC R10
+	LOOP : INC R10
+	LMS R0, ($9C)
+	OR R1
+	MOVE R3, R0
+	IBT R12, #$20
+	MOVE R13, R15
+	STW (R10)
+	INC R10
+	LOOP : INC R10
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B96EA:
+	CACHE
+	IBT R1, #$F8
+	FROM R9
+	AND R1
+	DIV2
+	DIV2
+	IWT R1, #$1F32
+	TO R10
+	ADD R1
+	FROM R9
+	AND #7
+	SUB #4
+	MULT R8
+	TO R2
+	ADD R2
+	MOVE R4, R2
+	IWT R8, #$FC00
+	IWT R1, #$2000
+	LMS R0, ($9C)
+	TO R3
+	OR R1
+	IWT R6, #$1F32
+	IWT R7, #$1F73
+	FROM R10
+CODE_0B9714:
+	CMP R6
+	BMI CODE_0B972B : NOP
+	FROM R10
+	CMP R7
+	BPL CODE_0B972B : NOP
+	FROM R4
+	HIB
+	SEX
+	TO R1
+	ADD R3
+	LDW (R10)
+	SUB R1
+	BPL CODE_0B972B : NOP
+	FROM R1
+	STW (R10)
+CODE_0B972B:
+	WITH R10
+	ADD R5
+	WITH R2
+	ADD R8
+	BPL CODE_0B9736 : WITH R4
+	IWT R8, #$FC80
+	WITH R4
+CODE_0B9736:
+	ADD R2
+	BPL CODE_0B9714 : FROM R10
+	LMS R1, ($94)
+	IBT R2, #$F8
+	IBT R0, #$18
+	CMP R1
+	BEQ CODE_0B975B : NOP
+	BCC CODE_0B975B : SUB R1
+	ADD #7
+	AND R2
+	LSR
+	LSR
+	TO R12
+	LSR
+	IWT R10, #$1F32
+	MOVE R0, R3
+	MOVE R13, R15
+	STW (R10)
+	INC R10
+	LOOP : INC R10
+CODE_0B975B:
+	IWT R0, #$0160
+	SUB R1
+	TO R1
+	HIB
+	BNE CODE_0B977D : NOP
+	SUB #7
+	AND R2
+	LSR
+	TO R1
+	LSR
+	TO R12
+	LSR
+	IWT R0, #$1F32
+	TO R11
+	ADD R1
+	IBT R0, #$40
+	TO R12
+	SUB R12
+	MOVE R0, R3
+	MOVE R13, R15
+	STW (R11)
+	INC R11
+	LOOP : INC R11
+CODE_0B977D:
+	IWT R0, #$1F32
+	LDW (R0)
+	SM ($1EF0), R0
+	STOP : NOP
+
+	%FREE_BYTES($0B9787, 121, $01)
+
+CODE_0B9800:
+	LM R0, ($1974)
+	AND #7
+	SMS ($F8), R0
+	LMS R1, ($A8)
+	DEC R1
+	BPL CODE_0B9813 : INC R1
+	WITH R1
+	NOT
+	INC R1
+CODE_0B9813:
+	LMS R0, ($AA)
+	DEC R0
+	BPL CODE_0B981C : INC R0
+	NOT
+	INC R0
+CODE_0B981C:
+	SUB R1
+	BCS CODE_0B9821 : ADD R1
+	FROM R1
+CODE_0B9821:
+	HIB
+	TO R1
+	SUB #4
+	BCC CODE_0B982A : NOP
+	IBT R0, #$03
+CODE_0B982A:
+	OR #4
+	SMS ($76), R0
+	LINK #4
+	IWT R15, #CODE_0B9979 : NOP
+	IWT R0, #$0008
+	SMS ($C0), R0
+	LMS R0, ($1D6)
+	IBT R1, #$20
+	SUB R1
+	BMI CODE_0B987F : NOP
+	LMS R0, ($180)
+	SUB #0
+	BEQ CODE_0B987F : NOP
+	IBT R1, #$E0
+	BPL CODE_0B9852 : NOP
+	IBT R1, #$20
+CODE_0B9852:
+	ADD R1
+	TO R1
+	XOR R1
+	BMI CODE_0B985A : NOP
+	SUB R0
+CODE_0B985A:
+	SBK
+	LMS R1, ($17E)
+	ADD R1
+	SBK
+	LMS R0, ($182)
+	SUB #2
+	BNE CODE_0B986E : INC R0
+	SMS ($184), R0
+	BRA CODE_0B9874 : NOP
+
+CODE_0B986E:
+	BCS CODE_0B9873 : NOP
+	INC R0
+	INC R0
+CODE_0B9873:
+	SBK
+CODE_0B9874:
+	IBT R5, #$20
+	IBT R6, #$00
+	IWT R8, #$0400
+	IWT R15, #CODE_0B9935 : NOP
+
+CODE_0B987F:
+	LM R0, ($0071)
+	AND #15
+	MOVE R1, R0
+	BNE CODE_0B98A1 : DEC R0
+	IBT R5, #$02
+	IBT R6, #$00
+	IWT R8, #$0400
+	IBT R10, #$00
+	LMS R0, ($A8)
+	SUB #0
+	BEQ CODE_0B98B9 : NOP
+	IWT R10, #$F800
+	BRA CODE_0B98B9 : NOP
+
+CODE_0B98A1:
+	MULT #5
+	IWT R14, #DATA_0AFB7A
+	TO R14
+	ADD R14
+	GETB
+	TO R10
+	SWAP
+	INC R14
+	GETB
+	INC R14
+	TO R6
+	GETBH
+	INC R14
+	GETB
+	INC R14
+	TO R8
+	GETBH
+	IBT R5, #$0C
+CODE_0B98B9:
+	LMS R2, ($184)
+	DEC R2
+	BPL CODE_0B98F4 : INC R2
+	LMS R0, ($182)
+	DEC R0
+	BMI CODE_0B98F4 : NOP
+	LMS R14, ($1F6)
+	DEC R14
+	BMI CODE_0B98D6 : NOP
+	SUB #2
+	BCC CODE_0B992A : NOP
+	BRA CODE_0B992D : NOP
+
+CODE_0B98D6:
+	SMS ($182), R0
+	IBT R14, #$04
+	SMS ($1F6), R14
+	SUB #2
+	BCC CODE_0B992A : NOP
+	BNE CODE_0B992D : NOP
+	LMS R0, ($C4)
+	XOR #2
+	SBK
+	LMS R0, ($17E)
+	NOT
+	INC R0
+	BRA CODE_0B992A : SBK
+
+CODE_0B98F4:
+	FROM R1
+	AND #3
+	BEQ CODE_0B992D : NOP
+	TO R1
+	AND #2
+	DEC R2
+	BMI CODE_0B990B : NOP
+	SMS ($C4), R1
+	SUB R0
+	SMS ($184), R0
+	BRA CODE_0B992A : NOP
+
+CODE_0B990B:
+	LMS R0, ($C4)
+	SUB R1
+	BEQ CODE_0B992A : NOP
+	LMS R0, ($A8)
+	SUB #0
+	BEQ CODE_0B9920 : NOP
+	DEC R1
+	XOR R1
+	BPL CODE_0B992D : INC R1
+CODE_0B9920:
+	IBT R0, #$04
+	SMS ($182), R0
+	IBT R0, #$04
+	SMS ($1F6), R0
+CODE_0B992A:
+	WITH R10
+	NOT
+	INC R10
+CODE_0B992D:
+	IWT R4, #$0400
+	LINK #4
+	IWT R15, #CODE_0B9BD9 : NOP
+CODE_0B9935:
+	MOVE R7, R5
+	LMS R0, ($C6)
+	DEC R0
+	BMI CODE_0B996C : NOP
+	MOVES R8, R8
+	BMI CODE_0B9958 : NOP
+	IBT R5, #$02
+	FROM R6
+	DIV2
+	DIV2
+	TO R6
+	DIV2
+	IWT R8, #$FF00
+	LINK #4
+	IWT R15, #CODE_0B9BF3 : NOP
+	BRA CODE_0B9976 : NOP
+
+CODE_0B9958:
+	LMS R0, ($FE)
+	IWT R4, #$0140
+	AND R4
+	BNE CODE_0B996C : SUB R0
+	SMS ($C6), R0
+	IBT R4, #$14
+	LINK #4
+	IWT R15, #CODE_0BCBC2 : NOP
+CODE_0B996C:
+	LINK #4
+	IWT R15, #CODE_0B9B9F : NOP
+	LINK #4
+	IWT R15, #CODE_0B9BBF : NOP
+CODE_0B9976:
+	SUB R0
+	STOP : NOP
+
+CODE_0B9979:
+	SMS ($68), R11
+	LMS R0, ($182)
+	DEC R0
+	BMI CODE_0B9990 : ADD R0
+	IWT R14, #DATA_0AFB72
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	TO R12
+	GETBH
+	BRA CODE_0B999F : NOP
+
+CODE_0B9990:
+	IWT R12, #DATA_540000+$00A0
+	LM R0, ($1974)
+	AND #2
+	BEQ CODE_0B999F : NOP
+	IWT R12, #DATA_540000+$00E0
+CODE_0B999F:
+	IBT R13, #(DATA_540000+$00E0)>>16
+	IBT R2, #$20
+	IBT R3, #$00
+	LMS R0, ($17E)
+	TO R5
+	HIB
+	IWT R6, #$0100
+	LINK #4
+	IWT R15, #CODE_0BF28A : NOP
+	IWT R0, #$0181
+	SMS ($BE), R0
+	LINK #4
+	IWT R15, #CODE_0BCE5A : NOP
+	IWT R14, #DATA_0AEB44
+	LINK #4
+	IWT R15, #CODE_0BCF7C : NOP
+	LMS R0, ($C6)
+	DEC R0
+	BPL CODE_0B99D1 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCB33 : NOP
+CODE_0B99D1:
+	LMS R11, ($68)
+	JMP R11 : NOP
+
+CODE_0B99D6:
+	IBT R0, #$64
+	SMS ($76), R0
+	LINK #4
+	IWT R15, #CODE_0B9B60 : NOP
+	LMS R0, ($1D6)
+	IBT R1, #$50
+	SUB R1
+	BMI CODE_0B9A0E : NOP
+	LMS R0, ($180)
+	IBT R2, #$10
+	ADD R2
+	SBK
+	SUB R0
+	SMS ($B4), R0
+	SMS ($A8), R0
+	IWT R0, #$0080
+	SMS ($AA), R0
+	LINK #4
+	IWT R15, #CODE_0BCE5A : NOP
+	IWT R14, #DATA_0AEB44
+	LINK #4
+	IWT R15, #CODE_0BCF7C : NOP
+	IWT R15, #CODE_0B9B06 : NOP
+
+CODE_0B9A0E:
+	LMS R0, ($1C4)
+	DEC R0
+	BPL CODE_0B9A27 : NOP
+	LMS R0, ($88)
+	LMS R1, ($84)
+	OR R1
+	LMS R1, ($86)
+	OR R1
+	LMS R1, ($72)
+	AND R1
+	BNE CODE_0B9A2B : NOP
+CODE_0B9A27:
+	IWT R15, #CODE_0B9AE4 : NOP
+
+CODE_0B9A2B:
+	IBT R0, #DATA_08AE18>>16
+	ROMB
+	LMS R0, ($17E)
+	TO R1
+	HIB
+	IWT R0, #DATA_08AE18
+	TO R14
+	ADD R1
+	GETB
+	IBT R6, #$08
+	MULT R6
+	ADD R0
+	ADD R0
+	HIB
+	SEX
+	LMS R2, ($C4)
+	DEC R2
+	BMI CODE_0B9A4A : NOP
+	NOT
+	INC R0
+CODE_0B9A4A:
+	LMS R2, ($8C)
+	TO R2
+	ADD R2
+	IWT R0, #DATA_08AE58
+	TO R14
+	ADD R1
+	GETB
+	MULT R6
+	ADD R0
+	ADD R0
+	HIB
+	TO R3
+	SEX
+	LMS R0, ($90)
+	SUB R3
+	IBT R3, #$10
+	TO R3
+	ADD R3
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	IWT R5, #$01C4
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IWT R0, #$10A2
+	ADD R1
+	FROM R2
+	STW (R0)
+	IWT R0, #$1142
+	ADD R1
+	FROM R3
+	STW (R0)
+	IBT R5, #$02
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$06
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$01
+	IWT R0, #$13C2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R5, #$0015
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0B9AE4 : SUB R0
+	IBT R0, #!Define_YI_SoundID67_EnemyTumbling
+	SMS ($7A), R0
+	INC R0
+	SMS ($1C4), R0
+	IBT R5, #$02
+	IWT R0, #$0F00
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #$10E2
+	ADD R1
+	FROM R2
+	STW (R0)
+	IWT R0, #$1182
+	ADD R1
+	FROM R3
+	STW (R0)
+	LMS R0, ($17E)
+	HIB
+	TO R5
+	ADD R0
+	IWT R0, #$1978
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($C4)
+	TO R5
+	XOR #2
+	IWT R0, #$1400
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R5, #$F800
+	IWT R0, #$19D6
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$07
+	IWT R0, #$1976
+	ADD R1
+	FROM R5
+	STW (R0)
+CODE_0B9AE4:
+	LMS R0, ($C6)
+	DEC R0
+	BPL CODE_0B9B09 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCCBF : NOP
+	IWT R14, #DATA_0AEB44
+	LINK #4
+	IWT R15, #CODE_0BCF7C : NOP
+	LINK #4
+	IWT R15, #CODE_0BCB33 : NOP
+	LM R1, ($0071)
+	LINK #4
+	IWT R15, #CODE_0BE1D3 : NOP
+CODE_0B9B06:
+	SUB R0
+	STOP : NOP
+
+CODE_0B9B09:
+	LINK #4
+	IWT R15, #CODE_0BCE5A : NOP
+	IWT R14, #DATA_0AEB44
+	LINK #4
+	IWT R15, #CODE_0BCF7C : NOP
+	LM R1, ($0071)
+	FROM R1
+	AND #3
+	BEQ CODE_0B9B25 : NOP
+	AND #2
+	SMS ($C4), R0
+CODE_0B9B25:
+	IBT R5, #$02
+	FROM R1
+	AND #15
+	BEQ CODE_0B9B2F : NOP
+	IBT R5, #$08
+CODE_0B9B2F:
+	MOVE R7, R5
+	MULT #5
+	IWT R14, #DATA_0AFBC5
+	TO R14
+	ADD R14
+	GETB
+	TO R10
+	SWAP
+	INC R14
+	GETB
+	INC R14
+	TO R6
+	GETBH
+	INC R14
+	GETB
+	INC R14
+	TO R8
+	GETBH
+	LINK #4
+	IWT R15, #CODE_0B9BF3 : NOP
+	LMS R0, ($CA)
+	DEC R0
+	BMI CODE_0B9B55 : NOP
+	IBT R10, #$00
+CODE_0B9B55:
+	IWT R4, #$0200
+	LINK #4
+	IWT R15, #CODE_0B9BD9 : NOP
+	SUB R0
+	STOP : NOP
+
+CODE_0B9B60:
+	SMS ($68), R11
+	IWT R12, #DATA_540000+$0000
+	LM R0, ($1974)
+	AND #4
+	BEQ CODE_0B9B72 : NOP
+	IWT R12, #DATA_540000+$0020
+CODE_0B9B72:
+	IBT R13, #(DATA_540000+$0054)>>16
+	IBT R2, #$20
+	IBT R3, #$00
+	LMS R0, ($17E)
+	TO R5
+	HIB
+	LMS R0, ($1D6)
+	IBT R6, #$50
+	SUB R6
+	BMI CODE_0B9B8C : NOP
+	LMS R0, ($180)
+	ADD R5
+	TO R5
+	LOB
+CODE_0B9B8C:
+	IWT R6, #$0100
+	LINK #4
+	IWT R15, #CODE_0BF28A : NOP
+	IWT R0, #$0171
+	SMS ($BE), R0
+	LMS R11, ($68)
+	JMP R11 : NOP
+
+CODE_0B9B9F:
+	LMS R0, ($B4)
+	SUB R6
+	BMI CODE_0B9BA9 : ADD R6
+	WITH R5
+	NOT
+	INC R5
+CODE_0B9BA9:
+	ADD R5
+	SBK
+	SMS ($A8), R0
+	SUB R6
+	BEQ CODE_0B9BBD : NOP
+	XOR R5
+	BMI CODE_0B9BBD : NOP
+	SMS ($B4), R6
+	SMS ($A8), R6
+CODE_0B9BBD:
+	JMP R11 : NOP
+
+CODE_0B9BBF:
+	LMS R0, ($AA)
+	SUB R8
+	BMI CODE_0B9BC9 : ADD R8
+	WITH R7
+	NOT
+	INC R7
+CODE_0B9BC9:
+	ADD R7
+	SBK
+	SUB R8
+	BEQ CODE_0B9BD7 : NOP
+	XOR R7
+	BMI CODE_0B9BD7 : NOP
+	SMS ($AA), R8
+CODE_0B9BD7:
+	JMP R11 : NOP
+
+CODE_0B9BD9:
+	LMS R0, ($17E)
+	TO R14
+	SUB R10
+	BEQ CODE_0B9BF1 : NOP
+	BMI CODE_0B9BE7 : NOP
+	WITH R4
+	NOT
+	INC R4
+CODE_0B9BE7:
+	ADD R4
+	SBK
+	SUB R10
+	XOR R14
+	BPL CODE_0B9BF1 : NOP
+	FROM R10
+	SBK
+CODE_0B9BF1:
+	JMP R11 : NOP
+
+CODE_0B9BF3:
+	SMS ($68), R11
+	LINK #4
+	IWT R15, #CODE_0B9B9F : NOP
+	LMS R0, ($C6)
+	SUB #3
+	BCS CODE_0B9C18 : NOP
+	LMS R0, ($AA)
+	IBT R3, #$30
+	SUB R3
+	BPL CODE_0B9C15 : SBK
+	IBT R0, #$03
+	SMS ($C6), R0
+	SUB R0
+	SMS ($CA), R0
+CODE_0B9C15:
+	BRA CODE_0B9C8D : NOP
+
+CODE_0B9C18:
+	LMS R0, ($CA)
+	DEC R0
+	BPL CODE_0B9C4A : NOP
+	IBT R4, #$0F
+	IBT R6, #$0E
+	LINK #4
+	IWT R15, #CODE_0BCC73 : NOP
+	LMS R0, ($FE)
+	IWT R3, #$0158
+	AND R3
+	BNE CODE_0B9C47 : SUB R0
+	INC R0
+	SMS ($CA), R0
+	IBT R4, #$14
+	LINK #4
+	IWT R15, #CODE_0BCBC2 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0B9C47 : SUB R0
+	SMS ($C6), R0
+CODE_0B9C47:
+	BRA CODE_0B9C79 : NOP
+
+CODE_0B9C4A:
+	IBT R4, #$0E
+	LINK #4
+	IWT R15, #CODE_0BCC09 : NOP
+	IBT R2, #$04
+	LMS R0, ($FE)
+	IWT R3, #$0140
+	AND R3
+	BEQ CODE_0B9C81 : NOP
+	LMS R0, ($FE)
+	IBT R3, #$18
+	AND R3
+	BEQ CODE_0B9C73 : SUB R0
+	SMS ($CA), R0
+	IBT R4, #$08
+	LINK #4
+	IWT R15, #CODE_0BCBC2 : NOP
+	BRA CODE_0B9C79 : NOP
+
+CODE_0B9C73:
+	IBT R2, #$FC
+	DEC R8
+	BMI CODE_0B9C81 : INC R8
+CODE_0B9C79:
+	LINK #4
+	IWT R15, #CODE_0B9BBF : NOP
+	BRA CODE_0B9C8D : NOP
+
+CODE_0B9C81:
+	LMS R0, ($AA)
+	ADD R2
+	IBT R2, #$D0
+	SUB R2
+	BPL CODE_0B9C8C : ADD R2
+	FROM R2
+CODE_0B9C8C:
+	SBK
+CODE_0B9C8D:
+	LMS R11, ($68)
+	JMP R11 : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0B9C92:
+	LM R0, ($1E04)
+	IWT R1, #$00C0
+	SUB R1
+	BCS CODE_0B9CA9 : ADD R1
+	INC R0
+	IBT R1, #$3F
+	AND R1
+	BNE CODE_0B9CA9 : NOP
+	IBT R0, #!Define_YI_SoundID7F_SwitchTimerEnding
+	SMS ($7A), R0
+CODE_0B9CA9:
+	LMS R0, ($C6)
+	DEC R0
+	BMI CODE_0B9CB4 : NOP
+	IWT R15, #CODE_0B9CD0 : NOP
+
+CODE_0B9CB4:
+	LINK #4
+	IWT R15, #CODE_0BA8CE : NOP
+	LINK #4
+	IWT R15, #CODE_0BA1A4 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCB33 : NOP
+	LINK #4
+	IWT R15, #CODE_0B9CD0 : NOP
+	LINK #4
+	IWT R15, #CODE_0B9F87 : NOP
+	SUB R0
+	STOP : NOP
+
+CODE_0B9CD0:
+	LM R1, ($0071)
+	LM R2, ($0073)
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0B9CF7 : NOP
+	LMS R7, ($188)
+	MOVES R7, R7
+	BPL CODE_0B9CF3 : NOP
+	LMS R0, ($18A)
+	IWT R4, #$0060
+	ADD R4
+	SBK
+	ADD R7
+	SMS ($188), R0
+CODE_0B9CF3:
+	IWT R15, #CODE_0B9DC1 : NOP
+
+CODE_0B9CF7:
+	LMS R7, ($18C)
+	DEC R7
+	BMI CODE_0B9D0A : INC R7
+	LMS R0, ($18E)
+	IWT R4, #$FFA0
+	ADD R4
+	SBK
+	ADD R7
+	SMS ($18C), R0
+CODE_0B9D0A:
+	LMS R7, ($C2)
+	IBT R8, #$FF
+	FROM R1
+	AND #4
+	BEQ CODE_0B9D19 : NOP
+	IBT R8, #$01
+	IBT R0, #$05
+CODE_0B9D19:
+	SUB R7
+	BEQ CODE_0B9D20 : ADD R7
+	FROM R7
+	ADD R8
+	SBK
+CODE_0B9D20:
+	BEQ CODE_0B9D2F : NOP
+	LM R0, ($0085)
+	AND R2
+	BNE CODE_0B9D3B : NOP
+	IWT R15, #CODE_0B9EAA : NOP
+
+CODE_0B9D2F:
+	LM R0, ($0085)
+	AND R2
+	BNE CODE_0B9D3B : NOP
+	IWT R15, #CODE_0B9DC1 : NOP
+
+CODE_0B9D3B:
+	IBT R0, #!Define_YI_SoundID38_BabyMarioJump
+	SMS ($7A), R0
+	IWT R0, #$0170
+	LM R6, ($1E3A)
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R7
+	OR R4
+	IWT R6, #$FB60					; Note: Super baby Mario's jumping Y speed.
+	LMS R0, ($180)
+	SUB #0
+	BEQ CODE_0B9D9A : NOP
+	IBT R0, #DATA_08AE58>>16
+	ROMB
+	IWT R14, #DATA_08AE58
+	LMS R0, ($B6)
+	TO R14
+	ADD R14
+	GETBS
+	ADD R0
+	ADD R0
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	NOT
+	INC R0
+	TO R7
+	ADD R7
+	IBT R0, #$40
+	WITH R14
+	SUB R0
+	GETBS
+	ADD R0
+	ADD R0
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	LMS R6, ($AA)
+	DEC R6
+	BMI CODE_0B9D8D : INC R6
+	IBT R6, #$00
+CODE_0B9D8D:
+	TO R6
+	ADD R6
+	BMI CODE_0B9D93 : TO R6
+	SUB R0
+CODE_0B9D93:
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	BRA CODE_0B9DA4 : NOP
+
+CODE_0B9D9A:
+	LMS R0, ($FC)
+	IBT R4, #$18
+	AND R4
+	BEQ CODE_0B9DA4 : TO R6
+	SUB R0
+CODE_0B9DA4:
+	SMS ($AA), R6
+	LMS R0, ($A8)
+	ADD R7
+	SMS ($B4), R0
+	IWT R0, #$0006
+	SMS ($C0), R0
+	SUB R0
+	SMS ($DA), R0
+	SMS ($C2), R0
+	SMS ($18C), R0
+	BRA CODE_0B9DC1 : NOP
+
+CODE_0B9DC1:
+	LMS R0, ($184)
+	SUB #0
+	BEQ CODE_0B9E07 : NOP
+	LMS R4, ($186)
+	TO R7
+	ADD R4
+	XOR R7
+	BPL CODE_0B9DF1 : SUB R0
+	SBK
+	SMS ($184), R0
+	SMS ($A8), R4
+	SMS ($B4), R4
+	MOVES R0, R4
+	BMI CODE_0B9DE4 : NOP
+	NOT
+	INC R0
+CODE_0B9DE4:
+	ADD R0
+	SMS ($AA), R0
+	IWT R0, #$0006
+	SMS ($C0), R0
+	BRA CODE_0B9E07 : NOP
+
+CODE_0B9DF1:
+	IBT R0, #$60
+	MOVES R7, R7
+	BMI CODE_0B9DFA : NOP
+	IBT R0, #$A0
+CODE_0B9DFA:
+	ADD R4
+	SBK
+	SMS ($184), R7
+	SUB R0
+	SMS ($AA), R0
+	IWT R15, #CODE_0B9EA8 : NOP
+
+CODE_0B9E07:
+	LMS R0, ($DA)
+	DEC R0
+	BMI CODE_0B9E12 : NOP
+	IWT R15, #CODE_0B9EA8 : NOP
+
+CODE_0B9E12:
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0B9E25 : FROM R1
+	LMS R0, ($D2)
+	SUB #5
+	BCC CODE_0B9E25 : FROM R1
+	IWT R15, #CODE_0B9F1A : NOP
+
+CODE_0B9E25:
+	AND #3
+	BNE CODE_0B9E2E : NOP
+	IWT R15, #CODE_0B9EAA : NOP
+
+CODE_0B9E2E:
+	SMS ($CC), R0
+	IBT R7, #$FF
+	AND #2
+	BNE CODE_0B9E3A : NOP
+	IBT R7, #$01
+CODE_0B9E3A:
+	LMS R4, ($C4)
+	SUB R4
+	BEQ CODE_0B9E46 : ADD R4
+	SMS ($C4), R0
+	MOVE R4, R0
+CODE_0B9E46:
+	LMS R0, ($B4)
+	SUB #0
+	BEQ CODE_0B9E58 : NOP
+	XOR R7
+	BPL CODE_0B9E58 : NOP
+	IBT R0, #$04
+	SMS ($1D0), R0
+CODE_0B9E58:
+	LM R0, ($00FB)
+	LSR
+	LSR
+	TO R7
+	OR R4
+	LMS R0, ($B6)
+	BIC #15
+	LSR
+	LSR
+	TO R7
+	OR R7
+	IWT R0, #DATA_0AEC2B
+	TO R14
+	ADD R7
+	GETB
+	INC R14
+	TO R8
+	GETBH
+	IBT R0, #$40
+	AND R1
+	BEQ CODE_0B9E85 : NOP
+	IWT R6, #$0140
+	FROM R8
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R8
+	OR R4
+CODE_0B9E85:
+	LMS R0, ($B4)
+	SUB R8
+	BEQ CODE_0B9ED6 : NOP
+	XOR R8
+	BPL CODE_0B9ED6 : NOP
+	LMS R0, ($1D0)
+	LOB
+	BEQ CODE_0B9E99 : NOP
+	INC R7
+CODE_0B9E99:
+	IWT R0, #DATA_0AEDB3
+	ADD R7
+	TO R14
+	ADD R7
+	GETB
+	INC R14
+	GETBH
+	LMS R7, ($B4)
+	ADD R7
+	SBK
+CODE_0B9EA8:
+	JMP R11 : NOP
+
+CODE_0B9EAA:
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0B9ED6 : NOP
+	LMS R0, ($C6)
+	DEC R0
+	BPL CODE_0B9ED6 : NOP
+	IWT R14, #DATA_0AEC2B
+	LMS R0, ($B4)
+	SUB #0
+	BPL CODE_0B9EC5 : NOP
+	INC R14
+	INC R14
+CODE_0B9EC5:
+	TO R8
+	GETB
+	INC R14
+	WITH R8
+	GETBH
+	SUB R8
+	BEQ CODE_0B9ED6 : NOP
+	XOR R8
+	BPL CODE_0B9ED6 : NOP
+	JMP R11 : NOP
+
+CODE_0B9ED6:
+	LM R0, ($00FB)
+	LSR
+	LSR
+	TO R7
+	LSR
+	LMS R0, ($B6)
+	BIC #15
+	LSR
+	LSR
+	LSR
+	TO R4
+	OR R7
+	IWT R0, #DATA_0AF0B3
+	TO R14
+	ADD R4
+	GETB
+	INC R14
+	TO R7
+	GETBH
+	LMS R8, ($B4)
+	FROM R8
+	SUB R7
+	BPL CODE_0B9EFB : NOP
+	INC R4
+CODE_0B9EFB:
+	IWT R0, #DATA_0AF193
+	ADD R4
+	TO R14
+	ADD R4
+	GETB
+	INC R14
+	GETBH
+	MOVE R4, R0
+	ADD R8
+	MOVE R8, R0
+	SUB R7
+	XOR R4
+	BMI CODE_0B9F15 : SUB R0
+	SMS ($CC), R0
+	MOVE R8, R7
+CODE_0B9F15:
+	SMS ($B4), R8
+	JMP R11 : NOP
+
+CODE_0B9F1A:
+	LMS R4, ($C4)
+	FROM R1
+	AND #3
+	BEQ CODE_0B9F39 : NOP
+	AND #2
+	SUB R4
+	BEQ CODE_0B9F39 : ADD R4
+	SBK
+	MOVE R4, R0
+	LMS R0, ($17E)
+	NOT
+	INC R0
+	LOB
+	SBK
+	LMS R0, ($19E)
+	NOT
+	INC R0
+	SBK
+CODE_0B9F39:
+	IWT R8, #$0200
+	LMS R14, ($17E)
+	FROM R14
+	SEX
+	BMI CODE_0B9F47 : NOP
+	IWT R8, #$0100
+CODE_0B9F47:
+	LMS R6, ($19E)
+	XOR R6
+	BMI CODE_0B9F65 : SUB R0
+	IBT R0, #DATA_08AE18>>16
+	ROMB
+	IWT R0, #DATA_08AE18
+	TO R14
+	ADD R14
+	GETB
+	SWAP
+	FMULT
+	DIV2
+	DIV2
+	DEC R4
+	BPL CODE_0B9F65 : INC R4
+	NOT
+	INC R0
+CODE_0B9F65:
+	MOVES R7, R0
+	BPL CODE_0B9F6C : WITH R8
+	NOT
+	INC R8
+CODE_0B9F6C:
+	IBT R0, #DATA_0AF0B3>>16
+	ROMB
+	LMS R0, ($B4)
+	SUB R8
+	BEQ CODE_0B9F7C : NOP
+	XOR R8
+	BMI CODE_0B9F80 : NOP
+CODE_0B9F7C:
+	IWT R15, #CODE_0B9ED6 : NOP
+
+CODE_0B9F80:
+	LMS R0, ($B4)
+	ADD R7
+	SBK
+	JMP R11 : NOP
+
+CODE_0B9F87:
+	SMS ($68), R11
+	IBT R2, #$20
+	IBT R3, #$00
+	IBT R13, #(DATA_540000+$60A1)>>16
+	LMS R0, ($192)
+	IWT R14, #DATA_0AFD50
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	TO R12
+	GETBH
+	INC R14
+	GETB
+	DEC R0
+	BPL CODE_0B9FB7 : INC R14
+	LMS R6, ($196)
+	LMS R4, ($198)
+	LMS R8, ($19A)
+	LMS R9, ($19C)
+	LINK #4
+	IWT R15, #CODE_0BF34E : NOP
+	BRA CODE_0B9FC2 : NOP
+
+CODE_0B9FB7:
+	LMS R5, ($17E)
+	IWT R6, #$0100
+	LINK #4
+	IWT R15, #CODE_0BF28A : NOP
+CODE_0B9FC2:
+	LMS R11, ($68)
+	IBT R0, #DATA_0AFCE5>>16
+	ROMB
+	LMS R0, ($180)
+	DEC R0
+	BPL CODE_0BA009 : NOP
+	LMS R0, ($C2)
+	LOB
+	BEQ CODE_0B9FDC : ADD R0
+	IBT R12, #$05
+	BRA CODE_0BA04F : NOP
+
+CODE_0B9FDC:
+	LMS R0, ($184)
+	SUB #0
+	BEQ CODE_0BA002 : ADD R0
+	BPL CODE_0B9FE9 : ADD R0
+	NOT
+	INC R0
+CODE_0B9FE9:
+	ADD R0
+	HIB
+	IWT R6, #$0100
+	WITH R6
+	SUB R0
+	DIV2
+	DIV2
+	IWT R4, #$0100
+	TO R4
+	ADD R4
+	IBT R12, #$00
+	IBT R8, #$04
+	IBT R9, #$1F
+	BRA CODE_0BA059 : NOP
+
+CODE_0BA002:
+	LMS R1, ($C0)
+	DEC R1
+	BPL CODE_0BA00D : INC R1
+CODE_0BA009:
+	IWT R15, #CODE_0BA0D8 : NOP
+
+CODE_0BA00D:
+	LMS R0, ($D2)
+	LOB
+	SUB #2
+	BCC CODE_0BA024 : DEC R0
+	IWT R14, #DATA_0AFCE5
+	TO R14
+	ADD R14
+	SUB #2
+	TO R12
+	BCC CODE_0BA04F : GETB
+	BRA CODE_0BA088 : NOP
+
+CODE_0BA024:
+	IBT R12, #$0A
+	LMS R0, ($AA)
+	DEC R0
+	BMI CODE_0BA02F : NOP
+	IBT R12, #$0F
+CODE_0BA02F:
+	LMS R0, ($188)
+	SUB #0
+	BPL CODE_0BA04F : ADD R0
+	ADD R0
+	HIB
+	SEX
+	IWT R4, #$0100
+	TO R4
+	ADD R4
+	DIV2
+	DIV2
+	IWT R6, #$0100
+	WITH R6
+	SUB R0
+	IBT R8, #$10
+	IBT R9, #$00
+	BRA CODE_0BA059 : NOP
+
+CODE_0BA04F:
+	IWT R6, #$0100
+	IWT R4, #$0100
+	IBT R8, #$10
+	IBT R9, #$10
+CODE_0BA059:
+	SUB R0
+	SMS ($17E), R0
+	SMS ($196), R6
+	SMS ($198), R4
+	SMS ($19A), R8
+	SMS ($19C), R9
+	BRA CODE_0BA088 : NOP
+
+CODE_0BA06C:
+	IBT R1, #$FC
+	LMS R0, ($17E)
+	SUB R5
+	TO R14
+	SWAP
+	BPL CODE_0BA079 : ADD R5
+	IBT R1, #$04
+CODE_0BA079:
+	ADD R1
+	TO R14
+	LOB
+	SUB R5
+	SWAP
+	XOR R1
+	BMI CODE_0BA085 : NOP
+	MOVE R14, R5
+CODE_0BA085:
+	SMS ($17E), R14
+CODE_0BA088:
+	SMS ($192), R12
+	IWT R0, #DATA_0AFD53
+	TO R14
+	ADD R12
+	GETB
+	INC R14
+	GETBH
+	IBT R1, #$10
+	SUB #0
+	BNE CODE_0BA0D0 : NOP
+	LMS R1, ($190)
+	LMS R0, ($1F6)
+	DEC R0
+	BPL CODE_0BA0C7 : NOP
+	IWT R0, #DATA_0AFD36
+	LMS R14, ($C0)
+	DEC R14
+	BMI CODE_0BA0BC : INC R14
+	IWT R0, #DATA_0AFD02
+	LMS R14, ($AA)
+	DEC R14
+	BMI CODE_0BA0BC : NOP
+	IWT R0, #DATA_0AFD1C
+CODE_0BA0BC:
+	TO R14
+	ADD R1
+	GETBS
+	INC R14
+	TO R1
+	ADD R1
+	GETB
+	SMS ($1F6), R0
+CODE_0BA0C7:
+	IWT R0, #DATA_0AFCE8
+	TO R14
+	ADD R1
+	GETB
+	INC R14
+	GETBH
+CODE_0BA0D0:
+	SMS ($BE), R0
+	SMS ($190), R1
+	JMP R11 : NOP
+
+CODE_0BA0D8:
+	LMS R0, ($18C)
+	DEC R0
+	BMI CODE_0BA0FA : INC R0
+	ADD R0
+	ADD R0
+	HIB
+	IWT R4, #$0100
+	WITH R4
+	SUB R0
+	DIV2
+	DIV2
+	IWT R6, #$0100
+	TO R6
+	ADD R6
+	IBT R8, #$10
+	IBT R9, #$1F
+	IBT R12, #$00
+	IWT R15, #CODE_0BA059 : NOP
+
+CODE_0BA0FA:
+	LMS R0, ($1D0)
+	LOB
+	BEQ CODE_0BA117 : NOP
+	LMS R0, ($B6)
+	LMS R6, ($C4)
+	DEC R6
+	BPL CODE_0BA10E : NOP
+	NOT
+	INC R0
+	LOB
+CODE_0BA10E:
+	SMS ($17E), R0
+	IBT R12, #$14
+	IWT R15, #CODE_0BA088 : NOP
+
+CODE_0BA117:
+	LMS R0, ($CC)
+	LOB
+	BEQ CODE_0BA126 : NOP
+	LMS R0, ($B4)
+	SUB #0
+	BNE CODE_0BA12C : NOP
+CODE_0BA126:
+	IBT R12, #$00
+	IWT R15, #CODE_0BA04F : NOP
+
+CODE_0BA12C:
+	IBT R14, #$30
+	BPL CODE_0BA136 : NOP
+	IWT R14, #$00C0
+	NOT
+	INC R0
+CODE_0BA136:
+	MOVE R5, R0
+	IWT R6, #$0080
+	SUB R6
+	BCS CODE_0BA14B : ADD R6
+	LMS R0, ($FC)
+	AND R14
+	MOVE R0, R6
+	BEQ CODE_0BA14B : NOP
+	IWT R0, #$0200
+CODE_0BA14B:
+	IWT R6, #$4000
+	FMULT
+	LMS R6, ($182)
+	ADD R6
+	IWT R6, #$0400
+	SUB R6
+	BCS CODE_0BA15B : NOP
+	ADD R6
+CODE_0BA15B:
+	SBK
+	TO R12
+	HIB
+	SMS ($F8), R12
+	BNE CODE_0BA174 : NOP
+	LMS R0, ($FA)
+	IWT R14, #DATA_0AF7E1
+	TO R14
+	ADD R14
+	GETB
+	DEC R0
+	BMI CODE_0BA174 : INC R0
+	SMS ($7A), R0
+CODE_0BA174:
+	IWT R0, #DATA_0AFCE1
+	TO R14
+	ADD R12
+	TO R12
+	GETB
+	LMS R0, ($180)
+	DEC R0
+	BMI CODE_0BA19E : SUB R0
+	LMS R6, ($B6)
+	LMS R0, ($C4)
+	DEC R0
+	BPL CODE_0BA190 : FROM R6
+	NOT
+	INC R0
+	TO R6
+	LOB
+CODE_0BA190:
+	IWT R0, #$0280
+	WITH R5
+	SUB R0
+	BCC CODE_0BA19C : SUB R0
+	FROM R5
+	LSR
+	LSR
+	LSR
+CODE_0BA19C:
+	FROM R6
+	SUB R0
+CODE_0BA19E:
+	TO R5
+	LOB
+	IWT R15, #CODE_0BA06C : NOP
+
+CODE_0BA1A4:
+	LMS R1, ($180)
+	SUB R0
+	SBK
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BA1C0 : NOP
+	LMS R0, ($B4)
+	DEC R0
+	BPL CODE_0BA1B9 : INC R0
+	NOT
+	INC R0
+CODE_0BA1B9:
+	IWT R2, #$0200
+	SUB R2
+	BCS CODE_0BA1D5 : NOP
+CODE_0BA1C0:
+	DEC R1
+	BMI CODE_0BA1D1 : INC R1
+	MOVE R1, R11
+	LINK #4
+	IWT R15, #CODE_0BA2E8 : NOP
+	MOVE R11, R1
+	IBT R0, #DATA_0AEB86>>16
+	ROMB
+CODE_0BA1D1:
+	IWT R15, #CODE_0BA324 : NOP
+
+CODE_0BA1D5:
+	LMS R9, ($8C)
+	LMS R10, ($90)
+	IBT R0, #DATA_08AE18>>16
+	ROMB
+	LMS R0, ($B6)
+CODE_0BA1E2:
+	IWT R14, #DATA_08AE18
+	TO R14
+	ADD R14
+	GETBS
+	MOVE R2, R0
+	SM ($1960), R0
+	IBT R0, #$40
+	TO R14
+	ADD R14
+	GETBS
+	NOT
+	INC R0
+	MOVE R3, R0
+	SM ($1962), R0
+	DEC R1
+	BPL CODE_0BA22A : INC R1
+	IBT R0, #$05
+	MULT R3
+	ADD R0
+	ADD R0
+	ADD R0
+	TO R6
+	ADD R0
+	FROM R2
+	FMULT
+	TO R9
+	ADD R9
+	LM R14, ($1E12)
+	ADD R14
+	SBK
+	FROM R3
+	FMULT
+	TO R10
+	ADD R10
+	LM R14, ($1E16)
+	ADD R14
+	SBK
+	LMS R0, ($B6)
+	SEX
+	DIV2
+	DIV2
+	LOB
+	SBK
+	BRA CODE_0BA1E2 : INC R1
+
+CODE_0BA22A:
+	IBT R0, #DATA_0AEB7A>>16
+	ROMB
+	IWT R14, #DATA_0AEB7A
+	SMS ($64), R11
+	IBT R2, #$00
+	SMS ($FE), R2
+	SMS ($100), R2
+	SMS ($FA), R2
+	IBT R3, #$01
+	MOVE R4, R3
+	LINK #4
+	IWT R15, #CODE_0BA5A1 : CACHE
+	LINK #4
+	IWT R15, #CODE_0BA5A3+$01 : ALT2
+	IBT R3, #$FF
+	DEC R4
+	BMI CODE_0BA255 : INC R4
+	MOVE R4, R3
+CODE_0BA255:
+	LINK #4
+	IWT R15, #CODE_0BA5A3+$01 : ALT2
+	LINK #4
+	IWT R15, #CODE_0BA5A3+$01 : ALT2
+	LMS R3, ($DC)
+	SUB R0
+	SBK
+	DEC R1
+	BMI CODE_0BA28D : INC R1
+	LMS R0, ($184)
+	SUB #0
+	BNE CODE_0BA28A : SUB R0
+	LMS R5, ($B4)
+	MOVES R0, R5
+	BPL CODE_0BA27A : NOP
+	NOT
+	INC R0
+CODE_0BA27A:
+	IWT R3, #$0280
+	SUB R3
+	BCC CODE_0BA28A : SUB R0
+	FROM R5
+	DIV2
+	SMS ($186), R0
+	SMS ($184), R0
+CODE_0BA28A:
+	SMS ($B4), R0
+CODE_0BA28D:
+	IBT R3, #$10
+	LINK #4
+	IWT R15, #CODE_0BA71A+$01 : ALT2
+	LMS R0, ($100)
+	TO R5
+	LSR
+	ROL
+	SBK
+	FROM R2
+	LSR
+	WITH R2
+	ROL
+	IBT R3, #$F0
+	LMS R4, ($BA)
+	LINK #4
+	IWT R15, #CODE_0BA71A+$01 : ALT2
+	SMS ($B8), R4
+	LMS R0, ($100)
+	TO R5
+	LSR
+	ROL
+	TO R5
+	LSR
+	ROL
+	SBK
+	FROM R2
+	LSR
+	WITH R2
+	ROL
+	FROM R2
+	LSR
+	WITH R2
+	ROL
+	FROM R2
+	LSR
+	BCS CODE_0BA2CC : SUB R0
+	IWT R0, #$0008
+	SMS ($C0), R0
+if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
+	SMS ($8C), R9
+	SMS ($90), R10
+	LINK #4
+	IWT R15, #CODE_0BA2E8 : NOP
+	LMS R9, ($8C)
+	LMS R10, ($90)
+	IBT R0, #DATA_0AEB7A>>16
+	ROMB
+endif
+	BRA CODE_0BA2E4 : NOP
+
+CODE_0BA2CC:
+	SMS ($180), R2
+	LINK #4
+	IWT R15, #CODE_0BDA99 : NOP
+	SMS ($B6), R4
+	SUB R0
+	SMS ($B8), R0
+	SMS ($BA), R0
+	SMS ($BC), R0
+	SMS ($DA), R0
+CODE_0BA2E4:
+	IWT R15, #CODE_0BA567 : NOP
+
+CODE_0BA2E8:
+	IBT R0, #DATA_08AE18>>16
+	ROMB
+	IWT R14, #DATA_08AE18
+	LMS R0, ($B6)
+	TO R14
+	ADD R14
+	GETBS
+	NOT
+	INC R0
+if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
+	IBT R3, #$0F
+else
+	IBT R3, #$0E
+endif
+	MULT R3
+	ADD R0
+	ADD R0
+	HIB
+	SEX
+	TO R9
+	ADD R3
+	LMS R0, ($90)
+	ADD R9
+	SBK
+	LM R0, ($1E16)
+	ADD R9
+	SBK
+	IBT R0, #$40
+	TO R14
+	ADD R14
+	GETBS
+	MULT R3
+	ADD R0
+	ADD R0
+	HIB
+	TO R9
+	SEX
+	LMS R0, ($8C)
+	ADD R9
+	SBK
+	LM R0, ($1E12)
+	ADD R9
+	JMP R11 : SBK
+
+CODE_0BA324:
+	IWT R14, #DATA_0AEB86
+	LMS R0, ($C2)
+	SUB #2
+	BCC CODE_0BA332 : NOP
+	IWT R14, #DATA_0AEB98
+CODE_0BA332:
+	SMS ($64), R11
+	LMS R9, ($8C)
+	LMS R10, ($90)
+	IBT R2, #$00
+	SMS ($FE), R2
+	SMS ($100), R2
+	SMS ($102), R2
+	SMS ($FA), R2
+	SMS ($B6), R2
+	IBT R3, #$01
+	IBT R4, #$00
+	LINK #4
+	IWT R15, #CODE_0BD282 : CACHE
+	LINK #4
+	IWT R15, #CODE_0BD287+$01 : ALT2
+	IBT R3, #$FF
+	LINK #4
+	IWT R15, #CODE_0BD287+$01 : ALT2
+	LINK #4
+	IWT R15, #CODE_0BD287+$01 : ALT2
+
+CODE_0BA366:
+	WITH R9
+	ADD R4
+	MOVES R0, R1
+	BEQ CODE_0BA3B9 : LSR
+	LMS R5, ($184)
+	MOVES R5, R5
+	BNE CODE_0BA3B2 : LSR
+	OR R1
+	MOVE R5, R0
+	LSR
+	LSR
+	LSR
+	LSR
+	OR R5
+	AND #3
+	DEC R0
+	BNE CODE_0BA3BC : DEC R0
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BA3B2 : NOP
+	FROM R1
+	AND #15
+	BEQ CODE_0BA391 : INC R0
+	SUB R0
+CODE_0BA391:
+	INC R0
+	LM R1, ($0071)
+	AND R1
+	BEQ CODE_0BA3B2 : INC R3
+	MOVE R1, R0
+	LMS R0, ($1B2)
+	ADD R0
+	BCC CODE_0BA3B2 : NOP
+	LMS R5, ($106)
+	FROM R5
+	AND #3
+	SUB R1
+	BNE CODE_0BA3B2 : NOP
+	LINK #4
+	IWT R15, #CODE_0BDC36 : NOP
+CODE_0BA3B2:
+	SUB R0
+	SMS ($A8), R0
+	SMS ($B4), R0
+CODE_0BA3B9:
+	BRA CODE_0BA3CE : NOP
+
+CODE_0BA3BC:
+	LMS R0, ($A8)
+	DIV2
+	SMS ($186), R0
+	SMS ($184), R0
+	SUB R0
+	SMS ($A8), R0
+	SMS ($B4), R0
+CODE_0BA3CE:
+	IBT R3, #$10
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	FROM R2
+	AND #3
+	BEQ CODE_0BA44B : NOP
+	LMS R3, ($AA)
+	MOVES R3, R3
+	BPL CODE_0BA44A : SUB R0
+	SBK
+	INC R0
+	SMS ($D2), R0
+	IBT R0, #$14
+	SMS ($1E6), R0
+	LMS R0, ($1B2)
+	ADD R0
+	BCC CODE_0BA43A : NOP
+	LM R0, ($0071)
+	AND #8
+	BEQ CODE_0BA43A : NOP
+	IWT R0, #$F800
+	AND R7
+	IWT R1, #$A000
+	SUB R1
+	BNE CODE_0BA43A : NOP
+	MOVE R5, R14
+	FROM R6
+	LOB
+	IWT R14, #DATA_0AEBBC
+	TO R14
+	ADD R14
+	GETB
+	MOVE R14, R5
+	IBT R5, #$08
+	TO R1
+	AND R5
+	BEQ CODE_0BA43A : SWAP
+	ADD R0
+	LMS R0, ($00)
+	AND #15
+	BCC CODE_0BA42B : NOP
+	ADC #15
+CODE_0BA42B:
+	SUB #14
+	SUB #8
+	BCS CODE_0BA43A : NOP
+	LINK #4
+	IWT R15, #CODE_0BDC20 : NOP
+	BRA CODE_0BA44B : NOP
+
+CODE_0BA43A:
+	IBT R0, #!Define_YI_SoundID1F_HitHead
+	SMS ($7A), R0
+	SMS ($18A), R3
+	SMS ($188), R3
+	IBT R0, #$08
+	SMS ($1DC), R0
+CODE_0BA44A:
+	INC R10
+CODE_0BA44B:
+	IBT R3, #$F0
+	LMS R4, ($B8)
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	SMS ($14), R1
+	LMS R0, ($010)
+	SMS ($B8), R0
+	LMS R0, ($00)
+	SMS ($20), R0
+	LMS R0, ($02)
+	SMS ($22), R0
+	SMS ($24), R6
+	SMS ($26), R7
+	LMS R4, ($BA)
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	SMS ($16), R1
+	LMS R0, ($010)
+	SMS ($BA), R0
+	LMS R0, ($00)
+	SMS ($28), R0
+	LMS R0, ($02)
+	SMS ($2A), R0
+	SMS ($2C), R6
+	SMS ($2E), R7
+	LMS R4, ($BC)
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	SMS ($18), R1
+	LMS R4, ($010)
+	SMS ($BC), R4
+	FROM R2
+	AND #7
+	BNE CODE_0BA4CB : NOP
+	LMS R0, ($1B4)
+	SUB #0
+	BEQ CODE_0BA4BA : NOP
+	IBT R4, #$00
+	IBT R5, #$00
+	IWT R15, #CODE_0BA53C : NOP
+
+CODE_0BA4BA:
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BA4C7 : NOP
+	IWT R0, #$0008
+	SMS ($C0), R0
+CODE_0BA4C7:
+	IWT R15, #CODE_0BA567 : NOP
+
+CODE_0BA4CB:
+	LMS R0, ($014)
+	LMS R5, ($016)
+	SUB R5
+	BMI CODE_0BA4D7 : ADD R5
+	MOVE R0, R5
+CODE_0BA4D7:
+	LMS R5, ($018)
+	MOVE R3, R5
+	SUB R3
+	BPL CODE_0BA4E2 : ADD R3
+	MOVE R3, R0
+CODE_0BA4E2:
+	WITH R10
+	ADD R3
+	FROM R5
+	SUB R3
+	BNE CODE_0BA4EE : NOP
+	LINK #4
+	IWT R15, #CODE_0BDB1D : NOP
+CODE_0BA4EE:
+	LMS R0, ($016)
+	SUB R3
+	BNE CODE_0BA50F : NOP
+	LMS R0, ($28)
+	SMS ($00), R0
+	LMS R0, ($2A)
+	SMS ($02), R0
+	LMS R6, ($2C)
+	LMS R7, ($2E)
+	LMS R4, ($BA)
+	LINK #4
+	IWT R15, #CODE_0BDA99 : NOP
+CODE_0BA50F:
+	LMS R0, ($014)
+	SUB R3
+	BNE CODE_0BA530 : NOP
+	LMS R0, ($20)
+	SMS ($00), R0
+	LMS R0, ($22)
+	SMS ($02), R0
+	LMS R6, ($24)
+	LMS R7, ($26)
+	LMS R4, ($B8)
+	LINK #4
+	IWT R15, #CODE_0BDB1D : NOP
+CODE_0BA530:
+	LMS R5, ($AA)
+	SUB R0
+	SMS ($AA), R0
+	IBT R0, #$FF
+	SMS ($8E), R0
+CODE_0BA53C:
+	SMS ($B6), R4
+	SUB R0
+	SMS ($B8), R0
+	SMS ($BA), R0
+	SMS ($BC), R0
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BA567 : SUB R0
+	SMS ($C0), R0
+	LMS R0, ($A8)
+	SMS ($B4), R0
+	SMS ($188), R0
+	SMS ($18E), R5
+	SMS ($18C), R5
+	LINK #4
+	IWT R15, #CODE_0BDF2D : NOP
+CODE_0BA567:
+	SMS ($8C), R9
+	SMS ($90), R10
+	SMS ($FC), R2
+	LMS R0, ($102)
+	DEC R0
+	BMI CODE_0BA57B+$02 : NOP
+	IBT R0, #$14
+	STOP : NOP
+
+CODE_0BA57B:
+	BRA CODE_0BA59C : LMS R0, ($100)
+	OR R2
+	IWT R6, #$01F8
+	LM R5, ($1FEC)
+	DEC R5
+	BPL CODE_0BA594 : INC R5
+	AND R6
+	SUB R6
+	BEQ CODE_0BA598 : NOP
+	BRA CODE_0BA59C : NOP
+
+CODE_0BA594:
+	AND R6
+	BNE CODE_0BA59C : NOP
+CODE_0BA598:
+	IBT R0, #$10
+	STOP : NOP
+
+CODE_0BA59C:
+	LMS R11, ($64)
+	JMP R11 : NOP
+
+CODE_0BA5A1:
+	IBT R1, #$00
+CODE_0BA5A3:
+	SMS ($62), R11
+	WITH R2
+	ADD R2
+	WITH R1
+	ADD R1
+	WITH R1
+	ADD R1
+	LINK #4
+	IWT R15, #CODE_0BA624 : TO R7
+	AND #2
+	BEQ CODE_0BA61F : NOP
+	LMS R0, ($B4)
+	SUB #0
+	BEQ CODE_0BA5C3 : INC R2
+	XOR R3
+	BPL CODE_0BA61F : NOP
+CODE_0BA5C3:
+	INC R1
+	XOR R3
+	BMI CODE_0BA5CB : NOP
+	NOT
+	INC R0
+CODE_0BA5CB:
+	IWT R5, #$0300
+	ADD R5
+	BPL CODE_0BA5F3 : NOP
+	IWT R0, #$F800
+	AND R7
+	IWT R5, #$4000
+	SUB R5
+	BNE CODE_0BA5F3 : INC R1
+	INC R1
+	SUB R0
+	SMS ($01C), R0
+	SMS ($01E), R0
+	SMS ($04), R1
+	LINK #4
+	IWT R15, #CODE_0BDF81 : NOP
+	LMS R1, ($04)
+	BRA CODE_0BA61F : NOP
+
+CODE_0BA5F3:
+	LM R0, ($1960)
+	MULT R4
+	ADD R0
+	ADD R0
+	TO R5
+	SWAP
+	LM R0, ($008B)
+	ADD R5
+	SBK
+	FROM R5
+	SEX
+	TO R9
+	ADC R9
+	LM R0, ($1962)
+	NOT
+	INC R0
+	MULT R4
+	ADD R0
+	ADD R0
+	TO R5
+	SWAP
+	LM R0, ($008F)
+	ADD R5
+	SBK
+	FROM R5
+	SEX
+	TO R10
+	ADC R10
+	IBT R4, #$00
+CODE_0BA61F:
+	IWT R15, #CODE_0BD514 : NOP
+
+CODE_0BA623:
+	TO R7
+CODE_0BA624:
+	GETB
+	INC R14
+	LM R5, ($1960)
+	FROM R5
+	TO R8
+	MULT R7
+	LM R0, ($1962)
+	TO R6
+	MULT R7
+	TO R7
+	GETB
+	INC R14
+	MULT R7
+	ADD R8
+	ADD R0
+	ADD R0
+	HIB
+	SEX
+	ADD R9
+	TO R8
+	ADD #8
+	FROM R7
+	MULT R5
+	SUB R6
+	ADD R0
+	ADD R0
+	HIB
+	SEX
+	ADD R10
+	IBT R7, #$20
+	ADD R7
+CODE_0BA64B:
+	LMS R6, ($1CA)
+	DEC R6
+	TO R7
+	BMI CODE_0BA657 : ADD R0
+	IWT R15, #CODE_0BA6EA : NOP
+
+CODE_0BA657:
+	LMS R5, ($A6)
+	SUB R5
+	IWT R5, #$00E0
+	SUB R5
+	LMS R5, ($A4)
+	BCS CODE_0BA67E : FROM R8
+	SUB R5
+	HIB
+	BNE CODE_0BA67E : FROM R8
+	LSR
+	LSR
+	LSR
+	IBT R5, #$3E
+	TO R5
+	AND R5
+	IWT R0, #$01E0
+	AND R7
+	ADD R0
+	OR R5
+	IWT R5, #$409E
+	ADD R5
+	BRA CODE_0BA6A8 : LDW (R0)
+
+CODE_0BA67E:
+	MERGE
+	BEQ CODE_0BA6E5 : TO R6
+	LOB
+	HIB
+	AND #14
+	UMULT #8
+	OR R6
+	IWT R6, #$0CAA
+	ADD R6
+	LDB (R0)
+	IBT R6, #$3F
+	AND R6
+	TO R6
+	SWAP
+	IWT R0, #$01E0
+	TO R5
+	AND R7
+	FROM R8
+	LOB
+	LSR
+	LSR
+	LSR
+	OR R5
+	LSR
+	OR R6
+	ADD R0
+	IWT R6, #$8000
+	ADD R6
+	STOP : NOP
+
+CODE_0BA6A8:
+	MOVE R6, R0
+	HIB
+	UMULT #3
+CODE_0BA6AD:
+	MOVE R5, R14
+	IWT R14, #DATA_0ABB12
+	TO R14
+	ADD R14
+	SMS ($00), R8
+	GETB
+	INC R14
+	WITH R7
+	ASR
+	SMS ($02), R7
+	IBT R8, #$F8
+	GETBH
+	INC R14
+	MOVE R7, R0
+	HIB
+	AND R8
+	IBT R8, #$72
+	SUB R8
+	SUB #15
+	BCS CODE_0BA6DE : TO R8
+	IBT R8, #$11
+	ADD R8
+	LM R8, ($1E08)
+	AND R8
+	BEQ CODE_0BA6DE : TO R8
+	WITH R7
+	OR #2
+	TO R8
+CODE_0BA6DE:
+	GETB
+	MOVE R0, R7
+	MOVE R14, R5
+	JMP R11 : NOP
+
+CODE_0BA6E5:
+	IBT R6, #$01
+	BRA CODE_0BA6AD : SUB R0
+
+CODE_0BA6EA:
+	LM R0, ($0094)
+	BIC #7
+	FROM R8
+	SUB R0
+	LSR
+	LSR
+	IBT R5, #$42
+	SUB R5
+	BCS CODE_0BA716 : ADD R5
+	LSR
+	BNE CODE_0BA705 : ADD R0
+	LM R0, ($1EF0)
+	BRA CODE_0BA70A+$01 : db $F5
+
+CODE_0BA705:
+	IWT R5, #$1F30
+	ADD R5
+	LDW (R0)
+CODE_0BA70A:
+	IWT R5, #$1FFF
+	AND R5
+	LM R5, ($009C)
+	SUB R5
+	ADD R0
+	TO R7
+	ADD R7
+CODE_0BA716:
+	IWT R15, #CODE_0BA657+$01 : ALT1
+
+CODE_0BA71A:
+	SMS ($62), R11
+	WITH R2
+	ADD R2
+	LINK #4
+	IWT R15, #CODE_0BA624 : TO R7
+	MOVES R4, R3
+	BMI CODE_0BA72D : NOP
+	IWT R15, #CODE_0BA8BE : NOP
+
+CODE_0BA72D:
+	LMS R0, ($B6)
+	IBT R1, #$20
+	TO R1
+	ADD R1
+	IBT R0, #$3F
+	AND R1
+	BNE CODE_0BA742 : NOP
+	LMS R0, ($B4)
+	DEC R0
+	BPL CODE_0BA742 : NOP
+	DEC R1
+CODE_0BA742:
+	IBT R0, #$40
+	AND R1
+	BEQ CODE_0BA74C : NOP
+	IWT R15, #CODE_0BA812 : NOP
+
+CODE_0BA74C:
+	IBT R5, #$00
+	FROM R1
+	SEX
+	BPL CODE_0BA758 : WITH R3
+	NOT
+	INC R3
+	IWT R5, #$0080
+CODE_0BA758:
+	SMS ($010), R5
+	LMS R0, ($02)
+	TO R1
+	AND #15
+	MOVE R12, R1
+	IBT R5, #$05
+	MOVES R3, R3
+	BPL CODE_0BA76C : NOP
+	IBT R5, #$04
+CODE_0BA76C:
+	FROM R7
+	AND R5
+	TO R13
+	SUB R5
+	BEQ CODE_0BA79C : NOP
+	SMS ($04), R6
+	SMS ($06), R7
+	SMS ($08), R8
+	LMS R8, ($00)
+	SMS ($0A), R8
+	LMS R7, ($02)
+	SMS ($0C), R7
+	SMS ($0E), R5
+	FROM R3
+	ADD R7
+	LINK #4
+	IWT R15, #CODE_0BA64B+$01 : ALT1
+	LMS R5, ($0E)
+	AND R5
+	SUB R5
+	BNE CODE_0BA7DB : NOP
+	WITH R1
+	SUB R3
+CODE_0BA79C:
+	SMS ($5C), R14
+	FROM R8
+	SWAP
+	MOVES R3, R3
+	BPL CODE_0BA7A8 : LSR
+	INC R0
+	INC R0
+CODE_0BA7A8:
+	IWT R14, #DATA_0ABD0E
+	TO R14
+	ADD R14
+	LMS R0, ($00)
+	AND #15
+	ADD R0
+	ADD R0
+	ADD R0
+	TO R14
+	ADD R14
+	TO R5
+	GETB
+	INC R14
+	GETBS
+	LMS R14, ($5C)
+	TO R1
+	SUB R1
+	BEQ CODE_0BA7C9 : FROM R1
+	XOR R3
+	BMI CODE_0BA7D6 : NOP
+CODE_0BA7C9:
+	MOVES R3, R3
+	BMI CODE_0BA7D0 : INC R1
+	DEC R1
+	DEC R1
+CODE_0BA7D0:
+	SMS ($010), R5
+	BRA CODE_0BA80C : INC R2
+
+CODE_0BA7D6:
+	MOVES R13, R13
+	BEQ CODE_0BA80E : NOP
+CODE_0BA7DB:
+	MOVE R1, R12
+	LMS R6, ($04)
+	LMS R7, ($06)
+	LMS R8, ($08)
+	LMS R0, ($0A)
+	SMS ($00), R0
+	LMS R0, ($0C)
+	SMS ($02), R0
+	IBT R0, #$02
+	MOVES R3, R3
+	BPL CODE_0BA7FB : NOP
+	IBT R0, #$03
+CODE_0BA7FB:
+	AND R7
+	BEQ CODE_0BA80E : NOP
+	INC R2
+	MOVES R3, R3
+	BMI CODE_0BA80A : WITH R1
+	XOR #15
+	BRA CODE_0BA80D : WITH R10
+
+CODE_0BA80A:
+	NOT
+	INC R1
+CODE_0BA80C:
+	WITH R10
+CODE_0BA80D:
+	ADD R1
+CODE_0BA80E:
+	IWT R15, #CODE_0BA8BE : NOP
+
+CODE_0BA812:
+	IBT R5, #$40
+	FROM R1
+	SEX
+	BPL CODE_0BA81E : WITH R3
+	NOT
+	INC R3
+	IWT R5, #$00C0
+CODE_0BA81E:
+	SMS ($010), R5
+	LMS R0, ($00)
+	TO R1
+	AND #15
+	MOVE R12, R1
+	FROM R7
+	TO R13
+	AND #4
+	BNE CODE_0BA853 : NOP
+	SMS ($04), R6
+	SMS ($06), R7
+	SMS ($08), R8
+	LMS R0, ($00)
+	SMS ($0A), R0
+	TO R8
+	ADD R3
+	LMS R0, ($02)
+	SMS ($0C), R0
+	LINK #4
+	IWT R15, #CODE_0BA64B+$01 : ALT1
+	AND #4
+	BEQ CODE_0BA892 : NOP
+	WITH R1
+	SUB R3
+CODE_0BA853:
+	SMS ($5C), R14
+	FROM R8
+	SWAP
+	MOVES R3, R3
+	BPL CODE_0BA85F : LSR
+	INC R0
+	INC R0
+CODE_0BA85F:
+	IWT R14, #DATA_0ABD0A
+	TO R14
+	ADD R14
+	LMS R0, ($02)
+	AND #15
+	ADD R0
+	ADD R0
+	ADD R0
+	TO R14
+	ADD R14
+	TO R5
+	GETB
+	INC R14
+	GETBS
+	LMS R14, ($5C)
+	TO R1
+	SUB R1
+	BEQ CODE_0BA880 : FROM R1
+	XOR R3
+	BMI CODE_0BA88D : NOP
+CODE_0BA880:
+	MOVES R3, R3
+	BMI CODE_0BA887 : INC R1
+	DEC R1
+	DEC R1
+CODE_0BA887:
+	SMS ($010), R5
+	BRA CODE_0BA8BC : INC R2
+
+CODE_0BA88D:
+	MOVES R13, R13
+	BNE CODE_0BA8BE : NOP
+CODE_0BA892:
+	MOVE R1, R12
+	LMS R6, ($04)
+	LMS R7, ($06)
+	LMS R8, ($08)
+	LMS R0, ($0A)
+	SMS ($00), R0
+	LMS R0, ($0C)
+	SMS ($02), R0
+	FROM R7
+	AND #2
+	BEQ CODE_0BA8BE : NOP
+	INC R2
+	MOVES R3, R3
+	BMI CODE_0BA8BA : WITH R1
+	XOR #15
+	BRA CODE_0BA8BD : WITH R9
+
+CODE_0BA8BA:
+	NOT
+	INC R1
+CODE_0BA8BC:
+	WITH R9
+CODE_0BA8BD:
+	ADD R1
+CODE_0BA8BE:
+	LMS R4, ($010)
+	MOVES R3, R4
+	BMI CODE_0BA8CA : NOP
+	IWT R15, #CODE_0BD631 : NOP
+
+CODE_0BA8CA:
+	IWT R15, #CODE_0BD7FD : NOP
+
+CODE_0BA8CE:
+	LMS R5, ($C0)
+	DEC R5
+	BPL CODE_0BA8E9 : INC R5
+	LMS R0, ($AE)
+	SUB #4
+	BNE CODE_0BA8E2 : NOP
+	IBT R9, #$00
+	BRA CODE_0BA8F0 : NOP
+
+CODE_0BA8E2:
+	LMS R0, ($180)
+	DEC R0
+	BPL CODE_0BA8ED : NOP
+CODE_0BA8E9:
+	IWT R15, #CODE_0BCCBF : NOP
+
+CODE_0BA8ED:
+	IWT R9, #$0300
+CODE_0BA8F0:
+	IBT R0, #DATA_08AE18>>16
+	ROMB
+	LMS R6, ($B4)
+	LMS R7, ($B6)
+	IWT R0, #DATA_08AE18
+	TO R14
+	ADD R7
+	GETBS
+	ADD R0
+	ADD R0
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R8
+	OR R4
+	IWT R0, #DATA_08AE58
+	TO R14
+	ADD R7
+	GETBS
+	ADD R0
+	ADD R0
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R14
+	OR R4
+	IBT R0, #$20
+	TO R7
+	ADD R7
+	IBT R0, #$3F
+	AND R7
+	BNE CODE_0BA92B : NOP
+	DEC R6
+	BPL CODE_0BA92B : INC R6
+	DEC R7
+CODE_0BA92B:
+	FROM R7
+	SEX
+	BPL CODE_0BA932 : WITH R9
+	NOT
+	INC R9
+CODE_0BA932:
+	IBT R0, #$40
+	AND R7
+	BEQ CODE_0BA939 : WITH R14
+	WITH R8
+CODE_0BA939:
+	ADD R9
+	SMS ($A8), R8
+	LM R0, ($01B4)
+	SUB #0
+	BEQ CODE_0BA949 : NOP
+	IWT R14, #$0400
+CODE_0BA949:
+	SMS ($AA), R14
+	IWT R15, #CODE_0BCE5A : NOP
+
+CODE_0BA950:
+	LINK #4
+	IWT R15, #CODE_0BAE37 : NOP
+	LMS R0, ($1D6)
+	IBT R2, #$50
+	SUB R2
+	BMI CODE_0BA968 : NOP
+	LMS R0, ($18E)
+	IBT R2, #$10
+	ADD R2
+	IWT R15, #CODE_0BAD83 : SBK
+
+CODE_0BA968:
+	LMS R1, ($180)
+	DEC R1
+	BMI CODE_0BA973 : INC R1
+CODE_0BA96F:
+	IWT R15, #CODE_0BAA0F : NOP
+
+CODE_0BA973:
+	LINK #4
+	IWT R15, #CODE_0BCCBF : NOP
+	IWT R14, #DATA_0AEBAA
+	LINK #4
+	IWT R15, #CODE_0BCF7C : NOP
+	LMS R1, ($180)
+	DEC R1
+	BPL CODE_0BA96F : INC R1
+	IWT R0, #$0100
+	SMS ($182), R0
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BA9E4 : NOP
+	LMS R0, ($8C)
+	TO R8
+	ADD #8
+	LMS R0, ($90)
+	IBT R7, #$18
+	ADD R7
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	IWT R0, #$F800
+	AND R7
+	IWT R5, #$4800
+	SUB R5
+	BNE CODE_0BA9E4 : NOP
+	FROM R6
+	HIB
+	IBT R1, #$1E
+	SUB R1
+	ADD R0
+	IWT R14, #DATA_0AFD94
+	TO R14
+	ADD R14
+	GETB
+	LM R1, ($0071)
+	AND R1
+	BEQ CODE_0BA9E4 : INC R14
+	IBT R0, #!Define_YI_SoundID5D_SelectLevel
+	SMS ($7A), R0
+	GETB
+	SMS ($B6), R0
+	SWAP
+	SMS ($18A), R0
+	SUB R0
+	SMS ($188), R0
+	SMS ($18C), R0
+	SMS ($B4), R0
+	IWT R1, #$0100
+	SMS ($180), R1
+	BRA CODE_0BAA0F : NOP
+
+CODE_0BA9E4:
+	LM R0, ($0071)
+	TO R6
+	AND #3
+	BEQ CODE_0BAA04 : NOP
+	IBT R5, #$00
+	IWT R6, #$0180
+	AND #2
+	SMS ($C4), R0
+	BEQ CODE_0BAA01 : NOP
+	IWT R5, #$8000
+	IWT R6, #$FE80
+CODE_0BAA01:
+	SMS ($17E), R5
+CODE_0BAA04:
+	IBT R5, #$10
+	LINK #4
+	IWT R15, #CODE_0B9B9F : NOP
+	IWT R15, #CODE_0BAC9C : NOP
+
+CODE_0BAA0F:
+	LINK #4
+	IWT R15, #CODE_0BADA0 : NOP
+	LMS R0, ($8C)
+	TO R8
+	ADD #8
+	MOVE R9, R8
+	LMS R0, ($90)
+	IBT R10, #$18
+	ADD R10
+	MOVE R10, R0
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	IWT R0, #$F800
+	AND R7
+	IWT R5, #$4800
+	TO R7
+	SUB R5
+	FROM R6
+	HIB
+	IBT R5, #$1E
+	SUB R5
+	MULT #8
+	IWT R6, #DATA_0AFDE1
+	TO R6
+	ADD R6
+	IBT R0, #$70
+	SUB R1
+	BCC CODE_0BAA48 : NOP
+	IWT R15, #CODE_0BAAF4 : NOP
+
+CODE_0BAA48:
+	SMS ($182), R1
+	IBT R0, #$FE
+	LMS R2, ($188)
+	DEC R2
+	BMI CODE_0BAA56 : INC R2
+	IBT R0, #$02
+CODE_0BAA56:
+	ADD R1
+	IWT R3, #$0100
+	SUB R3
+	BCC CODE_0BAA5F : ADD R3
+	SUB R0
+CODE_0BAA5F:
+	SMS ($180), R0
+	IBT R3, #$72
+	SUB R3
+	BNE CODE_0BAA9A : NOP
+	IWT R5, #$01C5
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IBT R0, #!Define_YI_SoundID36_CollectFlower
+	SMS ($7A), R0
+	LMS R3, ($8C)
+	IWT R0, #$10A2
+	ADD R1
+	FROM R3
+	STW (R0)
+	LMS R0, ($90)
+	TO R3
+	ADD #15
+	IWT R0, #$1142
+	ADD R1
+	FROM R3
+	STW (R0)
+	IBT R3, #$06
+	IWT R0, #$13C2
+	ADD R1
+	FROM R3
+	STW (R0)
+	IBT R3, #$03
+	IWT R0, #$1782
+	ADD R1
+	FROM R3
+	STW (R0)
+CODE_0BAA9A:
+	DEC R2
+	BMI CODE_0BAAB4 : INC R2
+	MOVE R8, R9
+	FROM R10
+	ADD #7
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	AND #3
+	BEQ CODE_0BAAF0 : NOP
+	LMS R0, ($90)
+	DEC R0
+	BRA CODE_0BAAF0 : SBK
+
+CODE_0BAAB4:
+	LINK #4
+	IWT R15, #CODE_0BAD86 : NOP
+	BNE CODE_0BAAF0 : NOP
+	LMS R0, ($18A)
+	HIB
+	LSR
+	LSR
+	LSR
+	LSR
+	IWT R14, #DATA_0AFDAA
+	TO R14
+	ADD R14
+	TO R3
+	GETB
+	FROM R9
+	AND #15
+	SUB R3
+	IBT R0, #$01
+	BMI CODE_0BAAD6 : INC R14
+	IBT R0, #$FF
+CODE_0BAAD6:
+	ADD R9
+	SUB #8
+	SMS ($8C), R0
+	TO R3
+	GETB
+	FROM R10
+	AND #15
+	SUB R3
+	IBT R0, #$01
+	BMI CODE_0BAAE9 : NOP
+	IBT R0, #$FF
+CODE_0BAAE9:
+	ADD R10
+	IBT R3, #$18
+	SUB R3
+	SMS ($90), R0
+CODE_0BAAF0:
+	IWT R15, #CODE_0BAC5C : NOP
+
+CODE_0BAAF4:
+	IWT R0, #$0100
+	SMS ($182), R0
+	LINK #4
+	IWT R15, #CODE_0BAD86 : NOP
+	BEQ CODE_0BAB06 : NOP
+	IWT R15, #CODE_0BABDF : NOP
+
+CODE_0BAB06:
+	MOVES R7, R7
+	BNE CODE_0BAB80 : NOP
+	MOVE R1, R9
+	SMS ($54), R10
+	IWT R2, #$4000
+	LMS R0, ($18A)
+	HIB
+	LSR
+	LSR
+	LSR
+	LSR
+	MOVE R3, R0
+	ADD #4
+CODE_0BAB1F:
+	AND #14
+	IWT R14, #DATA_0AFDBA
+	TO R14
+	ADD R14
+	TO R4
+	GETBS
+	INC R14
+	TO R8
+	GETBS
+	WITH R9
+	AND #15
+	WITH R10
+	AND #15
+	IBT R12, #$04
+	MOVE R13, R15
+	FROM R9
+	ADD R4
+	IBT R5, #$10
+	SUB R5
+	BCS CODE_0BAB53 : ADD R5
+	MOVE R9, R0
+	FROM R10
+	ADD R8
+	SUB R5
+	BCS CODE_0BAB53 : ADD R5
+	MOVE R10, R0
+	LINK #4
+	IWT R15, #CODE_0BAD86 : NOP
+	BNE CODE_0BAB54 : NOP
+	LOOP : NOP
+CODE_0BAB53:
+	INC R2
+CODE_0BAB54:
+	WITH R2
+	ADD R2
+	BCS CODE_0BAB6A : NOP
+	SMS ($00), R9
+	SMS ($02), R10
+	FROM R3
+	ADD #12
+CODE_0BAB62:
+	MOVE R9, R1
+	LMS R10, ($54)
+	BRA CODE_0BAB1F : NOP
+
+CODE_0BAB6A:
+	BMI CODE_0BABC6 : NOP
+	MOVES R0, R2
+	BEQ CODE_0BAB77 : LSR
+	SUB #3
+	BNE CODE_0BABAB : INC R0
+CODE_0BAB77:
+	IWT R2, #$C000
+	FROM R3
+	XOR #8
+	BRA CODE_0BAB62 : NOP
+
+CODE_0BAB80:
+	IBT R0, #!Define_YI_SoundID5D_SelectLevel
+	SMS ($7A), R0
+	IBT R0, #$72
+	SMS ($180), R0
+	IBT R0, #$02
+	SMS ($188), R0
+	LMS R0, ($C4)
+	DEC R0
+	BMI CODE_0BAB99 : SUB R0
+	IWT R0, #$8000
+CODE_0BAB99:
+	SMS ($18A), R0
+	HIB
+	SMS ($B6), R0
+	SUB R0
+	SMS ($B4), R0
+	SMS ($18C), R0
+	IWT R15, #CODE_0BAC5C : NOP
+
+CODE_0BABAB:
+	IBT R0, #$FE
+	BEQ CODE_0BABB8 : NOP
+	IBT R0, #$02
+	LMS R9, ($00)
+	LMS R10, ($02)
+CODE_0BABB8:
+	ADD R3
+	AND #14
+	ADD R0
+	ADD R0
+	ADD R0
+	ADD R0
+	SMS ($B6), R0
+	SWAP
+	SMS ($18A), R0
+CODE_0BABC6:
+	FROM R1
+	BIC #15
+	OR R9
+	MOVE R9, R0
+	SUB #8
+	SMS ($8C), R0
+	LMS R0, ($54)
+	BIC #15
+	OR R10
+	MOVE R10, R0
+	IBT R3, #$18
+	SUB R3
+	SMS ($90), R0
+CODE_0BABDF:
+	LMS R1, ($18A)
+	LM R0, ($0071)
+	AND #15
+	BEQ CODE_0BABF3 : NOP
+	IWT R14, #DATA_0AFDC9
+	TO R14
+	ADD R14
+	GETB
+	TO R1
+	SWAP
+CODE_0BABF3:
+	FROM R1
+	HIB
+	LSR
+	LSR
+	LSR
+	LSR
+	AND #14
+	IWT R14, #DATA_0AFDBA
+	TO R14
+	ADD R14
+	MOVE R2, R9
+	MOVE R3, R10
+	GETBS
+	ADD R0
+	INC R14
+	TO R9
+	ADD R9
+	MOVE R8, R9
+	GETBS
+	ADD R0
+	TO R10
+	ADD R10
+	MOVE R0, R10
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	IWT R0, #$F800
+	AND R7
+	IWT R5, #$4800
+	TO R7
+	SUB R5
+	FROM R6
+	HIB
+	IBT R5, #$1E
+	SUB R5
+	MULT #8
+	IWT R6, #DATA_0AFDE1
+	TO R6
+	ADD R6
+	LINK #4
+	IWT R15, #CODE_0BAD86 : NOP
+	BEQ CODE_0BAC3D : NOP
+	SMS ($18A), R1
+	FROM R1
+	HIB
+	SMS ($B6), R0
+CODE_0BAC3D:
+	IWT R6, #$0100
+	LMS R0, ($88)
+	LMS R2, ($84)
+	OR R2
+	LMS R2, ($86)
+	OR R2
+	LMS R2, ($70)
+	AND R2
+	BEQ CODE_0BAC55 : NOP
+	IWT R6, #$0180
+CODE_0BAC55:
+	IBT R5, #$10
+	LINK #4
+	IWT R15, #CODE_0B9B9F : NOP
+CODE_0BAC5C:
+	LMS R0, ($17E)
+	LMS R10, ($18A)
+	TO R1
+	SUB R10
+	BPL CODE_0BAC69 : WITH R1
+	NOT
+	INC R1
+CODE_0BAC69:
+	LMS R4, ($18C)
+	IWT R0, #$4000
+	SUB R1
+	BCC CODE_0BAC7A : NOP
+	BNE CODE_0BAC82 : SUB R0
+	DEC R4
+	BMI CODE_0BAC82 : SUB R0
+CODE_0BAC7A:
+	IWT R0, #$8000
+	TO R10
+	XOR R10
+	IBT R0, #$01
+CODE_0BAC82:
+	SBK
+	LMS R0, ($B4)
+	DEC R0
+	BPL CODE_0BAC8C : INC R0
+	NOT
+	INC R0
+CODE_0BAC8C:
+	ADD R0
+	ADD R0
+	IWT R4, #$0200
+	SUB R4
+	BCC CODE_0BAC97 : ADD R4
+	MOVE R4, R0
+CODE_0BAC97:
+	LINK #4
+	IWT R15, #CODE_0B9BD9 : NOP
+CODE_0BAC9C:
+	LMS R0, ($B4)
+	DEC R0
+	BPL CODE_0BACA5 : INC R0
+	NOT
+	INC R0
+CODE_0BACA5:
+	IWT R1, #$0080
+	SUB R1
+	BCC CODE_0BACAD : TO R1
+	ADD R1
+CODE_0BACAD:
+	LMS R0, ($186)
+	ADD R1
+	SBK
+	IWT R1, #$0600
+	SUB R1
+	BCC CODE_0BACC2 : NOP
+	SBK
+	LMS R0, ($184)
+	XOR #2
+	BEQ CODE_0BACC6 : SBK
+CODE_0BACC2:
+	IWT R15, #CODE_0BAD83 : NOP
+
+CODE_0BACC6:
+	IBT R0, #DATA_08AE18>>16
+	ROMB
+	LMS R0, ($17E)
+	HIB
+	MOVE R10, R0
+	IBT R14, #$40
+	ADD R14
+	SEX
+	BPL CODE_0BACDE : NOP
+	IBT R0, #$7F
+	XOR R10
+	INC R0
+	TO R10
+	LOB
+CODE_0BACDE:
+	IWT R0, #DATA_08AE18
+	TO R14
+	ADD R10
+	TO R1
+	GETB
+	IBT R0, #$40
+	TO R14
+	ADD R14
+	TO R2
+	GETB
+	IBT R0, #(DATA_0AB912-(!Define_YI_AmbSpr1BA*$02))>>16
+	ROMB
+	IBT R5, #$05
+	IBT R6, #$E8
+	LMS R0, ($BE)
+	IWT R3, #$0186
+	TO R9
+	SUB R3
+	BEQ CODE_0BAD02 : NOP
+	IBT R5, #$04
+	IBT R6, #$F2
+CODE_0BAD02:
+	FROM R5
+	TO R3
+	MULT R1
+	FROM R6
+	MULT R2
+	ADD R3
+	ADD R0
+	ADD R0
+	HIB
+	TO R3
+	SEX
+	LMS R8, ($C4)
+	DEC R8
+	BMI CODE_0BAD17 : INC R8
+	WITH R3
+	NOT
+	INC R3
+CODE_0BAD17:
+	FROM R5
+	TO R4
+	MULT R2
+	FROM R6
+	MULT R1
+	SUB R4
+	ADD R0
+	ADD R0
+	HIB
+	SEX
+	TO R4
+	ADD #14
+	IWT R5, #$01C6
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	LMS R0, ($7A)
+	DEC R0
+	BPL CODE_0BAD38 : NOP
+	IBT R0, #!Define_YI_SoundID45_SpitSeed
+	SMS ($7A), R0
+CODE_0BAD38:
+	LMS R0, ($8C)
+	TO R3
+	ADD R3
+	IWT R0, #$10A2
+	ADD R1
+	FROM R3
+	STW (R0)
+	LMS R0, ($90)
+	TO R4
+	ADD R4
+	IWT R0, #$1142
+	ADD R1
+	FROM R4
+	STW (R0)
+	IBT R3, #$40
+	IBT R4, #$04
+	MOVES R9, R9
+	BEQ CODE_0BAD5A : NOP
+	INC R4
+	WITH R3
+	LSR
+CODE_0BAD5A:
+	IWT R0, #$1E4E
+	ADD R1
+	FROM R3
+	STW (R0)
+	IWT R0, #$13C2
+	ADD R1
+	FROM R4
+	STW (R0)
+	IBT R3, #$09
+	IWT R0, #$1782
+	ADD R1
+	FROM R3
+	STW (R0)
+	IBT R0, #$40
+	ADD R10
+	DEC R8
+	BPL CODE_0BAD7A : INC R8
+	IBT R3, #$7F
+	XOR R3
+	INC R0
+CODE_0BAD7A:
+	LOB
+	TO R3
+	ADD R0
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R3
+	STW (R0)
+CODE_0BAD83:
+	SUB R0
+	STOP : NOP
+
+CODE_0BAD86:
+	MOVES R7, R7
+	BNE CODE_0BAD9E : SUB R0
+	FROM R10
+	AND #15
+	LSR
+	TO R14
+	ADD R6
+	TO R5
+	GETB
+	FROM R9
+	AND #15
+	LSR
+	IWT R14, #DATA_0AFDD9
+	TO R14
+	ADD R14
+	GETB
+	AND R5
+CODE_0BAD9E:
+	JMP R11 : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BADA0:
+	LMS R2, ($B4)
+	LMS R0, ($190)
+	LOB
+	ADD R2
+	SBK
+	HIB
+	TO R3
+	SEX
+	IBT R0, #DATA_08AE18>>16
+	ROMB
+	LMS R0, ($B6)
+	IWT R14, #DATA_08AE18
+	TO R14
+	ADD R14
+	GETB
+	TO R4
+	SEX
+	BEQ CODE_0BADC9 : NOP
+	MOVE R0, R3
+	MOVE R4, R2
+	BPL CODE_0BADC9 : WITH R4
+	NOT
+	INC R4
+	NOT
+	INC R0
+CODE_0BADC9:
+	SMS ($A8), R4
+	MOVE R8, R0
+	IBT R0, #$40
+	TO R14
+	ADD R14
+	GETB
+	TO R14
+	SEX
+	BEQ CODE_0BADE3 : NOP
+	MOVE R0, R3
+	MOVE R14, R2
+	BMI CODE_0BADE3 : WITH R14
+	NOT
+	INC R14
+	NOT
+	INC R0
+CODE_0BADE3:
+	SMS ($AA), R14
+	MOVES R3, R0
+	BEQ CODE_0BAE27 : NOP
+	MOVES R8, R8
+	BEQ CODE_0BAE27 : NOP
+	ADD R0
+	TO R2
+	ROL
+	FROM R8
+	ADD R8
+	WITH R2
+	ROL
+	LMS R0, ($8C)
+	LSR
+	LMS R0, ($90)
+	ROL
+	XOR R2
+	AND #3
+	DEC R0
+	LSR
+	BEQ CODE_0BAE0A : ROL
+	IBT R0, #$FF
+CODE_0BAE0A:
+	INC R0
+	LSR
+	BCC CODE_0BAE19 : NOP
+	MOVES R8, R8
+	BEQ CODE_0BAE19 : NOP
+	BMI CODE_0BAE19 : INC R8
+	DEC R8
+	DEC R8
+CODE_0BAE19:
+	LSR
+	BCC CODE_0BAE27 : NOP
+	MOVES R3, R3
+	BEQ CODE_0BAE27 : NOP
+	BMI CODE_0BAE27 : INC R3
+	DEC R3
+	DEC R3
+CODE_0BAE27:
+	LMS R0, ($8C)
+	ADD R8
+	SBK
+	LMS R0, ($90)
+	ADD R3
+	SBK
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	JMP R11 : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BAE37:
+	SMS ($68), R11
+	LMS R0, ($180)
+	DEC R0
+	IBT R1, #$72
+	SUB R1
+	IWT R14, #$0186
+	IWT R0, #DATA_0AFD8C
+	BCS CODE_0BAE4F : NOP
+	ADD #4
+	IWT R14, #$0187
+CODE_0BAE4F:
+	SMS ($BE), R14
+	LMS R14, ($184)
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	TO R12
+	GETBH
+	IBT R13, #(DATA_540000+$0080)>>16
+	IBT R2, #$20
+	IBT R3, #$00
+	LMS R0, ($17E)
+	TO R5
+	HIB
+	IWT R6, #$4000
+	ADD R6
+	ADD R0
+	BEQ CODE_0BAE7E : NOP
+	BCC CODE_0BAE7B : SUB R0
+	IBT R0, #$7F
+	XOR R5
+	INC R0
+	TO R5
+	LOB
+	IBT R0, #$02
+CODE_0BAE7B:
+	SMS ($C4), R0
+CODE_0BAE7E:
+	LMS R0, ($1D6)
+	IBT R6, #$50
+	SUB R6
+	BMI CODE_0BAE8D : NOP
+	LMS R0, ($18E)
+	ADD R5
+	TO R5
+	LOB
+CODE_0BAE8D:
+	LMS R6, ($182)
+	LINK #4
+	IWT R15, #CODE_0BF28A : NOP
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	LMS R11, ($68)
+	JMP R11 : NOP
+
+CODE_0BAE9E:
+	SUB R0
+	SMS ($B4), R0
+	SMS ($18A), R0
+	LMS R0, ($1D6)
+	IBT R1, #$50
+	SUB R1
+	BMI CODE_0BAEB8 : NOP
+	LMS R0, ($194)
+	IBT R2, #$10
+	ADD R2
+	IWT R15, #CODE_0BAF9C : SBK
+
+CODE_0BAEB8:
+	LM R0, ($0071)
+	MOVE R3, R0
+	TO R7
+	BIC #15
+	TO R5
+	AND #3
+	AND #12
+	LSR
+	TO R6
+	LSR
+	LMS R0, ($182)
+	LMS R1, ($180)
+	SUB R1
+	AND #3
+	MOVE R4, R0
+	LSR
+	BCC CODE_0BAEDE : NOP
+	MOVE R14, R5
+	MOVE R5, R6
+	MOVE R6, R14
+CODE_0BAEDE:
+	IWT R0, #DATA_0AFC2D
+	TO R14
+	ADD R4
+	GETB
+	TO R14
+	LSR
+	BCC CODE_0BAEF1 : NOP
+	WITH R6
+	LSR
+	ROL
+	ADD R0
+	AND #2
+	TO R6
+	OR R6
+CODE_0BAEF1:
+	DEC R14
+	BMI CODE_0BAEFD : NOP
+	WITH R5
+	LSR
+	ROL
+	ADD R0
+	AND #2
+	TO R5
+	OR R5
+CODE_0BAEFD:
+	FROM R6
+	ADD R6
+	ADD R0
+	OR R5
+	TO R1
+	OR R7
+	LMS R2, ($182)
+	IWT R0, #DATA_0AFC25
+	ADD R2
+	TO R14
+	ADD R2
+	GETB
+	TO R5
+	AND R1
+	BNE CODE_0BAF18 : INC R14
+	SMS ($180), R2
+	BRA CODE_0BAF51 : NOP
+
+CODE_0BAF18:
+	LMS R5, ($1B4)
+	MOVES R5, R5
+	BNE CODE_0BAF26 : NOP
+	TO R5
+	XOR #15
+	WITH R1
+	BIC R5
+CODE_0BAF26:
+	IWT R5, #$0100
+	GETB
+	AND R1
+	BEQ CODE_0BAF33 : SUB R0
+	IWT R5, #$FF00
+	IBT R0, #$02
+CODE_0BAF33:
+	LMS R6, ($C0)
+	DEC R6
+	BPL CODE_0BAF3D : INC R6
+	SMS ($B4), R5
+CODE_0BAF3D:
+	MOVE R5, R0
+	FROM R2
+	LSR
+	BCS CODE_0BAF51 : NOP
+	LM R0, ($017F)
+	IBT R6, #$7F
+	AND R6
+	BNE CODE_0BAF51 : NOP
+	SMS ($C4), R5
+CODE_0BAF51:
+	SMS ($18A), R1
+	LMS R6, ($B4)
+	DEC R6
+	BPL CODE_0BAF5E : INC R6
+	WITH R6
+	NOT
+	INC R6
+CODE_0BAF5E:
+	IWT R0, #$0400
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R4
+	OR R4
+	LMS R10, ($184)
+	LINK #4
+	IWT R15, #CODE_0B9BD9 : NOP
+	MOVES R6, R6
+	BNE CODE_0BAF7F : SUB R0
+	SMS ($188), R0
+	SMS ($186), R0
+	BRA CODE_0BAF9C : NOP
+
+CODE_0BAF7F:
+	IWT R0, #$0080
+	SUB R6
+	BCS CODE_0BAF88 : ADD R6
+	MOVE R0, R6
+CODE_0BAF88:
+	LMS R1, ($188)
+	ADD R1
+	SBK
+	IWT R1, #$0300
+	SUB R1
+	BCC CODE_0BAF9C : NOP
+	SBK
+	LMS R0, ($186)
+	AND #7
+	INC R0
+	SBK
+CODE_0BAF9C:
+	LINK #4
+	IWT R15, #CODE_0BAFA4 : NOP
+	SUB R0
+	STOP : NOP
+
+CODE_0BAFA4:
+	SMS ($68), R11
+	IWT R12, #DATA_540000+$2060
+	LMS R0, ($BE)
+	IWT R13, #$0198
+	SUB R13
+	BEQ CODE_0BAFC3 : NOP
+	IWT R12, #DATA_540000+$20C0
+	LM R0, ($1974)
+	AND #2
+	BEQ CODE_0BAFC3 : NOP
+	IWT R12, #DATA_540000+$20E0
+CODE_0BAFC3:
+	IBT R13, #(DATA_540000+$20E0)>>16
+	IBT R2, #$20
+	IBT R3, #$00
+	LMS R0, ($17E)
+	TO R5
+	HIB
+	LMS R0, ($1D6)
+	IBT R6, #$50
+	SUB R6
+	BMI CODE_0BAFDD : NOP
+	LMS R0, ($194)
+	ADD R5
+	TO R5
+	LOB
+CODE_0BAFDD:
+	LMS R6, ($186)
+	DEC R6
+	BMI CODE_0BAFF3 : INC R6
+	IBT R0, #$10
+	ADD R5
+	LSR
+	LSR
+	LSR
+	LSR
+	LSR
+	FROM R6
+	SUB R0
+	DEC R0
+	TO R6
+	AND #7
+	INC R6
+CODE_0BAFF3:
+	IWT R0, #$0198
+	ADD R6
+	SMS ($BE), R0
+	IWT R6, #$0100
+	LINK #4
+	IWT R15, #CODE_0BF28A : NOP
+	LINK #4
+	IWT R15, #CODE_0BA8CE : NOP
+	LINK #4
+	IWT R15, #CODE_0BB011 : NOP
+	LMS R11, ($68)
+	JMP R11 : NOP
+
+CODE_0BB011:
+	SMS ($64), R11
+	LMS R0, ($184)
+	TO R1
+	HIB
+	LMS R0, ($17E)
+	LMS R2, ($C4)
+	DEC R2
+	BMI CODE_0BB02F : HIB
+	IBT R3, #$7F
+	XOR R3
+	INC R0
+	LOB
+	WITH R1
+	XOR R3
+	INC R1
+	WITH R1
+	LOB
+CODE_0BB02F:
+	SUB R1
+	BEQ CODE_0BB05E : NOP
+	LMS R1, ($B4)
+	MOVES R1, R1
+	BNE CODE_0BB059 : NOP
+	LMS R1, ($182)
+	MOVES R1, R1
+	BEQ CODE_0BB059 : NOP
+	IBT R2, #$01
+	SWAP
+	BPL CODE_0BB04E : SWAP
+	NOT
+	INC R0
+	LOB
+	IBT R2, #$FF
+CODE_0BB04E:
+	IBT R3, #$20
+	SUB R3
+	BCC CODE_0BB059 : NOP
+	FROM R1
+	ADD R2
+	AND #3
+	SBK
+CODE_0BB059:
+	IBT R0, #$FE
+	BRA CODE_0BB05F : NOP
+
+CODE_0BB05E:
+	ADD R1
+CODE_0BB05F:
+	SMS ($18C), R0
+	LMS R9, ($8C)
+	LMS R10, ($90)
+	IBT R2, #$00
+	SMS ($FE), R2
+	SMS ($100), R2
+	SMS ($102), R2
+	SMS ($FA), R2
+	SMS ($192), R2
+	IBT R3, #$00
+	IWT R14, #DATA_0AEB6A
+	IBT R1, #$02
+	IBT R4, #$FF
+	LINK #4
+	IWT R15, #CODE_0BB39E : ALT2
+	IWT R4, #$0080
+	LINK #4
+	IWT R15, #CODE_0BB3A9 : ALT2
+	IBT R4, #$FF
+	LINK #4
+	IWT R15, #CODE_0BB3A9 : ALT2
+	IBT R4, #$00
+	LINK #4
+	IWT R15, #CODE_0BB3A9 : ALT2
+	IWT R4, #$00C0
+	LINK #4
+	IWT R15, #CODE_0BB3A9 : ALT2
+	LMS R0, ($100)
+	TO R5
+	LSR
+	ROL
+	SBK
+	FROM R2
+	LSR
+	WITH R2
+	ROL
+	FROM R3
+	LSR
+	WITH R3
+	ROL
+	IBT R1, #$03
+	IBT R4, #$FF
+	LINK #4
+	IWT R15, #CODE_0BB3A9 : ALT2
+	IBT R4, #$40
+	LINK #4
+	IWT R15, #CODE_0BB3A9 : ALT2
+	IBT R4, #$FF
+	LINK #4
+	IWT R15, #CODE_0BB3A9 : ALT2
+	LMS R0, ($1B4)
+	SUB #0
+	BEQ CODE_0BB0D6 : NOP
+	WITH R2
+	OR #7
+CODE_0BB0D6:
+	LMS R0, ($18C)
+	SMS ($18E), R0
+	LMS R0, ($192)
+	DEC R0
+	BPL CODE_0BB0E6 : SUB R0
+	SMS ($190), R0
+CODE_0BB0E6:
+	LMS R7, ($18A)
+	IBT R4, #$00
+	LMS R1, ($182)
+	FROM R1
+	LSR
+	BCC CODE_0BB0F9 : NOP
+	MOVE R14, R9
+	MOVE R9, R10
+	MOVE R10, R14
+CODE_0BB0F9:
+	IWT R0, #DATA_0AFC31
+	TO R14
+	ADD R1
+	GETB
+	MOVE R8, R0
+	TO R14
+	LSR
+	BCC CODE_0BB109 : NOP
+	WITH R10
+	NOT
+	INC R10
+CODE_0BB109:
+	DEC R14
+	BMI CODE_0BB110 : NOP
+	WITH R9
+	NOT
+	INC R9
+CODE_0BB110:
+	IBT R12, #$00
+	FROM R1
+	MULT #10
+	IWT R14, #DATA_0AFC35
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	AND R2
+	BEQ CODE_0BB134 : INC R14
+	AND R3
+	BEQ CODE_0BB12A : SUB R0
+	LMS R0, ($C4)
+	DEC R0
+CODE_0BB12A:
+	TO R5
+	NOT
+	INC R5
+	IBT R4, #$00
+	SUB R0
+	IWT R15, #CODE_0BB1C2 : NOP
+
+CODE_0BB134:
+	GETB
+	INC R14
+	GETBH
+	TO R6
+	AND R2
+	BNE CODE_0BB15E : INC R14
+	GETB
+	INC R14
+	GETBH
+	AND R2
+	BNE CODE_0BB149 : NOP
+	IWT R15, #CODE_0BB1E1 : NOP
+
+CODE_0BB149:
+	LMS R5, ($C4)
+	DEC R5
+	FROM R10
+	AND #15
+	BEQ CODE_0BB15A : NOP
+	AND #8
+	BEQ CODE_0BB15A : DEC R0
+	IBT R0, #$01
+CODE_0BB15A:
+	IWT R15, #CODE_0BB1F1 : NOP
+
+CODE_0BB15E:
+	FROM R9
+	TO R13
+	AND #15
+	SUB R6
+	BNE CODE_0BB181 : NOP
+	GETB
+	INC R14
+	GETBH
+	AND R2
+	BNE CODE_0BB149 : NOP
+	LMS R0, ($C4)
+	DEC R0
+	TO R5
+	NOT
+	INC R5
+	FROM R9
+	AND #8
+	BEQ CODE_0BB1B1 : NOP
+	WITH R13
+	XOR #15
+	BRA CODE_0BB1B1 : NOP
+
+CODE_0BB181:
+	GETB
+	INC R14
+	GETBH
+	AND R2
+	BNE CODE_0BB149 : INC R14
+	GETB
+	INC R14
+	GETBH
+	IBT R5, #$FF
+	AND R2
+	BEQ CODE_0BB198 : INC R14
+	IBT R5, #$01
+	WITH R13
+	XOR #15
+CODE_0BB198:
+	FROM R13
+	SUB #3
+	SUB #5
+	BCC CODE_0BB1B1 : NOP
+	GETB
+	INC R14
+	GETBH
+	AND R2
+	BNE CODE_0BB1B1 : NOP
+	LMS R0, ($B4)
+	XOR R5
+	BMI CODE_0BB1B1 : NOP
+	INC R12
+CODE_0BB1B1:
+	IWT R0, #DATA_0AFCC1
+	ADD R13
+	TO R14
+	ADD R13
+	TO R4
+	GETB
+	MOVES R5, R5
+	BMI CODE_0BB1C0 : WITH R4
+	NOT
+	INC R4
+CODE_0BB1C0:
+	INC R14
+	GETB
+CODE_0BB1C2:
+	MOVE R6, R0
+	FROM R10
+	AND #15
+	TO R14
+	SUB #12
+	BCC CODE_0BB1D0 : NOP
+	IBT R14, #$10
+	SUB R14
+CODE_0BB1D0:
+	SUB R6
+	TO R14
+	SUB #8
+	BPL CODE_0BB1E1 : NOP
+	LMS R14, ($C0)
+	DEC R14
+	BMI CODE_0BB1E5 : INC R14
+	BCC CODE_0BB1E5 : NOP
+CODE_0BB1E1:
+	IWT R15, #CODE_0BB241 : NOP
+
+CODE_0BB1E5:
+	SUB #0
+	BEQ CODE_0BB1F3 : NOP
+	IBT R0, #$FF
+	BPL CODE_0BB1F1 : NOP
+	IBT R0, #$01
+CODE_0BB1F1:
+	TO R10
+	ADD R10
+CODE_0BB1F3:
+	SUB R0
+	SMS ($C0), R0
+	DEC R12
+	BPL CODE_0BB205 : INC R12
+	IWT R0, #DATA_0AFCB9
+	TO R14
+	ADD R1
+	GETB
+	AND R7
+	BEQ CODE_0BB213 : NOP
+CODE_0BB205:
+	FROM R1
+	ADD R5
+	AND #3
+	SMS ($182), R0
+	DEC R12
+	BPL CODE_0BB213 : INC R12
+	SMS ($180), R0
+CODE_0BB213:
+	FROM R1
+	MULT #7
+	IWT R14, #DATA_0AFC5D
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	AND R2
+	BEQ CODE_0BB22A : INC R14
+	AND R3
+	BNE CODE_0BB256 : TO R5
+	BRA CODE_0BB268 : SUB R0
+
+CODE_0BB22A:
+	GETB
+	INC R14
+	GETBH
+	TO R6
+	AND R2
+	BNE CODE_0BB252 : INC R14
+	INC R14
+	INC R14
+	GETB
+	LM R6, ($0073)
+	AND R6
+	BEQ CODE_0BB27C : NOP
+	WITH R10
+	SUB #4
+CODE_0BB241:
+	SUB R0
+	SMS ($182), R0
+	SMS ($180), R0
+	IWT R0, #$0008
+	SMS ($C0), R0
+	IWT R15, #CODE_0BB27C : NOP
+
+CODE_0BB252:
+	SUB R6
+	BNE CODE_0BB25C : NOP
+CODE_0BB256:
+	LMS R5, ($C4)
+	BRA CODE_0BB268 : DEC R5
+
+CODE_0BB25C:
+	GETB
+	INC R14
+	GETBH
+	IBT R5, #$01
+	AND R2
+	BNE CODE_0BB268 : NOP
+	IBT R5, #$FF
+CODE_0BB268:
+	IWT R0, #DATA_0AFCBD
+	TO R14
+	ADD R1
+	GETB
+	AND R7
+	BEQ CODE_0BB27C : NOP
+	FROM R1
+	ADD R5
+	AND #3
+	SMS ($182), R0
+	SMS ($180), R0
+CODE_0BB27C:
+	IBT R0, #$10
+	MULT R1
+	IWT R14, #DATA_0AFC79
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	TO R12
+	AND R2
+	BNE CODE_0BB291 : NOP
+	IWT R15, #CODE_0BB367 : NOP
+
+CODE_0BB291:
+	MOVE R6, R0
+	TO R11
+	SUB R12
+	FROM R12
+	AND R3
+	TO R12
+	XOR R12
+	WITH R6
+	SUB R12
+	FROM R9
+	AND #15
+	BNE CODE_0BB2C3 : INC R14
+	MOVES R12, R12
+	BEQ CODE_0BB2DF : NOP
+	MOVES R6, R6
+	BNE CODE_0BB2B2 : NOP
+	WITH R14
+	ADD #6
+	BRA CODE_0BB328 : NOP
+
+CODE_0BB2B2:
+	GETB
+	INC R14
+	GETBH
+	INC R14
+	INC R14
+	IBT R5, #$01
+	AND R12
+	BNE CODE_0BB328 : INC R14
+	IBT R5, #$FF
+	BRA CODE_0BB328 : NOP
+
+CODE_0BB2C3:
+	IBT R5, #$01
+	AND #8
+	BNE CODE_0BB2CE : NOP
+	IBT R5, #$FF
+	INC R14
+	INC R14
+CODE_0BB2CE:
+	GETB
+	INC R14
+	GETBH
+	AND R2
+	BEQ CODE_0BB2DF : NOP
+	WITH R9
+	ADD R5
+	IWT R14, #DATA_0AFC7F
+	AND R12
+	BNE CODE_0BB328 : NOP
+CODE_0BB2DF:
+	MOVES R11, R11
+	BEQ CODE_0BB325 : NOP
+	IBT R0, #$10
+	MULT R1
+	IWT R14, #DATA_0AFC7F
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	AND R2
+CODE_0BB2F1:
+	BNE CODE_0BB367 : DEC R14
+	DEC R14
+	GETBH
+	DEC R14
+	GETBL
+	WITH R14
+	ADD #4
+	IBT R5, #$01
+	AND R2
+	BEQ CODE_0BB307 : NOP
+	IBT R5, #$FF
+	INC R14
+	INC R14
+CODE_0BB307:
+	GETB
+	AND R7
+	BNE CODE_0BB367 : NOP
+	WITH R14
+	ADD #4
+	GETB
+	INC R14
+	GETBH
+	AND R2
+	BNE CODE_0BB367 : SUB R0
+	WITH R9
+	ADD R5
+	SMS ($182), R0
+	SMS ($180), R0
+	IWT R0, #$0008
+	SMS ($C0), R0
+CODE_0BB325:
+	BRA CODE_0BB367 : NOP
+
+CODE_0BB328:
+	GETB
+	INC R14
+	GETBH
+	TO R13
+	AND R2
+	BNE CODE_0BB339 : INC R14
+	MOVES R12, R12
+	BEQ CODE_0BB342 : NOP
+	BRA CODE_0BB2F1+$02 : DEC R14
+
+CODE_0BB339:
+	SUB R13
+	BEQ CODE_0BB367 : NOP
+	MOVES R6, R6
+	BNE CODE_0BB354 : NOP
+CODE_0BB342:
+	IBT R5, #$01
+	GETB
+	INC R14
+	AND R7
+	BNE CODE_0BB360 : INC R14
+	IBT R5, #$FF
+	GETB
+	AND R7
+	BNE CODE_0BB360 : NOP
+	BRA CODE_0BB367 : NOP
+
+CODE_0BB354:
+	MOVES R5, R5
+	BPL CODE_0BB35B : NOP
+	INC R14
+	INC R14
+CODE_0BB35B:
+	GETB
+	AND R7
+	BEQ CODE_0BB367 : NOP
+CODE_0BB360:
+	FROM R1
+	ADD R5
+	AND #3
+	SMS ($182), R0
+CODE_0BB367:
+	FROM R8
+	LSR
+	BCC CODE_0BB36F : LSR
+	WITH R10
+	NOT
+	INC R10
+CODE_0BB36F:
+	BCC CODE_0BB375 : NOP
+	WITH R9
+	NOT
+	INC R9
+CODE_0BB375:
+	FROM R1
+	LSR
+	BCC CODE_0BB380 : NOP
+	MOVE R14, R9
+	MOVE R9, R10
+	MOVE R10, R14
+CODE_0BB380:
+	LMS R0, ($182)
+	IWT R14, #DATA_0AFC21
+	TO R14
+	ADD R14
+	GETB
+	SMS ($B6), R0
+	ADD R4
+	LOB
+	LMS R14, ($C4)
+	DEC R14
+	BPL CODE_0BB397 : SWAP
+	NOT
+	INC R0
+CODE_0BB397:
+	SMS ($184), R0
+	IWT R15, #CODE_0BD214 : NOP
+
+CODE_0BB39E:
+	SMS ($62), R11
+	LINK #4
+	IWT R15, #CODE_0BD316 : CACHE
+	BRA CODE_0BB3B2 : WITH R2
+
+CODE_0BB3A9:
+	SMS ($62), R11
+	LINK #4
+	IWT R15, #CODE_0BD316+$01 : ALT3
+	WITH R2
+CODE_0BB3B2:
+	ADD R2
+	AND R1
+	BEQ CODE_0BB3B8 : NOP
+	INC R2
+CODE_0BB3B8:
+	LINK #4
+	IWT R15, #CODE_0BD4EC : NOP
+	WITH R3
+	ADD R3
+	IWT R0, #$F800
+	AND R7
+	HIB
+	LSR
+	INC R0
+	TO R15
+	ADD R15 : db $FF
+
+DATA_0BB3C9:
+	dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BD628 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB439 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BD883 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BD59A : NOP
+	NOP : dw CODE_0BD61F : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP : dw CODE_0BB480 : NOP
+	NOP
+
+CODE_0BB439:
+	INC R3
+	LMS R0, ($18C)
+	SUB R4
+	BNE CODE_0BB480 : ADD R4
+	LMS R5, ($18E)
+	SUB R5
+	BNE CODE_0BB480 : NOP
+	LMS R0, ($B4)
+	SUB #0
+	BEQ CODE_0BB480 : NOP
+	LMS R0, ($192)
+	INC R0
+	SBK
+	LMS R0, ($190)
+	IBT R5, #$02
+	SUB R5
+	BCS CODE_0BB462 : ADD R5
+	INC R0
+	BRA CODE_0BB480 : SBK
+
+CODE_0BB462:
+	DEC R2
+	DEC R3
+	LMS R0, ($A8)
+	NOT
+	INC R0
+	DIV2
+	DIV2
+	SMS ($01C), R0
+	IBT R0, #$80
+	SMS ($01E), R0
+	SMS ($42), R1
+	LINK #4
+	IWT R15, #CODE_0BDF81 : NOP
+	LMS R1, ($42)
+CODE_0BB480:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BB485:
+	SUB R0
+	SMS ($D2), R0
+	LMS R6, ($B4)
+	LMS R0, ($186)
+	ADD R6
+	SBK
+	HIB
+	AND #7
+	SMS ($F8), R0
+	LMS R5, ($C0)
+	DEC R5
+	BPL CODE_0BB4A6 : INC R5
+	LINK #4
+	IWT R15, #CODE_0BCCF1 : NOP
+	BRA CODE_0BB4B3 : NOP
+
+CODE_0BB4A6:
+	SMS ($A8), R6
+	LMS R2, ($AA)
+	IBT R0, #$28
+	LINK #4
+	IWT R15, #CODE_0BCE27 : NOP
+CODE_0BB4B3:
+	LMS R0, ($C0)
+	SMS ($182), R0
+	LMS R0, ($B6)
+	SMS ($184), R0
+	LINK #4
+	IWT R15, #CODE_0BCF64 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BB513 : NOP
+	LMS R0, ($182)
+	SUB #0
+	BNE CODE_0BB513 : NOP
+	LMS R0, ($B6)
+	LMS R1, ($184)
+	SUB R1
+	SEX
+	BMI CODE_0BB4FD : NOP
+	IBT R1, #$21
+	SUB R1
+	BCC CODE_0BB513 : NOP
+	LMS R0, ($180)
+	DEC R0
+	BPL CODE_0BB513 : NOP
+	IWT R0, #$0080
+	SBK
+	SMS ($1F6), R0
+	IBT R0, #!Define_YI_SoundID3C_InedibleObject
+	SMS ($7A), R0
+	IWT R1, #$FC00
+	BRA CODE_0BB507 : SUB R0
+
+CODE_0BB4FD:
+	IBT R1, #$1F
+	ADD R1
+	BPL CODE_0BB513 : SUB R0
+	LM R1, ($1E3C)
+CODE_0BB507:
+	SMS ($17E), R0
+	SMS ($AA), R1
+	IWT R0, #$0008
+	SMS ($C0), R0
+CODE_0BB513:
+	LMS R0, ($180)
+	DEC R0
+	BPL CODE_0BB51E : INC R0
+	IWT R15, #CODE_0BB5CA : NOP
+
+CODE_0BB51E:
+	LMS R1, ($C0)
+	DEC R1
+	BPL CODE_0BB57E : INC R1
+	ADD #2
+	SMS ($180), R0
+	IWT R1, #$0100
+	SUB R1
+	BCC CODE_0BB57B : ADD R1
+	LMS R0, ($1F6)
+	DEC R0
+	BPL CODE_0BB579 : NOP
+	LM R0, ($00B7)
+	NOT
+	INC R0
+	SMS ($17E), R0
+	IBT R0, #!Define_YI_SoundID0A_BreakDirt
+	SMS ($7A), R0
+	IWT R5, #$01CB
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	LMS R5, ($8C)
+	IWT R0, #$10A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($90)
+	TO R5
+	ADD #12
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R5, ($01C)
+	IBT R5, #$07
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$04
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	BRA CODE_0BB57B : SUB R0
+
+CODE_0BB579:
+	MOVE R0, R1
+CODE_0BB57B:
+	SMS ($180), R0
+CODE_0BB57E:
+	IWT R2, #$0190
+	IWT R1, #$0080
+	SUB R1
+	BEQ CODE_0BB5C3 : ADD R1
+	MOVE R6, R0
+	IBT R2, #$20
+	IBT R3, #$00
+	IBT R8, #$10
+	IBT R9, #$10
+	IWT R12, #DATA_540000+$2021
+	IBT R13, #(DATA_540000+$2021)>>16
+	LINK #4
+	IWT R15, #CODE_0BF34C : NOP
+	IBT R2, #$20
+	IBT R3, #$00
+	LMS R0, ($B4)
+	ADD R0
+	LMS R5, ($17E)
+	ADD R5
+	SBK
+	TO R5
+	HIB
+	IWT R6, #$0100
+	MOVE R4, R6
+	IWT R12, #DATA_540000+$0001
+	IBT R13, #(DATA_540000+$0001)>>16
+	IBT R1, #$00
+	LINK #4
+	IWT R15, #CODE_0BF28E : NOP
+	SUB R0
+	SMS ($124), R0
+	IWT R2, #$0188
+CODE_0BB5C3:
+	SMS ($BE), R2
+	IWT R15, #CODE_0BB636 : NOP
+
+CODE_0BB5CA:
+	LM R0, ($00B7)
+	TO R10
+	NOT
+	INC R10
+	LMS R0, ($B4)
+	TO R4
+	DIV2
+	TO R4
+	SUB R4
+	LINK #4
+	IWT R15, #CODE_0B9BD9 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BB60A : SUB R0
+	IWT R12, #$2001
+	LMS R0, ($72)
+	LMS R1, ($84)
+	AND R1
+	BEQ CODE_0BB61D : NOP
+	IBT R0, #!Define_YI_SoundID49_Jump
+	SMS ($7A), R0
+	IWT R0, #$FCC0
+	SMS ($AA), R0
+	IWT R0, #$0006
+	SMS ($C0), R0
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	BRA CODE_0BB61D : NOP
+
+CODE_0BB60A:
+	SMS ($17E), R0
+	IWT R12, #DATA_540000+$0021
+	LMS R0, ($AA)
+	IWT R1, #$0080
+	SUB R1
+	BMI CODE_0BB61D : NOP
+	IWT R12, #DATA_540000+$4040
+CODE_0BB61D:
+	IBT R13, #(DATA_540000+$4040)>>16
+	IBT R2, #$20
+	IBT R3, #$00
+	LMS R0, ($17E)
+	TO R5
+	HIB
+	IWT R6, #$0100
+	LINK #4
+	IWT R15, #CODE_0BF28A : NOP
+	IWT R0, #$0188
+	SMS ($BE), R0
+CODE_0BB636:
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BB650 : NOP
+	LMS R0, ($B4)
+	IWT R1, #$0200
+	SUB R1
+	BMI CODE_0BB65A : ADD R1
+	SUB #4
+	BRA CODE_0BB65A : SBK
+
+CODE_0BB650:
+	IBT R0, #$06
+	SMS ($FA), R0
+	LINK #4
+	IWT R15, #CODE_0BE2C4 : NOP
+CODE_0BB65A:
+	SUB R0
+	STOP : NOP
+
+CODE_0BB65D:
+if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
+	%FREE_BYTES($0BB672, 398, $01)
+else
+	%FREE_BYTES($0BB65D, 419, $01)
+endif
+
+DATA_0BB800:
+	dw $8080,$0040,$0080,$80C0,$0000,$8040,$8100,$00C0
+
+DATA_0BB810:
+	dw $0000,$0000,$0000,$0000,$0000,$0002,$0002,$0002
+	dw $0002,$0002,$0002,$0002,$0004,$0004,$0004,$0004
+	dw $0004,$0004,$0006,$0006,$0006,$0006,$0006,$0006
+	dw $0008,$0008,$0008,$0008,$0008,$0008,$000A,$000A
+	dw $000A,$000A,$000A,$000A,$000A,$000C,$000C,$000C
+	dw $000C,$000C,$000C,$000E,$000E,$000E,$000E,$000E
+	dw $000E,$000E,$0010,$0010,$0010,$0010,$0010,$0010
+	dw $0012,$0012,$0012,$0012,$0012,$0012,$0012,$0014
+	dw $0014,$0014,$0014,$0014,$0014,$0014,$0016,$0016
+	dw $0016,$0016,$0016,$0016,$0018,$0018,$0018,$0018
+	dw $0018,$0018,$0018,$001A,$001A,$001A,$001A,$001A
+	dw $001A,$001A,$001C,$001C,$001C,$001C,$001C,$001C
+	dw $001C,$001E,$001E,$001E,$001E,$001E,$001E,$001E
+	dw $001E,$0020,$0020,$0020,$0020,$0020,$0020,$0020
+	dw $0022,$0022,$0022,$0022,$0022,$0022,$0022,$0022
+	dw $0024,$0024,$0024,$0024,$0024,$0024,$0024,$0026
+	dw $0026,$0026,$0026,$0026,$0026,$0026,$0026,$0028
+	dw $0028,$0028,$0028,$0028,$0028,$0028,$0028,$002A
+	dw $002A,$002A,$002A,$002A,$002A,$002A,$002A,$002A
+	dw $002C,$002C,$002C,$002C,$002C,$002C,$002C,$002C
+	dw $002E,$002E,$002E,$002E,$002E,$002E,$002E,$002E
+	dw $002E,$0030,$0030,$0030,$0030,$0030,$0030,$0030
+	dw $0030,$0030,$0032,$0032,$0032,$0032,$0032,$0032
+	dw $0032,$0032,$0032,$0032,$0034,$0034,$0034,$0034
+	dw $0034,$0034,$0034,$0034,$0034,$0034,$0036,$0036
+	dw $0036,$0036,$0036,$0036,$0036,$0036,$0036,$0036
+	dw $0038,$0038,$0038,$0038,$0038,$0038,$0038,$0038
+	dw $0038,$0038,$0038,$003A,$003A,$003A,$003A,$003A
+	dw $003A,$003A,$003A,$003A,$003A,$003A,$003C,$003C
+	dw $003C,$003C,$003C,$003C,$003C,$003C,$003C,$003C
+	dw $003C,$003E,$003E,$003E,$003E,$003E,$003E,$003E
+	dw $003E,$003E,$003E,$003E,$003E,$0040,$0040,$0040
+	dw $0040
+
+DATA_0BBA12:
+	dw $0000,$0006,$000C,$0012,$0019,$001F,$0025,$002C
+	dw $0032,$0039,$0040,$0046,$004D,$0054,$005B,$0062
+	dw $006A,$0071,$0079,$0080,$0088,$0091,$0099,$00A2
+	dw $00AB,$00B4,$00BD,$00C7,$00D2,$00DC,$00E8,$00F3
+	dw $0100,$010C,$011A,$0128,$0137,$0148,$0159,$016B
+	dw $017F,$0194,$01AB,$01C3,$01DE,$01FC,$021D,$0241
+	dw $026A,$0297,$02CB,$0306,$034B,$039D,$03FE,$0474
+	dw $0506,$05C3,$06BD,$081B,$0A27,$0D8E,$145B,$28BC
+	dw $7FFF,$D744,$EBA6,$F272,$F5D9,$F7E5,$F943,$FA3D
+	dw $FAFA,$FB8C,$FC02,$FC63,$FCB5,$FCFA,$FD35,$FD69
+	dw $FD96,$FDBF,$FDE3,$FE04,$FE22,$FE3D,$FE55,$FE6C
+	dw $FE81,$FE95,$FEA7,$FEB8,$FEC9,$FED8,$FEE6,$FEF4
+	dw $FF01,$FF0D,$FF18,$FF24,$FF2E,$FF39,$FF43,$FF4C
+	dw $FF55,$FF5E,$FF67,$FF6F,$FF78,$FF80,$FF87,$FF8F
+	dw $FF96,$FF9E,$FFA5,$FFAC,$FFB3,$FFBA,$FFC0,$FFC7
+	dw $FFCE,$FFD4,$FFDB,$FFE1,$FFE7,$FFEE,$FFF4,$FFFA
+	dw $0000,$0006,$000C,$0012,$0019,$001F,$0025,$002C
+	dw $0032,$0039,$0040,$0046,$004D,$0054,$005B,$0062
+	dw $006A,$0071,$0079,$0080,$0088,$0091,$0099,$00A2
+	dw $00AB,$00B4,$00BD,$00C7,$00D2,$00DC,$00E8,$00F3
+	dw $0100,$010C,$011A,$0128,$0137,$0148,$0159,$016B
+	dw $017F,$0194,$01AB,$01C3,$01DE,$01FC,$021D,$0241
+	dw $026A,$0297,$02CB,$0306,$034B,$039D,$03FE,$0474
+	dw $0506,$05C3,$06BD,$081B,$0A27,$0D8E,$145B,$28BC
+	dw $7FFF,$D744,$EBA6,$F272,$F5D9,$F7E5,$F943,$FA3D
+	dw $FAFA,$FB8C,$FC02,$FC63,$FCB5,$FCFA,$FD35,$FD69
+	dw $FD96,$FDBF,$FDE3,$FE04,$FE22,$FE3D,$FE55,$FE6C
+	dw $FE81,$FE95,$FEA7,$FEB8,$FEC9,$FED8,$FEE6,$FEF4
+	dw $FF01,$FF0D,$FF18,$FF24,$FF2E,$FF39,$FF43,$FF4C
+	dw $FF55,$FF5E,$FF67,$FF6F,$FF78,$FF80,$FF87,$FF8F
+	dw $FF96,$FF9E,$FFA5,$FFAC,$FFB3,$FFBA,$FFC0,$FFC7
+	dw $FFCE,$FFD4,$FFDB,$FFE1,$FFE7,$FFEE,$FFF4,$FFFA
+
+CODE_0BBC12:
+	SMS ($48), R4
+	SMS ($58), R12
+	SMS ($5C), R14
+	SMS ($54), R10
+CODE_0BBC1E:
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	WITH R5
+	ADD R5
+	IWT R0, #DATA_08AC18
+	TO R14
+	ADD R5
+	IWT R0, #DATA_08AB98
+	TO R10
+	ADD R5
+	GETB
+	INC R14
+	GETBH
+	MOVE R6, R0
+	FROM R8
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R12
+	OR R4
+	FROM R7
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R5
+	OR R4
+	MOVE R14, R10
+	GETB
+	INC R14
+	GETBH
+	MOVE R6, R0
+	FROM R8
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	TO R8
+	SUB R5
+	FROM R7
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	TO R7
+	ADD R12
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	LMS R10, ($54)
+	LMS R12, ($58)
+	LMS R14, ($5C)
+	LMS R4, ($48)
+	JMP R11 : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BBC74:
+	IBT R0, #DATA_0BB800>>16
+	ROMB
+	SMS ($38), R11
+	SMS ($3A), R5
+	SMS ($3C), R9
+	SMS ($3E), R10
+	IWT R9, #DATA_0BB810
+	IWT R10, #DATA_0BB800
+	IWT R5, #$2200
+	IWT R7, #$0200
+	IWT R8, #$01FE
+	WITH R3
+	SUB R3
+	MOVES R6, R1
+	BPL CODE_0BBCA0 : NOP
+	IBT R3, #$04
+	FROM R1
+	TO R6
+	NOT
+	INC R6
+CODE_0BBCA0:
+	MOVES R0, R2
+	BPL CODE_0BBCAA : NOP
+	INC R3
+	INC R3
+	FROM R2
+	NOT
+	INC R0
+CODE_0BBCAA:
+	CMP R6
+	BPL CODE_0BBCB6 : INC R3
+	DEC R3
+	MOVE R4, R0
+	MOVE R0, R6
+	MOVE R6, R4
+CODE_0BBCB6:
+	ADD R0
+	ADD R5
+	LDW (R0)
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	ADD R0
+	CMP R7
+	BCC CODE_0BBCC9 : NOP
+	IWT R0, #$01FE
+CODE_0BBCC9:
+	TO R14
+	ADD R9
+	GETB
+	INC R14
+	GETBH
+	MOVE R4, R0
+	WITH R3
+	ADD R3
+	FROM R10
+	TO R14
+	ADD R3
+	GETB
+	INC R14
+	GETBH
+	ADD R0
+	BCC CODE_0BBCE1 : NOP
+	WITH R4
+	NOT
+	INC R4
+CODE_0BBCE1:
+	ADD R4
+	AND R8
+	TO R1
+	LSR
+	LMS R9, ($3C)
+	LMS R10, ($3E)
+	LMS R11, ($38)
+	WITH R11
+	ADD #3
+	LMS R8, ($3A)
+	FROM R11
+	LJMP R8 : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BBCF8:
+	IWT R0, #CODE_0BBC74
+	IBT R8, #CODE_0BBC74>>16
+	IBT R5, #CODE_0BBD04>>16
+	MOVE R11, R15
+	LJMP R8 : NOP
+
+CODE_0BBD04:
+	STOP : NOP
+
+CODE_0BBD06:
+	LMS R0, ($B4)
+	DEC R0
+	BPL CODE_0BBD0F : INC R0
+	NOT
+	INC R0
+CODE_0BBD0F:
+	HIB
+	TO R1
+	SUB #4
+	BCC CODE_0BBD18 : NOP
+	IBT R0, #$03
+CODE_0BBD18:
+	IBT R1, #$44
+	OR R1
+	SMS ($76), R0
+	LMS R0, ($FC)
+	AND #15
+	SMS ($19A), R0
+	LMS R0, ($C4)
+	SMS ($19C), R0
+	SUB R0
+	SMS ($1A4), R0
+	SMS ($1A6), R0
+	SMS ($1A8), R0
+	SMS ($1AA), R0
+	SMS ($1AC), R0
+	LINK #4
+	IWT R15, #CODE_0BCCBF : NOP
+	LINK #4
+	IWT R15, #CODE_0BBE67 : NOP
+	LINK #4
+	IWT R15, #CODE_0BC3C5 : NOP
+	LINK #4
+	IWT R15, #CODE_0BC564 : NOP
+	IBT R5, #$60
+	LMS R1, ($FC)
+	FROM R1
+	AND R5
+	BEQ CODE_0BBD76 : NOP
+	FROM R1
+	AND #15
+	BEQ CODE_0BBD76 : NOP
+	IWT R5, #$00A0
+	LMS R0, ($18C)
+	CMP R5
+	BMI CODE_0BBD8A : NOP
+	SUB #8
+	CMP R5
+	BPL CODE_0BBD8A : DEC R5
+	WITH R5
+	BRA CODE_0BBD8A : TO R0
+
+CODE_0BBD76:
+	IWT R5, #$0100
+	LMS R0, ($18C)
+	CMP R5
+	BPL CODE_0BBD8A : NOP
+	ADD #8
+	CMP R5
+	BMI CODE_0BBD8A : NOP
+	MOVE R0, R5
+CODE_0BBD8A:
+	SBK
+	SUB R0
+	MOVE R3, R0
+	IBT R0, #$20
+	MOVE R2, R0
+	IWT R6, #$0100
+	LMS R4, ($18C)
+	LMS R5, ($18E)
+	LMS R0, ($1A2)
+	LOB
+	BEQ CODE_0BBDAA : NOP
+	IWT R12, #DATA_548000+$4021
+	IBT R13, #(DATA_548000+$4021)>>16
+	BRA CODE_0BBDBA : NOP
+
+CODE_0BBDAA:
+	LMS R0, ($F8)
+	IWT R14, #DATA_0AFC15
+	WITH R14
+	ADD R0
+	GETB
+	INC R14
+	GETBH
+	MOVE R12, R0
+	IBT R13, #(DATA_540000+$60A0)>>16
+CODE_0BBDBA:
+	LINK #4
+	IWT R15, #CODE_0BF28C : NOP
+	LMS R0, ($19C)
+	LMS R1, ($C4)
+	CMP R1
+	BEQ CODE_0BBDD2 : NOP
+	LMS R0, ($18E)
+	SEX
+	NOT
+	INC R0
+	LOB
+	SBK
+CODE_0BBDD2:
+	IBT R0, #DATA_0AEB56>>16
+	ROMB
+	IWT R0, #DATA_0AEB56
+	TO R2
+	ADD #14
+	LMS R0, ($C4)
+	ADD R0
+	IWT R1, #DATA_0AFC19
+	TO R1
+	ADD R1
+	IWT R3, #$017E
+	IWT R4, #$0184
+	LMS R9, ($8C)
+	LMS R10, ($90)
+	IBT R12, #$03
+	CACHE
+	MOVE R13, R15
+	MOVE R14, R1
+	TO R6
+	GETBS
+	INC R1
+	MOVE R14, R2
+	GETBS
+	TO R8
+	ADD R6
+	INC R14
+	INC R2
+	INC R2
+	TO R7
+	GETBS
+	LMS R5, ($B6)
+	LINK #4
+	IWT R15, #CODE_0BBC12 : NOP
+	FROM R8
+	ADD #8
+	ADD R9
+	STW (R3)
+	IBT R6, #$18
+	FROM R7
+	ADD R6
+	ADD R10
+	STW (R4)
+	INC R3
+	INC R3
+	INC R4
+	LOOP : INC R4
+	LMS R0, ($8C)
+	SMS ($19C), R0
+	IBT R0, #$01
+	SMS ($1A4), R0
+	LMS R2, ($FC)
+	LINK #4
+	IWT R15, #CODE_0BC1BB : NOP
+	LMS R1, ($19C)
+	LMS R0, ($8C)
+	TO R1
+	SUB R1
+	IWT R3, #$017E
+	IBT R12, #$03
+	CACHE
+	MOVE R13, R15
+	LDW (R3)
+	ADD R1
+	SBK
+	INC R3
+	LOOP : INC R3
+	LMS R0, ($90)
+	SMS ($198), R0
+	IBT R1, #$67
+	LMS R0, ($1D6)
+	SUB R1
+	BEQ CODE_0BBE65 : SUB R0
+	LMS R0, ($18A)
+	LOB
+	BEQ CODE_0BBE65 : NOP
+	LINK #4
+	IWT R15, #CODE_0BC5C7 : NOP
+	SUB R0
+CODE_0BBE65:
+	STOP : NOP
+
+CODE_0BBE67:
+	SMS ($64), R11
+	IWT R14, #DATA_0AEB56
+	LMS R9, ($8C)
+	LMS R10, ($90)
+	IBT R2, #$00
+	SMS ($FE), R2
+	SMS ($100), R2
+	SMS ($FA), R2
+	SMS ($DA), R2
+	IBT R3, #$01
+	MOVE R4, R3
+	SUB R0
+	LINK #4
+	IWT R15, #CODE_0BC34D : CACHE
+	FROM R2
+	TO R6
+	AND #1
+	FROM R2
+	ADD R2
+	TO R2
+	OR R6
+	SUB R0
+	LINK #4
+	IWT R15, #CODE_0BC34F+$01 : ALT2
+	FROM R2
+	TO R6
+	AND #1
+	FROM R2
+	ADD R2
+	TO R2
+	OR R6
+	IBT R3, #$FF
+	DEC R4
+	BMI CODE_0BBEA9 : INC R4
+	MOVE R4, R3
+CODE_0BBEA9:
+	IBT R0, #$FF
+	LINK #4
+	IWT R15, #CODE_0BC34F+$01 : ALT2
+	FROM R2
+	TO R6
+	AND #1
+	FROM R2
+	ADD R2
+	TO R2
+	OR R6
+	IBT R0, #$FF
+	LINK #4
+	IWT R15, #CODE_0BC34F+$01 : ALT2
+	FROM R2
+	TO R6
+	AND #1
+	FROM R2
+	ADD R2
+	TO R2
+	OR R6
+	SUB R0
+	SMS ($DC), R0
+	MOVES R0, R1
+	BEQ CODE_0BBF2B : LSR
+	LSR
+	OR R1
+	MOVE R5, R0
+	LSR
+	LSR
+	LSR
+	LSR
+	OR R5
+	AND #3
+	DEC R0
+	BNE CODE_0BBF0B : SUB R0
+	SMS ($A8), R0
+	SMS ($B4), R0
+	FROM R1
+	AND #15
+	BEQ CODE_0BBEED : INC R9
+	DEC R9
+	DEC R9
+CODE_0BBEED:
+	LMS R0, ($C0)
+	SUB #0
+	BNE CODE_0BBF2B : NOP
+	FROM R1
+	AND #15
+	BEQ CODE_0BBEFC : INC R0
+	SUB R0
+CODE_0BBEFC:
+	INC R0
+	LM R5, ($0071)
+	AND R5
+	BEQ CODE_0BBF2B : NOP
+	SMS ($DC), R0
+	BRA CODE_0BBF2B : NOP
+
+CODE_0BBF0B:
+	LMS R0, ($A8)
+	NOT
+	INC R0
+	DIV2
+	DIV2
+	SBK
+	SMS ($B4), R0
+	BMI CODE_0BBF1D : ADD R0
+	NOT
+	INC R0
+CODE_0BBF1D:
+	ADD R0
+	SMS ($AA), R0
+	IBT R0, #!Define_YI_SoundID47_Explosion
+	SMS ($7A), R0
+	IBT R0, #$20
+	SMS ($1C6), R0
+CODE_0BBF2B:
+	IBT R1, #$00
+	IBT R3, #$10
+	LINK #4
+	IWT R15, #CODE_0BC399+$01 : ALT2
+	IBT R1,#$00
+	LINK #4
+	IWT R15, #CODE_0BC399+$01 : ALT2
+	FROM R2
+	TO R6
+	AND #1
+	FROM R2
+	ADD R2
+	TO R2
+	OR R6
+	IBT R1, #$00
+	LINK #4
+	IWT R15, #CODE_0BC399+$01 : ALT2
+	FROM R2
+	AND #15
+	BEQ CODE_0BBF62 : NOP
+	INC R10
+	LMS R0, ($AA)
+	SUB #0
+	BPL CODE_0BBF62 : SUB R0
+	SBK
+	SMS ($D2), R0
+	IBT R0, #!Define_YI_SoundID0A_BreakDirt
+	SMS ($7A), R0
+CODE_0BBF62:
+	IBT R3, #$F0
+	LMS R4, ($B8)
+	LINK #4
+	IWT R15, #CODE_0BC399+$01 : ALT2
+	LMS R0, ($10)
+	SMS ($018), R0
+	SMS ($B8), R0
+	SMS ($01A), R1
+	LMS R0, ($00)
+	SMS ($014), R0
+	LMS R0, ($02)
+	SMS ($016), R0
+	LMS R4, ($BA)
+	LINK #4
+	IWT R15, #CODE_0BC399+$01 : ALT2
+	LMS R0, ($10)
+	SMS ($20), R0
+	SMS ($BA), R0
+	SMS ($22), R1
+	LMS R0, ($00)
+	SMS ($01C), R0
+	LMS R0, ($02)
+	SMS ($01E), R0
+	FROM R2
+	TO R6
+	AND #1
+	FROM R2
+	ADD R2
+	TO R2
+	OR R6
+	LMS R4, ($BC)
+	LINK #4
+	IWT R15, #CODE_0BC399+$01 : ALT2
+	LMS R0, ($10)
+	SMS ($2E), R0
+	SMS ($BC), R0
+	SMS ($30), R1
+	LMS R0, ($00)
+	SMS ($2A), R0
+	LMS R0, ($02)
+	SMS ($2C), R0
+	SMS ($44), R2
+	LMS R0, ($18E)
+	SMS ($40), R0
+	FROM R2
+	AND #15
+	BEQ CODE_0BBFEF : NOP
+	IWT R0, #$0100
+	SMS ($AA), R0
+	FROM R2
+	AND #6
+	BEQ CODE_0BBFEA : FROM R2
+	BRA CODE_0BC038 : NOP
+
+CODE_0BBFEA:
+	AND #9
+	BNE CODE_0BC00B : NOP
+CODE_0BBFEF:
+	LMS R0, ($1B4)
+	SUB #0
+	BEQ CODE_0BC001 : SUB R0
+	SMS ($B6), R0
+	SMS ($18E), R0
+	IWT R15, #CODE_0BC186 : NOP
+
+CODE_0BC001:
+	IWT R0, #$0008
+	SMS ($C0), R0
+	IWT R15, #CODE_0BC1A7 : NOP
+
+CODE_0BC00B:
+	SUB #9
+	BEQ CODE_0BC014 : NOP
+	IWT R15, #CODE_0BC07D : NOP
+
+CODE_0BC014:
+	LMS R0, ($182)
+	SMS ($38), R0
+	LMS R1, ($188)
+	SMS ($3A), R1
+	LMS R0, ($17E)
+	SMS ($3C), R0
+	LMS R0, ($184)
+	SMS ($3E), R0
+	LMS R0, ($30)
+	LINK #4
+	IWT R15, #CODE_0BC2EE : NOP
+	IWT R15, #CODE_0BC186 : NOP
+
+CODE_0BC038:
+	IBT R0, #$01
+	SMS ($19E), R0
+	LMS R0, ($196)
+	SMS ($1A0), R0
+	LMS R0, ($01C)
+	SMS ($00), R0
+	LMS R0, ($01E)
+	SMS ($02), R0
+	LMS R0, ($01C)
+	LMS R1, ($20)
+	LMS R2, ($A8)
+	WITH R2
+	SUB #0
+	BNE CODE_0BC066 : NOP
+	LMS R2, ($C4)
+	WITH R2
+	LOB
+	BNE CODE_0BC071 : NOP
+CODE_0BC066:
+	BMI CODE_0BC071 : NOP
+	LINK #4
+	IWT R15, #CODE_0BC2A6 : NOP
+	BRA CODE_0BC076 : NOP
+
+CODE_0BC071:
+	LINK #4
+	IWT R15, #CODE_0BC25A : NOP
+CODE_0BC076:
+	LMS R0, ($22)
+	IWT R15, #CODE_0BC16C : TO R10
+
+CODE_0BC07D:
+	IWT R12, #$0080
+	IWT R13, #$0100
+	FROM R2
+	AND #8
+	BEQ CODE_0BC101 : SUB R0
+	LMS R0, ($014)
+	SMS ($00), R0
+	LMS R0, ($016)
+	SMS ($02), R0
+	LMS R1, ($018)
+	LMS R0, ($19E)
+	LOB
+	BEQ CODE_0BC0D9 : NOP
+	LMS R0, ($1A0)
+	CMP R1
+	BNE CODE_0BC0D2 : NOP
+	SUB #0
+	BNE CODE_0BC0FE : SUB R0
+	LMS R0, ($A8)
+	ADD R12
+	CMP R13
+	BCS CODE_0BC0CC : NOP
+	LMS R0, ($01C)
+	AND #15
+	TO R12
+	SUB #3
+	BMI CODE_0BC0CC : INC R12
+	WITH R10
+	ADD R12
+	INC R10
+	SUB R0
+	IBT R1, #$04
+	MOVE R13, R15
+	SUB R1
+	LOOP : MOVE R1, R0
+CODE_0BC0CC:
+	LMS R0, ($01A)
+	BRA CODE_0BC0FE : NOP
+
+CODE_0BC0D2:
+	SUB R0
+	SMS ($19E), R0
+	SMS ($1A0), R1
+CODE_0BC0D9:
+	LMS R0, ($014)
+	LMS R2, ($A8)
+	WITH R2
+	SUB #0
+	BNE CODE_0BC0ED : NOP
+	LMS R2, ($C4)
+	WITH R2
+	LOB
+	BNE CODE_0BC0F8 : NOP
+CODE_0BC0ED:
+	BMI CODE_0BC0F8 : NOP
+	LINK #4
+	IWT R15, #CODE_0BC2A6 : NOP
+	BRA CODE_0BC0FE : SUB R0
+
+CODE_0BC0F8:
+	LINK #4
+	IWT R15, #CODE_0BC25A : NOP
+	SUB R0
+CODE_0BC0FE:
+	BRA CODE_0BC16C : TO R10
+
+CODE_0BC101:
+	LMS R1, ($2E)
+	LMS R0, ($19E)
+	LOB
+	BEQ CODE_0BC146 : NOP
+	LMS R0, ($1A0)
+	CMP R1
+	BNE CODE_0BC13F : NOP
+	SUB #0
+	BNE CODE_0BC16B : SUB R0
+	LMS R0, ($A8)
+	ADD R12
+	CMP R13
+	BCS CODE_0BC139 : NOP
+	LMS R0, ($01C)
+	AND #15
+	SUB #13
+	BPL CODE_0BC139 : TO R12
+	NOT
+	INC R12
+	WITH R10
+	ADD R12
+	INC R10
+	SUB R0
+	IBT R1, #$04
+	MOVE R13, R15
+	ADD R1
+	LOOP : MOVE R1, R0
+CODE_0BC139:
+	LMS R0, ($30)
+	BRA CODE_0BC16B : NOP
+
+CODE_0BC13F:
+	SUB R0
+	SMS ($19E), R0
+	SMS ($1A0), R1
+CODE_0BC146:
+	LMS R0, ($2A)
+	LMS R2, ($A8)
+	WITH R2
+	SUB #0
+	BNE CODE_0BC15A : NOP
+	LMS R2, ($C4)
+	WITH R2
+	LOB
+	BNE CODE_0BC165 : NOP
+CODE_0BC15A:
+	BMI CODE_0BC165 : NOP
+	LINK #4
+	IWT R15, #CODE_0BC2A6 : NOP
+	BRA CODE_0BC16B : SUB R0
+
+CODE_0BC165:
+	LINK #4
+	IWT R15, #CODE_0BC25A : NOP
+	SUB R0
+CODE_0BC16B:
+	TO R10
+CODE_0BC16C:
+	ADD R10
+	FROM R1
+	TO R2
+	LOB
+	SMS ($B6), R2
+	LMS R0, ($C4)
+	LOB
+	BNE CODE_0BC17E : FROM R1
+	NOT
+	INC R0
+	TO R2
+	LOB
+CODE_0BC17E:
+	SMS ($18E), R2
+	LINK #4
+	IWT R15, #CODE_0BDB1D : NOP
+CODE_0BC186:
+	LMS R2, ($44)
+	SUB R0
+	SMS ($B8), R0
+	SMS ($BA), R0
+	SMS ($BC), R0
+	LMS R0, ($C0)
+	SUB #0
+	BEQ CODE_0BC1A7 : SUB R0
+	SMS ($C0), R0
+	SMS ($D2), R0
+	LMS R0, ($A8)
+	SMS ($B4), R0
+CODE_0BC1A7:
+	SMS ($8C), R9
+	SMS ($90), R10
+	SMS ($FC), R2
+	FROM R2
+	AND #15
+	SMS ($192), R0
+	LMS R11, ($64)
+	JMP R11 : NOP
+
+CODE_0BC1BB:
+	SMS ($6C), R11
+	LMS R0, ($112)
+	LOB
+	BEQ CODE_0BC1CD : NOP
+	IWT R1, #$FF00
+	FROM R2
+	AND R1
+	BEQ CODE_0BC1CF : NOP
+CODE_0BC1CD:
+	JMP R11 : NOP
+
+CODE_0BC1CF:
+	IBT R2, #$00
+	IBT R3, #$01
+	MOVE R4, R3
+	LMS R0, ($17E)
+	TO R8
+	SUB #4
+	LMS R5, ($112)
+	LMS R0, ($184)
+	SUB #8
+	ADD R5
+	TO R7
+	ADD R0
+	LINK #4
+	IWT R15, #CODE_0BC244 : CACHE
+	FROM R2
+	TO R6
+	AND #1
+	FROM R2
+	ADD R2
+	OR R6
+	ADD R0
+	OR R6
+	ADD R0
+	TO R2
+	OR R6
+	IBT R3, #$FF
+	DEC R4
+	BMI CODE_0BC1FF : INC R4
+	MOVE R4, R3
+CODE_0BC1FF:
+	LMS R0, ($182)
+	TO R8
+	ADD #4
+	LMS R5, ($112)
+	LMS R0, ($188)
+	SUB #8
+	ADD R5
+	TO R7
+	ADD R0
+	LINK #4
+	IWT R15, #CODE_0BC246+$01 : ALT2
+	FROM R2
+	TO R6
+	AND #1
+	FROM R2
+	ADD R2
+	OR R6
+	ADD R0
+	OR R6
+	ADD R0
+	TO R2
+	OR R6
+	MOVES R0, R1
+	BEQ CODE_0BC235 : NOP
+	SUB R0
+	SMS ($A8), R0
+	SMS ($B4), R0
+	FROM R1
+	AND #3
+	BEQ CODE_0BC235 : INC R9
+	DEC R9
+	DEC R9
+CODE_0BC235:
+	WITH R2
+	SWAP
+	LMS R0, ($FC)
+	OR R2
+	SBK
+	SMS ($8C), R9
+	LMS R11, ($6C)
+	JMP R11 : NOP
+
+CODE_0BC244:
+	IBT R1, #$00
+CODE_0BC246:
+	SMS ($62), R11
+	WITH R2
+	ADD R2
+	WITH R1
+	ADD R1
+	WITH R1
+	ADD R1
+	FROM R7
+	LSR
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	IWT R15, #CODE_0BD295 : NOP
+
+CODE_0BC25A:
+	SMS ($6C), R11
+	LMS R2, ($196)
+	FROM R2
+	CMP R1
+	BEQ CODE_0BC2A1 : LOB
+	BEQ CODE_0BC29E : NOT
+	INC R0
+	TO R4
+	AND #15
+	IBT R5, #$08
+	FROM R4
+	SUB R5
+	BPL CODE_0BC29E : NOP
+	FROM R1
+	SEX
+	DIV2
+	DIV2
+	DIV2
+	MOVE R12, R4
+	IBT R2, #$00
+	CACHE
+	MOVE R13, R15
+	WITH R2
+	ADD R0
+	LOOP : DEC R5
+	LMS R0, ($196)
+	SEX
+	DIV2
+	DIV2
+	TO R3
+	DIV2
+	MOVE R12, R5
+	SUB R0
+	MOVE R13, R15
+	ADD R3
+	LOOP : NOP
+	TO R1
+	BRA CODE_0BC2A1 : ADD R2
+
+CODE_0BC29E:
+	SMS ($196), R1
+CODE_0BC2A1:
+	LMS R11, ($6C)
+	JMP R11 : NOP
+
+CODE_0BC2A6:
+	SMS ($6C), R11
+	LMS R2, ($196)
+	FROM R2
+	CMP R1
+	BEQ CODE_0BC2E9 : TO R4
+	AND #15
+	IBT R5, #$07
+	FROM R4
+	SUB R5
+	BPL CODE_0BC2E6 : INC R4
+	INC R5
+	FROM R1
+	SEX
+	DIV2
+	DIV2
+	DIV2
+	MOVE R12, R4
+	IBT R2, #$00
+	CACHE
+	MOVE R13, R15
+	WITH R2
+	ADD R0
+	LOOP : DEC R5
+	LMS R0, ($196)
+	SEX
+	DIV2
+	DIV2
+	TO R3
+	DIV2
+	MOVE R12, R5
+	SUB R0
+	MOVE R13, R15
+	ADD R3
+	LOOP : NOP
+	TO R1
+	BRA CODE_0BC2E9 : ADD R2
+
+CODE_0BC2E6:
+	SMS ($196), R1
+CODE_0BC2E9:
+	LMS R11, ($6C)
+	JMP R11 : NOP
+
+CODE_0BC2EE:
+	SMS ($6A), R11
+	LMS R5, ($01A)
+	TO R5
+	SUB R5
+	BMI CODE_0BC310 : NOP
+	BNE CODE_0BC301 : NOP
+	LINK #4
+	IWT R15, #CODE_0BDB1D : NOP
+CODE_0BC301:
+	LMS R0, ($014)
+	SMS ($00), R0
+	LMS R0, ($016)
+	SMS ($02), R0
+	LMS R0, ($01A)
+CODE_0BC310:
+	TO R10
+	ADD R10
+	LINK #4
+	IWT R15, #CODE_0BDB1D : NOP
+	IBT R0, #$FF
+	SMS ($8E), R0
+	LMS R0, ($2E)
+	SEX
+	LMS R1, ($018)
+	WITH R1
+	SEX
+	ADD R1
+	TO R1
+	DIV2
+	LMS R0, ($B6)
+	SEX
+	ADD R1
+	TO R1
+	DIV2
+	FROM R1
+	TO R4
+	LOB
+	SMS ($B6), R4
+	SMS ($196), R4
+	LMS R0, ($C4)
+	LOB
+	BNE CODE_0BC345 : FROM R1
+	NOT
+	INC R0
+	TO R4
+	LOB
+CODE_0BC345:
+	SMS ($18E), R4
+	LMS R11, ($6A)
+	JMP R11 : NOP
+
+CODE_0BC34D:
+	IBT R1, #$00
+CODE_0BC34F:
+	SMS ($62), R11
+	WITH R2
+	ADD R2
+	WITH R1
+	ADD R1
+	WITH R1
+	ADD R1
+	TO R8
+	GETBS
+	INC R14
+	TO R7
+	GETBS
+	INC R14
+	LMS R5, ($C4)
+	DEC R5
+	TO R6
+	XOR R5
+	LMS R0, ($18A)
+	LOB
+	BNE CODE_0BC37E : NOP
+	LMS R0, ($B6)
+	SEX
+	MOVES R5, R5
+	BPL CODE_0BC379 : NOP
+	NOT
+	INC R0
+CODE_0BC379:
+	XOR R6
+	BPL CODE_0BC387 : FROM R8
+CODE_0BC37E:
+	LMS R5, ($B6)
+	LINK #4
+	IWT R15, #CODE_0BBC12 : NOP
+	FROM R8
+CODE_0BC387:
+	ADD #8
+	TO R8
+	ADD R9
+	IBT R5, #$18
+	FROM R7
+	ADD R5
+	ADD R10
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	IWT R15, #CODE_0BD295 : NOP
+
+CODE_0BC399:
+	SMS ($62), R11
+	WITH R2
+	ADD R2
+	SUB R0
+	SMS ($010), R0
+	TO R8
+	GETBS
+	INC R14
+	TO R7
+	GETBS
+	INC R14
+	FROM R8
+	ADD #8
+	TO R8
+	ADD R9
+	IBT R0, #$18
+	ADD R10
+	ADD R7
+	MOVES R3, R3
+	BPL CODE_0BC3BC : NOP
+	LMS R7, ($18A)
+	ADD R7
+CODE_0BC3BC:
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	IWT R15, #CODE_0BD3FC : NOP
+
+CODE_0BC3C5:
+	LM R1, ($0072)
+	LMS R0, ($1E4)
+	SUB #0
+	BEQ CODE_0BC3D4 : SUB R0
+	BRA CODE_0BC401 : NOP
+
+CODE_0BC3D4:
+	LMS R0, ($18C)
+	HIB
+	BEQ CODE_0BC442+$01 : LMS R0, ($112)
+	SUB #0
+	BNE CODE_0BC442 : NOP
+	LM R0, ($0084)
+	LM R5, ($0088)
+	OR R5
+	LM R5, ($0086)
+	OR R5
+	AND R1
+	BEQ CODE_0BC442 : INC R0
+	SMS ($194), R0
+	IBT R0, #$40
+	SMS ($1E4), R0
+	IBT R0, #!Define_YI_SoundID34_BurtJump
+	SMS ($7A), R0
+CODE_0BC401:
+	IBT R5, #$F0
+	LMS R0, ($FC)
+	AND R5
+	BEQ CODE_0BC423 : NOP
+	IWT R5, #$FF00
+	AND R5
+	BEQ CODE_0BC41D : NOP
+	IWT R0, #$FC00
+	SMS ($AA), R0
+	IBT R0, #$08
+	SMS ($C0), R0
+	SUB R0
+CODE_0BC41D:
+	SMS ($1E4), R0
+	BRA CODE_0BC465 : NOP
+
+CODE_0BC423:
+	LMS R0, ($112)
+	SUB #1
+	BMI CODE_0BC430 : INC R0
+	IBT R5, #$01
+	SMS ($1A2), R5
+CODE_0BC430:
+	INC R0
+	INC R0
+	IBT R5, #$20
+	CMP R5
+	BPL CODE_0BC465 : NOP
+	SMS ($112), R0
+	SMS ($18A), R0
+	BRA CODE_0BC465 : NOP
+
+CODE_0BC442:
+	LMS R0, ($18A)
+	SUB #0
+	BEQ CODE_0BC450 : SUB R0
+	IBT R0, #!Define_YI_SoundID56_ThunderLakituAttacking6
+	SMS ($7A), R0
+	SUB R0
+CODE_0BC450:
+	SMS ($18A), R0
+	LMS R0, ($112)
+	SUB #8
+	BPL CODE_0BC465 : SBK
+	SUB R0
+	SBK
+	LMS R0, ($1A2)
+	LOB
+	BEQ CODE_0BC465 : SUB R0
+	SBK
+CODE_0BC465:
+	LM R1, ($0071)
+	LMS R0, ($D8)
+	SUB #0
+	BNE CODE_0BC47A : FROM R1
+	AND #3
+	BNE CODE_0BC47A : NOP
+	IWT R15, #CODE_0BC4FA : NOP
+
+CODE_0BC47A:
+	SMS ($CC), R0
+	IBT R7, #$FF
+	AND #2
+	BNE CODE_0BC486 : NOP
+	IBT R7, #$01
+CODE_0BC486:
+	LMS R4, ($C4)
+	SUB R4
+	BEQ CODE_0BC492 : ADD R4
+	SMS ($C4), R0
+	MOVE R4, R0
+CODE_0BC492:
+	LMS R0, ($B4)
+	SUB #0
+	BEQ CODE_0BC4AC : NOP
+	XOR R7
+	BPL CODE_0BC4AC : NOP
+	LMS R0, ($C0)
+	SUB #0
+	BNE CODE_0BC4AC : NOP
+	IBT R0, #$08
+	SMS ($1D0), R0
+CODE_0BC4AC:
+	LMS R0, ($FA)
+	SWAP
+	LSR
+	LSR
+	TO R7
+	OR R4
+	LMS R0, ($B6)
+	BIC #15
+	LSR
+	LSR
+	TO R7
+	OR R7
+	LMS R0, ($D8)
+	DEC R0
+	BMI CODE_0BC4CB+$01 : IWT R0, #DATA_0AEDAF
+	TO R14
+	ADD R4
+	BRA CODE_0BC4D1 : GETB
+
+CODE_0BC4CB:
+	IWT R0, #DATA_0AEC2B
+	TO R14
+	ADD R7
+	GETB
+CODE_0BC4D1:
+	INC R14
+	TO R8
+	GETBH
+	LMS R0, ($B4)
+	SUB R8
+	BEQ CODE_0BC520 : NOP
+	XOR R8
+	BPL CODE_0BC520 : NOP
+	LMS R0, ($1D0)
+	LOB
+	BEQ CODE_0BC4E9 : NOP
+	INC R7
+CODE_0BC4E9:
+	IWT R0, #DATA_0AEDB3
+	ADD R7
+	TO R14
+	ADD R7
+	GETB
+	INC R14
+	GETBH
+	LMS R7, ($B4)
+	ADD R7
+	SBK
+	JMP R11 : NOP
+
+CODE_0BC4FA:
+	LMS R0, ($C0)
+	SUB #0
+	BEQ CODE_0BC520 : NOP
+	IWT R14, #DATA_0AEC2B
+	LMS R0, ($B4)
+	SUB #0
+	BPL CODE_0BC50F : NOP
+	INC R14
+	INC R14
+CODE_0BC50F:
+	TO R8
+	GETB
+	INC R14
+	WITH R8
+	GETBH
+	SUB R8
+	BEQ CODE_0BC520 : NOP
+	XOR R8
+	BPL CODE_0BC520 : NOP
+	JMP R11 : NOP
+
+CODE_0BC520:
+	LMS R0, ($FA)
+	SWAP
+	LSR
+	LSR
+	TO R7
+	LSR
+	LMS R0, ($B6)
+	BIC #15
+	LSR
+	LSR
+	LSR
+	TO R4
+	OR R7
+	IWT R0, #DATA_0AF0B3
+	TO R14
+	ADD R4
+	GETB
+	INC R14
+	TO R7
+	GETBH
+	LMS R8, ($B4)
+	FROM R8
+	SUB R7
+	BPL CODE_0BC545 : NOP
+	INC R4
+CODE_0BC545:
+	IWT R0, #DATA_0AF193
+	ADD R4
+	TO R14
+	ADD R4
+	GETB
+	INC R14
+	GETBH
+	MOVE R4, R0
+	ADD R8
+	MOVE R8, R0
+	SUB R7
+	XOR R4
+	BMI CODE_0BC55F : SUB R0
+	SMS ($CC), R0
+	MOVE R8, R7
+CODE_0BC55F:
+	SMS ($B4), R8
+	JMP R11 : NOP
+
+CODE_0BC564:
+	LMS R0, ($C0)
+	LOB
+	BNE CODE_0BC59E : NOP
+	LMS R0, ($CC)
+	LOB
+	BEQ CODE_0BC579 : NOP
+	LMS R0, ($DC)
+	LOB
+	BEQ CODE_0BC57F : NOP
+CODE_0BC579:
+	IWT R0, #$0080
+	BRA CODE_0BC58C : NOP
+
+CODE_0BC57F:
+	LMS R0, ($B4)
+	SUB #0
+	BEQ CODE_0BC579 : NOP
+	BPL CODE_0BC58C : NOP
+	NOT
+	INC R0
+CODE_0BC58C:
+	LMS R3, ($F8)
+	IWT R2, #$0800
+	LMS R1, ($190)
+	ADD R1
+	SUB R2
+	BMI CODE_0BC59D : ADD R2
+	SUB R2
+	INC R3
+	INC R3
+CODE_0BC59D:
+	SBK
+CODE_0BC59E:
+	IWT R2, #$016B
+	LMS R0, ($112)
+	LOB
+	BEQ CODE_0BC5BC : NOP
+	IWT R2, #$016C
+	FROM R3
+	AND #2
+	BEQ CODE_0BC5B4 : NOP
+	IWT R2, #$016D
+CODE_0BC5B4:
+	SMS ($BE), R2
+	SMS ($F8), R0
+	JMP R11 : NOP
+
+CODE_0BC5BC:
+	SMS ($BE), R2
+	FROM R3
+	AND #2
+	SMS ($F8), R0
+	JMP R11 : NOP
+
+CODE_0BC5C7:
+	SMS ($62), R11
+	IBT R1, #$10
+	IWT R2, #$0F00
+	IWT R3, #$701360
+	IWT R4, #$1CD6
+	IWT R5, #$1BB6
+	LMS R6, ($11C)
+	LMS R7, ($11E)
+	LMS R8, ($112)
+	IBT R12, #$18
+	CACHE
+	MOVE R13, R15
+	LDW (R2)
+	SUB R1
+	BNE CODE_0BC638 : INC R2
+	TO R9
+	LDW (R5)
+	FROM R9
+	TO R10
+	ADD R9
+	LDW (R4)
+	SUB R6
+	ADD R9
+	CMP R10
+	BCS CODE_0BC638 : NOP
+	INC R5
+	INC R5
+	INC R4
+	INC R4
+	LDW (R5)
+	TO R9
+	ADD R8
+	LDW (R4)
+	DEC R5
+	DEC R5
+	DEC R4
+	SUB R7
+	CMP R9
+	BCS CODE_0BC638 : DEC R4
+	TO R9
+	LDW (R3)
+	IWT R0, #$0115
+	CMP R9
+	BEQ CODE_0BC62B : NOP
+	IWT R0, #$0065
+	CMP R9
+	BEQ CODE_0BC62B : NOP
+	IWT R0, #$00FA
+	CMP R9
+	BEQ CODE_0BC62B : NOP
+	IWT R0, #$0110
+	CMP R9
+	BNE CODE_0BC638 : NOP
+CODE_0BC62B:
+	IWT R0, #$0018
+	SUB R12
+	ADD R0
+	ADD R0
+	SMS ($00), R0
+	IBT R0, #$1C
+	STOP : NOP
+
+CODE_0BC638:
+	IBT R0, #$04
+	WITH R3
+	ADD R0
+	WITH R4
+	ADD R0
+	WITH R5
+	ADD R0
+	INC R2
+	INC R2
+	LOOP : INC R2
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BC649:
+	SMS ($60), R11
+	IBT R1, #$FF
+	IBT R9, #$48
+	LMS R10, ($11C)
+	LMS R3, ($11E)
+	IWT R4, #$1CD6
+	IWT R5, #$0F00
+	IBT R6, #$10
+	IWT R11, #$1041
+	IBT R14, #$FF
+	CACHE
+	IBT R12, #$18
+	MOVE R13, R15
+	LDB (R5)
+	SUB R6
+	BNE CODE_0BC69D : NOP
+	LDB (R11)
+	AND #1
+	BEQ CODE_0BC69D : NOP
+	LDW (R4)
+	SUB R10
+	LMS R8, ($C4)
+	DEC R8
+	BMI CODE_0BC680 : NOP
+	NOT
+	INC R0
+CODE_0BC680:
+	SUB R9
+	BCS CODE_0BC69D : ADD R9
+	MOVE R8, R0
+	FROM R4
+	ADD #2
+	LDW (R0)
+	SUB R3
+	BPL CODE_0BC690 : NOP
+	NOT
+	INC R0
+CODE_0BC690:
+	SUB R9
+	BCS CODE_0BC69D : ADD R9
+	ADD R8
+	SUB R14
+	BCS CODE_0BC69D : ADD R14
+	MOVE R14, R0
+	MOVE R1, R12
+CODE_0BC69D:
+	IBT R0, #$04
+	TO R4
+	ADD R4
+	TO R5
+	ADD R5
+	TO R11
+	ADD R11
+	LOOP : NOP : MOVES R1, R1
+	BMI CODE_0BC6B2 : NOP
+	IBT R0, #$18
+	SUB R1
+	ADD R0
+	TO R1
+	ADD R0
+CODE_0BC6B2:
+	LMS R11, ($60)
+	JMP R11 : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC6B7:
+	LMS R0, ($180)
+	DEC R0
+	BMI CODE_0BC6C3 : NOP
+	LINK #4
+	IWT R15, #CODE_0BA2E8 : NOP
+CODE_0BC6C3:
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC6C5:
+	LMS R0, ($1D8)
+	DEC R0
+	BPL CODE_0BC6CD : NOP
+	SUB R0
+CODE_0BC6CD:
+	SBK
+	IBT R0, #DATA_0AF7D5>>16
+	ROMB
+	LINK #4
+	IWT R15, #CODE_0BEDF5 : NOP
+	SUB R0
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC6DA:
+	LINK #4
+	IWT R15, #CODE_0BCE5A : NOP
+	LINK #4
+	IWT R15, #CODE_0BEBC8 : NOP
+	SUB R0
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC6E7:
+	IBT R0, #DATA_0AEB20>>16
+	ROMB
+	IWT R15, #CODE_0BC995 : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC6EF:
+	IBT R0, #DATA_0AF613>>16
+	ROMB
+	IWT R15, #CODE_0BC99F : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC6F7:
+	IBT R0, #DATA_0AEB0E>>16
+	ROMB
+	LINK #4
+	IWT R15, #CODE_0BCF64 : NOP
+	SUB R0
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC703:
+	LINK #4
+	IWT R15, #CODE_0BCCBF : NOP
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC70A:
+	LINK #4
+	IWT R15, #CODE_0BCE5A : NOP
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+CODE_0BC711:
+	LMS R2, ($AA)
+	LINK #4
+	IWT R15, #CODE_0BCEBB : NOP
+	STOP : NOP
+
+;---------------------------------------------------------------------------
+
+; Note: Player state 0000 routine
+
+CODE_0BC71B:
+	IBT R0, #(DATA_0AAF12-(!Define_YI_AmbSpr1BA*$02))>>16
+	ROMB
+	LM R0, ($1E04)
+	DEC R0
+	BMI CODE_0BC775 : NOP
+	SBK
+	LM R0, ($1974)
+	AND #7
+	BNE CODE_0BC775 : NOP
+	IBT R0, #$10
+	LM R2, ($1970)
+	UMULT R2
+	HIB
+	SUB #8
+	LMS R2, ($8C)
+	TO R2
+	ADD R2
+	IBT R0, #$20
+	LM R3, ($1971)
+	UMULT R3
+	HIB
+	SUB #4
+	LMS R3, ($90)
+	TO R3
+	ADD R3
+	IWT R5, #$01DD
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IWT R0, #$10A2
+	ADD R1
+	FROM R2
+	STW (R0)
+	IWT R0, #$1142
+	ADD R1
+	FROM R3
+	STW (R0)
+	IBT R5, #$04
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$06
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+CODE_0BC775:
+	SUB R0
+	SMS ($CE), R0
+	LMS R1, ($AE)
+	LMS R0, ($B4)
+	SUB #0
+	BEQ CODE_0BC78F : FROM R1
+	LSR
+	IWT R14, #DATA_0AEA74
+	TO R14
+	ADD R14
+	GETB
+	SMS ($76), R0
+	FROM R1
+CODE_0BC78F:
+	ADD R1
+	INC R0
+	TO R15
+	ADD R15 : db $FF
+
+DATA_0BC794:
+	dw CODE_0BC7BC : NOP
+	NOP : dw CODE_0BBD06 : NOP
+	NOP : dw CODE_0BAE9E : NOP
+	NOP : dw CODE_0B9800 : NOP
+	NOP : dw CODE_0BA950 : NOP
+	NOP : dw CODE_0BEF0D : NOP
+	NOP : dw CODE_0B99D6 : NOP
+	NOP : dw CODE_0BB485 : NOP
+	NOP : dw CODE_0B9C92 : NOP
+	NOP : dw CODE_0BB65D : NOP
+	NOP
+
+CODE_0BC7BC:
+	LMS R0, ($14A)
+	SUB #0
+	BEQ CODE_0BC7E5 : NOP
+	LMS R1, ($14C)
+	DEC R1
+	BPL CODE_0BC7DB : NOP
+	IWT R1, #$0200
+	ADD R1
+	IWT R1, #$0401
+	SUB R1
+	BCC CODE_0BC7D8 : SUB R0
+	IBT R0, #$06
+CODE_0BC7D8:
+	SMS ($14C), R0
+CODE_0BC7DB:
+	SUB R0
+	SMS ($70), R0
+	SMS ($72), R0
+	BRA CODE_0BC807 : NOP
+
+CODE_0BC7E5:
+	LMS R0, ($1D6)
+	IBT R1, #$40
+	SUB R1
+	BCC CODE_0BC807 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BC807 : NOP
+	IBT R1, #$00
+	IBT R2, #$00
+	LINK #4
+	IWT R15, #CODE_0BCE64 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCF64 : NOP
+	IWT R15, #CODE_0BC9A4 : NOP
+
+CODE_0BC807:
+	LMS R0, ($C6)
+	DEC R0
+	BMI CODE_0BC812 : NOP
+	IWT R15, #CODE_0BC9AC : NOP
+
+CODE_0BC812:
+	LMS R0, ($DA)
+	SUB #0
+	BNE CODE_0BC81E : SUB R0
+	IWT R15, #CODE_0BC8A6 : NOP
+
+CODE_0BC81E:
+	SMS ($D4), R0
+	LINK #4
+	IWT R15, #CODE_0BDFE5 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BC834 : SUB R0
+	SMS ($DA), R0
+	IWT R15, #CODE_0BC9A4 : NOP
+
+CODE_0BC834:
+	IWT R1, #$0100
+	LMS R0, ($DA)
+	DEC R0
+	BPL CODE_0BC841 : INC R0
+	IWT R1, #$FF00
+CODE_0BC841:
+	SUB R1
+	TO R2
+	XOR R1
+	BPL CODE_0BC849 : NOP
+	SUB R0
+CODE_0BC849:
+	SBK
+	IWT R2, #$0100
+	LMS R0, ($C4)
+	DEC R0
+	BMI CODE_0BC859 : WITH R1
+	NOT
+	INC R1
+	WITH R2
+	NOT
+	INC R2
+CODE_0BC859:
+	SMS ($B4), R2
+	SMS ($A8), R2
+	SMS ($AA), R1
+	LMS R0, (!EXRAM_YI_Player_SubXPosLo&$0000FF)
+	LOB
+	ADD R2
+	SBK
+	HIB
+	TO R2
+	SEX
+	LMS R0, ($8C)
+	ADD R2
+	SBK
+	FROM R1
+	XOR R2
+	BPL CODE_0BC878 : WITH R2
+	NOT
+	INC R2
+CODE_0BC878:
+	LMS R0, ($90)
+	ADD R2
+	SBK
+	LMS R0, ($90)
+	AND #15
+	MOVES R1, R1
+	BMI CODE_0BC888 : ADD R0
+	INC R0
+CODE_0BC888:
+	ADD R0
+	IWT R14, #DATA_0AEBE2
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	SMS ($BE), R0
+	LMS R0, ($DA)
+	SUB #0
+	BNE CODE_0BC8A2 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCF64 : NOP
+CODE_0BC8A2:
+	IWT R15, #CODE_0BC98D : NOP
+
+CODE_0BC8A6:
+	LMS R7, ($D4)
+	DEC R7
+	BPL CODE_0BC8B1 : INC R7
+	IWT R15, #CODE_0BC990 : NOP
+
+CODE_0BC8B1:
+	SMS ($0A), R7
+	LM R1, ($0071)
+	LM R2, ($0073)
+	IWT R0, #DATA_0AEA7C
+	ADD R7
+	TO R14
+	ADD R7
+	GETB
+	INC R14
+	GETBH
+	SMS ($BE), R0
+	LMS R0, ($1DE)
+	LOB
+	BNE CODE_0BC908 : NOP
+	IBT R0, #$06
+	SUB R7
+	BCS CODE_0BC8FB : INC R7
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BC908 : NOP
+	IBT R0, #$0C
+	SUB R7
+	BCS CODE_0BC8FB : NOP
+	LM R0, ($0087)
+	LM R14, ($0089)
+	OR R14
+	OR #4
+	AND R1
+	SUB #4
+	BEQ CODE_0BC91A : SUB R0
+	SMS ($D4), R0
+	IWT R15, #CODE_0BC990 : NOP
+
+CODE_0BC8FB:
+	SMS ($D4), R7
+	IWT R0, #DATA_0AEA94
+	ADD R7
+	TO R14
+	ADD R7
+	GETB
+	SMS ($1DE), R0
+CODE_0BC908:
+	IBT R0, #$07
+	SUB R7
+	BCC CODE_0BC91B : SUB R0
+	SMS ($AA), R0
+	SMS ($B4), R0
+	SMS ($A8), R0
+	BRA CODE_0BC983 : NOP
+
+CODE_0BC91A:
+	SUB R0
+CODE_0BC91B:
+	SMS ($B4), R0
+	SMS ($A8), R0
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BC930 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCCBF : NOP
+	BRA CODE_0BC983 : NOP
+
+CODE_0BC930:
+	IWT R0, #$0800
+	SMS ($AA), R0
+	LM R0, ($1974)
+	LSR
+	BCC CODE_0BC97E : NOP
+	IWT R5, #$01DD
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	LM R0, ($1970)
+	AND #7
+	ADD R0
+	IWT R14, #DATA_0AEAB2
+	TO R14
+	ADD R14
+	GETBS
+	INC R14
+	LM R5, ($008C)
+	TO R5
+	ADD R5
+	IWT R0, #$10A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETBS
+	LM R5, ($0090)
+	TO R5
+	ADD R5
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$04
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R5
+	STW (R0)
+	DEC R5
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+CODE_0BC97E:
+	LINK #4
+	IWT R15, #CODE_0BCE5A : NOP
+CODE_0BC983:
+	LINK #4
+	IWT R15, #CODE_0BCF64 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCB33 : NOP
+CODE_0BC98D:
+	SUB R0
+	STOP : NOP
+
+CODE_0BC990:
+	LINK #4
+	IWT R15, #CODE_0BCCBF : NOP
+CODE_0BC995:
+	LINK #4
+	IWT R15, #CODE_0BCF64 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCB33 : NOP
+CODE_0BC99F:
+	LINK #4
+	IWT R15, #CODE_0BDFE5 : NOP
+CODE_0BC9A4:
+	LINK #4
+	IWT R15, #CODE_0BEBC8 : NOP
+	SUB R0
+	STOP : NOP
+
+CODE_0BC9AC:
+	LMS R0, ($B4)
+	SMS ($A8), R0
+	IBT R0, #$01
+	SMS ($D2), R0
+	LINK #4
+	IWT R15, #CODE_0BCE5A : NOP
+	SUB R0
+	SMS ($C2), R0
+	LINK #4
+	IWT R15, #CODE_0BCF64 : NOP
+	LINK #4
+	IWT R15, #CODE_0BE31C : NOP
+	LMS R1, ($C6)
+	FROM R1
+	SUB #3
+	BCS CODE_0BCA09 : NOP
+	FROM R1
+	ADD R1
+	ADD R0
+	IWT R14, #DATA_0AEABE
+	TO R14
+	ADD R14
+	GETBS
+	INC R14
+	LMS R2, ($AA)
+	ADD R2
+	BPL CODE_0BC9EB : SBK
+	GETB
+	SBK
+	INC R1
+	SMS ($C6), R1
+CODE_0BC9EB:
+	INC R14
+	IBT R1, #$40
+	LMS R0, ($B4)
+	SUB #0
+	BMI CODE_0BC9F9 : NOP
+	WITH R1
+	NOT
+	INC R1
+CODE_0BC9F9:
+	ADD R1
+	TO R1
+	XOR R1
+	BMI CODE_0BCA01 : NOP
+	SUB R0
+CODE_0BCA01:
+	SBK
+	SMS ($A8), R0
+	IWT R15, #CODE_0BCB06 : NOP
+
+CODE_0BCA09:
+	IBT R0, #$01
+	SMS ($FA), R0
+	LM R1, ($0071)
+	LINK #4
+	IWT R15, #CODE_0BE1D3 : NOP
+	IBT R9, #$FF
+	LMS R8, ($D0)
+	FROM R1
+	AND #4
+	BEQ CODE_0BCA26 : SUB R0
+	IBT R9, #$01
+	IBT R0, #$09
+CODE_0BCA26:
+	SUB R8
+	BEQ CODE_0BCA2D : ADD R8
+	FROM R8
+	ADD R9
+	SBK
+CODE_0BCA2D:
+	LMS R2, ($AA)
+	IBT R3, #$F0
+	LMS R0, ($FC)
+	IBT R4, #$18
+	AND R4
+	BNE CODE_0BCA97 : NOP
+	LMS R7, ($FE)
+	FROM R7
+	AND R4
+	BNE CODE_0BCA99 : NOP
+	FROM R9
+	ASR
+	ADD R8
+	SUB #2
+	BNE CODE_0BCA50 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCBC0 : NOP
+CODE_0BCA50:
+	LINK #4
+	IWT R15, #CODE_0BCC07 : NOP
+	LMS R1, ($84)
+	LMS R0, ($70)
+	AND R1
+	BEQ CODE_0BCA76 : NOP
+	LMS R0, ($D0)
+	SUB #0
+	BNE CODE_0BCA76 : NOP
+	IWT R0, #$0006
+	SMS ($C0), R0
+	IWT R0, #$FB80
+	SMS ($AA), R0
+	BRA CODE_0BCA84 : SUB R0
+
+CODE_0BCA76:
+	IWT R0, #$0140
+	AND R7
+	BNE CODE_0BCA99 : SUB R0
+	LMS R4, ($C0)
+	SUB R4
+	BNE CODE_0BCA90 : SUB R0
+CODE_0BCA84:
+	SMS ($C6), R0
+	LINK #4
+	IWT R15, #CODE_0BCBC0 : NOP
+	IWT R15, #CODE_0BCB30 : NOP
+
+CODE_0BCA90:
+	IBT R0, #$D0
+	SUB R2
+	BMI CODE_0BCA97 : TO R2
+	ADD R2
+CODE_0BCA97:
+	IBT R3, #$02
+CODE_0BCA99:
+	LINK #4
+	IWT R15, #CODE_0BCC6F : NOP
+	FROM R2
+	ADD R3
+	IWT R3, #$FF00
+	SUB R3
+	BMI CODE_0BCAA8 : TO R3
+	ADD R3
+CODE_0BCAA8:
+	SMS ($AA), R3
+	LMS R1, ($F8)
+	LMS R0, ($1D2)
+	LOB
+	BNE CODE_0BCAEA : NOP
+	IBT R0, #$04
+	SBK
+	LM R0, ($0071)
+	AND #3
+	IBT R0, #$10
+	BNE CODE_0BCAD2 : NOP
+	LMS R0, ($A8)
+	IBT R2, #$40
+	ADD R2
+	IWT R2, #$0081
+	SUB R2
+	BCC CODE_0BCAD2 : SUB R0
+	IBT R0, #$06
+CODE_0BCAD2:
+	SUB R1
+	BEQ CODE_0BCAEA : NOP
+	IBT R0, #$FE
+	BMI CODE_0BCADD : NOP
+	IBT R0, #$02
+CODE_0BCADD:
+	TO R1
+	ADD R1
+	IBT R0, #$0E
+	SUB R1
+	BCS CODE_0BCAE7 : NOP
+	IBT R1, #$08
+CODE_0BCAE7:
+	SMS ($F8), R1
+CODE_0BCAEA:
+	LMS R0, ($D0)
+	DEC R0
+	BMI CODE_0BCB00 : INC R0
+	SUB #9
+	BCS CODE_0BCB00 : INC R1
+	ADD #9
+	ADD R0
+	IWT R14, #DATA_0AEAEA
+	TO R14
+	BRA CODE_0BCB06 : ADD R14
+
+CODE_0BCB00:
+	IWT R0, #DATA_0AEACA
+	ADD R1
+	TO R14
+	ADD R1
+CODE_0BCB06:
+	LMS R0, ($14A)
+	MOVES R2, R0
+	BEQ CODE_0BCB16 : NOP
+	LINK #4
+	IWT R15, #CODE_0BEBD0 : NOP
+	BRA CODE_0BCB30 : NOP
+
+CODE_0BCB16:
+	LMS R0, ($150)
+	DEC R0
+	BPL CODE_0BCB30 : NOP
+	LMS R0, ($DE)
+	LOB
+	BEQ CODE_0BCB29 : ADD R0
+	IWT R14, #DATA_0AF647
+	TO R14
+	ADD R14
+CODE_0BCB29:
+	GETB
+	INC R14
+	GETBH
+	SMS ($BE), R0
+CODE_0BCB30:
+	SUB R0
+	STOP : NOP
+
+CODE_0BCB33:
+	SMS ($64), R11
+	IWT R1, #$0194
+	LMS R0, ($8C)
+	AND #8
+	BEQ CODE_0BCB43 : NOP
+	IBT R1, #$69
+CODE_0BCB43:
+	LMS R0, ($FE)
+	AND R1
+	SUB R1
+	BEQ CODE_0BCB8E : ADD R1
+	IBT R4, #$0C
+	IWT R1, #$00A0
+	AND R1
+	BEQ CODE_0BCB5B : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BCB65 : NOP
+CODE_0BCB5B:
+	LMS R0, ($C8)
+	DEC R0
+	BPL CODE_0BCBB2 : NOP
+	BRA CODE_0BCBBB : NOP
+
+CODE_0BCB65:
+	LMS R0, ($C8)
+	SMS ($FA), R0
+	DEC R0
+	BMI CODE_0BCB7F : NOP
+	LMS R0, ($C2)
+	SUB #2
+	BEQ CODE_0BCBB6 : NOP
+	LINK #4
+	IWT R15, #CODE_0BCC07 : NOP
+	BRA CODE_0BCBBB : NOP
+
+CODE_0BCB7F:
+	IBT R0, #$01
+	SMS ($C8), R0
+	SUB R0
+	SMS ($B4), R0
+	SMS ($A8), R0
+	BRA CODE_0BCBB6 : NOP
+
+CODE_0BCB8E:
+	IBT R4, #$00
+	LMS R1, ($AA)
+	MOVES R1, R1
+	BMI CODE_0BCBB6 : SUB R0
+	SMS ($D4), R0
+	SMS ($F8), R0
+	SMS ($1D2), R0
+	SMS ($D0), R0
+	INC R0
+	SMS ($C6), R0
+	IWT R0, #$0280
+	SUB R1
+	BPL CODE_0BCBB2 : ADD R1
+	SMS ($AA), R0
+CODE_0BCBB2:
+	SUB R0
+	SMS ($C8), R0
+CODE_0BCBB6:
+	LINK #4
+	IWT R15, #CODE_0BCBC2 : NOP
+CODE_0BCBBB:
+	LMS R11, ($64)
+	JMP R11 : NOP
+
+CODE_0BCBC0:
+	IBT R4, #$04
+CODE_0BCBC2:
+	LMS R0, ($1E8)
+	DEC R0
+	BPL CODE_0BCC05 : NOP
+	IBT R0, #$10
+	SBK
+	IBT R0, #!Define_YI_SoundID5F_Splash1
+	SMS ($7A), R0
+	SMS ($60), R11
+	IWT R5, #$01BA
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	LMS R5, ($8C)
+	IWT R0, #$10A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($90)
+	ADD R4
+	TO R5
+	BIC #15
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$1A
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$03
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R11, ($60)
+CODE_0BCC05:
+	JMP R11 : NOP
+
+CODE_0BCC07:
+	IBT R4, #$0A
+CODE_0BCC09:
+	LMS R0, ($A8)
+	SUB #0
+	BEQ CODE_0BCC6D : NOP
+	IBT R6, #$00
+	BPL CODE_0BCC1A : NOP
+	IBT R6, #$02
+	NOT
+	INC R0
+CODE_0BCC1A:
+	HIB
+	ADD R0
+	IWT R14, #DATA_0AEAFC
+	TO R14
+	ADD R14
+	GETB
+	LM R5, ($1974)
+	AND R5
+	BNE CODE_0BCC6D : INC R14
+	SMS ($60), R11
+	IWT R5, #$01BB
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	IBT R0, #!Define_YI_SoundID03_Swim
+	BPL CODE_0BCC40 : NOP
+	IBT R0, #!Define_YI_SoundID60_Splash2
+CODE_0BCC40:
+	SMS ($7A), R0
+	IWT R0, #$13C0
+	ADD R1
+	FROM R6
+	STW (R0)
+	LMS R5, ($8C)
+	IWT R0, #$10A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($90)
+	ADD R4
+	BIC #15
+	TO R5
+	GETB
+	TO R5
+	ADD R5
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$13
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R11, ($60)
+CODE_0BCC6D:
+	JMP R11 : NOP
+
+CODE_0BCC6F:
+	IBT R4, #$10
+	IBT R6, #$F8
+CODE_0BCC73:
+	LM R0, ($1974)
+	IBT R5, #$7F
+	AND R5
+	BNE CODE_0BCCBD : NOP
+	SMS ($60), R11
+	IWT R5, #$01BC
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	LM R5, ($1970)
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R5, ($8C)
+	LMS R0, ($C4)
+	DEC R0
+	BMI CODE_0BCC9F : FROM R4
+	NOT
+	ADD #4
+CODE_0BCC9F:
+	TO R5
+	ADD R5
+	IWT R0, #$10A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($90)
+	TO R5
+	ADD R6
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$FF
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R11, ($60)
+CODE_0BCCBD:
+	JMP R11 : NOP
+
+CODE_0BCCBF:
+	LMS R0, ($1AE)
+	ADD R0
+	BCC CODE_0BCCC8 : NOP
+	JMP R11 : NOP
+
+CODE_0BCCC8:
+	LMS R1, ($70)
+	LMS R2, ($AA)
+	LMS R0, ($D2)
+	TO R3
+	LOB
+	HIB
+	TO R8
+	SWAP
+	LM R4, ($1E3A)
+	SUB R0
+	SBK
+	LMS R0, ($B4)
+	TO R6
+	ADD R4
+	LMS R5, ($C0)
+	DEC R5
+	BPL CODE_0BCD52 : INC R5
+	MOVES R4, R4
+	BNE CODE_0BCCEE : SUB R0
+	INC R0
+CODE_0BCCEE:
+	SMS ($D2), R0
+CODE_0BCCF1:
+	IBT R0, #DATA_08AE18>>16
+	ROMB
+	LMS R7, ($B6)
+	IWT R0, #DATA_08AE18
+	TO R14
+	ADD R7
+	GETBS
+	ADD R0
+	ADD R0
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R9
+	OR R4
+	SMS ($A8), R9
+	BPL CODE_0BCD11 : WITH R9
+	NOT
+	INC R9
+CODE_0BCD11:
+	LM R0, ($01B4)
+	SUB #0
+	BEQ CODE_0BCD1E : NOP
+	IWT R15, #CODE_0BCE0A : NOP
+
+CODE_0BCD1E:
+	LMS R0, ($AE)
+	SUB #2
+	BEQ CODE_0BCD4E : NOP
+	IWT R0, #DATA_08AE58
+	TO R14
+	ADD R7
+	GETBS
+	ADD R0
+	ADD R0
+	LMULT
+	WITH R4
+	HIB
+CODE_0BCD33:
+	LOB
+	SWAP
+	OR R4
+	SM ($1E3C), R0
+	BMI CODE_0BCD3E : NOP
+	ADD R9
+CODE_0BCD3E:
+	IWT R4, #$0300
+	ADD R4
+	IWT R4, #$0700
+	SUB R4
+	BMI CODE_0BCD4B : ADD R4
+	MOVE R0, R4
+CODE_0BCD4B:
+	SMS ($AA), R0
+CODE_0BCD4E:
+	IWT R15, #CODE_0BCE5A : NOP
+
+CODE_0BCD52:
+	SMS ($A8), R6
+	DEC R3
+	BPL CODE_0BCD74 : INC R3
+	LMS R0, ($72)
+	LMS R7, ($84)
+	AND R7
+	BEQ CODE_0BCD6B : NOP
+	LMS R0, ($1E6)
+	SUB #8
+	BCC CODE_0BCD6F : NOP
+CODE_0BCD6B:
+	IWT R15, #CODE_0BCE0A : NOP
+
+CODE_0BCD6F:
+	IBT R3, #$01
+	SMS ($D2), R3
+CODE_0BCD74:
+	LMS R0, ($1E6)
+	DEC R0
+	BPL CODE_0BCD6B : NOP
+	LMS R0, ($AE)
+	DEC R0
+	BMI CODE_0BCD88 : INC R0
+	IBT R7, #$10
+	SUB R7
+	BNE CODE_0BCDFA : NOP
+CODE_0BCD88:
+	LMS R0, ($C2)
+	DEC R0
+	BPL CODE_0BCDFA : DEC R3
+	BNE CODE_0BCDAA : INC R3
+	IWT R0, #$0160
+	SUB R2
+	BPL CODE_0BCE0A : NOP
+	LMS R0, ($84)
+	AND R1
+	BNE CODE_0BCDA4 : NOP
+	IWT R15, #CODE_0BCE24 : NOP
+
+CODE_0BCDA4:
+	INC R3
+	FROM R3
+	OR R8
+	SMS ($D2), R0
+CODE_0BCDAA:
+	LMS R0, ($84)
+	AND R1
+	BEQ CODE_0BCDFA : NOP
+	LMS R0, ($AE)
+	IBT R7, #$10
+	SUB R7
+	BNE CODE_0BCDBE : NOP
+	IWT R15, #CODE_0BCECA : NOP
+
+CODE_0BCDBE:
+	IWT R0, #$FE80
+	MOVES R8, R8
+	BPL CODE_0BCDC9 : NOP
+	IWT R0, #$FD40
+CODE_0BCDC9:
+	SUB R2
+	BPL CODE_0BCDFA : NOP
+	LMS R0, ($1D4)
+	LOB
+	BNE CODE_0BCDE9 : INC R0
+	INC R0
+	SBK
+	INC R3
+	FROM R3
+	SUB #8
+	BCC CODE_0BCDE4 : INC R3
+	IBT R3, #$04
+	IBT R0, #!Define_YI_SoundID37_FlutterJump
+	SMS ($7A), R0
+CODE_0BCDE4:
+	FROM R3
+	OR R8
+	SMS ($D2), R0
+CODE_0BCDE9:
+	IWT R0, #$FEF0
+	ADD R2
+	BPL CODE_0BCDF1 : NOP
+	SUB R0
+CODE_0BCDF1:
+	LSR
+	LSR
+	LSR
+	NOT
+	IBT R7, #$F1
+	BRA CODE_0BCE27 : ADD R7
+
+CODE_0BCDFA:
+	IBT R3, #$00
+	SMS ($D2), R3
+	IBT R0, #$12
+	SMS ($1E6), R0
+	IWT R0, #$0006
+	SMS ($C0), R0
+CODE_0BCE0A:
+	LMS R0, ($1DC)
+	DEC R0
+	BPL CODE_0BCE27 : SUB R0
+	IBT R7, #$40
+	LMS R0, ($AE)
+	SUB #2
+	BEQ CODE_0BCE27 : FROM R7
+	IBT R7, #$28
+	LMS R0, ($84)
+	AND R1
+	BNE CODE_0BCE27 : FROM R7
+CODE_0BCE24:
+	IWT R0, #$00A0
+CODE_0BCE27:
+	TO R2
+	ADD R2
+	BMI CODE_0BCE57 : NOP
+	IWT R0, #$0400
+	SUB R2
+	BCS CODE_0BCE35 : ADD R2
+	MOVE R2, R0
+CODE_0BCE35:
+	MOVES R5, R5
+	BEQ CODE_0BCE57 : FROM R3
+	SUB #2
+	BCS CODE_0BCE57 : NOP
+	IWT R7, #$0008
+	FROM R5
+	SUB R7
+	BCS CODE_0BCE54 : NOP
+	LMS R0, ($1D4)
+	LOB
+	BNE CODE_0BCE54 : NOP
+	INC R5
+	IBT R0, #$08
+	SMS ($1D4), R0
+CODE_0BCE54:
+	SMS ($C0), R5
+CODE_0BCE57:
+	SMS ($AA), R2
+CODE_0BCE5A:
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	LMS R1, ($A8)
+	LMS R2, ($AA)
+CODE_0BCE64:
+	LM R0, ($1E3E)
+	SUB #0
+	BEQ CODE_0BCEAE : NOP
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	LM R3, ($1E40)
+	IWT R0, #DATA_08AB98
+	ADD R3
+	TO R14
+	ADD R3
+	GETB
+	INC R14
+	TO R6
+	GETBH
+	IBT R0, #$C0
+	ADD R3
+	SWAP
+	BMI CODE_0BCE89 : WITH R1
+	NOT
+	INC R1
+CODE_0BCE89:
+	LM R0, ($1E44)
+	LOB
+	ADD R1
+	SBK
+	HIB
+	SEX
+	LM R1, ($1E46)
+	ADD R1
+	SBK
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	LM R3, ($1E42)
+	ADD R3
+	SMS ($8C), R0
+	IBT R0, #DATA_0AEA74>>16
+	ROMB
+	BRA CODE_0BCEBB : NOP
+
+CODE_0BCEAE:
+	LMS R0, ($8A)
+	LOB
+	ADD R1
+	SBK
+	HIB
+	SEX
+	LMS R1, ($8C)
+	ADD R1
+	SBK
+CODE_0BCEBB:
+	LMS R0, ($8E)
+	LOB
+	ADD R2
+	SBK
+	HIB
+	SEX
+	LMS R2, ($90)
+	ADD R2
+	SBK
+	JMP R11 : NOP
+
+CODE_0BCECA:
+	IWT R6, #$0100
+	FROM R3
+	SUB #5
+	BCC CODE_0BCF39 : NOP
+	IBT R0, #DATA_08AC18>>16
+	ROMB
+	LMS R7, ($17E)
+	LMS R5, ($19E)
+	MOVES R5, R5
+	BMI CODE_0BCEED : SUB R0
+	IWT R0, #$0300
+	AND R1
+	IBT R0, #$FF
+	BEQ CODE_0BCEED : NOP
+	IBT R0, #$FC
+CODE_0BCEED:
+	ADD R7
+	SEX
+	IWT R14, #$0200
+	IBT R0, #$10
+	BMI CODE_0BCF04 : NOP
+	IWT R14, #$FE00
+	IWT R0, #$0300
+	AND R1
+	IBT R0, #$F2
+	BEQ CODE_0BCF04 : NOP
+	ADD R0
+CODE_0BCF04:
+	ADD R5
+	MOVE R5, R0
+	SUB R14
+	XOR R14
+	BMI CODE_0BCF0F : NOP
+	MOVE R5, R14
+CODE_0BCF0F:
+	SMS ($19E), R5
+	LMS R0, ($1A0)
+	LOB
+	ADD R5
+	SBK
+	HIB
+	ADD R7
+	TO R7
+	LOB
+	SMS ($17E), R7
+	IBT R0, #$18
+	ADD R7
+	LOB
+	ADD R0
+	IWT R14, #DATA_08AC18
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	NOT
+	INC R0
+	IWT R6, #$0080
+	SUB R6
+	BPL CODE_0BCF55 : TO R6
+	BRA CODE_0BCF55 : ADD R6
+
+CODE_0BCF39:
+	LMS R0, ($1D4)
+	LOB
+	BNE CODE_0BCF55 : NOP
+	IBT R0, #$04
+	SBK
+	FROM R3
+	SUB #4
+	BNE CODE_0BCF52 : INC R3
+	IWT R0, #$FF30
+	SMS ($19E), R0
+	IWT R2, #$FE40
+CODE_0BCF52:
+	SMS ($D2), R3
+CODE_0BCF55:
+	IBT R0, #$10
+	ADD R2
+	SUB R6
+	BPL CODE_0BCF5D : TO R6
+	ADD R6
+CODE_0BCF5D:
+	SMS ($AA), R6
+	IWT R15, #CODE_0BCE5A : NOP
+
+CODE_0BCF64:
+	IWT R14, #DATA_0AEB32
+	LMS R0, ($C6)
+	DEC R0
+	BPL CODE_0BCF7C : NOP
+	IWT R14, #DATA_0AEB0E
+	LMS R0, ($C2)
+	SUB #2
+	BCC CODE_0BCF7C : NOP
+	IWT R14, #DATA_0AEB20
+CODE_0BCF7C:
+	SMS ($64), R11
+	LMS R9, ($8C)
+	LMS R10, ($90)
+	IBT R2, #$00
+	SMS ($FE), R2
+	SMS ($100), R2
+	SMS ($102), R2
+	SMS ($FA), R2
+	SMS ($B6), R2
+	IBT R3, #$01
+	IBT R4, #$00
+	LINK #4
+	IWT R15, #CODE_0BD282 : CACHE
+	LINK #4
+	IWT R15, #CODE_0BD287+$01 : ALT2
+	IWT R0, #$0100
+	AND R7
+	SMS ($104), R0
+	IBT R3, #$FF
+	LINK #4
+	IWT R15, #CODE_0BD287+$01 : ALT2
+	LINK #4
+	IWT R15, #CODE_0BD287+$01 : ALT2
+	WITH R9
+	ADD R4
+	LMS R3, ($DC)
+	SUB R0
+	SBK
+	MOVES R1, R1
+	BEQ CODE_0BD001 : SUB R0
+	SMS ($A8), R0
+	SMS ($B4), R0
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BD001 : FROM R1
+	AND #15
+	BEQ CODE_0BCFD6 : INC R0
+	SUB R0
+CODE_0BCFD6:
+	INC R0
+	LM R1, ($0071)
+	AND R1
+	BEQ CODE_0BD01C : INC R3
+	MOVE R1, R0
+	LMS R0, ($1B2)
+	ADD R0
+	BCC CODE_0BD011 : NOP
+	LMS R5, ($106)
+	FROM R5
+	AND #3
+	SUB R1
+	BNE CODE_0BD011 : NOP
+	LMS R0, ($150)
+	DEC R0
+	BPL CODE_0BD011 : NOP
+	LINK #4
+	IWT R15, #CODE_0BDC36 : NOP
+	BRA CODE_0BD01C : NOP
+
+CODE_0BD001:
+	LMS R0, ($1C2)
+	SUB #0
+	BEQ CODE_0BD01C : NOP
+	IBT R0, #$0F
+	SUB R3
+	BCC CODE_0BD011 : TO R3
+	ADC R3
+CODE_0BD011:
+	IBT R0, #$23
+	SUB R3
+	BCS CODE_0BD019 : NOP
+	IBT R3, #$10
+CODE_0BD019:
+	SMS ($DC), R3
+CODE_0BD01C:
+	IBT R3, #$10
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+
+CODE_0BD028:
+	FROM R2
+	AND #3
+	BNE CODE_0BD032 : NOP
+	IWT R15, #CODE_0BD0AB : NOP
+
+CODE_0BD032:
+	LMS R0, ($AA)
+	ADD R0
+	BCC CODE_0BD0AA : SUB R0
+	SBK
+	INC R0
+	SMS ($D2), R0
+	IBT R0, #$14
+	SMS ($1E6), R0
+	LMS R0, ($1B2)
+	ADD R0
+	BCC CODE_0BD0A0 : NOP
+	IWT R0, #$F800
+	AND R7
+	IWT R1, #$A000
+	SUB R1
+	BNE CODE_0BD0A0 : NOP
+	MOVE R5, R14
+	FROM R6
+	LOB
+	IWT R14, #DATA_0AEBBC
+	TO R14
+	ADD R14
+	GETB
+	MOVE R14, R5
+	MOVE R5, R0
+	TO R1
+	AND #8
+	BEQ CODE_0BD0A0 : SWAP
+	ADD R0
+	LMS R0, ($00)
+	AND #15
+	BCC CODE_0BD074 : NOP
+	ADC #15
+CODE_0BD074:
+	SMS ($10E), R0
+	IBT R1, #$40
+	WITH R1
+	AND R5
+	BNE CODE_0BD08F : NOP
+	SUB #10
+	IBT R1, #$10
+	SUB R1
+	BCS CODE_0BD0A0 : NOP
+	LM R0, ($0071)
+	AND #8
+	BEQ CODE_0BD0A0 : NOP
+CODE_0BD08F:
+	LMS R0, ($150)
+	DEC R0
+	BPL CODE_0BD0A0 : NOP
+	IBT R5, #$08
+	LINK #4
+	IWT R15, #CODE_0BDC20 : NOP
+	BRA CODE_0BD0AB : NOP
+
+CODE_0BD0A0:
+	IBT R0, #!Define_YI_SoundID1F_HitHead
+	SMS ($7A), R0
+	IBT R0, #$08
+	SMS ($1DC), R0
+CODE_0BD0AA:
+	INC R10
+CODE_0BD0AB:
+	IBT R3, #$F0
+	LMS R4, ($B8)
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	SMS ($14), R1
+	LMS R0, ($010)
+	SMS ($B8), R0
+	LMS R0, ($00)
+	SMS ($20), R0
+	LMS R0, ($02)
+	SMS ($22), R0
+	SMS ($24), R6
+	SMS ($26), R7
+	LMS R4, ($BA)
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	SMS ($16), R1
+	LMS R0, ($010)
+	SMS ($BA), R0
+	LMS R0, ($00)
+	SMS ($28), R0
+	LMS R0, ($02)
+	SMS ($2A), R0
+	SMS ($2C), R6
+	SMS ($2E), R7
+	LMS R4, ($BC)
+	LINK #4
+	IWT R15, #CODE_0BD3EE+$01 : ALT2
+	SMS ($18), R1
+	LMS R4, ($010)
+	SMS ($BC), R4
+	FROM R2
+	AND #7
+	BNE CODE_0BD12C : NOP
+	LMS R0, ($1B4)
+	SUB #0
+	BEQ CODE_0BD11B : NOP
+	IBT R4, #$00
+	LMS R6, ($AA)
+	IWT R15, #CODE_0BD1A2 : NOP
+
+CODE_0BD11B:
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BD128 : NOP
+	IWT R0, #$0008
+	SMS ($C0), R0
+CODE_0BD128:
+	IWT R15, #CODE_0BD214 : NOP
+
+CODE_0BD12C:
+	LMS R0, ($014)
+	LMS R5, ($016)
+	SUB R5
+	BMI CODE_0BD138 : ADD R5
+	MOVE R0, R5
+CODE_0BD138:
+	LMS R5, ($018)
+	MOVE R3, R5
+	SUB R3
+	BPL CODE_0BD143 : ADD R3
+	MOVE R3, R0
+CODE_0BD143:
+	WITH R10
+	ADD R3
+	FROM R5
+	SUB R3
+	BNE CODE_0BD14F : NOP
+	LINK #4
+	IWT R15, #CODE_0BDB1D : NOP
+CODE_0BD14F:
+	LMS R0, ($016)
+	SUB R3
+	BNE CODE_0BD170 : NOP
+	LMS R0, ($28)
+	SMS ($00), R0
+	LMS R0, ($2A)
+	SMS ($02), R0
+	LMS R6, ($2C)
+	LMS R7, ($2E)
+	LMS R4, ($BA)
+	LINK #4
+	IWT R15, #CODE_0BDA99 : NOP
+CODE_0BD170:
+	LMS R0, ($014)
+	SUB R3
+	BNE CODE_0BD191 : NOP
+	LMS R0, ($20)
+	SMS ($00), R0
+	LMS R0, ($22)
+	SMS ($02), R0
+	LMS R6, ($24)
+	LMS R7, ($26)
+	LMS R4, ($B8)
+	LINK #4
+	IWT R15, #CODE_0BDB1D : NOP
+CODE_0BD191:
+	LMS R0, ($C6)
+	DEC R0
+	BPL CODE_0BD1A2 : NOP
+	LMS R6, ($AA)
+	SUB R0
+	SBK
+	IBT R0, #$FF
+	SMS ($8E), R0
+CODE_0BD1A2:
+	SMS ($B6), R4
+	SUB R0
+	SMS ($B8), R0
+	SMS ($BA), R0
+	SMS ($BC), R0
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BD1CC : SUB R0
+	SMS ($C0), R0
+	SMS ($D6), R0
+	LMS R0, ($A8)
+	SMS ($B4), R0
+	IBT R0, #$05
+	SMS ($1D4), R0
+	LINK #4
+	IWT R15, #CODE_0BDF2D : NOP
+CODE_0BD1CC:
+	LMS R0, ($1CA)
+	DEC R0
+	BMI CODE_0BD1D8 : NOP
+	LINK #4
+	IWT R15, #CODE_0BD24F : NOP
+CODE_0BD1D8:
+	LMS R5, ($104)
+	MOVES R5, R5
+	BEQ CODE_0BD214 : NOP
+	FROM R9
+	AND #15
+	SUB #4
+	SUB #9
+	BCS CODE_0BD214 : NOP
+	LM R0, ($0071)
+	AND #8
+	BEQ CODE_0BD214 : NOP
+	LMS R0, ($150)
+	DEC R0
+	BPL CODE_0BD214 : NOP
+	LMS R0, ($1B2)
+	ADD R0
+	BCC CODE_0BD214 : NOP
+	IBT R0, #$0A
+	SMS ($AC), R0
+	SUB R0
+	SMS ($F8), R0
+	IBT R0, #$06
+	SMS ($1D2), R0
+	IBT R0, #$08
+	SMS ($116), R0
+CODE_0BD214:
+	SMS ($8C), R9
+	SMS ($90), R10
+	SMS ($FC), R2
+	LMS R0, ($102)
+	DEC R0
+	BMI CODE_0BD22B : NOP
+	IBT R0, #$14
+	STOP : NOP
+
+CODE_0BD228:
+	BRA CODE_0BD24A : NOP
+
+CODE_0BD22B:
+	LMS R0, ($100)
+	OR R2
+	IWT R6, #$01F8
+	LM R5, ($1FEC)
+	DEC R5
+	BPL CODE_0BD242 : INC R5
+	AND R6
+	SUB R6
+	BEQ CODE_0BD246 : NOP
+	BRA CODE_0BD24A : NOP
+
+CODE_0BD242:
+	AND R6
+	BNE CODE_0BD24A : NOP
+CODE_0BD246:
+	IBT R0, #$10
+	STOP : NOP
+
+CODE_0BD24A:
+	LMS R11, ($64)
+	JMP R11 : NOP
+
+CODE_0BD24F:
+	LM R0, ($0094)
+	TO R5
+	BIC #7
+	LMS R0, ($8C)
+	SUB R5
+	LSR
+	LSR
+	IBT R5, #$42
+	SUB R5
+	BCS CODE_0BD280 : ADD R5
+	LSR
+	BNE CODE_0BD26D : ADD R0
+	LM R0, ($1EF0)
+CODE_0BD26A:
+	BRA CODE_0BD272+$01 : db $F5
+
+CODE_0BD26D:
+	IWT R5, #$1F30
+	ADD R5
+	LDW (R0)
+CODE_0BD272:
+	IWT R5, #$1FFF
+	AND R5
+	LM R5, ($009C)
+	SUB R5
+	LMS R5, ($1B4)
+	OR R5
+	SBK
+CODE_0BD280:
+	JMP R11 : NOP
+
+CODE_0BD282:
+	IBT R1, #$00
+	SMS ($106), R1
+CODE_0BD287:
+	SMS ($62), R11
+	WITH R2
+	ADD R2
+	WITH R1
+	ADD R1
+	WITH R1
+	ADD R1
+	LINK #4
+	IWT R15, #CODE_0BD316+$01 : ALT3
+CODE_0BD295:
+	AND #2
+	BEQ CODE_0BD312 : NOP
+	LMS R0, ($AE)
+	SUB #14
+	BNE CODE_0BD2F0 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BD2E9 : NOP
+	SMS ($04), R6
+	SMS ($06), R7
+	SMS ($08), R8
+	LMS R8, ($00)
+	FROM R3
+	ADD R3
+	MULT #8
+	TO R8
+	ADD R8
+	SMS ($0A), R8
+	LMS R0, ($02)
+	SMS ($0C), R0
+	SMS ($0E), R5
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	AND #4
+	LMS R6, ($04)
+	LMS R7, ($06)
+	LMS R8, ($08)
+	LMS R0, ($0A)
+	SMS ($00), R0
+	LMS R0, ($0C)
+	SMS ($02), R0
+	BNE CODE_0BD312 : NOP
+	BRA CODE_0BD2F0 : NOP
+
+CODE_0BD2E9:
+	LMS R0, ($AA)
+	ADD R0
+	BCS CODE_0BD312 : NOP
+CODE_0BD2F0:
+	LMS R0, ($A8)
+	SUB #0
+	BEQ CODE_0BD2FD : INC R2
+	XOR R3
+	BPL CODE_0BD312 : NOP
+CODE_0BD2FD:
+	INC R1
+	MOVES R4, R3
+	LMS R0, ($00)
+	AND #15
+	INC R3
+	BEQ CODE_0BD30B : DEC R3
+	XOR #15
+CODE_0BD30B:
+	DEC R0
+	BPL CODE_0BD312 : NOP
+	SMS ($8A), R3
+CODE_0BD312:
+	IWT R15, #CODE_0BD514 : NOP
+
+CODE_0BD316:
+	GETBS
+	INC R14
+	TO R8
+	ADD R9
+	GETBS
+	INC R14
+	ADD R10
+CODE_0BD31F:
+	LMS R6, ($1CA)
+	DEC R6
+	TO R7
+	BMI CODE_0BD32B : ADD R0
+	IWT R15, #CODE_0BD3BE : NOP
+
+CODE_0BD32B:
+	LMS R5, ($A6)
+	SUB R5
+	IWT R5, #$00E0
+	SUB R5
+	LMS R5, ($A4)
+	BCS CODE_0BD352 : FROM R8
+	SUB R5
+	HIB
+	BNE CODE_0BD352 : FROM R8
+	LSR
+	LSR
+	LSR
+	IBT R5, #$3E
+	TO R5
+	AND R5
+	IWT R0, #$01E0
+	AND R7
+	ADD R0
+	OR R5
+	IWT R5, #$409E
+	ADD R5
+	BRA CODE_0BD37C : LDW (R0)
+
+CODE_0BD352:
+	MERGE
+	BEQ CODE_0BD3B9 : TO R6
+	LOB
+	HIB
+	AND #14
+	UMULT #8
+	OR R6
+	IWT R6, #$0CAA
+	ADD R6
+	LDB (R0)
+	IBT R6, #$3F
+	AND R6
+	TO R6
+	SWAP
+	IWT R0, #$01E0
+	TO R5
+	AND R7
+	FROM R8
+	LOB
+	LSR
+	LSR
+	LSR
+	OR R5
+	LSR
+	OR R6
+	ADD R0
+	IWT R6, #$8000
+	ADD R6
+	STOP : NOP
+
+CODE_0BD37C:
+	MOVE R6, R0
+	HIB
+	UMULT #3
+CODE_0BD381:
+	MOVE R5, R14
+	IWT R14, #DATA_0ABB12
+	TO R14
+	ADD R14
+	SMS ($00), R8
+	GETB
+	INC R14
+	WITH R7
+	ASR
+	SMS ($02), R7
+	IBT R8, #$F8
+	GETBH
+	INC R14
+	MOVE R7, R0
+	HIB
+	AND R8
+	IBT R8, #$72
+	SUB R8
+	SUB #15
+	BCS CODE_0BD3B2 : TO R8
+	IBT R8, #$11
+	ADD R8
+	LM R8, ($1E08)
+	AND R8
+	BEQ CODE_0BD3B2 : TO R8
+	WITH R7
+	OR #2
+	TO R8
+CODE_0BD3B2:
+	GETB
+	MOVE R0, R7
+	MOVE R14, R5
+	JMP R11 : NOP
+
+CODE_0BD3B9:
+	IBT R6, #$01
+	BRA CODE_0BD381 : SUB R0
+
+CODE_0BD3BE:
+	LM R0, ($0094)
+	BIC #7
+	FROM R8
+	SUB R0
+	LSR
+	LSR
+	IBT R5, #$42
+	SUB R5
+	BCS CODE_0BD3EA : ADD R5
+	LSR
+	BNE CODE_0BD3D9 : ADD R0
+	LM R0, ($1EF0)
+	BRA CODE_0BD3DE+$01 : db $F5
+
+CODE_0BD3D9:
+	IWT R5, #$1F30
+	ADD R5
+	LDW (R0)
+CODE_0BD3DE:
+	IWT R5, #$1FFF
+	AND R5
+	LM R5, ($009C)
+	SUB R5
+	ADD R0
+	TO R7
+	ADD R7
+CODE_0BD3EA:
+	IWT R15, #CODE_0BD32B+$01 : ALT1
+
+CODE_0BD3EE:
+	SMS ($62), R11
+	WITH R2
+	ADD R2
+	SUB R0
+	SMS ($010), R0
+	LINK #4
+	IWT R15, #CODE_0BD316+$01 : ALT3
+CODE_0BD3FC:
+	LMS R0, ($02)
+	TO R1
+	AND #15
+	MOVE R12, R1
+	IBT R5, #$05
+	DEC R3
+	BPL CODE_0BD40C : INC R3
+	IBT R5, #$04
+CODE_0BD40C:
+	FROM R7
+	AND R5
+	TO R13
+	SUB R5
+	BEQ CODE_0BD43B : NOP
+	SMS ($04), R6
+	SMS ($06), R7
+	SMS ($08), R8
+	LMS R8, ($00)
+	SMS ($0A), R8
+	LMS R7, ($02)
+	SMS ($0C), R7
+	SMS ($0E), R5
+	FROM R3
+	ADD R7
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	LMS R5, ($0E)
+	AND R5
+	SUB R5
+	BNE CODE_0BD4A6 : WITH R1
+	SUB R3
+CODE_0BD43B:
+	SMS ($5C), R14
+	FROM R8
+	SWAP
+	MOVES R3, R3
+	BPL CODE_0BD447 : LSR
+	INC R0
+	INC R0
+CODE_0BD447:
+	IWT R14, #DATA_0ABD0E
+	TO R14
+	ADD R14
+	LMS R0, ($00)
+	AND #15
+	MULT #8
+	TO R14
+	ADD R14
+	TO R5
+	GETB
+	INC R14
+	GETBS
+	LMS R14, ($5C)
+	SUB R1
+	XOR R3
+	BMI CODE_0BD4A1 : TO R1
+	XOR R3
+	INC R1
+	SMS ($010), R5
+	MOVES R3, R3
+	BPL CODE_0BD4E4 : INC R2
+	FROM R5
+	SEX
+	BPL CODE_0BD475 : NOP
+	NOT
+	INC R0
+CODE_0BD475:
+	LSR
+	LSR
+	LSR
+	LSR
+	ADD #9
+	ADD R1
+	BMI CODE_0BD4A0 : NOP
+	LMS R0, ($AA)
+	ADD R0
+	BCC CODE_0BD4E8 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BD4E8 : NOP
+	DEC R4
+	BPL CODE_0BD4A0 : INC R4
+	LM R0, ($00A9)
+	XOR R5
+	SEX
+	BMI CODE_0BD4A0 : SUB R0
+	SMS ($010), R0
+	WITH R10
+	ADD R1
+CODE_0BD4A0:
+	DEC R2
+CODE_0BD4A1:
+	MOVES R13, R13
+	BEQ CODE_0BD4DE : NOP
+CODE_0BD4A6:
+	MOVE R1, R12
+	LMS R6, ($04)
+	LMS R7, ($06)
+	LMS R8, ($08)
+	LMS R0, ($0A)
+	SMS ($00), R0
+	LMS R0, ($0C)
+	SMS ($02), R0
+	IBT R0, #$02
+	DEC R3
+	BPL CODE_0BD4C5 : INC R3
+	IBT R0, #$03
+CODE_0BD4C5:
+	AND R7
+	BEQ CODE_0BD4DE : NOP
+	INC R2
+	WITH R1
+	NOT
+	MOVES R3, R3
+	BPL CODE_0BD4E4 : INC R1
+	LMS R0, ($AA)
+	ADD R0
+	BCS CODE_0BD4DD : FROM R1
+	ADD #8
+	BPL CODE_0BD4E8 : NOP
+CODE_0BD4DD:
+	DEC R2
+CODE_0BD4DE:
+	IBT R1, #$20
+	DEC R3
+	BMI CODE_0BD4E8 : INC R3
+CODE_0BD4E4:
+	IWT R15, #CODE_0BD631 : NOP
+
+CODE_0BD4E8:
+	IWT R15, #CODE_0BD7FD : NOP
+
+CODE_0BD4EC:
+	IBT R0, #$18
+	AND R7
+	SUB #8
+	BEQ CODE_0BD4FF : INC R0
+	LMS R0, ($02)
+	LMS R5, ($1BC)
+	SUB R5
+	BMI CODE_0BD4FF : SUB R0
+	INC R0
+CODE_0BD4FF:
+	LSR
+	LMS R0, ($FE)
+	ROL
+	SBK
+	LMS R0, ($100)
+	ADD R0
+	IBT R5, #$20
+	WITH R5
+	AND R7
+	BEQ CODE_0BD511 : NOP
+	INC R0
+CODE_0BD511:
+	SBK
+	JMP R11 : NOP
+
+CODE_0BD514:
+	LINK #4
+	IWT R15, #CODE_0BD4EC : NOP
+	IWT R0, #$F800
+	AND R7
+	BEQ CODE_0BD595 : HIB
+	LSR
+	INC R0
+	TO R15
+	ADD R15 : db $FF
+
+DATA_0BD525:
+	dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD88D : NOP
+	NOP : dw CODE_0BD628 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD883 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD5F1 : NOP
+	NOP : dw CODE_0BD59A : NOP
+	NOP : dw CODE_0BD61F : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD595 : NOP
+	NOP : dw CODE_0BD8AC : NOP
+	NOP
+
+CODE_0BD595:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD59A:
+	LMS R0, ($1EA)
+	SUB #0
+	BNE CODE_0BD5EC : NOP
+	LMS R0, ($C0)
+	LMS R5, ($B4)
+	OR R5
+	BEQ CODE_0BD5EC : NOP
+	IBT R0, #$08
+	SMS ($1EA), R0
+	IBT R0, #!Define_YI_SoundID04_SpitOut
+	SMS ($7A), R0
+	SMS ($42), R1
+	IWT R5, #$0214
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	LMS R0, ($00)
+	TO R5
+	BIC #15
+	IWT R0, #$10A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($02)
+	TO R5
+	BIC #15
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$0E
+	IWT R0, #$13C2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$04
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R1, ($42)
+CODE_0BD5EC:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD5F1:
+	MOVE R5, R14
+	FROM R6
+	LOB
+	IWT R14, #DATA_0AEBBC
+	TO R14
+	ADD R14
+	GETB
+	MOVE R14, R5
+	IBT R5, #$01
+	MOVES R3, R3
+	BMI CODE_0BD606 : NOP
+	IBT R5, #$02
+CODE_0BD606:
+	TO R5
+	AND R5
+	BEQ CODE_0BD61A : NOP
+	IWT R0, #$7D0B
+	SUB R6
+	BCS CODE_0BD617 : NOP
+	IWT R0, #$8000
+	TO R5
+	OR R5
+CODE_0BD617:
+	SMS ($106), R5
+CODE_0BD61A:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD61F:
+	LM R0, ($1E08)
+	AND #8
+	BEQ CODE_0BD62C : NOP
+CODE_0BD628:
+	IBT R0, #$02
+	STOP : NOP
+
+CODE_0BD62C:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD631:
+	LINK #4
+	IWT R15, #CODE_0BD4EC : NOP
+	IWT R0, #$F800
+	AND R7
+	BEQ CODE_0BD6B2 : HIB
+	LSR
+	INC R0
+	TO R15
+	ADD R15 : db $FF
+
+DATA_0BD642:
+	dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD749 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD88D : NOP
+	NOP : dw CODE_0BD628 : NOP
+	NOP : dw CODE_0BD79A : NOP
+	NOP : dw CODE_0BD7DE : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD883 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B7 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD702 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD59A : NOP
+	NOP : dw CODE_0BD61F : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD6B2 : NOP
+	NOP : dw CODE_0BD883 : NOP
+	NOP : dw CODE_0BD8AC : NOP
+	NOP
+
+CODE_0BD6B2:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD6B7:
+	LM R0, ($1E08)
+	IBT R5, #$10
+	AND R5
+	BEQ CODE_0BD6FD : NOP
+	LMS R0, ($AA)
+	ADD R0
+	BCC CODE_0BD6FD : NOP
+	IWT R5, #$0004
+	SMS ($42), R1
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BD6FA : NOP
+	IBT R5, #$02
+	IWT R0, #$0F00
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($00)
+	TO R5
+	BIC #15
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($02)
+	TO R5
+	BIC #15
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R0, #$0A
+	STOP : NOP
+
+CODE_0BD6FA:
+	LMS R1, ($42)
+CODE_0BD6FD:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD702:
+	LM R0, ($1974)
+	AND #7
+	BNE CODE_0BD73E : NOP
+	SMS ($42), R1
+	IBT R0, #!Define_YI_SoundID04_SpitOut
+	SMS ($7A), R0
+	IWT R5, #$0201
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IWT R0, #$10A2
+	ADD R1
+	FROM R9
+	STW (R0)
+	IBT R0, #$06
+	TO R5
+	ADD R10
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$05
+	IWT R0, #$13C2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$02
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R1, ($42)
+CODE_0BD73E:
+	LMS R0, ($AA)
+	ADD #4
+	SBK
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD749:
+	LMS R0, ($1BE)
+	SUB #0
+	BNE CODE_0BD794 : NOP
+	SMS ($42), R1
+	IWT R5, #$007E
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BD791 : NOP
+	IBT R5, #$02
+	IWT R0, #$0F00
+	ADD R1
+	FROM R5
+	STW (R0)
+	FROM R9
+	TO R5
+	SUB #8
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($02)
+	TO R5
+	BIC #15
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R0, #$F0
+	TO R5
+	OR R5
+	IWT R0, #$19D6
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R0, #$01
+	SMS ($1BE), R0
+	IBT R0, #$1C
+	SMS ($1F0), R0
+CODE_0BD791:
+	LMS R1, ($42)
+CODE_0BD794:
+	DEC R2
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD79A:
+	LMS R0, ($AA)
+	ADD R0
+	BCC CODE_0BD7D9 : FROM R6
+	LOB
+	IWT R5, #$0067
+	TO R5
+	ADD R5
+	SMS ($42), R1
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BD7D9 : NOP
+	IBT R5, #$02
+	IWT R0, #$0F00
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($00)
+	TO R5
+	BIC #15
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($02)
+	TO R5
+	BIC #15
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R0, #$0A
+	STOP : NOP
+
+CODE_0BD7D6:
+	LMS R1, ($42)
+CODE_0BD7D9:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD7DE:
+	LMS R0, ($AA)
+	ADD R0
+	BCC CODE_0BD7F8 : SUB R0
+	SMS ($01C), R0
+	IBT R0, #$80
+	SMS ($01E), R0
+	SMS ($42), R1
+	LINK #4
+	IWT R15, #CODE_0BDF81 : NOP
+	LMS R1, ($42)
+CODE_0BD7F8:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD7FD:
+	LINK #4
+	IWT R15, #CODE_0BD4EC : NOP
+	IWT R0, #$F800
+	AND R7
+	BEQ CODE_0BD87E : HIB
+	LSR
+	INC R0
+	TO R15
+	ADD R15 : db $FF
+
+DATA_0BD80E:
+	dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD88D : NOP
+	NOP : dw CODE_0BD628 : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD883 : NOP
+	NOP : dw CODE_0BD8CB : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD8E9 : NOP
+	NOP : dw CODE_0BD979 : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD59A : NOP
+	NOP : dw CODE_0BD61F : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BDA19 : NOP
+	NOP : dw CODE_0BD883 : NOP
+	NOP : dw CODE_0BD87E : NOP
+	NOP : dw CODE_0BD8AC : NOP
+	NOP
+
+CODE_0BD87E:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD883:
+	IBT R0, #$01
+	SMS ($102), R0
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD88D:
+	LMS R0, ($AC)
+	LM R11, ($1E04)
+	OR R11
+	BNE CODE_0BD8A7 : NOP
+	IBT R0, #$1A
+	STOP : NOP
+
+CODE_0BD89C:
+	LMS R0, ($AC)
+	IBT R11, #$28
+	SUB R11
+	BNE CODE_0BD8A7 : SUB R0
+	STOP : NOP
+
+CODE_0BD8A7:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD8AC:
+	LMS R0, ($AC)
+	LM R11, ($1E04)
+	OR R11
+	BNE CODE_0BD8C6 : NOP
+	IBT R0, #$12
+	STOP : NOP
+
+CODE_0BD8BB:
+	LMS R0, ($AC)
+	IBT R11, #$0E
+	SUB R11
+	BNE CODE_0BD8C6 : SUB R0
+	STOP : NOP
+
+CODE_0BD8C6:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD8CB:
+	LMS R0, ($D4)
+	DEC R0
+	BMI CODE_0BD8E4 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BD8E4 : FROM R6
+	ADD #1
+	AND #2
+	BNE CODE_0BD8E4 : NOP
+	IBT R0, #$10
+	TO R1
+	ADD R1
+CODE_0BD8E4:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD8E9:
+	FROM R2
+	LSR
+	BCC CODE_0BD8E4 : NOP
+	IBT R12, #$00
+	IBT R13, #$00
+	IWT R5, #$0117
+	IWT R0, #$7502
+	SUB R6
+	BEQ CODE_0BD90C : NOP
+	IBT R12, #$08
+	IBT R13, #$08
+	IWT R0, #$7500
+	SUB R6
+	BEQ CODE_0BD909 : NOP
+	IBT R12, #$F8
+CODE_0BD909:
+	IWT R5, #$0118
+CODE_0BD90C:
+	LMS R0, ($00)
+	BIC #15
+	ADD R12
+	SBK
+	LMS R0, ($02)
+	BIC #15
+	ADD R13
+	SBK
+	SMS ($42), R1
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BD971 : NOP
+	LMS R5, ($00)
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R5, ($02)
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$70
+	IWT R0, #$1A96
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #$701360
+	ADD R1
+	LDW (R0)
+	IWT R5, #$0117
+	SUB R5
+	IBT R12, #$0A
+	IBT R13, #$02
+	BEQ CODE_0BD953 : NOP
+	IBT R12, #$0C
+	IBT R13, #$04
+CODE_0BD953:
+	IWT R0, #$1BB8
+	ADD R1
+	LDW (R0)
+	TO R5
+	ADD R13
+	IWT R0, #$1BB8
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #$1BB6
+	ADD R1
+	FROM R5
+	STW (R0)
+	MOVE R0, R12
+	STOP : NOP
+
+CODE_0BD96A:
+	LMS R1, ($42)
+	INC R1
+	BRA CODE_0BD974 : INC R1
+
+CODE_0BD971:
+	LMS R1, ($42)
+CODE_0BD974:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BD979:
+	FROM R2
+	LSR
+	BCC CODE_0BD974 : NOP
+	SMS ($42), R1
+	SMS ($44), R2
+	FROM R6
+	LOB
+	TO R2
+	LSR
+	BCC CODE_0BD992 : NOP
+	LMS R0, ($00)
+	IBT R5, #$10
+	SUB R5
+	SBK
+CODE_0BD992:
+	IWT R5, #$0121
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BDA0E : NOP
+	IBT R0, #!Define_YI_SoundID33_StepOnNumberPlatform
+	SMS ($7A), R0
+	LMS R0, ($00)
+	BIC #15
+	TO R5
+	ADD #8
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($02)
+	BIC #15
+	TO R5
+	ADD #8
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #$1978
+	ADD R1
+	FROM R2
+	STW (R0)
+	IWT R0, #$1BB6
+	ADD R1
+	LDW (R0)
+	TO R5
+	ADD #4
+	IWT R0, #$1BB6
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #$1BB8
+	ADD R1
+	LDW (R0)
+	TO R5
+	ADD #3
+	IWT R0, #$1BB8
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #$1B58
+	ADD R1
+	LDW (R0)
+	TO R5
+	ADD #2
+	IWT R0, #$1B58
+	ADD R1
+	FROM R5
+	STW (R0)
+	FROM R2
+	ADD R2
+	IWT R5, #$776D
+	TO R5
+	ADD R5
+	IBT R0, #$0E
+	STOP : NOP
+
+CODE_0BD9F9:
+	LMS R0, ($00)
+	IBT R1, #$10
+	ADD R1
+	SBK
+	INC R5
+	IBT R0, #$0E
+	STOP : NOP
+
+CODE_0BDA05:
+	LMS R0, ($42)
+	TO R1
+	ADD #4
+	BRA CODE_0BDA11 : NOP
+
+CODE_0BDA0E:
+	LMS R1, ($42)
+CODE_0BDA11:
+	LMS R2, ($44)
+CODE_0BDA14:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDA19:
+	LMS R0, ($1C0)
+	SUB #0
+	BNE CODE_0BDA14 : NOP
+	FROM R2
+	LSR
+	BCC CODE_0BDA14 : NOP
+	IBT R12, #$00
+	IBT R13, #$00
+	FROM R6
+	LOB
+	IBT R5, #$04
+	SUB R5
+	BCS CODE_0BDA43 : NOP
+	ADD #2
+	NOT
+	INC R0
+	ADD R0
+	ADD R0
+	ADD R0
+	TO R12
+	ADD R0
+	IBT R13, #$10
+	IWT R5, #$0196
+	BRA CODE_0BDA4F : NOP
+
+CODE_0BDA43:
+	XOR #1
+	ADD R0
+	ADD R0
+	ADD R0
+	TO R12
+	ADD R0
+	IBT R13, #$00
+	IWT R5, #$0195
+CODE_0BDA4F:
+	SMS ($04), R13
+	LMS R0, ($00)
+	BIC #15
+	ADD R12
+	SBK
+	LMS R0, ($02)
+	BIC #15
+	ADD R13
+	SBK
+	SMS ($42), R1
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BDA91 : NOP
+	IBT R5, #$02
+	IWT R0, #$0F00
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R5, ($00)
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R5, ($02)
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($04)
+	DEC R0
+	BPL CODE_0BDA8E : INC R0
+	IBT R0, #$04
+CODE_0BDA8E:
+	SMS ($1C0), R0
+CODE_0BDA91:
+	LMS R1, ($42)
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDA99:
+	SMS ($62), R11
+	IWT R0, #$F800
+	AND R7
+	BEQ CODE_0BDB18 : HIB
+	LSR
+	INC R0
+	TO R15
+	ADD R15 : db $FF
+
+DATA_0BDAA8:
+	dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDD76 : NOP
+	NOP : dw CODE_0BDE02 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDCE2 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDED6 : NOP
+	NOP : dw CODE_0BDB9C : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDC7A : NOP
+	NOP : dw CODE_0BDBD1 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDD67 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP
+
+CODE_0BDB18:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDB1D:
+	SMS ($62), R11
+	IWT R0, #$F800
+	AND R7
+	BEQ CODE_0BDB18 : HIB
+	LSR
+	INC R0
+	TO R15
+	ADD R15 : db $FF
+
+DATA_0BDB2C:
+	dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDD71 : NOP
+	NOP : dw CODE_0BDE02 : NOP
+	NOP : dw CODE_0BDE0C : NOP
+	NOP : dw CODE_0BDCDD : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDED6 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDEB8 : NOP
+	NOP : dw CODE_0BDE47 : NOP
+	NOP : dw CODE_0BDE4D : NOP
+	NOP : dw CODE_0BDEF0 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDC75 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDD67 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP : dw CODE_0BDB18 : NOP
+	NOP
+
+CODE_0BDB9C:
+	LMS R0, ($AE)
+	SUB #8
+	BNE CODE_0BDBCC : NOP
+	LM R0, ($0071)
+	AND #4
+	BEQ CODE_0BDBCC : NOP
+	IBT R0, #!Define_YI_SoundID5D_SelectLevel
+	SMS ($7A), R0
+	IBT R0, #$40
+	SMS ($B6), R0
+	SWAP
+	SMS ($18A), R0
+	SUB R0
+	SMS ($188), R0
+	SMS ($18C), R0
+	IWT R1, #$0100
+	SMS ($180), R1
+	SUB R0
+	SMS ($B4), R0
+CODE_0BDBCC:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDBD1:
+	LMS R0, ($1B2)
+	ADD R0
+	BCC CODE_0BDC1B : FROM R6
+	LOB
+	IWT R14, #DATA_0AEBBC
+	TO R14
+	ADD R14
+	GETB
+	MOVE R5, R0
+	TO R14
+	AND #4
+	BEQ CODE_0BDC1B : SWAP
+	ADD R0
+	LMS R0, ($00)
+	AND #15
+	BCC CODE_0BDBF2 : NOP
+	ADC #15
+CODE_0BDBF2:
+	SMS ($10E), R0
+	IBT R14, #$40
+	WITH R14
+	AND R5
+	BNE CODE_0BDC0D : NOP
+	SUB #8
+	IBT R14, #$10
+	SUB R14
+	BCS CODE_0BDC1B : NOP
+	LM R0, ($0071)
+	AND #4
+	BEQ CODE_0BDC1B : NOP
+CODE_0BDC0D:
+	LMS R0, ($150)
+	DEC R0
+	BPL CODE_0BDC1B : NOP
+	IBT R5, #$04
+	LINK #4
+	IWT R15, #CODE_0BDC20 : NOP
+CODE_0BDC1B:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDC20:
+	IWT R0, #$7D0B
+	SUB R6
+	BCS CODE_0BDC36 : ADD R6
+	IWT R0, #$7D1B
+	SUB R6
+	IWT R0, #$8000
+	BCS CODE_0BDC34 : NOP
+	IWT R0, #$A000
+CODE_0BDC34:
+	TO R5
+	OR R5
+CODE_0BDC36:
+	FROM R5
+	LSR
+	WITH R5
+	BIC #15
+CODE_0BDC3B:
+	INC R5
+	INC R5
+	BCC CODE_0BDC3B : LSR
+	SMS ($106), R5
+	IBT R0, #$06
+	SMS ($AC), R0
+	SMS ($1B0), R0
+	SUB R0
+	SMS ($108), R0
+	SMS ($10A), R0
+	SMS ($1F6), R0
+	SMS ($B4), R0
+	SMS ($A8), R0
+	SMS ($AA), R0
+	SMS ($DE), R0
+	INC R0
+	SMS ($10C), R0
+	IBT R0, #!Define_YI_SoundID31_EnterPipe
+	SMS ($7A), R0
+	LMS R0, ($00)
+	LMS R5, ($10E)
+	SUB R5
+	ADD #8
+	JMP R11 : SBK
+
+CODE_0BDC75:
+	MOVES R4, R4
+	BEQ CODE_0BDCB4 : NOP
+CODE_0BDC7A:
+	LMS R0, ($1EA)
+	SUB #0
+	BNE CODE_0BDCB4 : NOP
+	IBT R0, #$08
+	SMS ($1EA), R0
+	IBT R0, #!Define_YI_SoundID60_Splash2
+	SMS ($7A), R0
+	IWT R5, #$0201
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IWT R0, #$10A2
+	ADD R1
+	FROM R9
+	STW (R0)
+	IBT R0, #$20
+	TO R5
+	ADD R10
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$05
+	IWT R0, #$13C2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$02
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+CODE_0BDCB4:
+	FROM R4
+	SWAP
+	BEQ CODE_0BDCC3 : NOP
+	IWT R0, #$FD00
+	BPL CODE_0BDCD4 : NOP
+	NOT
+	BRA CODE_0BDCD4 : INC R0
+
+CODE_0BDCC3:
+	FROM R6
+	HIB
+	IWT R5, #$0082
+	SUB R5
+	BMI CODE_0BDCD8 : NOP
+	IWT R0, #$FF00
+	BEQ CODE_0BDCD4 : NOP
+	NOT
+	INC R0
+CODE_0BDCD4:
+	SM ($1E3A), R0
+CODE_0BDCD8:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDCDD:
+	MOVES R4, R4
+	BEQ CODE_0BDCD8 : NOP
+CODE_0BDCE2:
+	IBT R0, #$05
+	SMS ($FA), R0
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BDCF8 : NOP
+	IWT R5, #$021C
+	IBT R6, #$02
+	IBT R0, #$08
+	BRA CODE_0BDD2E : NOP
+
+CODE_0BDCF8:
+	LMS R0, ($CC)
+	DEC R0
+	BMI CODE_0BDD10 : NOP
+	LMS R0, ($F8)
+	LMS R5, ($110)
+	SBK
+	SUB R5
+	BEQ CODE_0BDD62 : ADD R5
+	BNE CODE_0BDD62 : NOP
+	BRA CODE_0BDD27 : NOP
+
+CODE_0BDD10:
+	LMS R0, ($B4)
+	DEC R0
+	BPL CODE_0BDD19 : INC R0
+	NOT
+	INC R0
+CODE_0BDD19:
+	LMS R5, ($110)
+	ADD R5
+	IWT R5, #$1800
+	CMP R5
+	BCC CODE_0BDD62 : SBK
+	SUB R5
+	SBK
+CODE_0BDD27:
+	IWT R5, #$021D
+	IBT R6, #$03
+	IBT R0, #$08
+CODE_0BDD2E:
+	SMS ($1EA), R0
+	IBT R0, #!Define_YI_SoundID60_Splash2
+	SMS ($7A), R0
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IWT R0, #$10A2
+	ADD R1
+	FROM R9
+	STW (R0)
+	IBT R0, #$10
+	TO R5
+	ADD R10
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$09
+	IWT R0, #$13C2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #$1782
+	ADD R1
+	FROM R6
+	STW (R0)
+	LMS R5, ($C4)
+	IWT R0, #$13C0
+	ADD R1
+	FROM R5
+	STW (R0)
+CODE_0BDD62:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDD67:
+	IBT R0, #$03
+	SMS ($FA), R0
+CODE_0BDD6C:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDD71:
+	MOVES R4, R4
+	BEQ CODE_0BDD6C : NOP
+CODE_0BDD76:
+	LMS R0, ($7C)
+	AND #7
+	SUB #4
+	BNE CODE_0BDDFD : NOP
+	LMS R0, ($FA)
+	SUB #4
+	BEQ CODE_0BDDB8 : NOP
+	LMS R8, ($00)
+	LMS R0, ($02)
+	IBT R7, #$10
+	SUB R7
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	FROM R6
+	HIB
+	IBT R5, #$2A
+	SUB R5
+	BEQ CODE_0BDDA4 : ADD R5
+	IBT R5, #$6A
+	SUB R5
+	BNE CODE_0BDDFD : NOP
+CODE_0BDDA4:
+	IBT R0, #$04
+	SMS ($FA), R0
+	LMS R0, ($AE)
+	SUB #6
+	BEQ CODE_0BDDB8 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BPL CODE_0BDDC6 : NOP
+CODE_0BDDB8:
+	LMS R0, ($F8)
+	LMS R5, ($110)
+	SBK
+	SUB R5
+	BEQ CODE_0BDDFD : ADD R5
+	BNE CODE_0BDDFD : NOP
+CODE_0BDDC6:
+	IWT R0, #!Define_YI_SoundID98_WalkingInSnow
+	SMS ($7A), R0
+	IWT R5, #$01CA
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IWT R0, #$10A2
+	ADD R1
+	FROM R9
+	STW (R0)
+	IBT R0, #$18
+	TO R5
+	ADD R10
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$06
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$03
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R5, #$FEC0
+	IWT R0, #$11E2
+	ADD R1
+	FROM R5
+	STW (R0)
+CODE_0BDDFD:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDE02:
+	IBT R0, #$02
+	SMS ($FA), R0
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDE0C:
+	LMS R0, ($1BE)
+	SUB #0
+	BNE CODE_0BDE42 : NOP
+	IWT R5, #$007E
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BDE42 : NOP
+	IBT R5, #$02
+	IWT R0, #$0F00
+	ADD R1
+	FROM R5
+	STW (R0)
+	FROM R9
+	TO R5
+	SUB #8
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($02)
+	TO R5
+	BIC #15
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R0, #$01
+	SMS ($1BE), R0
+CODE_0BDE42:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDE47:
+	IWT R1, #$F800
+	BRA CODE_0BDE50 : NOP
+
+CODE_0BDE4D:
+	IWT R1, #$0800
+CODE_0BDE50:
+	LMS R0, ($DA)
+	LMS R5, ($150)
+	OR R5
+	LMS R5, ($DE)
+	BNE CODE_0BDEA9 : NOP
+	LM R0, ($0071)
+	AND #3
+	BEQ CODE_0BDEA9 : NOP
+	IBT R8, #$10
+	AND #2
+	BEQ CODE_0BDE6F : NOP
+	IBT R8, #$F0
+CODE_0BDE6F:
+	SMS ($C4), R0
+	MOVE R5, R8
+	MOVES R1, R1
+	BPL CODE_0BDE7B : WITH R5
+	NOT
+	INC R5
+CODE_0BDE7B:
+	MOVE R0, R10
+	MOVES R5, R5
+	BPL CODE_0BDE84 : NOP
+	XOR #8
+CODE_0BDE84:
+	AND #8
+	BEQ CODE_0BDE9E : NOP
+	MOVE R14, R7
+	LMS R0, ($00)
+	TO R8
+	ADD R8
+	LMS R0, ($02)
+	ADD R5
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	FROM R7
+	SUB R14
+	BNE CODE_0BDEB3 : NOP
+CODE_0BDE9E:
+	SMS ($DA), R1
+	IBT R0, #$80
+	SMS ($8A), R0
+	SMS ($8E), R0
+CODE_0BDEA9:
+	SUB R0
+	SMS ($B4), R0
+	SMS ($A8), R0
+	SMS ($AA), R0
+CODE_0BDEB3:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDEB8:
+	LMS R0, ($D4)
+	DEC R0
+	BMI CODE_0BDED1 : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BDED1 : FROM R6
+	ADD #1
+	AND #2
+	BNE CODE_0BDED1 : NOP
+	IBT R0, #$06
+	STOP : NOP
+
+CODE_0BDED1:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDED6:
+	LMS R0, ($D4)
+	DEC R0
+	BMI CODE_0BDEEB : SUB R0
+	SMS ($01C), R0
+	IWT R0, #$0080
+	SMS ($01E), R0
+	LINK #4
+	IWT R15, #CODE_0BDF81 : NOP
+CODE_0BDEEB:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDEF0:
+	LMS R0, ($1C0)
+	SUB #0
+	BNE CODE_0BDF28 : NOP
+	IWT R5, #$00DE
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BDF28 : NOP
+	IBT R5, #$02
+	IWT R0, #$0F00
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($00)
+	TO R5
+	BIC #15
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($02)
+	TO R5
+	BIC #15
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R0, #$01
+	SMS ($1C0), R0
+CODE_0BDF28:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BDF2D:
+	LMS R0, ($D4)
+	DEC R0
+	BMI CODE_0BDF7F : NOP
+	IBT R0, #!Define_YI_SoundID23_GroundPound
+	SMS ($7A), R0
+	IBT R0, #$40
+	SMS ($1F2), R0
+	LMS R0, ($8C)
+	SM ($0EB2), R0
+	LMS R0, ($90)
+	SM ($0EB4), R0
+	IBT R0, #$20
+	SMS ($1C6), R0
+	SMS ($60), R11
+	IWT R5, #$01DC
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IWT R0, #$10A2
+	ADD R1
+	FROM R9
+	STW (R0)
+	IBT R0, #$10
+	TO R5
+	ADD R10
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$0B
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$02
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R11, ($60)
+CODE_0BDF7F:
+	JMP R11 : NOP
+
+CODE_0BDF81:
+	SMS ($60), R11
+	IBT R0, #!Define_YI_SoundID0A_BreakDirt
+	SMS ($7A), R0
+	IWT R5, #$01C3
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	LMS R0, ($00)
+	TO R5
+	BIC #15
+	IWT R0, #$10A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($02)
+	TO R5
+	BIC #15
+	IWT R0, #$1142
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R5, ($01C)
+	IWT R0, #$11E0
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R5, ($01E)
+	IWT R0, #$11E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$0A
+	IWT R0, #$13C2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$02
+	IWT R0, #$1782
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$08
+	IWT R0, #$1502
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R5, #$0400
+	IWT R0, #$15A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R0, #$04
+	STOP : NOP
+
+CODE_0BDFE0:
+	LMS R11, ($60)
+	JMP R11 : NOP
+
+CODE_0BDFE5:
+	SMS ($64), R11
+	LINK #4
+	IWT R15, #CODE_0BE31C : NOP
+	LMS R11, ($64)
+	LM R1, ($0071)
+	LM R2, ($0073)
+	LMS R0, ($DA)
+	SUB #0
+	BEQ CODE_0BE004 : NOP
+	IWT R15, #CODE_0BE088 : NOP
+
+CODE_0BE004:
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BE058 : NOP
+	LMS R0, ($C2)
+	LMS R7, ($150)
+	OR R7
+	LMS R7, ($DE)
+	OR R7
+	BNE CODE_0BE051 : SUB R0
+	FROM R1
+	AND #3
+	BNE CODE_0BE051 : SUB R0
+	FROM R1
+	AND #4
+	BEQ CODE_0BE051 : INC R7
+	LMS R0, ($D6)
+	INC R0
+	BEQ CODE_0BE054 : TO R8
+	SUB #8
+	BCC CODE_0BE051 : NOP
+	IBT R0, #!Define_YI_SoundID73_PrepareGroundPound
+	SMS ($7A), R0
+	SMS ($D4), R7
+	SUB R0
+	SMS ($AA), R0
+	IBT R0, #$03
+	SMS ($1DE), R0
+	SMS ($64), R11
+	LINK #4
+	IWT R15, #CODE_0BEB5B : NOP
+	LMS R11, ($64)
+	IWT R15, #CODE_0BE105 : NOP
+
+CODE_0BE051:
+	SMS ($D6), R0
+CODE_0BE054:
+	IWT R15, #CODE_0BE105 : NOP
+
+CODE_0BE058:
+	LMS R0, ($DE)
+	LOB
+	IBT R8, #$FF
+	LMS R7, ($C2)
+	BNE CODE_0BE06E : SUB R0
+	FROM R1
+	AND #4
+	BEQ CODE_0BE06E : NOP
+	IBT R8, #$01
+	IBT R0, #$05
+CODE_0BE06E:
+	SUB R7
+	BEQ CODE_0BE075 : ADD R7
+	FROM R7
+	ADD R8
+	SBK
+CODE_0BE075:
+	BEQ CODE_0BE088 : SUB R0
+	DEC R0
+	SMS ($D6), R0
+	LM R0, ($0085)
+	AND R2
+	BNE CODE_0BE090 : NOP
+	IWT R15, #CODE_0BE28F : NOP
+
+CODE_0BE088:
+	LM R0, ($0085)
+	AND R2
+	BEQ CODE_0BE0F3 : NOP
+CODE_0BE090:
+	IBT R0, #!Define_YI_SoundID49_Jump
+	SMS ($7A), R0
+	IBT R0, #$40
+	SMS ($1F2), R0
+	LMS R0, ($8C)
+	SM ($0EB2), R0
+	LMS R0, ($90)
+	SM ($0EB4), R0
+	LMS R0, ($FC)
+	IBT R4, #$18
+	AND R4
+	BNE CODE_0BE0B4 : SUB R0
+	IWT R0, #$FB60
+CODE_0BE0B4:
+	SMS ($AA), R0
+	LM R6, ($1E3A)
+	IWT R0, #$0170
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	LMS R6, ($A8)
+	ADD R6
+	MOVE R6, R0
+	BPL CODE_0BE0D0 : NOP
+	NOT
+	INC R0
+CODE_0BE0D0:
+	IWT R4, #$0300
+	SUB R4
+	BCC CODE_0BE0E0 : NOP
+	MOVES R6, R6
+	MOVE R6, R4
+	BPL CODE_0BE0E0 : WITH R6
+	NOT
+	INC R6
+CODE_0BE0E0:
+	SMS ($B4), R6
+	IWT R0, #$0006
+	SMS ($C0), R0
+	SUB R0
+	SMS ($DA), R0
+	SMS ($C2), R0
+	BRA CODE_0BE105 : NOP
+
+CODE_0BE0F3:
+	LMS R0, ($150)
+	DEC R0
+	BPL CODE_0BE105 : FROM R1
+	AND #8
+	BEQ CODE_0BE105 : NOP
+	IWT R0, #$004C
+	SMS ($CE), R0
+CODE_0BE105:
+	LMS R0, ($DA)
+	SUB #0
+	BEQ CODE_0BE111 : NOP
+	IWT R15, #CODE_0BE28D : NOP
+
+CODE_0BE111:
+	LM R0, ($1FE8)
+	SUB #0
+	BEQ CODE_0BE124 : NOP
+	LMS R0, ($C0)
+	LMS R5, ($150)
+	OR R5
+	BEQ CODE_0BE128 : NOP
+CODE_0BE124:
+	IWT R15, #CODE_0BE1D3 : NOP
+
+CODE_0BE128:
+	LMS R5, ($F2)
+	MOVES R12, R5
+	BPL CODE_0BE132 : WITH R12
+	NOT
+	INC R12
+CODE_0BE132:
+	LMS R4, ($C4)
+	WITH R1
+	AND #3
+	BEQ CODE_0BE162 : NOP
+	FROM R1
+	AND #2
+	SUB R4
+	BEQ CODE_0BE154 : NOP
+	LMS R0, ($DE)
+	LOB
+	BNE CODE_0BE154 : WITH R5
+	NOT
+	INC R5
+	SMS ($F2), R5
+	WITH R4
+	XOR #2
+	SMS ($C4), R4
+CODE_0BE154:
+	IBT R7, #$02
+	SMS ($F4), R7
+	IBT R0, #$0E
+	SUB R5
+	BMI CODE_0BE165 : NOP
+	BRA CODE_0BE16D : FROM R7
+
+CODE_0BE162:
+	LMS R7, ($F4)
+CODE_0BE165:
+	LMS R0, ($1D8)
+	DEC R0
+	BPL CODE_0BE1BE : NOP
+	FROM R7
+CODE_0BE16D:
+	XOR R5
+	BMI CODE_0BE17E : NOP
+	IBT R0, #$17
+	SUB R12
+	BCC CODE_0BE182 : NOP
+	IBT R0, #$10
+	SUB R12
+	BEQ CODE_0BE182 : NOP
+CODE_0BE17E:
+	WITH R5
+	BRA CODE_0BE1AE : ADD R7
+
+CODE_0BE182:
+	MOVES R0, R1
+	BNE CODE_0BE1A3 : SUB R0
+	IBT R12, #$0E
+	LM R0, ($1970)
+	TO R7
+	AND #4
+	WITH R7
+	SUB #2
+	SMS ($F4), R7
+	FROM R7
+	XOR R5
+	BMI CODE_0BE1A5 : NOP
+	IBT R12, #$12
+	AND #9
+	BNE CODE_0BE1A5 : NOP
+CODE_0BE1A3:
+	IBT R12, #$1A
+CODE_0BE1A5:
+	MOVES R5, R5
+	MOVE R5, R12
+	BPL CODE_0BE1AE : WITH R5
+	NOT
+	INC R5
+CODE_0BE1AE:
+	SMS ($F2), R5
+	IBT R0, #$1A
+	ADD R5
+	LSR
+	IWT R14, #DATA_0AFB57
+	TO R14
+	ADD R14
+	GETB
+	SMS ($1D8), R0
+CODE_0BE1BE:
+	IBT R0, #$19
+	SUB R12
+	BCS CODE_0BE1D9 : FROM R7
+	XOR R5
+	BMI CODE_0BE1D9 : NOP
+	MOVES R5, R5
+	BPL CODE_0BE1D0 : WITH R4
+	XOR #2
+CODE_0BE1D0:
+	MOVE R1, R4
+	INC R1
+CODE_0BE1D3:
+	FROM R1
+	AND #3
+	BNE CODE_0BE1E8 : NOP
+CODE_0BE1D9:
+	LMS R0, ($FA)
+	SUB #2
+	BCC CODE_0BE1E4 : SUB R0
+	SMS ($CC), R0
+CODE_0BE1E4:
+	IWT R15, #CODE_0BE28F : NOP
+
+CODE_0BE1E8:
+	LMS R7, ($1EC)
+	MOVES R7, R7
+	BEQ CODE_0BE1F2 : NOP
+	XOR #3
+CODE_0BE1F2:
+	SMS ($CC), R0
+	IBT R7, #$FF
+	TO R4
+	AND #2
+	BNE CODE_0BE1FF : NOP
+	IBT R7, #$01
+CODE_0BE1FF:
+	LM R0, ($1FE8)
+	SUB #0
+	BNE CODE_0BE236 : NOP
+	LMS R0, ($C4)
+	SUB R4
+	BEQ CODE_0BE21C : NOP
+	LMS R0, ($150)
+	LMS R14, ($DE)
+	OR R14
+	BNE CODE_0BE21C : NOP
+	SMS ($C4), R4
+CODE_0BE21C:
+	LMS R0, ($B4)
+	SUB #0
+	BEQ CODE_0BE236 : NOP
+	XOR R7
+	BPL CODE_0BE236 : NOP
+	LMS R0, ($FA)
+	SUB #2
+	BCS CODE_0BE236 : NOP
+	IBT R0, #$04
+	SMS ($1D0), R0
+CODE_0BE236:
+	LM R0, ($00FB)
+	LSR
+	LSR
+	TO R7
+	OR R4
+	LMS R0, ($B6)
+	BIC #15
+	LSR
+	LSR
+	TO R7
+	OR R7
+	IWT R0, #DATA_0AEC2B
+	TO R14
+	ADD R7
+	GETB
+	INC R14
+	TO R8
+	GETBH
+	LMS R0, ($B4)
+	LMS R14, ($150)
+	DEC R14
+	BPL CODE_0BE26C : NOP
+	LMS R14, ($C0)
+	DEC R14
+	BMI CODE_0BE26D : INC R14
+	LMS R14, ($D2)
+	WITH R14
+	LOB
+	DEC R14
+	DEC R14
+	BMI CODE_0BE26D : NOP
+CODE_0BE26C:
+	ADD R0
+CODE_0BE26D:
+	SUB R8
+	BEQ CODE_0BE2C4 : NOP
+	XOR R8
+	BPL CODE_0BE2C4 : NOP
+	LMS R0, ($1D0)
+	LOB
+	BEQ CODE_0BE27E : NOP
+	INC R7
+CODE_0BE27E:
+	IWT R0, #DATA_0AEDB3
+	ADD R7
+	TO R14
+	ADD R7
+	GETB
+	INC R14
+	GETBH
+	LMS R7, ($B4)
+	ADD R7
+	SBK
+CODE_0BE28D:
+	JMP R11 : NOP
+
+CODE_0BE28F:
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BE2C4 : NOP
+	LMS R0, ($C6)
+	DEC R0
+	BPL CODE_0BE2C4 : NOP
+	IWT R14, #DATA_0AEC2B
+	LMS R0, ($D2)
+	TO R8
+	LOB
+	LMS R0, ($B4)
+	DEC R8
+	DEC R8
+	BPL CODE_0BE2AE : ADD R0
+	ASR
+CODE_0BE2AE:
+	BPL CODE_0BE2B3 : NOP
+	INC R14
+	INC R14
+CODE_0BE2B3:
+	TO R8
+	GETB
+	INC R14
+	WITH R8
+	GETBH
+	SUB R8
+	BEQ CODE_0BE2C4 : NOP
+	XOR R8
+	BPL CODE_0BE2C4 : NOP
+	JMP R11 : NOP
+
+CODE_0BE2C4:
+	LM R0, ($00FB)
+	LSR
+	LSR
+	TO R7
+	LSR
+	LMS R0, ($B6)
+	BIC #15
+	LSR
+	LSR
+	LSR
+	TO R4
+	OR R7
+	IWT R0, #DATA_0AF0B3
+	TO R14
+	ADD R4
+	GETB
+	INC R14
+	TO R7
+	GETBH
+	LMS R8, ($B4)
+	FROM R8
+	SUB R7
+	BPL CODE_0BE2E9 : NOP
+	INC R4
+CODE_0BE2E9:
+	IWT R0, #DATA_0AF193
+	ADD R4
+	TO R14
+	ADD R4
+	GETB
+	INC R14
+	GETBH
+	LM R4, ($1FE8)
+	MOVES R4, R4
+	BEQ CODE_0BE2FE : NOP
+	DIV2
+CODE_0BE2FE:
+	LMS R4, ($C2)
+	DEC R4
+	BMI CODE_0BE307 : NOP
+	ADD R0
+	ADD R0
+CODE_0BE307:
+	MOVE R4, R0
+	ADD R8
+	MOVE R8, R0
+	SUB R7
+	XOR R4
+	BMI CODE_0BE317 : SUB R0
+	SMS ($CC), R0
+	MOVE R8, R7
+CODE_0BE317:
+	SMS ($B4), R8
+	JMP R11 : NOP
+
+CODE_0BE31C:
+	LMS R0, ($1D6)
+	IBT R8, #$40
+	SUB R8
+	BCC CODE_0BE327 : NOP
+	JMP R11 : NOP
+
+CODE_0BE327:
+	SMS ($62), R11
+	LMS R8, ($15A)
+	LMS R0, ($15C)
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	LMS R3, ($168)
+	LMS R4, ($16A)
+	LMS R8, ($162)
+	LMS R2, ($150)
+	DEC R2
+	BMI CODE_0BE349 : INC R2
+	IWT R15, #CODE_0BE702 : NOP
+
+CODE_0BE349:
+	LMS R0, ($DE)
+	DEC R0
+	BPL CODE_0BE354 : NOP
+	IWT R15, #CODE_0BE55E : NOP
+
+CODE_0BE354:
+	LMS R1, ($C6)
+	DEC R1
+	BPL CODE_0BE39C : NOP
+	LMS R1, ($1E2)
+	DEC R1
+	BMI CODE_0BE366 : NOP
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE366:
+	LMS R1, ($EC)
+	MOVES R1, R1
+	BEQ CODE_0BE373 : NOP
+	SUB #5
+	BEQ CODE_0BE377 : NOP
+CODE_0BE373:
+	IWT R15, #CODE_0BE542 : NOP
+
+CODE_0BE377:
+	LMS R3, ($72)
+	LMS R0, ($88)
+	AND R3
+	BNE CODE_0BE39D : SUB R0
+	LMS R3, ($70)
+	IWT R0, #$0300
+	AND R3
+	BNE CODE_0BE3A7 : SUB R0
+	IWT R0, #$0400
+	AND R3
+	BEQ CODE_0BE3A7 : SUB R0
+	LMS R0, ($E8)
+	INC R0
+	TO R2
+	SUB #8
+	BCC CODE_0BE3A7 : NOP
+CODE_0BE39C:
+	SUB R0
+CODE_0BE39D:
+	SMS ($DE), R0
+	SMS ($E0), R0
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE3A7:
+	SMS ($E8), R0
+	IBT R2, #$01
+	LMS R0, ($82)
+	DEC R0
+	LMS R0, ($86)
+	BMI CODE_0BE3BD : NOP
+	AND R3
+	BEQ CODE_0BE3C7 : NOP
+	BRA CODE_0BE3C9 : NOP
+
+CODE_0BE3BD:
+	LMS R3, ($72)
+	LMS R0, ($86)
+	AND R3
+	BEQ CODE_0BE3C9 : NOP
+CODE_0BE3C7:
+	IBT R2, #$10
+CODE_0BE3C9:
+	LMS R0, ($E2)
+	ADD #4
+	IBT R3, #$20
+	SUB R3
+	BCS CODE_0BE3D6 : ADD R3
+	MOVE R3, R0
+CODE_0BE3D6:
+	LMS R0, ($EA)
+	SUB #0
+	BNE CODE_0BE44D : NOP
+	LMS R0, ($E0)
+	IWT R7, #$0100
+	SUB R7
+	BCS CODE_0BE3F7 : NOP
+	LM R0, ($0071)
+	AND #8
+	BNE CODE_0BE400 : NOP
+	IWT R7, #$2600
+	BRA CODE_0BE403 : NOP
+
+CODE_0BE3F7:
+	LM R0, ($0071)
+	AND #8
+	BEQ CODE_0BE427 : NOP
+CODE_0BE400:
+	IWT R7, #$2E00
+CODE_0BE403:
+	LMS R0, ($EE)
+	TO R14
+	SUB R7
+	BEQ CODE_0BE411 : NOP
+	IWT R6, #$00C0
+	BMI CODE_0BE414 : NOP
+CODE_0BE411:
+	IWT R6, #$FF40
+CODE_0BE414:
+	SMS ($F0), R6
+	ADD R6
+	MOVE R14, R0
+	SUB R7
+	XOR R6
+	MOVE R0, R14
+	BMI CODE_0BE424 : NOP
+	MOVE R0, R7
+CODE_0BE424:
+	BRA CODE_0BE445 : NOP
+
+CODE_0BE427:
+	LMS R0, ($EE)
+	LMS R6, ($F0)
+	TO R7
+	ADD R6
+	BMI CODE_0BE440 : SUB R0
+	MOVE R0, R7
+	IWT R7, #$2E00
+	SUB R7
+	BCC CODE_0BE445 : ADD R7
+	MOVES R6, R6
+	BMI CODE_0BE445 : NOP
+CODE_0BE440:
+	WITH R6
+	NOT
+	INC R6
+	FROM R6
+	SBK
+CODE_0BE445:
+	SMS ($EE), R0
+	BRA CODE_0BE44D : NOP
+
+CODE_0BE44B:
+	MOVE R3, R0
+CODE_0BE44D:
+	LMS R0, ($72)
+	IBT R7, #$30
+	AND R7
+	BEQ CODE_0BE463 : NOP
+	LMS R0, ($EA)
+	SUB #0
+	BNE CODE_0BE460 : SUB R0
+	MOVE R0, R1
+CODE_0BE460:
+	SMS ($EA), R0
+CODE_0BE463:
+	IBT R7, #$00
+	IBT R0, #DATA_08AF58>>16
+	ROMB
+	IBT R6, #$30
+	LMS R0, ($E0)
+	LSR
+	LSR
+	LSR
+	ADD R6
+	IBT R6, #$48
+	SUB R6
+	BCS CODE_0BE47A : ADD R6
+	MOVE R6, R0
+CODE_0BE47A:
+	LMS R0, ($EE)
+	ADD R0
+	IWT R14, #$2000
+	SUB R14
+	LSR
+	LSR
+	LSR
+	LSR
+	LSR
+	LSR
+	LSR
+	IWT R14, #DATA_08AF58
+	TO R14
+	ADD R14
+	GETB
+	MULT R6
+	ADD R0
+	ADD R0
+	HIB
+	SEX
+	LMS R4, ($C4)
+	DEC R4
+	BMI CODE_0BE4A4 : NOP
+	LMS R4, ($1CE)
+	DEC R4
+	BPL CODE_0BE4A4 : NOP
+	NOT
+	INC R0
+CODE_0BE4A4:
+	LMS R4, ($8C)
+	TO R4
+	ADD R4
+	IWT R0, #$0080
+	TO R14
+	ADD R14
+	GETB
+	MULT R6
+	ADD R0
+	ADD R0
+	HIB
+	SEX
+	ADD #4
+	LMS R6, ($90)
+	TO R6
+	ADD R6
+	IBT R0, #(DATA_0AB912-(!Define_YI_AmbSpr1BA*$02))>>16
+	ROMB
+	SMS ($E2), R3
+	SMS ($E4), R4
+	SMS ($E6), R6
+	IWT R5, #$01E2
+	LINK #4
+	IWT R15, #CODE_0BF0C4 : NOP
+	IWT R0, #$10A2
+	ADD R1
+	FROM R4
+	STW (R0)
+	IWT R0, #$1142
+	ADD R1
+	FROM R6
+	STW (R0)
+	LMS R5, ($8C)
+	IWT R0, #$1E8C
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #$1782
+	ADD R1
+	FROM R2
+	STW (R0)
+	IBT R0, #$20
+	SUB R3
+	BCS CODE_0BE4F3 : ADD R3
+	MOVE R3, R0
+CODE_0BE4F3:
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R3
+	STW (R0)
+	IWT R0, #$1002
+	ADD R1
+	TO R5
+	LDW (R0)
+	IBT R4, #$01
+	IWT R0, #$1E4E
+	ADD R1
+	FROM R4
+	STW (R0)
+	LM R0, ($1974)
+	AND #4
+	LSR
+	ADD #2
+	TO R5
+	OR R5
+	IWT R0, #$1002
+	ADD R1
+	FROM R5
+	STW (R0)
+	MOVE R0, R3
+	DEC R2
+	BNE CODE_0BE542 : SUB R0
+	LMS R0, ($E0)
+	IWT R1, #$0280
+	SUB R1
+	BCC CODE_0BE52B : ADD R1
+	IWT R0, #$0100
+CODE_0BE52B:
+	IBT R5, #$30
+	ADD R5
+	SMS ($E0), R0
+	DEC R0
+	TO R1
+	HIB
+	LOB
+	SUB R5
+	BCS CODE_0BE53E : NOP
+	IBT R0, #!Define_YI_SoundID09_Coin
+	SMS ($7A), R0
+CODE_0BE53E:
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE542:
+	LMS R0, ($DE)
+	DEC R0
+	TO R14
+	SUB #2
+	BNE CODE_0BE551 : SBK
+	IBT R14, #!Define_YI_SoundID4A_YoshiGrunt
+	SMS ($7A), R14
+CODE_0BE551:
+	IWT R14, #DATA_0AF65D
+	TO R14
+	ADD R14
+	GETB
+	SMS ($1E2), R0
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE55E:
+	MOVES R3, R3
+	BEQ CODE_0BE59B : NOP
+	BMI CODE_0BE59B : NOP
+	DEC R4
+	BPL CODE_0BE57F : INC R4
+	LMS R0, ($72)
+	LMS R1, ($88)
+	AND R1
+	BEQ CODE_0BE578 : NOP
+	IWT R15, #CODE_0BE614 : NOP
+
+CODE_0BE578:
+	LMS R0, ($1EE)
+	DEC R0
+	BMI CODE_0BE589 : NOP
+CODE_0BE57F:
+	LMS R1, ($70)
+	IWT R0, #$0400
+	AND R1
+	BEQ CODE_0BE59B : NOP
+CODE_0BE589:
+	DEC R4
+	BPL CODE_0BE59B : INC R4
+	IBT R3, #$00
+	SMS ($168), R3
+	IBT R2, #$2B
+	SMS ($150), R2
+	IWT R15, #CODE_0BE702 : NOP
+
+CODE_0BE59B:
+	LMS R1, ($72)
+	LMS R0, ($86)
+	AND R1
+	BEQ CODE_0BE60C : NOP
+	LMS R0, ($C6)
+	DEC R0
+	BPL CODE_0BE5D5 : NOP
+	LM R0, ($1DF6)
+	LOB
+	BEQ CODE_0BE5D5 : NOP
+	LM R1, ($1DF8)
+	IWT R0, #$701360
+	ADD R1
+	LDW (R0)
+	IWT R7, #!Define_YI_NorSpr027_Key
+	SUB R7
+	BEQ CODE_0BE5D5 : NOP
+	IBT R0, #$08
+	STOP : NOP
+
+CODE_0BE5C8:
+	IBT R0, #!Define_YI_SoundID1A_PrepareAimEgg
+	SMS ($7A), R0
+	IWT R0, #$19D8
+	TO R1
+	ADD R1
+	IBT R0, #$FF
+	STW (R1)
+CODE_0BE5D5:
+	SMS ($EC), R0
+	IBT R0, #$0A
+	SMS ($DE), R0
+	IBT R0, #$01
+	SMS ($1E2), R0
+	SUB R0
+	SMS ($E8), R0
+	SMS ($EA), R0
+	SMS ($DA), R0
+	IWT R7, #$0400
+	LM R0, ($0071)
+	AND #8
+	BEQ CODE_0BE5FB : NOP
+	IWT R7, #$2E00
+CODE_0BE5FB:
+	SUB R0
+	SMS ($E0), R0
+	SMS ($EE), R7
+	IWT R0, #$FF40
+	SMS ($F0), R0
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE60C:
+	LMS R0, ($88)
+	TO R2
+	AND R1
+	BEQ CODE_0BE618 : NOP
+CODE_0BE614:
+	IWT R15, #CODE_0BE628 : NOP
+
+CODE_0BE618:
+	LMS R0, ($14A)
+	SUB #0
+	BEQ CODE_0BE624 : NOP
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE624:
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE628:
+	LM R0, ($0071)
+	TO R2
+	AND #8
+	BEQ CODE_0BE634 : INC R2
+	IBT R2, #$03
+CODE_0BE634:
+	SMS ($150), R2
+	SUB R0
+	SMS ($160), R0
+	SMS ($C2), R0
+	SMS ($DA), R0
+	MOVES R3, R3
+	BNE CODE_0BE65E : NOP
+	IBT R0, #!Define_YI_SoundID3E_Tongue
+	SMS ($7A), R0
+	FROM R7
+	AND #2
+	BNE CODE_0BE655 : NOP
+	IWT R15, #CODE_0BE6FC : NOP
+
+CODE_0BE655:
+	IBT R0, #$0A
+	SMS ($1E0), R0
+	IWT R15, #CODE_0BE7F2 : NOP
+
+CODE_0BE65E:
+	DEC R4
+	BMI CODE_0BE69C : INC R4
+	LMS R0, ($C6)
+	DEC R0
+	BMI CODE_0BE670 : SUB R0
+	SMS ($150), R0
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE670:
+	IWT R0, #$BE00
+	DEC R4
+	BEQ CODE_0BE680 : INC R4
+	FROM R4
+	SUB #4
+	BNE CODE_0BE68F : NOP
+	IWT R0, #$BA00
+CODE_0BE680:
+	SMS ($114), R0
+	LMS R0, ($15A)
+	SMS ($172), R0
+	LMS R0, ($15C)
+	SMS ($174), R0
+CODE_0BE68F:
+	FROM R4
+	SUB #3
+	BNE CODE_0BE698 : SUB R0
+	SMS ($172), R0
+CODE_0BE698:
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE69C:
+	FROM R7
+	AND #2
+	BEQ CODE_0BE6A6 : NOP
+	IWT R15, #CODE_0BE6EA : NOP
+
+CODE_0BE6A6:
+	IBT R8, #$00
+	SMS ($162), R8
+	IWT R12, #$0180
+	IWT R13, #$FC80
+	DEC R2
+	BNE CODE_0BE6C3 : INC R2
+	IWT R12, #$0280
+	IWT R13, #$0080
+	LMS R0, ($C4)
+	DEC R0
+	BPL CODE_0BE6C3 : INC R0
+	INC R0
+CODE_0BE6C3:
+	LMS R0, ($C4)
+	DEC R0
+	BMI CODE_0BE6CC : WITH R12
+	NOT
+	INC R12
+CODE_0BE6CC:
+	SMS ($E4), R12
+	SMS ($E6), R13
+	MOVE R0, R2
+	DEC R0
+	ADD R0
+	LMS R14, ($C4)
+	OR R14
+	IWT R14, #DATA_0AF353
+	TO R14
+	ADD R14
+	GETBS
+	INC R14
+	SMS ($164), R0
+	GETBS
+	SMS ($166), R0
+CODE_0BE6EA:
+	IWT R1, #$0056
+	LMS R0, ($C6)
+	DEC R0
+	BMI CODE_0BE6F7 : NOP
+	IWT R1, #$0064
+CODE_0BE6F7:
+	SMS ($BE), R1
+	IBT R0, #$0A
+CODE_0BE6FC:
+	SMS ($1E0), R0
+	BRA CODE_0BE705 : NOP
+
+CODE_0BE702:
+	LMS R0, ($1E0)
+CODE_0BE705:
+	MOVES R1, R0
+	BNE CODE_0BE74E : NOP
+	DEC R8
+	BMI CODE_0BE729 : INC R8
+	MOVES R4, R4
+	BEQ CODE_0BE71A : NOP
+	LMS R11, ($62)
+	IWT R15, #CODE_0BE89F : NOP
+
+CODE_0BE71A:
+	FROM R7
+	AND #2
+	BEQ CODE_0BE761 : NOP
+	MOVES R3, R3
+	BNE CODE_0BE740 : NOP
+	IWT R15, #CODE_0BE761 : NOP
+
+CODE_0BE729:
+	FROM R7
+	AND #2
+	BEQ CODE_0BE761 : NOP
+	FROM R2
+	LSR
+	BCC CODE_0BE761 : SUB R0
+	SMS ($B4), R0
+	INC R2
+	SMS ($150), R2
+	IBT R0, #$01
+	SMS ($15E), R0
+CODE_0BE740:
+	LMS R0, ($152)
+	LMS R1, ($154)
+	OR R1
+	BNE CODE_0BE761 : NOP
+	IWT R15, #CODE_0BE878 : SUB R0
+
+CODE_0BE74E:
+	MOVES R3, R3
+	BEQ CODE_0BE75D : NOP
+	FROM R1
+	SUB #7
+	BNE CODE_0BE75D : NOP
+	IWT R15, #CODE_0BE7F2 : NOP
+
+CODE_0BE75D:
+	IWT R15, #CODE_0BE89A : NOP
+
+CODE_0BE761:
+	FROM R2
+	SUB #7
+	BCC CODE_0BE76B : NOP
+	IWT R15, #CODE_0BE855 : FROM R2
+
+CODE_0BE76B:
+	LMS R0, ($15E)
+	LOB
+	BEQ CODE_0BE7A3 : FROM R2
+	IBT R1, #$0F
+	SUB R1
+	BCC CODE_0BE77B : ADD R1
+	BRA CODE_0BE79D : SUB R0
+
+CODE_0BE77B:
+	LMS R1, ($160)
+	WITH R1
+	SUB #3
+	BCS CODE_0BE795 : INC R0
+	IBT R1, #$0A
+	SUB R1
+	BCS CODE_0BE79D : ADD R1
+	IBT R1, #$04
+	SUB R1
+	BCC CODE_0BE79D : ADD R1
+	IBT R0, #$0A
+	BRA CODE_0BE79D : NOP
+
+CODE_0BE795:
+	IBT R1, #$0A
+	SUB R1
+	BCC CODE_0BE79D : ADD R1
+	IBT R0, #$04
+CODE_0BE79D:
+	SMS ($15E), R0
+	BRA CODE_0BE7F2 : NOP
+
+CODE_0BE7A3:
+	ADD R2
+	ADD R0
+	LMS R1, ($C4)
+	OR R1
+	ADD R0
+	IWT R14, #DATA_0AF353
+	TO R14
+	ADD R14
+	GETB
+	SEX
+	BEQ CODE_0BE7BB : INC R14
+	LMS R1, ($152)
+	ADD R1
+	BRA CODE_0BE7C2 : SBK
+
+CODE_0BE7BB:
+	GETBS
+	LMS R1, ($154)
+	ADD R1
+	SBK
+CODE_0BE7C2:
+	INC R14
+	TO R1
+	GETBS
+	SUB R1
+	BEQ CODE_0BE83A : ADD R1
+	INC R14
+	TO R1
+	GETBS
+	SUB R1
+	XOR R1
+	ADD R0
+	DEC R8
+	BPL CODE_0BE7E3 : INC R8
+	BCS CODE_0BE7F2 : NOP
+	LMS R5, ($70)
+	LMS R0, ($88)
+	AND R5
+	BNE CODE_0BE7F2 : NOP
+CODE_0BE7E3:
+	FROM R2
+	LSR
+	BCC CODE_0BE7F2 : NOP
+CODE_0BE7E8:
+	INC R2
+	SMS ($150), R2
+	DEC R2
+	IBT R0, #$03
+	SMS ($1E0), R0
+CODE_0BE7F2:
+	MOVE R0, R2
+	DEC R0
+	TO R14
+	BIC #1
+	LMS R1, ($160)
+	DEC R1
+	BMI CODE_0BE824 : FROM R1
+	SUB #2
+	BCS CODE_0BE816 : NOP
+	LMS R0, ($152)
+	LMS R2, ($154)
+	ADD R2
+	BPL CODE_0BE810 : NOP
+	NOT
+	INC R0
+CODE_0BE810:
+	IBT R2, #$20
+	SUB R2
+	BCS CODE_0BE819 : NOP
+CODE_0BE816:
+	SMS ($160), R1
+CODE_0BE819:
+	FROM R1
+	BIC #1
+	ADD R0
+	OR R14
+	IWT R14, #DATA_0AF383
+	BRA CODE_0BE832 : TO R14
+
+CODE_0BE824:
+	LMS R0, ($C6)
+	DEC R0
+	BMI CODE_0BE82C : NOP
+	INC R14
+CODE_0BE82C:
+	FROM R14
+	ADD R14
+	IWT R14, #DATA_0AF37B
+	TO R14
+CODE_0BE832:
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	BRA CODE_0BE897 : NOP
+
+CODE_0BE83A:
+	FROM R2
+	LSR
+	BCS CODE_0BE7E8 : NOP
+	DEC R8
+	BMI CODE_0BE878 : SUB R0
+	IWT R0, #$0F00
+	ADD R8
+	LDW (R0)
+	IBT R1, #$08
+	SUB R1
+	BNE CODE_0BE874 : SUB R0
+	MOVES R3, R3
+	BNE CODE_0BE878 : NOP
+	INC R2
+	FROM R2
+CODE_0BE855:
+	ADD #4
+	SMS ($150), R0
+	IBT R1, #$2F
+	SUB R1
+	BCC CODE_0BE869 : ADD R1
+	IBT R1, #$4F
+	SUB R1
+	BCC CODE_0BE87E : ADD R1
+	BRA CODE_0BE86F : NOP
+
+CODE_0BE869:
+	IBT R1, #$2B
+	SUB R1
+	BCC CODE_0BE87E : ADD R1
+CODE_0BE86F:
+	IBT R0, #!Define_YI_SoundID14_Gulp
+	SMS ($7A), R0
+CODE_0BE874:
+	SUB R0
+	SMS ($162), R0
+CODE_0BE878:
+	SMS ($150), R0
+	BRA CODE_0BE89A : NOP
+
+CODE_0BE87E:
+	LMS R1, ($C6)
+	DEC R1
+	BMI CODE_0BE886 : NOP
+	INC R0
+CODE_0BE886:
+	TO R1
+	ADD R0
+	ADD R1
+	IWT R14, #DATA_0AF396
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	SMS ($1E0), R0
+	GETB
+	INC R14
+	GETBH
+CODE_0BE897:
+	SMS ($BE), R0
+CODE_0BE89A:
+	LMS R11, ($62)
+	JMP R11 : NOP
+
+CODE_0BE89F:
+	FROM R4
+	ADD R4
+	TO R5
+	ADD R4
+	INC R5
+	LMS R0, ($16C)
+	INC R0
+	SBK
+	WITH R15
+	ADD R5 : db $FF
+
+CODE_0BE8AC:                                    ; flavor: data (state-dispatch `dw` table interleaved with STOP/NOP markers)
+                                                ; CODE_ name is a SuperFX-bridge contract; cannot be renamed.
+	dw $0000 : STOP
+	dw CODE_0BE8BB : NOP
+	dw CODE_0BE96A : NOP
+	dw CODE_0BEA09 : NOP
+	dw CODE_0BEAB8 : NOP
+
+CODE_0BE8BB:
+	IBT R1, #$2A
+	SUB R1
+	BCC CODE_0BE8E1 : ADD R1
+	IWT R0, #$BC00
+	SMS ($114), R0
+CODE_0BE8C7:
+	LMS R0, ($170)
+	SUB #10
+	SBK
+	BNE CODE_0BE8D9 : SUB R0
+CODE_0BE8D0:
+	SMS ($16A), R0
+	SMS ($162), R0
+	SMS ($168), R0
+CODE_0BE8D9:
+	SMS ($150), R0
+	SMS ($16C), R0
+CODE_0BE8DF:
+	JMP R11 : NOP
+
+CODE_0BE8E1:
+	IBT R1, #$0E
+	SUB R1
+	BCS CODE_0BE8DF : ADD R1
+	MOVE R14, R0
+	AND #1
+	BNE CODE_0BE968 : NOP
+	SMS ($60), R11
+	IWT R5, #$0018
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BE965 : NOP
+	IBT R0, #!Define_YI_SoundID04_SpitOut
+	SMS ($7A), R0
+	WITH R14
+	BIC #1
+	LMS R5, ($C4)
+	IBT R0, #$06
+	TO R12
+	MULT R5
+	IBT R0, #$30
+	LMS R11, ($150)
+	DEC R11
+	BNE CODE_0BE91C : NOP
+	LMS R11, ($C0)
+	DEC R11
+	BPL CODE_0BE91C : LSR
+	SUB R0
+CODE_0BE91C:
+	ADD R14
+	ADD R12
+	IWT R14, #DATA_0AF489
+	TO R14
+	ADD R14
+	GETBS
+	INC R14
+	LMS R8, ($172)
+	TO R8
+	ADD R8
+	IWT R0, #$10E2
+	ADD R1
+	FROM R8
+	STW (R0)
+	GETBS
+	INC R14
+	LMS R7, ($174)
+	TO R7
+	ADD R7
+	IWT R0, #$1182
+	ADD R1
+	FROM R7
+	STW (R0)
+	WITH R5
+	XOR #2
+	IWT R0, #$1400
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$10
+	IWT R0, #$1A96
+	ADD R1
+	FROM R5
+	STW (R0)
+	WITH R8
+	ADD #8
+	FROM R7
+	ADD #8
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	AND #2
+	BEQ CODE_0BE965 : NOP
+	IBT R0, #$0E
+	SMS ($16C), R0
+CODE_0BE965:
+	LMS R11, ($60)
+CODE_0BE968:
+	JMP R11 : NOP
+
+CODE_0BE96A:
+	IBT R1, #$18
+	SUB R1
+	BCC CODE_0BE974 : ADD R1
+	IWT R15, #CODE_0BE8C7 : NOP
+
+CODE_0BE974:
+	IWT R14, #DATA_0AF4D3
+	IBT R12, #$04
+	MOVE R13, R15
+	TO R1
+	GETB
+	SUB R1
+	BEQ CODE_0BE985 : ADD R1
+	LOOP : INC R14
+	JMP R11 : NOP
+
+CODE_0BE985:
+	SMS ($60), R11
+	MOVE R14, R12
+	IWT R5, #$0019
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	LMS R11, ($60)
+	MOVE R12, R14
+	BMI CODE_0BEA07 : NOP
+	IBT R0, #!Define_YI_SoundID04_SpitOut
+	SMS ($7A), R0
+	LMS R0, ($C4)
+	IBT R14, #$09
+	TO R14
+	MULT R14
+	IBT R0, #$48
+	LMS R5, ($150)
+	DEC R5
+	BNE CODE_0BE9B8 : NOP
+	LMS R5, ($C0)
+	MOVES R5, R5
+	BNE CODE_0BE9B8 : LSR
+	SUB R0
+CODE_0BE9B8:
+	ADD R14
+	IWT R14, #DATA_0AF4D7
+	TO R14
+	ADD R14
+	GETBS
+	INC R14
+	LMS R5, ($15A)
+	TO R5
+	ADD R5
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETBS
+	INC R14
+	LMS R5, ($15C)
+	TO R5
+	ADD R5
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	DEC R12
+	FROM R12
+	ADD R12
+	ADD R0
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	INC R14
+	IWT R0, #$1220
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$1222
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$04
+	IWT R0, #$1402
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$0A
+	IWT R0, #$1A98
+	ADD R1
+	FROM R5
+	STW (R0)
+CODE_0BEA07:
+	JMP R11 : NOP
+
+CODE_0BEA09:
+	SUB #8
+	BCC CODE_0BEA07 : SUB R0
+	SMS ($16C), R0
+	SMS ($60), R11
+	IWT R5, #$0107
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	LMS R11, ($60)
+	BPL CODE_0BEA26 : NOP
+	IWT R15, #CODE_0BEAA8 : NOP
+
+CODE_0BEA26:
+	IBT R0, #!Define_YI_SoundID45_SpitSeed
+	SMS ($7A), R0
+	LMS R0, ($C4)
+	IBT R14, #$0F
+	TO R14
+	MULT R14
+	IBT R0, #$78
+	LMS R5, ($150)
+	DEC R5
+	BNE CODE_0BEA44 : NOP
+	LMS R5, ($C0)
+	MOVES R5, R5
+	BNE CODE_0BEA44 : LSR
+	SUB R0
+CODE_0BEA44:
+	ADD R14
+	IWT R14, #DATA_0AF543
+	TO R14
+	ADD R14
+	GETBS
+	INC R14
+	LMS R5, ($15A)
+	TO R5
+	ADD R5
+	IWT R0, #$10E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETBS
+	INC R14
+	LMS R5, ($15C)
+	TO R5
+	ADD R5
+	IWT R0, #$1182
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R0, ($172)
+	TO R5
+	SUB #6
+	BCC CODE_0BEA70 : INC R0
+	SUB R0
+CODE_0BEA70:
+	SBK
+	ADD R0
+	ADD R0
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	INC R14
+	IWT R0, #$1220
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$1222
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$01
+	IWT R0, #$1D38
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$FF
+	IWT R0, #$1863
+	ADD R1
+	FROM R5
+	STB (R0)
+	LMS R0, ($170)
+	DEC R0
+	BNE CODE_0BEAA8 : SBK
+	IWT R15, #CODE_0BE8D0 : SUB R0
+
+CODE_0BEAA8:
+	LMS R0, ($88)
+	LMS R1, ($70)
+	AND R1
+	BNE CODE_0BEAB6 : NOP
+	IWT R15, #CODE_0BE8D9 : SUB R0
+
+CODE_0BEAB6:
+	JMP R11 : NOP
+
+CODE_0BEAB8:
+	IBT R1, #$38
+	SUB R1
+	BCC CODE_0BEAC8 : ADD R1
+	IWT R0, #$BC00
+	SMS ($114), R0
+	IWT R15, #CODE_0BE8C7 : NOP
+
+CODE_0BEAC8:
+	IBT R1, #$1C
+	SUB R1
+	BCS CODE_0BEAB6 : ADD R1
+	MOVE R14, R0
+	AND #3
+	BNE CODE_0BEAB6 : NOP
+	SMS ($60), R11
+	IWT R5, #$0006
+	LINK #4
+	IWT R15, #CODE_0BEF10 : NOP
+	BMI CODE_0BEB56 : NOP
+	IBT R0, #!Define_YI_SoundID04_SpitOut
+	SMS ($7A), R0
+	FROM R14
+	BIC #3
+	TO R14
+	LSR
+	LMS R5, ($C4)
+	IBT R0, #$06
+	TO R12
+	MULT R5
+	IBT R0, #$30
+	LMS R11, ($150)
+	DEC R11
+	BNE CODE_0BEB05 : NOP
+	LMS R11, ($C0)
+	DEC R11
+	BPL CODE_0BEB05 : LSR
+	SUB R0
+CODE_0BEB05:
+	ADD R14
+	ADD R12
+	IWT R14, #DATA_0AF489
+	TO R14
+	ADD R14
+	GETBS
+	INC R14
+	LMS R8, ($172)
+	TO R8
+	ADD R8
+	IWT R0, #$10E2
+	ADD R1
+	FROM R8
+	STW (R0)
+	GETBS
+	INC R14
+	LMS R7, ($174)
+	TO R7
+	ADD R7
+	IWT R0, #$1182
+	ADD R1
+	FROM R7
+	STW (R0)
+	WITH R5
+	XOR #2
+	IWT R0, #$1400
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$03
+	IWT R0, #$1402
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R5, #$06
+	IWT R0, #$1A96
+	ADD R1
+	FROM R5
+	STW (R0)
+	WITH R8
+	ADD #8
+	FROM R7
+	ADD #8
+	LINK #4
+	IWT R15, #CODE_0BD31F+$01 : ALT1
+	AND #2
+	BEQ CODE_0BEB56 : NOP
+	IBT R0, #$1C
+	SMS ($16C), R0
+CODE_0BEB56:
+	LMS R11, ($60)
+	JMP R11 : NOP
+
+CODE_0BEB5B:
+	LMS R3, ($162)
+	DEC R3
+	BPL CODE_0BEB6D : NOP
+	LMS R3, ($168)
+	MOVES R3, R3
+	BEQ CODE_0BEBBD : SUB R0
+	BRA CODE_0BEBC0 : SUB R0
+
+CODE_0BEB6D:
+	LMS R0, ($152)
+	LMS R4, ($154)
+	OR R4
+	BEQ CODE_0BEBC6 : NOP
+	IBT R4, #$10
+	IWT R0, #$0F00
+	ADD R3
+	FROM R4
+	STW (R0)
+	IBT R4, #$FF
+	IWT R0, #$1862
+	ADD R3
+	FROM R4
+	STB (R0)
+	IWT R0, #$701360
+	ADD R3
+	LDW (R0)
+	TO R5
+	ADD R0
+	IWT R0, #DATA_0A9F1A
+	TO R14
+	ADD R5
+	TO R4
+	GETB
+	IWT R0, #$14A2
+	ADD R3
+	FROM R4
+	STW (R0)
+	IWT R0, #DATA_0A9B1C
+	TO R14
+	ADD R5
+	GETB
+	IBT R4, #$0C
+	TO R4
+	AND R4
+	IWT R0, #$1040
+	ADD R3
+	LDW (R0)
+	TO R4
+	OR R4
+	IWT R0, #$1040
+	ADD R3
+	FROM R4
+	STW (R0)
+	SUB R0
+	SMS ($162), R0
+	SMS ($168), R0
+	SMS ($16A), R0
+CODE_0BEBBD:
+	SMS ($150), R0
+CODE_0BEBC0:
+	SMS ($152), R0
+	SMS ($154), R0
+CODE_0BEBC6:
+	JMP R11 : NOP
+
+CODE_0BEBC8:
+	LMS R0, ($14A)
+	MOVES R2, R0
+	BEQ CODE_0BEC39 : NOP
+CODE_0BEBD0:
+	IBT R1, #$FA
+	BPL CODE_0BEBD9 : NOP
+	NOT
+	INC R0
+	IBT R1, #$06
+CODE_0BEBD9:
+	IBT R3, #$40
+	SUB R3
+	BCS CODE_0BEC13 : NOP
+	LMS R3, ($14C)
+	DEC R3
+	BMI CODE_0BEC13 : INC R3
+	LMS R0, ($148)
+	IWT R4, #$0500
+	SUB R4
+	BCC CODE_0BEC1F : NOP
+	LMS R0, ($1F6)
+	DEC R0
+	BPL CODE_0BEC0A : NOP
+	DEC R3
+	SMS ($14C), R3
+	BNE CODE_0BEC01 : NOP
+	SMS ($14A), R3
+CODE_0BEC01:
+	IWT R0, #DATA_0AF61F
+	TO R14
+	ADD R3
+	GETB
+	SMS ($1F6), R0
+CODE_0BEC0A:
+	FROM R3
+	ADD R3
+	IWT R14, #DATA_0AF613
+	IWT R15, #CODE_0BEDA9 : TO R14
+
+CODE_0BEC13:
+	WITH R2
+	ADD R1
+	FROM R2
+	XOR R1
+	BMI CODE_0BEC1C : TO R2
+	SUB R0
+CODE_0BEC1C:
+	SMS ($14A), R2
+CODE_0BEC1F:
+	IWT R1, #$0600
+	LMS R0, ($148)
+	ADD R2
+	BPL CODE_0BEC2A : NOP
+	ADD R1
+CODE_0BEC2A:
+	SUB R1
+	BCS CODE_0BEC2F : NOP
+	ADD R1
+CODE_0BEC2F:
+	SBK
+	HIB
+	ADD R0
+	IWT R14, #DATA_0AF607
+	IWT R15, #CODE_0BEDA9 : TO R14
+
+CODE_0BEC39:
+	LMS R1, ($1D6)
+	IBT R2, #$40
+	FROM R1
+	SUB R2
+	BCC CODE_0BEC7D : NOP
+	IBT R2, #$50
+	SUB R2
+	BCC CODE_0BEC51 : ADD R2
+	IWT R0, #$006B
+	SMS ($BE), R0
+	JMP R11 : NOP
+
+CODE_0BEC51:
+	LMS R2, ($C0)
+	DEC R2
+	BMI CODE_0BEC66 : NOP
+	IBT R2, #$30
+	SUB R2
+	BCS CODE_0BEC7D : NOP
+	IBT R0, #$40
+	SMS ($1D6), R0
+	BRA CODE_0BEC7D : NOP
+
+CODE_0BEC66:
+	IBT R2, #$30
+	SUB R2
+	BCC CODE_0BEC73 : ADD R2
+	IBT R0, #$6F
+	SMS ($1D6), R0
+	IBT R0, #$2F
+CODE_0BEC73:
+	AND #7
+	ADD R0
+	IWT R14, #DATA_0AF5F7
+	IWT R15, #CODE_0BEDA9 : TO R14
+
+CODE_0BEC7D:
+	LMS R1, ($16C)
+	DEC R1
+	BMI CODE_0BECCE : NOP
+	LMS R0, ($16A)
+	SUB #3
+	BNE CODE_0BECB2 : NOP
+	MOVE R0, R1
+	IBT R1, #$06
+	SUB R1
+CODE_0BEC91:
+	BCS CODE_0BEC91 : SUB R1
+	ADD R1
+	ADD R1
+	TO R1
+	ADD R0
+	IBT R0, #$18
+	LMS R2, ($150)
+	DEC R2
+	BNE CODE_0BECAA : NOP
+	LMS R2, ($C0)
+	MOVES R2, R2
+	BNE CODE_0BECAA : LSR
+	SUB R0
+CODE_0BECAA:
+	ADD R1
+	IWT R14, #DATA_0AF625
+	IWT R15, #CODE_0BEDA9 : TO R14
+
+CODE_0BECB2:
+	IWT R1, #$008F
+	LMS R2, ($150)
+	DEC R2
+	BNE CODE_0BECC9 : NOP
+	IWT R1, #$0093
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BECC9 : NOP
+	IWT R1, #$0088
+CODE_0BECC9:
+	SMS ($BE), R1
+CODE_0BECCC:
+	JMP R11 : NOP
+
+CODE_0BECCE:
+	LMS R0, ($150)
+	DEC R0
+	BPL CODE_0BECCC : NOP
+	LMS R14, ($DE)
+	DEC R14
+	BMI CODE_0BED31 : INC R14
+	FROM R14
+	SUB #6
+	BNE CODE_0BED1A : NOP
+	LMS R0, ($E0)
+	DEC R0
+	BMI CODE_0BED1A : NOP
+	LMS R0, ($C0)
+	DEC R0
+	BMI CODE_0BED00 : NOP
+	LMS R0, ($D2)
+	LOB
+	SUB #2
+	BCC CODE_0BED1A : NOP
+	IWT R14, #DATA_0AF6A1
+	IWT R15, #CODE_0BEDA9 : TO R14
+
+CODE_0BED00:
+	LMS R0, ($1D0)
+	LOB
+	BEQ CODE_0BED0E : NOP
+	IWT R14, #DATA_0AF6BF
+	IWT R15, #CODE_0BEDA1 : NOP
+
+CODE_0BED0E:
+	LMS R0, ($B4)
+	SUB #0
+	BEQ CODE_0BED1A : NOP
+	IWT R15, #CODE_0BEE2D : NOP
+
+CODE_0BED1A:
+	LM R0, ($1FE8)
+	SUB #0
+	BEQ CODE_0BED2A : NOP
+	IWT R14, #DATA_0AFB21
+	IWT R15, #CODE_0BEDEC : NOP
+
+CODE_0BED2A:
+	IWT R0, #DATA_0AF647
+	ADD R14
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BED31:
+	LMS R0, ($C2)
+	LOB
+	BEQ CODE_0BED3E : ADD R0
+	IWT R14, #DATA_0AF665
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BED3E:
+	LMS R1, ($C0)
+	DEC R1
+	BMI CODE_0BED88 : INC R1
+	LMS R0, ($1DA)
+	LOB
+	BEQ CODE_0BED55 : DEC R0
+	LSR
+	BIC #1
+	IWT R14, #DATA_0AF671
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BED55:
+	LMS R0, ($1DC)
+	LOB
+	BEQ CODE_0BED74 : DEC R0
+	LMS R14, ($1F0)
+	DEC R14
+	BPL CODE_0BED6B : NOP
+	BIC #1
+	IWT R14, #DATA_0AF675
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BED6B:
+	FROM R14
+	BIC #1
+	IWT R14, #DATA_0AF67D
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BED74:
+	LMS R0, ($D2)
+	LOB
+	SUB #2
+	BCC CODE_0BED83 : NOP
+	IWT R14, #DATA_0AF699
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BED83:
+	SMS ($BE), R1
+	JMP R11 : NOP
+
+CODE_0BED88:
+	LMS R0, ($1D4)
+	LOB
+	BEQ CODE_0BED97 : NOP
+	BIC #1
+	IWT R14, #DATA_0AF6A9
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BED97:
+	LMS R0, ($1D0)
+	LOB
+	BEQ CODE_0BEDB3 : NOP
+	IWT R14, #DATA_0AF6AF
+CODE_0BEDA1:
+	LM R0, ($1974)
+	ADD R0
+	AND #14
+	TO R14
+CODE_0BEDA9:
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+CODE_0BEDAE:
+	SMS ($BE), R0
+	JMP R11 : NOP
+
+CODE_0BEDB3:
+	LMS R0, ($CC)
+	LOB
+	BEQ CODE_0BEDD8 : NOP
+	LMS R0, ($DC)
+	LOB
+	BEQ CODE_0BEDD0 : NOP
+	IBT R1, #$10
+	SUB R1
+	BCC CODE_0BEDD8 : NOP
+	LSR
+	BIC #1
+	IWT R14, #DATA_0AF6CF
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BEDD0:
+	LMS R0, ($B4)
+	SUB #0
+	BNE CODE_0BEE2D : NOP
+CODE_0BEDD8:
+	LMS R0, ($CE)
+	SUB #0
+	BNE CODE_0BEDAE : NOP
+	LM R0, ($1FE8)
+	SUB #0
+	BEQ CODE_0BEDF5 : NOP
+	IWT R14, #DATA_0AFAEB
+CODE_0BEDEC:
+	LMS R0, ($F2)
+	IBT R1, #$1A
+	ADD R1
+	BRA CODE_0BEDA9 : TO R14
+
+CODE_0BEDF5:
+	LMS R0, ($1D8)
+	LOB
+	BNE CODE_0BEE17 : NOP
+	IBT R1, #$00
+	LM R0, ($1970)
+	LSR
+	BCS CODE_0BEE09 : NOP
+	TO R1
+	AND #6
+CODE_0BEE09:
+	SMS ($F6), R1
+	FROM R1
+	LSR
+	IWT R14, #DATA_0AF7D5
+	TO R14
+	ADD R14
+	GETB
+	SMS ($1D8), R0
+CODE_0BEE17:
+	TO R1
+	ADD R0
+	LMS R0, ($F6)
+	IWT R14, #DATA_0AF7D9
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	ADD R1
+	IWT R14, #DATA_0AF6D9
+	IWT R15, #CODE_0BEDA9 : TO R14
+
+CODE_0BEE2D:
+	BPL CODE_0BEE32 : NOP
+	NOT
+	INC R0
+CODE_0BEE32:
+	LM R4, ($1FE8)
+	MOVES R4, R4
+	BNE CODE_0BEE73 : NOP
+	IWT R1, #$0260
+	SUB R1
+	BCC CODE_0BEE73 : ADD R1
+	IWT R1, #$0018
+	LMS R0, ($DE)
+	DEC R0
+	BMI CODE_0BEE4F : NOP
+	IWT R1, #$0053
+CODE_0BEE4F:
+	LM R0, ($1974)
+	AND #2
+	BNE CODE_0BEE69 : NOP
+	LMS R0, ($FA)
+	IWT R14, #DATA_0AF7E1
+	TO R14
+	ADD R14
+	GETB
+	DEC R0
+	BMI CODE_0BEE68 : INC R0
+	SMS ($7A), R0
+CODE_0BEE68:
+	SUB R0
+CODE_0BEE69:
+	SMS ($F8), R0
+	LSR
+	ADD R1
+	SMS ($BE), R0
+	JMP R11 : NOP
+
+CODE_0BEE73:
+	ADD R0
+	ADD R0
+	TO R1
+	HIB
+	LMS R0, ($1D2)
+	LOB
+	LMS R0, ($F8)
+	IWT R2, #DATA_0AFA73
+	BNE CODE_0BEEDE : NOP
+	LMS R3, ($B4)
+	LMS R14, ($C4)
+	DEC R14
+	WITH R3
+	XOR R14
+	BMI CODE_0BEE9B : INC R0
+	SUB #3
+	BPL CODE_0BEEA3 : NOP
+	IBT R0, #$12
+	BRA CODE_0BEEA3 : NOP
+
+CODE_0BEE9B:
+	IBT R3, #$12
+	TO R3
+	SUB R3
+	BCC CODE_0BEEA3 : INC R0
+	SUB R0
+CODE_0BEEA3:
+	SMS ($F8), R0
+	MOVE R3, R0
+	ADD R0
+	ADD R0
+	ADD R0
+	TO R1
+	OR R1
+	LMS R0, ($FA)
+	DEC R3
+	BMI CODE_0BEEBB : INC R3
+	IBT R14, #$0A
+	WITH R14
+	SUB R3
+	BNE CODE_0BEEC9 : NOP
+CODE_0BEEBB:
+	IWT R14, #DATA_0AF7E1
+	TO R14
+	ADD R14
+	TO R14
+	GETB
+	DEC R14
+	BMI CODE_0BEEC9 : INC R14
+	SMS ($7A), R14
+CODE_0BEEC9:
+	ADD R0
+	IWT R14, #DATA_0AFA67
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	GETBH
+	ADD R1
+	IWT R14, #DATA_0AF7E7
+	TO R14
+	ADD R14
+	GETB
+	SMS ($1D2), R0
+	FROM R3
+CODE_0BEEDE:
+	TO R14
+	ADD R2
+	LMS R0, ($DE)
+	DEC R0
+	BMI CODE_0BEEEB : NOP
+	IBT R0, #$14
+	TO R14
+	ADD R14
+CODE_0BEEEB:
+	MOVES R4, R4
+	BEQ CODE_0BEF04 : NOP
+	IBT R0, #$28
+	LMS R4, ($F2)
+	MOVES R4, R4
+	IBT R4, #$1A
+	BPL CODE_0BEEFF : WITH R4
+	NOT
+	INC R4
+	ADD R0
+CODE_0BEEFF:
+	SMS ($F2), R4
+	TO R14
+	ADD R14
+CODE_0BEF04:
+	GETB
+	INC R14
+	GETBH
+	SMS ($BE), R0
+	JMP R11 : NOP
+
+CODE_0BEF0D:
+	SUB R0
+	STOP : NOP
+
+CODE_0BEF10:
+	IWT R1, #$0F5C
+	IBT R12, #$12
+	MOVE R13, R15
+	LDB (R1)
+	SUB #0
+	BEQ CODE_0BEF24 : DEC R1
+	DEC R1
+	DEC R1
+	LOOP : DEC R1
+	JMP R11 : DEC R12
+
+CODE_0BEF24:
+	FROM R12
+	ADD #5
+	ADD R0
+	TO R1
+	ADD R0
+	IBT R12, #$10
+	IWT R0, #$0F00
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R12, #$00FF
+	IWT R0, #$14A0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IBT R12, #$00
+	IWT R0, #$1D96
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1220
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1222
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1976
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1400
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$10E0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1D36
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1978
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$19D6
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$19D8
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1A36
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1A38
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1A96
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1A98
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1AF6
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1AF8
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1402
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1860
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$0F02
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1D38
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1720
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1680
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1682
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1540
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$15E0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$17C0
+	ADD R1
+	FROM R12
+	STW (R0)
+	DEC R12
+	IWT R0, #$1362
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1722
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R12, #$1FFF
+	IWT R0, #$1862
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$701360
+	ADD R1
+	FROM R5
+	STW (R0)
+	FROM R5
+	TO R12
+	ADD R5
+	SMS ($5C), R14
+	IWT R0, #DATA_0AA716
+	TO R14
+	ADD R12
+	TO R13
+	GETB
+	IWT R5, #$0EBB
+	IBT R14, #$06
+CODE_0BF007:
+	LDB (R5)
+	SUB R13
+	BEQ CODE_0BF014 : DEC R14
+	BNE CODE_0BF007 : DEC R5
+	TO R5
+	BRA CODE_0BF01A : SUB R0
+
+CODE_0BF014:
+	FROM R14
+	ADD #8
+	ADD R0
+	TO R5
+	ADD R0
+CODE_0BF01A:
+	IWT R0, #$1180
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0A9F1A
+	TO R14
+	ADD R12
+	TO R5
+	GETB
+	INC R14
+	IWT R0, #$14A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETB
+	IBT R5, #$20
+	TO R5
+	XOR R5
+	IWT R0, #$1042
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0AA318
+	TO R14
+	ADD R12
+	TO R5
+	GETBS
+	INC R14
+	IWT R0, #$1542
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETBS
+	MULT #8
+	TO R5
+	ADD R0
+	IWT R0, #$15E2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0A971E
+	TO R14
+	ADD R12
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$0FA2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0A9B1C
+	TO R14
+	ADD R12
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$1040
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0A9320
+	TO R14
+	ADD R12
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$0FA0
+	ADD R1
+	FROM R5
+	STW (R0)
+	IBT R0, #$1F
+	AND R5
+	ADD R0
+	ADD R0
+	ADD R0
+	IWT R14, #DATA_0A9220
+	TO R14
+	ADD R14
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	INC R14
+	IWT R0, #$1B56
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	INC R14
+	IWT R0, #$1B58
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	INC R14
+	IWT R0, #$1BB6
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$1BB8
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R14, ($5C)
+	JMP R11 : SUB R0
+
+CODE_0BF0C4:
+	IWT R1, #$0EFC
+	IBT R12, #$10
+	MOVE R13, R15
+	LDB (R1)
+	SUB #0
+	BEQ CODE_0BF0E8 : DEC R1
+	DEC R1
+	DEC R1
+	LOOP : DEC R1
+	LM R0, ($1E4A)
+	DEC R0
+	DEC R0
+	DEC R0
+	DEC R0
+	BPL CODE_0BF0E3 : NOP
+	IBT R0, #$3C
+CODE_0BF0E3:
+	SBK
+	LSR
+	TO R12
+	LSR
+	INC R12
+CODE_0BF0E8:
+	DEC R12
+	FROM R12
+	ADD R12
+	TO R1
+	ADD R0
+	IBT R12, #$0E
+	IWT R0, #$0EC0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R12, #$00FF
+	IWT R0, #$1460
+	ADD R1
+	FROM R12
+	STW (R0)
+	IBT R12, #$00
+	IWT R0, #$11E0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$11E2
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$13C0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$10A0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1E4C
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1E4E
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1E8C
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1782
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1E8E
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$13C2
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1820
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$0EC2
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$16E0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1640
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1642
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1500
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$15A0
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1780
+	ADD R1
+	FROM R12
+	STW (R0)
+	DEC R12
+	IWT R0, #$1322
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$16E2
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R12, #$1FFF
+	IWT R0, #$1822
+	ADD R1
+	FROM R12
+	STW (R0)
+	IWT R0, #$1320
+	ADD R1
+	FROM R5
+	STW (R0)
+	FROM R5
+	TO R12
+	ADD R5
+	SMS ($5C), R14
+	IWT R0, #DATA_0AB912-(!Define_YI_AmbSpr1BA*$02)
+	TO R14
+	ADD R12
+	TO R13
+	GETB
+	IWT R5, #$0EBB
+	IBT R14, #$06
+CODE_0BF19A:
+	LDB (R5)
+	SUB R13
+	BEQ CODE_0BF1A7 : DEC R14
+	BNE CODE_0BF19A : DEC R5
+	TO R5
+	BRA CODE_0BF1AD : SUB R0
+
+CODE_0BF1A7:
+	FROM R14
+	ADD #8
+	ADD R0
+	TO R5
+	ADD R0
+CODE_0BF1AD:
+	IWT R0, #$1140
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0AB512-(!Define_YI_AmbSpr1BA*$02)
+	TO R14
+	ADD R12
+	TO R5
+	GETB
+	INC R14
+	IWT R0, #$1462
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETB
+	IBT R5, #$30
+	TO R5
+	XOR R5
+	IWT R0, #$1002
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0AB712-(!Define_YI_AmbSpr1BA*$02)
+	TO R14
+	ADD R12
+	TO R5
+	GETBS
+	INC R14
+	IWT R0, #$1502
+	ADD R1
+	FROM R5
+	STW (R0)
+	GETBS
+	MULT #8
+	TO R5
+	ADD R0
+	IWT R0, #$15A2
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0AAF12-(!Define_YI_AmbSpr1BA*$02)
+	TO R14
+	ADD R12
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$0F60
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0AB112-(!Define_YI_AmbSpr1BA*$02)
+	TO R14
+	ADD R12
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$0F62
+	ADD R1
+	FROM R5
+	STW (R0)
+	IWT R0, #DATA_0AB312-(!Define_YI_AmbSpr1BA*$02)
+	TO R14
+	ADD R12
+	GETB
+	INC R14
+	TO R5
+	GETBH
+	IWT R0, #$1000
+	ADD R1
+	FROM R5
+	STW (R0)
+	LMS R14, ($5C)
+	JMP R11 : NOP
+
+;---------------------------------------------------------------------------
+
+ADDR_0BF21D:
+	MOVE R4, R6
+	SMS ($66), R11
+	IBT R1, #$01
+	IWT R11, #$2200
+	FROM R11
+	ADD R6
+	ADD R6
+	TO R6
+	LDW (R0)
+	FROM R11
+	ADD R4
+	ADD R4
+	TO R11
+	LDW (R0)
+	MOVE R0, R8
+	TO R10
+	SWAP
+	ADD R0
+	NOT
+	INC R0
+	LMULT
+	WITH R10
+	ADD R4
+	MOVE R5, R6
+	MOVE R6, R11
+	MOVE R0, R9
+	TO R7
+	SWAP
+	ADD R0
+	NOT
+	INC R0
+	LMULT
+	WITH R7
+	ADD R4
+	MOVE R0, R12
+	LSR
+	BCC ADDR_0BF254 : ADD R0
+	WITH R1
+	OR #4
+ADDR_0BF254:
+	FROM R1
+	CMODE
+	MOVE R6, R0
+	FROM R13
+	ROMB
+	IBT R4, #$20
+	MOVE R9, R4
+	IWT R13, #CODE_0BF26A
+	CACHE
+CODE_0BF264:
+	MOVE R1, R3
+	MOVE R8, R10
+	MOVE R12, R9
+CODE_0BF26A:
+	MERGE
+	BEQ CODE_0BF277 : TO R14
+	ADD R6
+	WITH R8
+	ADD R5
+	GETC
+	LOOP : PLOT
+	BRA CODE_0BF27E : WITH R7
+
+CODE_0BF277:
+	WITH R8
+	ADD R5
+	SUB R0
+	COLOR
+	LOOP : PLOT
+	WITH R7
+CODE_0BF27E:
+	ADD R11
+	DEC R4
+	BNE CODE_0BF264 : INC R2
+	RPIX
+	LMS R11, ($66)
+	JMP R11 : NOP
+
+CODE_0BF28A:
+	MOVE R4, R6
+CODE_0BF28C:
+	IBT R1, #$01
+CODE_0BF28E:
+	IWT R8, #$2200
+	FROM R8
+	ADD R6
+	ADD R6
+	TO R6
+	LDW (R0)
+	FROM R8
+	ADD R4
+	ADD R4
+	TO R8
+	LDW (R0)
+	SMS ($66), R11
+	WITH R5
+	ADD R5
+	IBT R0, #DATA_08AB98>>16
+	ROMB
+	IWT R0, #DATA_08AB98
+	TO R14
+	ADD R5
+	GETB
+	INC R14
+	GETBH
+	MOVE R14, R0
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R9
+	OR R4
+	MOVE R7, R6
+	MOVE R6, R8
+	FROM R14
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	TO R8
+	OR R4
+	SMS ($00), R8
+	IWT R0, #DATA_08AC18
+	TO R14
+	ADD R5
+	GETB
+	INC R14
+	GETBH
+	MOVE R14, R0
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	NOT
+	INC R0
+	MOVE R5, R0
+	ADD R8
+	NOT
+	INC R0
+	ADD R0
+	ADD R0
+	ADD R0
+	ADD R0
+	IWT R10, #$1000
+	TO R11
+	ADD R10
+	MOVE R6, R7
+	FROM R14
+	LMULT
+	WITH R4
+	HIB
+	LOB
+	SWAP
+	OR R4
+	SMS ($02), R0
+	ADD R9
+	NOT
+	INC R0
+	ADD R0
+	ADD R0
+	ADD R0
+	ADD R0
+	TO R10
+	ADD R10
+	MOVE R0, R12
+	LSR
+	BCC CODE_0BF308 : ADD R0
+	WITH R1
+	OR #4
+CODE_0BF308:
+	FROM R1
+	CMODE
+	MOVE R6, R0
+	FROM R13
+	ROMB
+	IBT R4, #$20
+	IWT R13, #CODE_0BF31E
+	CACHE
+CODE_0BF316:
+	MOVE R1, R3
+	MOVE R8, R10
+	MOVE R7, R11
+	IBT R12, #$20
+CODE_0BF31E:
+	MERGE
+	BCS CODE_0BF32F : TO R14
+	ADD R6
+	WITH R8
+	ADD R9
+	WITH R7
+	ADD R5
+	GETC
+	LOOP : PLOT
+	BRA CODE_0BF337+$01 : LMS R0, ($02)
+
+CODE_0BF32F:
+	WITH R8
+	ADD R9
+	WITH R7
+	ADD R5
+	SUB R0
+	COLOR
+	LOOP : PLOT
+CODE_0BF337:
+	LMS R0, ($02)
+	TO R10
+	ADD R10
+	LMS R0, ($00)
+	TO R11
+	ADD R11
+	DEC R4
+	BNE CODE_0BF316 : INC R2
+	RPIX
+	LMS R11, ($66)
+	JMP R11 : NOP
+
+CODE_0BF34C:
+	MOVE R4, R6
+CODE_0BF34E:
+	IBT R1, #$01
+	SMS ($66), R11
+	IWT R11, #$2200
+	FROM R11
+	ADD R6
+	ADD R6
+	TO R6
+	LDW (R0)
+	FROM R11
+	ADD R4
+	ADD R4
+	TO R11
+	LDW (R0)
+	MOVE R0, R8
+	TO R10
+	SWAP
+	NOT
+	INC R0
+	LMULT
+	WITH R10
+	ADD R4
+	MOVE R5, R6
+	MOVE R6, R11
+	MOVE R0, R9
+	TO R7
+	SWAP
+	NOT
+	INC R0
+	LMULT
+	WITH R7
+	ADD R4
+	MOVE R0, R12
+	LSR
+	BCC CODE_0BF381 : ADD R0
+	WITH R1
+	OR #4
+CODE_0BF381:
+	FROM R1
+	CMODE
+	MOVE R6, R0
+	FROM R13
+	ROMB
+	IWT R13, #CODE_0BF397
+	IBT R4, #$20
+	MOVE R9, R4
+	CACHE
+CODE_0BF391:
+	MOVE R1, R3
+	MOVE R8, R10
+	MOVE R12, R9
+CODE_0BF397:
+	MERGE
+	BCS CODE_0BF3A4 : TO R14
+	ADD R6
+	WITH R8
+	ADD R5
+	GETC
+	LOOP : PLOT
+	BRA CODE_0BF3AB : WITH R7
+
+CODE_0BF3A4:
+	WITH R8
+	ADD R5
+	SUB R0
+	COLOR
+	LOOP : PLOT
+	WITH R7
+CODE_0BF3AB:
+	ADD R11
+	DEC R4
+	BNE CODE_0BF391 : INC R2
+	RPIX
+	LMS R11, ($66)
+	JMP R11 : NOP
+
+if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
+	%InsertGarbageData($0BF3B7, incbin, DATA_0BF3B7_YI_U2.bin)
+else
+	%FREE_BYTES($0BF3B7, 3145, $FF)
+endif
+%SuperFXBankEnd(!FXBank0B)

@@ -1,0 +1,47 @@
+{
+  "name": "shiny-egg",
+  "version": "0.3.0",
+  "description": "A Yoshi's Island (SNES) level editor",
+  "main": "./out/main/index.js",
+  "author": "",
+  "private": true,
+  "packageManager": "pnpm@11.5.1",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "build:win": "electron-vite build && electron-builder --win --publish never",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:renderer": "tsc --noEmit -p tsconfig.renderer.json --composite false",
+    "typecheck": "pnpm run typecheck:node && pnpm run typecheck:renderer",
+    "test:renderer": "vitest run",
+    "xref": "node snes-framework/scripts/cli.ts xref",
+    "closure": "node snes-framework/scripts/cli.ts closure",
+    "level-lookup": "node snes-framework/scripts/cli.ts level-lookup",
+    "sweep-levels": "node snes-framework/scripts/engine/sweep-levels.ts",
+    "inspect-level": "node snes-framework/scripts/engine/inspect-level.ts",
+    "find-object": "node snes-framework/scripts/engine/find-object.ts",
+    "slope-pages": "node snes-framework/scripts/engine/slope-pages.ts",
+    "map16-probe": "node snes-framework/scripts/engine/map16-probe.ts",
+    "pool-report": "node snes-framework/scripts/pool-report.ts",
+    "render-cli": "node snes-framework/scripts/engine/render-cli.ts"
+  },
+  "dependencies": {
+    "snes-framework": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vitest": "^4.1.8"
+  }
+}

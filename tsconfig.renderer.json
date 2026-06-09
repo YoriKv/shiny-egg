@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "useDefineForClassFields": true,
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "paths": {
+      "@renderer/*": ["./src/renderer/src/*"]
+    }
+  },
+  "include": [
+    "src/renderer/src/**/*",
+    "src/shared/**/*",
+    "src/preload/api.d.ts"
+  ]
+}

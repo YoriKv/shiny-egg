@@ -1,0 +1,18 @@
+{
+  "id": "flutter-auto-advance-victory",
+  "name": "Auto-Advance Victory Screen",
+  "category": "Flutter! - Skips and Speedups",
+  "description": "The level-clear victory screen advances on its own, without waiting for a button press.",
+  "attribution": "Extracted from the Flutter hack (https://www.romhacking.net/hacks/8972/)",
+  "details": [
+    "Removes the wait-for-button check on the level-clear victory state so it auto-advances."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1",
+  "chunks": [
+    {
+      "offset": "0xBEA6",
+      "bytes": "EAEA"
+    }
+  ]
+}

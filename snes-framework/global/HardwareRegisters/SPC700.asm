@@ -1,0 +1,377 @@
+includeonce
+
+;SPC700 registers/IPLROM
+;$00F0
+!REGISTER_SPC700_ControlRegister = $00F1
+!REGISTER_SPC700_DSPRegisterIndex = $00F2
+!REGISTER_SPC700_ReadWriteToDSPRegister = $00F3
+!REGISTER_SPC700_APUPort0 = $00F4
+!REGISTER_SPC700_APUPort1 = $00F5
+!REGISTER_SPC700_APUPort2 = $00F6
+!REGISTER_SPC700_APUPort3 = $00F7
+;$00F8
+;$00F9
+!REGISTER_SPC700_Timer0 = $00FA
+!REGISTER_SPC700_Timer1 = $00FB
+!REGISTER_SPC700_Timer2 = $00FC
+!REGISTER_SPC700_Counter0 = $00FD
+!REGISTER_SPC700_Counter1 = $00FE
+!REGISTER_SPC700_Counter2 = $00FF
+!REGISTER_SPC700_IPLROMLoc = $FFC0
+
+;DSP registers					; Note: Any register that has "ChannelX" in the name are meant to be used with the "!DSPChannelX" defines below.
+!REGISTER_DSP_ChannelXLeftVolume = $00
+	!DSPChannel1 = $00
+	!DSPChannel2 = $10
+	!DSPChannel3 = $20
+	!DSPChannel4 = $30
+	!DSPChannel5 = $40
+	!DSPChannel6 = $50
+	!DSPChannel7 = $60
+	!DSPChannel8 = $70
+!REGISTER_DSP_ChannelXRightVolume = $01
+!REGISTER_DSP_ChannelXPitchLo = $02
+!REGISTER_DSP_ChannelXPitchHi = $03
+!REGISTER_DSP_ChannelXSourceNumber = $04
+!REGISTER_DSP_ChannelXToggleADSROrGAIN = $05
+!REGISTER_DSP_ChannelXADSREnvelope = $06
+!REGISTER_DSP_ChannelXGAINEnvelope = $07
+!REGISTER_DSP_ChannelXWriteEnvelope = $08
+!REGISTER_DSP_ChannelXWriteWaveform = $09
+!REGISTER_DSP_MainLeftVolume = $0C
+!REGISTER_DSP_EchoFeedback = $0D
+!REGISTER_DSP_ChannelXFIRFilerCoefficients = $0F
+!REGISTER_DSP_MainRightVolume = $1C
+!REGISTER_DSP_EchoLeftVolume = $2C
+!REGISTER_DSP_PitchModulation = $2D
+!REGISTER_DSP_EchoRightVolume = $3C
+!REGISTER_DSP_NoiseEnable = $3D
+!REGISTER_DSP_KeyOnBits = $4C
+!REGISTER_DSP_EchoEnable = $4D
+!REGISTER_DSP_KeyOffBits = $5C
+!REGISTER_DSP_SourceDirectoryOffset = $5D
+	!SourceDirectoryOffset_0000 = $0000
+	!SourceDirectoryOffset_0100 = $0100
+	!SourceDirectoryOffset_0200 = $0200
+	!SourceDirectoryOffset_0300 = $0300
+	!SourceDirectoryOffset_0400 = $0400
+	!SourceDirectoryOffset_0500 = $0500
+	!SourceDirectoryOffset_0600 = $0600
+	!SourceDirectoryOffset_0700 = $0700
+	!SourceDirectoryOffset_0800 = $0800
+	!SourceDirectoryOffset_0900 = $0900
+	!SourceDirectoryOffset_0A00 = $0A00
+	!SourceDirectoryOffset_0B00 = $0B00
+	!SourceDirectoryOffset_0C00 = $0C00
+	!SourceDirectoryOffset_0D00 = $0D00
+	!SourceDirectoryOffset_0E00 = $0E00
+	!SourceDirectoryOffset_0F00 = $0F00
+	!SourceDirectoryOffset_1000 = $1000
+	!SourceDirectoryOffset_1100 = $1100
+	!SourceDirectoryOffset_1200 = $1200
+	!SourceDirectoryOffset_1300 = $1300
+	!SourceDirectoryOffset_1400 = $1400
+	!SourceDirectoryOffset_1500 = $1500
+	!SourceDirectoryOffset_1600 = $1600
+	!SourceDirectoryOffset_1700 = $1700
+	!SourceDirectoryOffset_1800 = $1800
+	!SourceDirectoryOffset_1900 = $1900
+	!SourceDirectoryOffset_1A00 = $1A00
+	!SourceDirectoryOffset_1B00 = $1B00
+	!SourceDirectoryOffset_1C00 = $1C00
+	!SourceDirectoryOffset_1D00 = $1D00
+	!SourceDirectoryOffset_1E00 = $1E00
+	!SourceDirectoryOffset_1F00 = $1F00
+	!SourceDirectoryOffset_2000 = $2000
+	!SourceDirectoryOffset_2100 = $2100
+	!SourceDirectoryOffset_2200 = $2200
+	!SourceDirectoryOffset_2300 = $2300
+	!SourceDirectoryOffset_2400 = $2400
+	!SourceDirectoryOffset_2500 = $2500
+	!SourceDirectoryOffset_2600 = $2600
+	!SourceDirectoryOffset_2700 = $2700
+	!SourceDirectoryOffset_2800 = $2800
+	!SourceDirectoryOffset_2900 = $2900
+	!SourceDirectoryOffset_2A00 = $2A00
+	!SourceDirectoryOffset_2B00 = $2B00
+	!SourceDirectoryOffset_2C00 = $2C00
+	!SourceDirectoryOffset_2D00 = $2D00
+	!SourceDirectoryOffset_2E00 = $2E00
+	!SourceDirectoryOffset_2F00 = $2F00
+	!SourceDirectoryOffset_3000 = $3000
+	!SourceDirectoryOffset_3100 = $3100
+	!SourceDirectoryOffset_3200 = $3200
+	!SourceDirectoryOffset_3300 = $3300
+	!SourceDirectoryOffset_3400 = $3400
+	!SourceDirectoryOffset_3500 = $3500
+	!SourceDirectoryOffset_3600 = $3600
+	!SourceDirectoryOffset_3700 = $3700
+	!SourceDirectoryOffset_3800 = $3800
+	!SourceDirectoryOffset_3900 = $3900
+	!SourceDirectoryOffset_3A00 = $3A00
+	!SourceDirectoryOffset_3B00 = $3B00
+	!SourceDirectoryOffset_3C00 = $3C00
+	!SourceDirectoryOffset_3D00 = $3D00
+	!SourceDirectoryOffset_3E00 = $3E00
+	!SourceDirectoryOffset_3F00 = $3F00
+	!SourceDirectoryOffset_4000 = $4000
+	!SourceDirectoryOffset_4100 = $4100
+	!SourceDirectoryOffset_4200 = $4200
+	!SourceDirectoryOffset_4300 = $4300
+	!SourceDirectoryOffset_4400 = $4400
+	!SourceDirectoryOffset_4500 = $4500
+	!SourceDirectoryOffset_4600 = $4600
+	!SourceDirectoryOffset_4700 = $4700
+	!SourceDirectoryOffset_4800 = $4800
+	!SourceDirectoryOffset_4900 = $4900
+	!SourceDirectoryOffset_4A00 = $4A00
+	!SourceDirectoryOffset_4B00 = $4B00
+	!SourceDirectoryOffset_4C00 = $4C00
+	!SourceDirectoryOffset_4D00 = $4D00
+	!SourceDirectoryOffset_4E00 = $4E00
+	!SourceDirectoryOffset_4F00 = $4F00
+	!SourceDirectoryOffset_5000 = $5000
+	!SourceDirectoryOffset_5100 = $5100
+	!SourceDirectoryOffset_5200 = $5200
+	!SourceDirectoryOffset_5300 = $5300
+	!SourceDirectoryOffset_5400 = $5400
+	!SourceDirectoryOffset_5500 = $5500
+	!SourceDirectoryOffset_5600 = $5600
+	!SourceDirectoryOffset_5700 = $5700
+	!SourceDirectoryOffset_5800 = $5800
+	!SourceDirectoryOffset_5900 = $5900
+	!SourceDirectoryOffset_5A00 = $5A00
+	!SourceDirectoryOffset_5B00 = $5B00
+	!SourceDirectoryOffset_5C00 = $5C00
+	!SourceDirectoryOffset_5D00 = $5D00
+	!SourceDirectoryOffset_5E00 = $5E00
+	!SourceDirectoryOffset_5F00 = $5F00
+	!SourceDirectoryOffset_6000 = $6000
+	!SourceDirectoryOffset_6100 = $6100
+	!SourceDirectoryOffset_6200 = $6200
+	!SourceDirectoryOffset_6300 = $6300
+	!SourceDirectoryOffset_6400 = $6400
+	!SourceDirectoryOffset_6500 = $6500
+	!SourceDirectoryOffset_6600 = $6600
+	!SourceDirectoryOffset_6700 = $6700
+	!SourceDirectoryOffset_6800 = $6800
+	!SourceDirectoryOffset_6900 = $6900
+	!SourceDirectoryOffset_6A00 = $6A00
+	!SourceDirectoryOffset_6B00 = $6B00
+	!SourceDirectoryOffset_6C00 = $6C00
+	!SourceDirectoryOffset_6D00 = $6D00
+	!SourceDirectoryOffset_6E00 = $6E00
+	!SourceDirectoryOffset_6F00 = $6F00
+	!SourceDirectoryOffset_7000 = $7000
+	!SourceDirectoryOffset_7100 = $7100
+	!SourceDirectoryOffset_7200 = $7200
+	!SourceDirectoryOffset_7300 = $7300
+	!SourceDirectoryOffset_7400 = $7400
+	!SourceDirectoryOffset_7500 = $7500
+	!SourceDirectoryOffset_7600 = $7600
+	!SourceDirectoryOffset_7700 = $7700
+	!SourceDirectoryOffset_7800 = $7800
+	!SourceDirectoryOffset_7900 = $7900
+	!SourceDirectoryOffset_7A00 = $7A00
+	!SourceDirectoryOffset_7B00 = $7B00
+	!SourceDirectoryOffset_7C00 = $7C00
+	!SourceDirectoryOffset_7D00 = $7D00
+	!SourceDirectoryOffset_7E00 = $7E00
+	!SourceDirectoryOffset_7F00 = $7F00
+	!SourceDirectoryOffset_8000 = $8000
+	!SourceDirectoryOffset_8100 = $8100
+	!SourceDirectoryOffset_8200 = $8200
+	!SourceDirectoryOffset_8300 = $8300
+	!SourceDirectoryOffset_8400 = $8400
+	!SourceDirectoryOffset_8500 = $8500
+	!SourceDirectoryOffset_8600 = $8600
+	!SourceDirectoryOffset_8700 = $8700
+	!SourceDirectoryOffset_8800 = $8800
+	!SourceDirectoryOffset_8900 = $8900
+	!SourceDirectoryOffset_8A00 = $8A00
+	!SourceDirectoryOffset_8B00 = $8B00
+	!SourceDirectoryOffset_8C00 = $8C00
+	!SourceDirectoryOffset_8D00 = $8D00
+	!SourceDirectoryOffset_8E00 = $8E00
+	!SourceDirectoryOffset_8F00 = $8F00
+	!SourceDirectoryOffset_9000 = $9000
+	!SourceDirectoryOffset_9100 = $9100
+	!SourceDirectoryOffset_9200 = $9200
+	!SourceDirectoryOffset_9300 = $9300
+	!SourceDirectoryOffset_9400 = $9400
+	!SourceDirectoryOffset_9500 = $9500
+	!SourceDirectoryOffset_9600 = $9600
+	!SourceDirectoryOffset_9700 = $9700
+	!SourceDirectoryOffset_9800 = $9800
+	!SourceDirectoryOffset_9900 = $9900
+	!SourceDirectoryOffset_9A00 = $9A00
+	!SourceDirectoryOffset_9B00 = $9B00
+	!SourceDirectoryOffset_9C00 = $9C00
+	!SourceDirectoryOffset_9D00 = $9D00
+	!SourceDirectoryOffset_9E00 = $9E00
+	!SourceDirectoryOffset_9F00 = $9F00
+	!SourceDirectoryOffset_A000 = $A000
+	!SourceDirectoryOffset_A100 = $A100
+	!SourceDirectoryOffset_A200 = $A200
+	!SourceDirectoryOffset_A300 = $A300
+	!SourceDirectoryOffset_A400 = $A400
+	!SourceDirectoryOffset_A500 = $A500
+	!SourceDirectoryOffset_A600 = $A600
+	!SourceDirectoryOffset_A700 = $A700
+	!SourceDirectoryOffset_A800 = $A800
+	!SourceDirectoryOffset_A900 = $A900
+	!SourceDirectoryOffset_AA00 = $AA00
+	!SourceDirectoryOffset_AB00 = $AB00
+	!SourceDirectoryOffset_AC00 = $AC00
+	!SourceDirectoryOffset_AD00 = $AD00
+	!SourceDirectoryOffset_AE00 = $AE00
+	!SourceDirectoryOffset_AF00 = $AF00
+	!SourceDirectoryOffset_B000 = $B000
+	!SourceDirectoryOffset_B100 = $B100
+	!SourceDirectoryOffset_B200 = $B200
+	!SourceDirectoryOffset_B300 = $B300
+	!SourceDirectoryOffset_B400 = $B400
+	!SourceDirectoryOffset_B500 = $B500
+	!SourceDirectoryOffset_B600 = $B600
+	!SourceDirectoryOffset_B700 = $B700
+	!SourceDirectoryOffset_B800 = $B800
+	!SourceDirectoryOffset_B900 = $B900
+	!SourceDirectoryOffset_BA00 = $BA00
+	!SourceDirectoryOffset_BB00 = $BB00
+	!SourceDirectoryOffset_BC00 = $BC00
+	!SourceDirectoryOffset_BD00 = $BD00
+	!SourceDirectoryOffset_BE00 = $BE00
+	!SourceDirectoryOffset_BF00 = $BF00
+	!SourceDirectoryOffset_C000 = $C000
+	!SourceDirectoryOffset_C100 = $C100
+	!SourceDirectoryOffset_C200 = $C200
+	!SourceDirectoryOffset_C300 = $C300
+	!SourceDirectoryOffset_C400 = $C400
+	!SourceDirectoryOffset_C500 = $C500
+	!SourceDirectoryOffset_C600 = $C600
+	!SourceDirectoryOffset_C700 = $C700
+	!SourceDirectoryOffset_C800 = $C800
+	!SourceDirectoryOffset_C900 = $C900
+	!SourceDirectoryOffset_CA00 = $CA00
+	!SourceDirectoryOffset_CB00 = $CB00
+	!SourceDirectoryOffset_CC00 = $CC00
+	!SourceDirectoryOffset_CD00 = $CD00
+	!SourceDirectoryOffset_CE00 = $CE00
+	!SourceDirectoryOffset_CF00 = $CF00
+	!SourceDirectoryOffset_D000 = $D000
+	!SourceDirectoryOffset_D100 = $D100
+	!SourceDirectoryOffset_D200 = $D200
+	!SourceDirectoryOffset_D300 = $D300
+	!SourceDirectoryOffset_D400 = $D400
+	!SourceDirectoryOffset_D500 = $D500
+	!SourceDirectoryOffset_D600 = $D600
+	!SourceDirectoryOffset_D700 = $D700
+	!SourceDirectoryOffset_D800 = $D800
+	!SourceDirectoryOffset_D900 = $D900
+	!SourceDirectoryOffset_DA00 = $DA00
+	!SourceDirectoryOffset_DB00 = $DB00
+	!SourceDirectoryOffset_DC00 = $DC00
+	!SourceDirectoryOffset_DD00 = $DD00
+	!SourceDirectoryOffset_DE00 = $DE00
+	!SourceDirectoryOffset_DF00 = $DF00
+	!SourceDirectoryOffset_E000 = $E000
+	!SourceDirectoryOffset_E100 = $E100
+	!SourceDirectoryOffset_E200 = $E200
+	!SourceDirectoryOffset_E300 = $E300
+	!SourceDirectoryOffset_E400 = $E400
+	!SourceDirectoryOffset_E500 = $E500
+	!SourceDirectoryOffset_E600 = $E600
+	!SourceDirectoryOffset_E700 = $E700
+	!SourceDirectoryOffset_E800 = $E800
+	!SourceDirectoryOffset_E900 = $E900
+	!SourceDirectoryOffset_EA00 = $EA00
+	!SourceDirectoryOffset_EB00 = $EB00
+	!SourceDirectoryOffset_EC00 = $EC00
+	!SourceDirectoryOffset_ED00 = $ED00
+	!SourceDirectoryOffset_EE00 = $EE00
+	!SourceDirectoryOffset_EF00 = $EF00
+	!SourceDirectoryOffset_F000 = $F000
+	!SourceDirectoryOffset_F100 = $F100
+	!SourceDirectoryOffset_F200 = $F200
+	!SourceDirectoryOffset_F300 = $F300
+	!SourceDirectoryOffset_F400 = $F400
+	!SourceDirectoryOffset_F500 = $F500
+	!SourceDirectoryOffset_F600 = $F600
+	!SourceDirectoryOffset_F700 = $F700
+	!SourceDirectoryOffset_F800 = $F800
+	!SourceDirectoryOffset_F900 = $F900
+	!SourceDirectoryOffset_FA00 = $FA00
+	!SourceDirectoryOffset_FB00 = $FB00
+	!SourceDirectoryOffset_FC00 = $FC00
+	!SourceDirectoryOffset_FD00 = $FD00
+	!SourceDirectoryOffset_FE00 = $FE00
+	!SourceDirectoryOffset_FF00 = $FF00
+!REGISTER_DSP_DSPStatusFlags = $6C
+	!DSPStatusFlags_NoiseClockFrequency_0Hz = $00
+	!DSPStatusFlags_NoiseClockFrequency_16Hz = $01
+	!DSPStatusFlags_NoiseClockFrequency_21Hz = $02
+	!DSPStatusFlags_NoiseClockFrequency_25Hz = $03
+	!DSPStatusFlags_NoiseClockFrequency_31Hz = $04
+	!DSPStatusFlags_NoiseClockFrequency_42Hz = $05
+	!DSPStatusFlags_NoiseClockFrequency_50Hz = $06
+	!DSPStatusFlags_NoiseClockFrequency_63Hz = $07
+	!DSPStatusFlags_NoiseClockFrequency_83Hz = $08
+	!DSPStatusFlags_NoiseClockFrequency_100Hz = $09
+	!DSPStatusFlags_NoiseClockFrequency_125Hz = $0A
+	!DSPStatusFlags_NoiseClockFrequency_167Hz = $0B
+	!DSPStatusFlags_NoiseClockFrequency_200Hz = $0C
+	!DSPStatusFlags_NoiseClockFrequency_250Hz = $0D
+	!DSPStatusFlags_NoiseClockFrequency_333Hz = $0E
+	!DSPStatusFlags_NoiseClockFrequency_400Hz = $0F
+	!DSPStatusFlags_NoiseClockFrequency_500Hz = $10
+	!DSPStatusFlags_NoiseClockFrequency_667Hz = $11
+	!DSPStatusFlags_NoiseClockFrequency_800Hz = $12
+	!DSPStatusFlags_NoiseClockFrequency_1000Hz = $13
+	!DSPStatusFlags_NoiseClockFrequency_1300Hz = $14
+	!DSPStatusFlags_NoiseClockFrequency_1600Hz = $15
+	!DSPStatusFlags_NoiseClockFrequency_2000Hz = $16
+	!DSPStatusFlags_NoiseClockFrequency_2700Hz = $17
+	!DSPStatusFlags_NoiseClockFrequency_3200Hz = $18
+	!DSPStatusFlags_NoiseClockFrequency_4000Hz = $19
+	!DSPStatusFlags_NoiseClockFrequency_5300Hz = $1A
+	!DSPStatusFlags_NoiseClockFrequency_6400Hz = $1B
+	!DSPStatusFlags_NoiseClockFrequency_8000Hz = $1C
+	!DSPStatusFlags_NoiseClockFrequency_10700Hz = $1D
+	!DSPStatusFlags_NoiseClockFrequency_16000Hz = $1E
+	!DSPStatusFlags_NoiseClockFrequency_32000Hz = $1F
+	!DSPStatusFlags_EchoEnableFlag = $20
+	!DSPStatusFlags_MuteAudioFlag = $40
+	!DSPStatusFlags_SoftResetFlag = $80
+!REGISTER_DSP_EchoBufferStartOffset = $6D
+!REGISTER_DSP_VoiceBits = $7C
+!REGISTER_DSP_EchoDelay = $7D
+
+;---------------------------------------------------------------------------
+
+; SPC700 code assembly specific macros
+
+macro SPC700RoutinePointer(Label, BlockStart, BlockEnd)
+	dd <Label>
+	dd <BlockStart>
+	dd <BlockEnd>
+endmacro
+
+;---------------------------------------------------------------------------
+
+macro InsertMacroAtXPosition(Address)
+	if stringsequal("<Address>", "NULLROM")
+	else
+		base <Address>
+	endif
+endmacro
+
+;---------------------------------------------------------------------------
+
+macro SetDuplicateOrNullPointer(BaseLoc, Pointer)
+pushbase
+base <BaseLoc>
+<Pointer>:
+pullbase
+endmacro
+
+;---------------------------------------------------------------------------
