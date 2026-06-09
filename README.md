@@ -19,7 +19,7 @@ to be done, but should be very usable despite that.
 
 ## Requirements
 
-- A legally-owned Yoshi's Island ROM — **USA V1.0**.
+- A legally-owned Yoshi's Island ROM - **USA V1.0**.
 - Windows (x64).
 - [BizHawk](https://tasvideos.org/BizHawk) (EmuHawk) for testing levels in-game.
 

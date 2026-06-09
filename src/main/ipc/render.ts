@@ -57,8 +57,9 @@ import type {
   SpriteLayerResponse
 } from '../../shared/ipc-types'
 import { fitHeightProfile, fitMetadata } from 'snes-framework/surface-fit'
-import type { LevelObject } from 'snes-framework/types'
+import type { LevelObject, PaletteEdit } from 'snes-framework/types'
 import { loadRomAndSymbols } from '../render/rom-cache'
+import { isPaletteBuildStale } from '../resources'
 import {
   resolveLevel,
   decodeForRequest,
@@ -198,6 +199,24 @@ export function registerRenderIpc(): void {
       // (and the canvas previews it via paletteOverride). The saved overlay is a
       // build-time concern, not a render-time one.
       return buildLevelCgram(rom, symbols, level, req.levelRecordId, frameworkWorkRoot())
+    }
+  )
+
+  // Whether the editable-palette panel is showing out-of-date colours: a colour
+  // the built ROM baked in (vs base) that the live edit `draft` no longer covers,
+  // so the swatch (read from the built ROM) is wrong until a rebuild. Compared
+  // against the draft, not the saved overlay, so a saved-but-unbuilt edit the
+  // draft previews correctly does NOT warn — only the reset-but-unbuilt case
+  // does. Global (the palette blob is shared). Returns false with no built ROM.
+  ipcMain.handle(
+    'render:paletteBuildStale',
+    async (_event, draft: PaletteEdit[]): Promise<boolean> => {
+      try {
+        const { rom, symbols } = loadRomAndSymbols()
+        return isPaletteBuildStale(rom, symbols, draft ?? [])
+      } catch {
+        return false
+      }
     }
   )
 

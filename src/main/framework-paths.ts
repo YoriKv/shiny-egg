@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { existsSync } from 'node:fs'
-import { cp, mkdir } from 'node:fs/promises'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { cp, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
 // Read-only template baked into the installer via electron-builder extraResources.
@@ -140,21 +140,51 @@ export function editorDataRoot(): string {
   return join(frameworkWorkRoot(), 'editor-data', 'yi')
 }
 
-// On first run in a packaged build, copy the bundled framework tree from
-// resources/ into the user-writable workRoot. User-state subfolders are
-// created empty; subsequent launches detect the existing asar.exe and skip.
+// The read-only template subtrees shipped in the installer (electron-builder
+// extraResources). These are pure inputs — extract/build only READ them; all
+// generated state goes to assets/yi, editor-data, reference/, build/. They MUST
+// be refreshed when the app version changes: gating the copy on "asar.exe
+// already exists" (the old behaviour) froze the framework asm/data at whatever
+// version was first installed, so a later framework change (e.g. a new
+// `;@editable` region) shipped dead on existing installs — the work root kept
+// serving the stale file and the editor threw "Missing ;@editable:… markers."
+const TEMPLATE_ENTRIES = ['asar.exe', 'global', 'yi'] as const
+
+// Records which app version last populated the template subtrees, so we only
+// re-copy on an actual version bump (or when missing — migrates old installs
+// that predate this stamp, force-refreshing their stale template once).
+function templateStampPath(): string {
+  return join(frameworkWorkRoot(), '.template-version')
+}
+
+// On first run in a packaged build, copy the bundled framework template from
+// resources/ into the user-writable workRoot, and create the empty user-state
+// subfolders. On every later run, refresh the template subtrees when the app
+// version has changed (clean re-copy incl. deletions), preserving all generated
+// state. The stamp is written LAST so a refresh interrupted mid-copy re-runs.
 export async function ensureFrameworkWorkRoot(): Promise<void> {
   if (!app.isPackaged) return
   const src = frameworkSourceRoot()
   const dst = frameworkWorkRoot()
-  if (existsSync(join(dst, 'asar.exe'))) return
-
   await mkdir(dst, { recursive: true })
-  await cp(join(src, 'asar.exe'), join(dst, 'asar.exe'))
-  await cp(join(src, 'global'), join(dst, 'global'), { recursive: true })
-  await cp(join(src, 'yi'), join(dst, 'yi'), { recursive: true })
-  await mkdir(join(dst, 'assets', 'yi'), { recursive: true })
-  await mkdir(join(dst, 'editor-data', 'yi'), { recursive: true })
-  await mkdir(join(dst, 'build'), { recursive: true })
-  await mkdir(join(dst, 'reference'), { recursive: true })
+
+  const firstRun = !existsSync(join(dst, 'asar.exe'))
+  const stamp = templateStampPath()
+  const current = app.getVersion()
+  const installed = existsSync(stamp) ? readFileSync(stamp, 'utf8').trim() : null
+  if (!firstRun && installed === current) return // template already current
+
+  for (const entry of TEMPLATE_ENTRIES) {
+    const target = join(dst, entry)
+    if (existsSync(target)) await rm(target, { recursive: true, force: true })
+    await cp(join(src, entry), target, { recursive: true })
+  }
+  writeFileSync(stamp, current)
+
+  if (firstRun) {
+    await mkdir(join(dst, 'assets', 'yi'), { recursive: true })
+    await mkdir(join(dst, 'editor-data', 'yi'), { recursive: true })
+    await mkdir(join(dst, 'build'), { recursive: true })
+    await mkdir(join(dst, 'reference'), { recursive: true })
+  }
 }

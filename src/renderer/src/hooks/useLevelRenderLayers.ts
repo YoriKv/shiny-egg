@@ -146,7 +146,12 @@ export function useLevelRenderLayers(
    *  FULL: the Map16 grid is unchanged, so the incremental patch would diff to
    *  zero cells and the stale colours would persist. Collision is
    *  palette-independent, so it ignores this. */
-  paletteOverride: PaletteEdit[] = NO_PALETTE_EDITS
+  paletteOverride: PaletteEdit[] = NO_PALETTE_EDITS,
+  /** Bumped on every successful build. The ROM bytes changed but nothing else in
+   *  the render deps did (same level, same draft), so on a change we force a FULL
+   *  re-fetch of every layer — dropping the patch tokens, since a token patch
+   *  would diff to zero cells and keep the pre-build pixels. */
+  refreshNonce = 0
 ): LevelRenderLayers {
   // bg1 + collision backing canvases (created lazily, reused across edits).
   const bg1CanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -434,6 +439,26 @@ export function useLevelRenderLayers(
     triggerBgLayers()
   }, [header, paletteOverride, triggerBgLayers])
 
+  // A rebuild changed the ROM bytes but not the level structure or palette draft,
+  // so no layer effect above re-fires. Force a FULL re-fetch of the colour-bearing
+  // layers: drop the patch tokens (a token patch would diff to zero cells and keep
+  // the pre-build pixels) + bump each gen (discard any in-flight stale render),
+  // then re-trigger. Collision is palette-independent and handled in its own
+  // effect (refreshNonce dep). Skips the initial render (no prior build).
+  const prevRefreshRef = useRef(refreshNonce)
+  useEffect(() => {
+    if (prevRefreshRef.current === refreshNonce) return
+    prevRefreshRef.current = refreshNonce
+    bg1TokenRef.current = null
+    spriteTokenRef.current = null
+    bg1GenRef.current += 1
+    spriteGenRef.current += 1
+    bgLayersGenRef.current += 1
+    triggerBg1()
+    triggerSprite()
+    triggerBgLayers()
+  }, [refreshNonce, triggerBg1, triggerSprite, triggerBgLayers])
+
   // Release the previous bgLayers' ImageBitmaps when it's replaced (level /
   // header / palette change) or on unmount. `createImageBitmap` holds GPU/native
   // memory that is only reclaimed on `.close()` or eventual GC (which lags,
@@ -457,12 +482,18 @@ export function useLevelRenderLayers(
   // we re-fetch on header too (mirrors bg1; without it a header-only edit left
   // the overlay stale). The patch gate is recordId-only, so the grid diff
   // captures any header-driven decode change correctly.
+  const collisionRefreshRef = useRef(refreshNonce)
   useEffect(() => {
     const lvl = levelRef.current
     if (!objects || !header || !lvl) {
       setCollisionCanvas(null)
       collisionTokenRef.current = null
       return
+    }
+    // On a rebuild, drop the patch token so this fetches FULL from the new ROM.
+    if (collisionRefreshRef.current !== refreshNonce) {
+      collisionRefreshRef.current = refreshNonce
+      collisionTokenRef.current = null
     }
     let cancelled = false
     void window.shinyEgg.render
@@ -494,7 +525,7 @@ export function useLevelRenderLayers(
       })
       .catch(() => { /* keep the existing canvas; next edit re-syncs */ })
     return () => { cancelled = true }
-  }, [objects, header])
+  }, [objects, header, refreshNonce])
 
   return {
     bg1Canvas,

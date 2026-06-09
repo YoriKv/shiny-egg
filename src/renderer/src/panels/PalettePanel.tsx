@@ -33,6 +33,9 @@ interface PaletteBodyProps {
   highlightRows: Set<number> | null
   /** The App-level palette colour-edit document (usePaletteEditor). */
   editor: PaletteEditorApi
+  /** Bumped on every successful build. Re-fetches the BASE CGRAM (the built ROM
+   *  changed) and re-checks the palette-stale warning. */
+  renderRefresh: number
 }
 
 /**
@@ -56,7 +59,8 @@ export function PaletteBody({
   selectedLevelRecordId,
   paletteRowsUsed,
   highlightRows,
-  editor
+  editor,
+  renderRefresh
 }: PaletteBodyProps): JSX.Element {
   // Base (unedited) CGRAM + provenance for the selected level. Fetched on level
   // change only — the draft is applied locally for display, so a colour edit
@@ -67,6 +71,10 @@ export function PaletteBody({
   const [status, setStatus] = useState<string>('Pick a level.')
   const [error, setError] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  // The built ROM's palette is out of date vs the saved overlay (a colour
+  // edit/reset saved but not yet rebuilt) — the panel's BASE CGRAM comes from
+  // that built ROM, so the swatches can lag the saved edits until a rebuild.
+  const [stale, setStale] = useState(false)
 
   const { draftMap } = editor
 
@@ -109,6 +117,51 @@ export function PaletteBody({
       cancelled = true
     }
   }, [selectedLevelRecordId])
+
+  // Re-query whether the built ROM is showing out-of-date colours, passing the
+  // live draft so a saved-but-unbuilt edit (previewed correctly by the draft)
+  // doesn't warn — only a reset-but-unbuilt swatch does. Re-runs when the draft
+  // changes (edit / reset), on a rebuild (`renderRefresh`), and on level change.
+  const draft = editor.draft
+  useEffect(() => {
+    let cancelled = false
+    void window.shinyEgg.render
+      .paletteBuildStale(draft)
+      .then((s) => {
+        if (!cancelled) setStale(s)
+      })
+      .catch(() => {
+        if (!cancelled) setStale(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [draft, renderRefresh, selectedLevelRecordId])
+
+  // After a rebuild the built ROM's colours changed, so re-fetch the BASE CGRAM
+  // (e.g. a reset's swatches refresh from blue back to yellow). Updates only the
+  // colours — selection / status are preserved (the layout is unchanged). Skips
+  // the initial render (the level-load effect above already fetched).
+  const prevRefreshRef = useRef(renderRefresh)
+  useEffect(() => {
+    if (prevRefreshRef.current === renderRefresh) return
+    prevRefreshRef.current = renderRefresh
+    if (selectedLevelRecordId === null) return
+    let cancelled = false
+    void window.shinyEgg.render
+      .editablePalette({ levelRecordId: selectedLevelRecordId })
+      .then((res: DecodedPalette | null) => {
+        if (cancelled || !res || res.cgram.length < 512) return
+        setCgram(Uint8Array.from(res.cgram))
+        setProvenance(res.provenance)
+      })
+      .catch(() => {
+        /* keep the existing CGRAM; next level load re-syncs */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [renderRefresh, selectedLevelRecordId])
 
   /** The displayed BGR-15 word for CGRAM index `i` = the draft edit if any, else
    *  the base colour. */
@@ -222,6 +275,13 @@ export function PaletteBody({
 
   return (
     <div className="se-palette">
+      {stale && (
+        <div className="se-palette__stale-warn" title="Palette edits are asm edits — they don't render live; the built ROM keeps the previous build's colours until you rebuild.">
+          ⚠ Palette out of date — saved colour edits aren't in the built ROM yet.
+          The swatches here and the in-game colours won't refresh until you rebuild
+          (Test Level / Launch).
+        </div>
+      )}
       {selected !== null && cgram && (
         <div className="se-palette__editor">
           <input

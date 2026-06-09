@@ -132,6 +132,10 @@ const api = {
      *  slots. */
     editablePalette: (req: LevelRenderRequest): Promise<DecodedPalette | null> =>
       ipcRenderer.invoke('render:editablePalette', req),
+    /** True when the built ROM has a baked-in palette colour the live `draft` no
+     *  longer covers — drives the palette panel's "rebuild needed" warning. */
+    paletteBuildStale: (draft: PaletteEdit[]): Promise<boolean> =>
+      ipcRenderer.invoke('render:paletteBuildStale', draft),
     /** Run the object decoder on a level and return the stamped Map16
      *  buffer plus per-screen page mapping. Null for empty / special-case
      *  level slots (e.g. Kamek's Revenge). Pass `override` to decode an

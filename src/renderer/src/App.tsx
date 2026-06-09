@@ -311,7 +311,16 @@ export default function App(): JSX.Element {
     needsBuildRef.current = v
     setNeedsBuildState(v)
   }, [])
-  const markBuildClean = useCallback(() => setNeedsBuild(false), [setNeedsBuild])
+  // Bumped on every successful build so the canvas layers + palette panel re-fetch
+  // from the freshly-built ROM (asm edits — palette, strings — only reach the
+  // rendered pixels through a rebuild, and nothing else in their render deps
+  // changes, so without this the canvas keeps the pre-build colours).
+  const [renderRefresh, setRenderRefresh] = useState(0)
+  const bumpRenderRefresh = useCallback(() => setRenderRefresh((v) => v + 1), [])
+  const markBuildClean = useCallback(() => {
+    setNeedsBuild(false)
+    bumpRenderRefresh()
+  }, [setNeedsBuild, bumpRenderRefresh])
   // Any ROM-affecting save (level data, asm edits like strings) leaves the built
   // ROM stale, so Test Level / Launch must rebuild before booting. asm-editing
   // tools call this on a successful save — the convention for all future asm
@@ -679,6 +688,7 @@ export default function App(): JSX.Element {
     saveAll,
     needsBuildRef,
     setNeedsBuild,
+    onBuilt: markBuildClean,
     openLog,
     blockers,
     selectedLevelRecordId,
@@ -1052,6 +1062,7 @@ export default function App(): JSX.Element {
           spawnOverride={worldMapSpawn}
           onSpawnCommit={onSpawnCommit}
           paletteOverride={paletteEditor.draft}
+          renderRefresh={renderRefresh}
         />
         {/* Rendered after the canvas (so it sits above the level visuals) but
             with auto z-index, so the positive-z floating panels stay above it. */}
@@ -1090,6 +1101,7 @@ export default function App(): JSX.Element {
                   paletteRowsUsed={tileUsage?.paletteRowsUsed ?? null}
                   highlightRows={selectedObjectRows}
                   editor={paletteEditor}
+                  renderRefresh={renderRefresh}
                 />
               ) : w.kind === 'strings' ? (
                 <StringsBody tables={[levelNameStrings, messageStrings]} />

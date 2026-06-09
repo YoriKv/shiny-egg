@@ -23,6 +23,9 @@ export interface EmulatorActionsParams {
   /** Synchronous mirror of needsBuild (read after a save without a stale closure). */
   needsBuildRef: RefObject<boolean>
   setNeedsBuild: (v: boolean) => void
+  /** Called after a successful build — clears needsBuild AND triggers a render
+   *  refresh so the canvas/palette re-fetch from the freshly-built ROM. */
+  onBuilt: () => void
   /** Open the ROM log popover (called when a build fails so the asar error shows). */
   openLog: () => void
   blockers: Blocker[]
@@ -50,6 +53,7 @@ export function useEmulatorActions({
   saveAll,
   needsBuildRef,
   setNeedsBuild,
+  onBuilt,
   openLog,
   blockers,
   selectedLevelRecordId,
@@ -87,7 +91,7 @@ export function useEmulatorActions({
           const r = await window.shinyEgg.build()
           const name = r.outputPath.split(/[/\\]/).pop()
           append(`${label}: built → ${name}`)
-          setNeedsBuild(false)
+          onBuilt()
         } catch (err) {
           append(`${label}: build failed — ${(err as Error).message}`)
           // The build left no fresh ROM — keep needsBuild set so the next Test
@@ -100,7 +104,7 @@ export function useEmulatorActions({
       }
       return true
     },
-    [anyDirty, saveAll, setNeedsBuild, needsBuildRef, openLog]
+    [anyDirty, saveAll, setNeedsBuild, onBuilt, needsBuildRef, openLog]
   )
 
   // Test Level chain: save+build if needed → ensure BizHawk running →

@@ -1192,6 +1192,19 @@ h3 { margin: 0; }
 .se-palette__editor-warn {
   color: var(--ink-2);
 }
+/* "Built ROM palette is out of date" banner — a saved colour edit/reset that
+ * hasn't been rebuilt, so the swatches (read from the built ROM) can lag. Amber,
+ * matching .se-blocker--warn. */
+.se-palette__stale-warn {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid #8a772c;
+  border-radius: 4px;
+  background: #5a4a1c;
+  color: #fff6e0;
+  font-size: 11px;
+  line-height: 1.4;
+}
 /* Colour editor sits at the top of the panel (a swatch is always auto-selected);
  * the Reset Color / Reset all toolbar at the bottom. */
 .se-palette__toolbar {

@@ -156,6 +156,10 @@ export interface CanvasProps {
    *  as `paletteOverride` so the canvas previews unsaved palette edits live (no
    *  build). See hooks/useLevelRenderLayers. */
   paletteOverride: PaletteEdit[]
+  /** Bumped on every successful build — forces the render layers to re-fetch from
+   *  the freshly-built ROM (asm/palette edits only reach the pixels via a rebuild,
+   *  and nothing else in the render deps changes). See hooks/useLevelRenderLayers. */
+  renderRefresh: number
 }
 
 /** Mouse movement (px) past which a press becomes a drag, not a click. */
@@ -201,7 +205,8 @@ export function Canvas({
   testSpawn,
   onSetTestSpawn,
   onClearTestSpawn,
-  paletteOverride
+  paletteOverride,
+  renderRefresh
 }: CanvasProps): JSX.Element {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -254,7 +259,7 @@ export function Canvas({
     bgLayers,
     collisionCanvas,
     renderVersion
-  } = useLevelRenderLayers(renderLevel, paletteOverride)
+  } = useLevelRenderLayers(renderLevel, paletteOverride, renderRefresh)
   const [loadError, setLoadError] = useState<string | null>(null)
   // Hover preview — objects show a chartreuse box; cel-backed sprites a
   // size-matched chartreuse box, marker/flag sprites a chartreuse ring.

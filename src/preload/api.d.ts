@@ -294,6 +294,12 @@ export interface RenderAPI {
   /** Palette-colour editing: CGRAM (overlay-patched) + per-entry blob
    *  provenance + the project's current palette edits. Null for empty/special. */
   editablePalette: (req: LevelRenderRequest) => Promise<DecodedPalette | null>
+  /** True when the built ROM has a baked-in palette colour the live `draft` no
+   *  longer covers — so the panel's swatch (read from the built ROM) is out of
+   *  date and a rebuild is needed. Compared against the draft so a saved-but-
+   *  unbuilt edit (previewed correctly) doesn't warn. Drives the panel's
+   *  "rebuild needed" warning. */
+  paletteBuildStale: (draft: PaletteEdit[]) => Promise<boolean>
   decodeLevelLayout: (req: LevelRenderRequest) => Promise<DecodedLevelLayout | null>
   /** Paint tool — forward-fit a painted height curve to std objects. The corners
    *  are interpolated into slope lines, decomposed into a representable staircase,

@@ -35,8 +35,11 @@ import { readExtractionState } from 'snes-framework/state'
 import {
   applyPaletteEdits,
   readPaletteEdits,
-  PALETTE_BLOB_BANK_FILE
+  diffPaletteBlob,
+  PALETTE_BLOB_BANK_FILE,
+  PALETTE_BLOB_LABEL
 } from 'snes-framework/palette-edit'
+import type { SymbolMap } from 'snes-framework/symbol-map'
 import type {
   PaletteEdit,
   PoolBudgetReport,
@@ -720,6 +723,39 @@ export async function savePaletteEdits(edits: PaletteEdit[]): Promise<SaveResour
   const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
   await saveOverlayFile(projectId, PALETTE_BLOB_BANK_FILE, applyPaletteEdits(baseText, edits))
   return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
+}
+
+/** Whether the editable-palette panel is showing colours that are out of date —
+ *  a colour the built ROM has baked in (vs base) that the live edit `draft` does
+ *  NOT currently cover, so the displayed swatch (and in-game colour) is wrong and
+ *  a rebuild is needed to refresh it.
+ *
+ *  Palette edits are asm edits (they don't render live), so saving one — or
+ *  resetting back to base — only marks the build dirty; the `.sfc` keeps the
+ *  previous build's colours until a rebuild. The panel reads its BASE CGRAM from
+ *  that `.sfc` and overlays the draft, so the displayed colour for an offset is
+ *  `draft[off] ?? builtRom[off]`.
+ *
+ *  A swatch is therefore stale ⇔ the draft has NO entry for an offset the built
+ *  ROM changed from base. We compare against the *draft* (the live, in-memory
+ *  edits the panel previews) rather than the saved overlay on purpose: a
+ *  saved-but-unbuilt edit is previewed correctly by the draft, so it must NOT
+ *  warn — only the reset-but-unbuilt case (built ROM carries a colour the draft
+ *  no longer has) leaves a swatch showing the wrong colour. (`rom`/`symbols` come
+ *  from the loaded project build.) */
+export function isPaletteBuildStale(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  draft: PaletteEdit[]
+): boolean {
+  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
+  const blobPc = symbols.pc(PALETTE_BLOB_LABEL)
+  const builtEdits = diffPaletteBlob(
+    baseText,
+    (off) => rom[blobPc + off] | (rom[blobPc + off + 1] << 8)
+  )
+  const covered = new Set(draft.map((e) => e.offset))
+  return builtEdits.some((e) => !covered.has(e.offset))
 }
 
 /** Per-level .bins for these (id, stream) pairs aren't what the build actually
