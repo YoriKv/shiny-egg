@@ -473,11 +473,20 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       const idx = exits.findIndex((e) => e.uid === action.uid)
       const src = exits[idx]
       if (idx < 0 || !src) return state
-      // One exit per screen — clone onto the first free screen, if any.
+      // One exit per screen. Prefer the screen right after the source so the
+      // copy lands next to where you're working; if that's occupied (or the
+      // source is on the last screen) fall back to the first free screen from 0
+      // up — so screen 0 is the natural fallback. No-op only when every screen
+      // is occupied.
       const used = new Set(exits.map((e) => e.screenIndex))
       let screen = -1
-      for (let i = 0; i < MAX_LEVEL_EXITS; i++) {
-        if (!used.has(i)) { screen = i; break }
+      const next = src.screenIndex + 1
+      if (next < MAX_LEVEL_EXITS && !used.has(next)) {
+        screen = next
+      } else {
+        for (let i = 0; i < MAX_LEVEL_EXITS; i++) {
+          if (!used.has(i)) { screen = i; break }
+        }
       }
       if (screen < 0) return state
       const clone = { ...src, uid: state.nextUid, screenIndex: screen } as ScreenExit

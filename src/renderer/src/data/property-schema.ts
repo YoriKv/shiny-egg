@@ -43,14 +43,10 @@ export interface EnumFieldKind {
   disabled?: boolean
 }
 
-/** A level-id picker (dropdown of the catalog). The value is a data-record id. */
-export interface LevelRefFieldKind {
-  kind: 'levelRef'
-  disabled?: boolean
-}
-
-/** Widget seam — extend with 'picker' / 'flag' as they're built. */
-export type FieldKind = NumFieldKind | EnumFieldKind | LevelRefFieldKind
+/** Widget seam — extend with 'levelRef' / 'picker' / 'flag' as they're built.
+ *  (A catalog `LevelPicker`/`LevelRefField` widget already exists for the World
+ *  Map panel; re-add a `'levelRef'` kind here if a property ever needs it again.) */
+export type FieldKind = NumFieldKind | EnumFieldKind
 
 /** Player entrance state on arrival (the warp record's 5th byte; the loader
  *  stores it straight into Player_CurrentStateLo — CODE_set_player_entrance_from_exit
@@ -200,11 +196,11 @@ export function exitFields(_e: ScreenExit): PropertyField<ScreenExit>[] {
     {
       key: 'destLevelRecordId',
       label: 'Dest level',
-      field: { kind: 'levelRef' },
+      field: { kind: 'num', min: 0, max: 0xff, hex: true },
       get: (e) => warp(e).destLevelRecordId,
       patch: (v) => ({ destLevelRecordId: v }) as Partial<ScreenExit>,
       showIf: isWarp,
-      hint: 'Destination level the warp leads to.'
+      hint: 'Destination level-data record id (0x00-0xFF) the warp leads to.'
     },
     {
       key: 'destX',

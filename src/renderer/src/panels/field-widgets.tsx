@@ -187,15 +187,13 @@ export function FieldRow({
               onCommit={onCommit}
             />
           </>
-        ) : field.kind === 'enum' ? (
+        ) : (
           <EnumField
             value={value}
             options={field.options}
             disabled={field.disabled}
             onCommit={onCommit}
           />
-        ) : (
-          <LevelRefField value={value} disabled={field.disabled} onCommit={onCommit} />
         )}
       </dd>
     </>
