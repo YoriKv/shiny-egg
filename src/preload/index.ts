@@ -25,7 +25,10 @@ import type {
   PatchPoolSettings,
   PatchPreview,
   PatchSummary,
+  OverlayDriftReport,
+  OverlayUpgradeResult,
   PrepackagedPatch,
+  ProjectBackupResult,
   ProjectDeleteResult,
   ProjectExportResult,
   ProjectInfo,
@@ -43,7 +46,9 @@ import type {
   RomImportSelection,
   SetExitDestResult,
   Settings,
-  SpriteLayerResponse
+  SpriteLayerResponse,
+  SpriteProperty,
+  SpritePropertiesRequest
 } from '../shared/ipc-types'
 import type { GfxFilesResult } from 'snes-framework/render-gfx-files'
 import type { CollisionEntry } from 'snes-framework/collision'
@@ -235,7 +240,13 @@ const api = {
     openFolder: (id: string): Promise<void> =>
       ipcRenderer.invoke('project:openFolder', id),
     delete: (id: string): Promise<ProjectDeleteResult> =>
-      ipcRenderer.invoke('project:delete', id)
+      ipcRenderer.invoke('project:delete', id),
+    checkOverlays: (id: string): Promise<OverlayDriftReport> =>
+      ipcRenderer.invoke('project:checkOverlays', id),
+    backup: (id: string): Promise<ProjectBackupResult> =>
+      ipcRenderer.invoke('project:backup', id),
+    upgradeOverlays: (id: string, files: string[]): Promise<OverlayUpgradeResult> =>
+      ipcRenderer.invoke('project:upgradeOverlays', { id, files })
   },
 
   // Generic editable-resource load/save (the registry). The level editor and
@@ -246,6 +257,8 @@ const api = {
     // overload as well as the generic Promise<unknown> form.
     loadResource: (resource: EditableResource) =>
       ipcRenderer.invoke('editor:loadResource', resource),
+    spriteProperties: (req: SpritePropertiesRequest): Promise<SpriteProperty[]> =>
+      ipcRenderer.invoke('editor:spriteProperties', req),
     saveResource: (
       resource: EditableResource,
       model: unknown

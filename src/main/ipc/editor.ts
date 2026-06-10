@@ -30,15 +30,25 @@ import {
   saveResource,
   setExitDestResource
 } from '../resources'
+import { computeSpriteProperties } from '../sprite-properties'
 import type {
   RelocationState,
   ResetLevelResult,
-  SetExitDestResult
+  SetExitDestResult,
+  SpriteProperty,
+  SpritePropertiesRequest
 } from '../../shared/ipc-types'
 
 export function registerEditorIpc(): void {
   // Generic editable-resource dispatch (the registry) — the level editor and
   // all new tools load/save through this.
+  // Per-sprite-type computed read-only properties (Properties panel).
+  ipcMain.handle(
+    'editor:spriteProperties',
+    async (_event, req: SpritePropertiesRequest): Promise<SpriteProperty[]> =>
+      computeSpriteProperties(req)
+  )
+
   ipcMain.handle(
     'editor:loadResource',
     async (_event, resource: EditableResource): Promise<unknown> =>

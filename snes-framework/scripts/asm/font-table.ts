@@ -10,13 +10,12 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { FontTable } from '../types.ts'
 
-export interface FontTable {
-  charToByte: Map<string, number>
-  byteToChar: Map<number, string>
-  /** Encodable characters, in the order Main.txt lists them. */
-  chars: string[]
-}
+// FontTable's home is the Node/DOM-free `types.ts` (so renderer-side codec
+// helpers can reference it). Re-exported here for the existing
+// `./asm/font-table.ts` import sites.
+export type { FontTable }
 
 export function parseFontTable(text: string): FontTable {
   const charToByte = new Map<string, number>()

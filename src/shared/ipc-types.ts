@@ -136,6 +136,43 @@ export interface RenameProjectArgs {
   newName: string
 }
 
+// ── Outdated-overlay checker ─────────────────────────────────────────────────
+// A project stores edits as a sparse overlay of full `.asm` file copies with
+// `;@editable:<id>` regions spliced in. When the editor's base `.asm` later
+// changes (code fixed outside the regions, or a new region added — e.g. the
+// message-pointer table), the overlay's frozen copy drifts. The checker, on
+// project launch, re-splices each genuinely-edited region onto the fresh base
+// and offers a per-file upgrade (backup first). See src/main/overlay-upgrade.ts.
+
+/** One overlay `.asm` file that has drifted from the current base. Region ids
+ *  are the `;@editable:<id>` marker ids in that file. */
+export interface OverlayDriftFile {
+  /** workRoot-relative POSIX path, e.g. 'yi/SuperFX/Banks/Bank51.asm'. */
+  file: string
+  /** Regions whose content you actually changed — the upgrade keeps your edits. */
+  editsPreserved: string[]
+  /** Regions the base added after this overlay was written — the upgrade adopts them. */
+  regionsAdded: string[]
+  /** Regions removed from the base — your edits to them can't be carried over. */
+  regionsDropped: string[]
+}
+
+/** Result of scanning a project's overlay `.asm` files for drift. */
+export interface OverlayDriftReport {
+  /** Drifted files (empty ⇒ the project is up to date). */
+  files: OverlayDriftFile[]
+}
+
+export type ProjectBackupResult =
+  | { ok: true; project: ProjectSummary }
+  | { ok: false; error: string }
+
+/** Result of upgrading the requested overlay files. `upgraded` lists the files
+ *  actually rewritten (a no-drift or skipped file is omitted). */
+export type OverlayUpgradeResult =
+  | { ok: true; upgraded: string[] }
+  | { ok: false; error: string; upgraded: string[] }
+
 // ── Render requests ─────────────────────────────────────────────────────────
 
 /** Level-header fields fed to the engine renderers. */
@@ -418,6 +455,37 @@ export type ResetLevelResult =
  *  drag, plan §A8 #8.5). On success the source level's overlay `.bin`(s) were
  *  rewritten (auto-saved) → the built ROM is stale and needs a rebuild. */
 export type SetExitDestResult = { ok: true } | { ok: false; error: string }
+
+// ── Per-sprite-type computed properties ──────────────────────────────────────
+// Read-only, explanatory fields shown in the Properties panel for sprites with
+// special behaviour — derived from the sprite + level context, not stored. A
+// main-side registry (src/main/sprite-properties.ts) maps sprite num → provider.
+
+/** One computed read-only property row (label + display value). */
+export interface SpriteProperty {
+  label: string
+  value: string
+  /** Mouse-over explanation of what the property means / how it's derived. */
+  tooltip?: string
+}
+
+/** Context for computing a sprite's properties: the sprite (num + cell x/y) plus
+ *  the level it's in (record id, and the translevel of the world-map level it's
+ *  reached from — some behaviour, e.g. the message box, keys off the translevel). */
+export interface SpritePropertiesRequest {
+  /** Record id of the loaded level the sprite is in (may be a sub-room). */
+  levelRecordId: number | null
+  /** Translevel of the world-map level this play context belongs to (the root
+   *  level's slot — `CurrentLevelFromMap` persists across sub-room warps). Null
+   *  when unresolved. */
+  translevelId: number | null
+  /** 9-bit sprite num. */
+  num: number
+  /** Sprite cell X (0..255, 16-px cells). */
+  x: number
+  /** Sprite cell Y (0..127, 16-px cells). */
+  y: number
+}
 
 // ── Custom patches (post-build binary patch layer) ──────────────────────────
 

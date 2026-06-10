@@ -1,0 +1,22 @@
+{
+  "id": "skip-prologue",
+  "name": "Skip Prologue",
+  "category": "Skips and Speedups",
+  "description": "On a brand-new save, skips the \"Once upon a time...\" stork prologue (game modes $37/$38/$39) and drops straight into the Welcome To Yoshi's Island level, exactly where the prologue would have ended. Mutually exclusive with \"Skip Prologue and Welcome Level\" - enable only one.",
+  "details": [
+    "The new-game branch (CODE_179932, Bank17 $17:9932) defaults to gm$1F (-> overworld) then, when the per-save progress byte $1123,x is 0, overrides to gm$37 (prologue fade) at $17:9953 with the 8 bytes 'LDA #$37 : STA $0118 : STZ $0383'.",
+    "This chunk rewrites those 8 bytes in place (label CODE_179932 + $21) to 'LDA #$0B : STA $0118 : STA $021A' - the exact exit sequence the prologue itself runs at CODE_04E1A8 when the stork lands: gm$0B (fade -> gm$0C level load) with CurrentLevelFromMap = $0B (Welcome To Yoshi's Island). The fade direction ($0201=1) is already armed two instructions earlier, and the RTS at $17:995B is preserved.",
+    "The dropped 'STZ CurrentYoshiColor ($0383)' is non-essential: a fresh save's RAM mirror is zeroed (green), and the returning-save path never runs it either.",
+    "The 8-byte form only fits because game mode $0B and the Welcome map slot happen to share the value $0B (one LDA feeds both stores). Dropping into a different level would need 10 bytes (a second LDA) and a freespace stub - if Welcome is not wanted, use \"Skip Prologue and Welcome Level\" instead.",
+    "Byte layout verified against the built USA V1.0 cart (PC 0xB9953: A9 37 8D 18 01 9C 83 03). NEEDS in-game verification."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1",
+  "chunks": [
+    {
+      "label": "CODE_179932",
+      "labelOffset": 33,
+      "bytes": "A90B8D18018D1A02"
+    }
+  ]
+}

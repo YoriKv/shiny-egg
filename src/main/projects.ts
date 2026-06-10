@@ -10,6 +10,7 @@
 // the build-tree merge land in later steps.
 
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -200,6 +201,31 @@ export function createProject(name?: string): ProjectSummary {
   writeProjectFile(pf)
   updateSettings({ lastProjectId: id })
   return pf
+}
+
+/**
+ * Duplicate a project into a `<id>-backup-<date>` restore point the user can
+ * switch back to from the project menu. Copies the overlay + project.json +
+ * patches, but skips the regenerable `build-tree/`. Does NOT change the current
+ * project. Used as the "back up first" step of the outdated-overlay upgrade.
+ */
+export function backupProject(id: string): ProjectSummary {
+  const src = readProjectFile(id)
+  if (!src) throw new Error(`Project "${id}" not found.`)
+  const date = new Date().toISOString().slice(0, 10) // YYYY-MM-DD (filesystem-safe)
+  let backupId = `${id}-backup-${date}`
+  for (let n = 2; projectExists(backupId); n++) backupId = `${id}-backup-${date}-${n}`
+
+  const srcRoot = projectRoot(id)
+  cpSync(srcRoot, projectRoot(backupId), {
+    recursive: true,
+    // Skip the regenerable merged build-tree (large; rebuilt on demand).
+    filter: (s) => s.slice(srcRoot.length).replace(/^[/\\]/, '').split(/[/\\]/)[0] !== 'build-tree'
+  })
+  const now = new Date().toISOString()
+  const backup: ProjectSummary = { ...src, id: backupId, name: backupId, createdAt: now, modifiedAt: now }
+  writeProjectFile(backup)
+  return backup
 }
 
 /** The current valid project, creating the default one if none exists. */

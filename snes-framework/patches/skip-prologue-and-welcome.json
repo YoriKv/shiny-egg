@@ -1,0 +1,22 @@
+{
+  "id": "skip-prologue-and-welcome",
+  "name": "Skip Prologue and Welcome Level",
+  "category": "Skips and Speedups",
+  "description": "On a brand-new save, skips both the \"Once upon a time...\" stork prologue (game modes $37/$38/$39) and the Welcome To Yoshi's Island tutorial level - a fresh save goes straight to the world map at 1-1, exactly like a returning save. Mutually exclusive with \"Skip Prologue\" - enable only one.",
+  "details": [
+    "The new-game branch (CODE_179932, Bank17 $17:9932) sets gm$1F (fade -> gm$20 prepare overworld -> world map), then tests the per-save progress byte: 'LDA $1123,x : BNE rts' at $17:994E. A zero (never-cleared) save falls through into the gm$37 prologue override.",
+    "This chunk flips that BNE ($17:9951, label CODE_179932 + $1F) from $D0 to $80 (BRA), so every save takes the returning-save exit: the override block becomes dead code and the game proceeds gm$1F -> world map with CurrentLevelFromMap = $0 (1-1) straight from the zeroed save block.",
+    "The skipped 'STZ CurrentYoshiColor ($0383)' is non-essential (fresh-save RAM is already zeroed; returning saves never run it).",
+    "Composes safely with \"Skip Prologue\": the byte ranges do not overlap, and the BRA simply makes the other patch's rewritten block unreachable (this patch wins). Still, enable only one - they express opposite intents.",
+    "Byte layout verified against the built USA V1.0 cart (PC 0xB9951: D0 08). NEEDS in-game verification."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1",
+  "chunks": [
+    {
+      "label": "CODE_179932",
+      "labelOffset": 31,
+      "bytes": "80"
+    }
+  ]
+}

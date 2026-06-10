@@ -25,6 +25,24 @@ export interface AsmRegion {
   innerEnd: number
 }
 
+/** Ids of every `;@editable:<id> begin` marker in `source`, in order of
+ *  appearance (deduped). Lets a caller discover which editable regions a file
+ *  carries without knowing the ids up front — used by the overlay-drift upgrade
+ *  to compare an overlay's regions against the current base's. */
+export function listEditableRegionIds(source: string): string[] {
+  const re = /^[ \t]*;@editable:(\S+)[ \t]+begin[ \t]*\r?$/gm
+  const ids: string[] = []
+  const seen = new Set<string>()
+  let m: RegExpExecArray | null
+  while ((m = re.exec(source)) !== null) {
+    if (!seen.has(m[1])) {
+      seen.add(m[1])
+      ids.push(m[1])
+    }
+  }
+  return ids
+}
+
 /** Locate the `;@editable:<id>` region in `source`, or null if its marker pair
  *  is absent. Throws if exactly one of the two markers is present (malformed). */
 export function findRegion(source: string, id: string): AsmRegion | null {

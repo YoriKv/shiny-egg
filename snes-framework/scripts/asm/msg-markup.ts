@@ -21,7 +21,10 @@
 // expands it. Works for any space-free token (named or `[$XX]`), not the
 // param'd `[gfx ...]`.
 
-import type { FontTable } from './font-table.ts';
+// FontTable's home is types.ts (Node/DOM-free), so importing it here doesn't
+// drag the node:fs-backed font-table loader into renderer bundles that use this
+// codec (e.g. markupByteSize for the live byte budget).
+import type { FontTable } from '../types.ts';
 
 /** Upper bound on bytes scanned per message (guards against a missing terminator). */
 export const MAX_MESSAGE_BYTES = 0x1000;
@@ -328,4 +331,38 @@ export function encodeMessageMarkup(markup: string, fontTable: FontTable): Encod
   }
   bytes.push(0xff, 0xff); // $FFFF terminator
   return { bytes };
+}
+
+/**
+ * Encoded byte size of a markup string — exactly what `encodeMessageMarkup`
+ * produces (including the `$FFFF` terminator), but WITHOUT a font table: every
+ * plain character is one font byte, so the SIZE never depends on the char→byte
+ * map. `[token]`s (and the `[$XX]` / `[token_N]` forms) size via the same
+ * `encodeToken` legend as the encoder; cosmetic `\n`/`\r` are free; an
+ * unknown/malformed token contributes 0 (the real encode reports it as an error
+ * on save). Lets the editor show a live byte usage that matches the on-save
+ * budget — unlike a raw character count, which over-counts multi-char tokens
+ * (e.g. `[scroll]` = 8 chars but 2 bytes) and cosmetic newlines.
+ */
+export function markupByteSize(markup: string): number {
+  let n = 0;
+  let i = 0;
+  while (i < markup.length) {
+    const ch = markup[i];
+    if (ch === '\n' || ch === '\r') {
+      i++;
+      continue;
+    }
+    if (ch === '[') {
+      const j = markup.indexOf(']', i);
+      if (j < 0) break; // unclosed bracket — encoder errors; stop counting
+      const r = encodeToken(markup.slice(i + 1, j).trim());
+      if (!r.error) n += r.bytes.length;
+      i = j + 1;
+      continue;
+    }
+    n += 1; // one font byte per plain character
+    i++;
+  }
+  return n + 2; // $FFFF terminator
 }

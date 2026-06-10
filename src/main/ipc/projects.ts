@@ -7,6 +7,7 @@ import { projectRoot } from '../framework-paths'
 import { buildProject } from '../build-tree'
 import { getBizHawk } from '../bizhawk'
 import {
+  backupProject,
   createProject,
   deleteProject,
   ensureCurrentProject,
@@ -15,7 +16,11 @@ import {
   renameProject,
   setCurrentProject
 } from '../projects'
+import { applyOverlayUpgrades, detectOutdatedOverlays } from '../overlay-upgrade'
 import type {
+  OverlayDriftReport,
+  OverlayUpgradeResult,
+  ProjectBackupResult,
   ProjectDeleteResult,
   ProjectExportResult,
   ProjectInfo,
@@ -61,6 +66,28 @@ export function registerProjectsIpc(): void {
   ipcMain.handle('project:openFolder', async (_e, id: string): Promise<void> => {
     await shell.openPath(projectRoot(id))
   })
+
+  // Outdated-overlay checker: detect overlay `.asm` drift, back up (duplicate
+  // the project), and upgrade selected files. See src/main/overlay-upgrade.ts.
+  ipcMain.handle(
+    'project:checkOverlays',
+    async (_e, id: string): Promise<OverlayDriftReport> => detectOutdatedOverlays(id)
+  )
+
+  // Result object (not a thrown error) so the friendly message reaches the UI.
+  ipcMain.handle('project:backup', async (_e, id: string): Promise<ProjectBackupResult> => {
+    try {
+      return { ok: true, project: backupProject(id) }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    'project:upgradeOverlays',
+    async (_e, args: { id: string; files: string[] }): Promise<OverlayUpgradeResult> =>
+      applyOverlayUpgrades(args.id, args.files)
+  )
 
   // Result object (not a thrown error) so the friendly "folder open" message
   // reaches the UI cleanly. On success returns the new current project (the

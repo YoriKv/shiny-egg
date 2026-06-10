@@ -5,6 +5,8 @@ import type {
   LevelData,
   LevelObject,
   LevelSprite,
+  OverlayDriftReport,
+  ProjectBackupResult,
   ProjectSummary
 } from '../../preload/api'
 import { Canvas } from './Canvas'
@@ -27,6 +29,7 @@ import { ProjectMenu } from './ProjectMenu'
 import { useEditDocument, useEditSession } from './edit-session/EditSession'
 import type { DocHistory } from './edit-session/useOverlayDocument'
 import { DiscardChangesModal } from './DiscardChangesModal'
+import { OverlayUpgradeModal } from './OverlayUpgradeModal'
 import { FloatingWindow } from './FloatingWindow'
 import { panelHelp } from './panel-help'
 import { LayerToggles } from './toolbar/LayerToggles'
@@ -35,7 +38,7 @@ import { HeaderBody } from './panels/HeaderPanel'
 import { PaletteBody } from './panels/PalettePanel'
 import { usePaletteEditor } from './edit-session/usePaletteEditor'
 import { TilesBody } from './panels/TilesPanel'
-import { StringsBody, useStringsEditor } from './panels/StringsPanel'
+import { StringsBody, useMessagePtrTableEditor, useStringsEditor } from './panels/StringsPanel'
 import { useWorldMapEditor } from './edit-session/useWorldMapEditor'
 import { WorldMapBody } from './panels/WorldMapPanel'
 import { PickerBody } from './panels/PickerPanel'
@@ -205,6 +208,9 @@ export default function App(): JSX.Element {
   // Bumped to force every overlay-backed panel to re-read from disk without a
   // project switch — e.g. after a ROM import rewrites the overlay in place.
   const [projectRev, setProjectRev] = useState(0)
+  // Outdated-overlay checker: drift found on the active project's launch (null =
+  // none / dismissed). Drives the OverlayUpgradeModal.
+  const [overlayDrift, setOverlayDrift] = useState<OverlayDriftReport | null>(null)
   const [running, setRunning] = useState<Operation>(null)
   const [log, setLog] = useState<string[]>([])
   const [activeTool, setActiveTool] = useState<string>('select')
@@ -503,6 +509,34 @@ export default function App(): JSX.Element {
     }
   }, [levelState.level, appendLog, setNeedsBuild])
 
+  // ── Outdated-overlay upgrade (research task 2) ────────────────────────────
+  // Back up = duplicate the project (a restore point); upgrade = re-splice the
+  // chosen overlay files' edited regions onto the fresh base. Both proxy to the
+  // main-side current project.
+  const onOverlayBackup = useCallback(async (): Promise<ProjectBackupResult> => {
+    const id = project?.id
+    if (!id) return { ok: false, error: 'No active project.' }
+    return window.shinyEgg.projects.backup(id)
+  }, [project?.id])
+
+  const onOverlayUpgrade = useCallback(
+    async (files: string[]): Promise<void> => {
+      const id = project?.id
+      if (!id) return
+      const r = await window.shinyEgg.projects.upgradeOverlays(id, files)
+      // Any rewritten file: reload the overlay-backed panels from disk (projectRev),
+      // refresh the overlay-aware level names, and force a rebuild before launch.
+      if (r.upgraded.length > 0) {
+        setProjectRev((rev) => rev + 1)
+        void refreshLevelsCatalog()
+        setNeedsBuild(true)
+      }
+      if (!r.ok) throw new Error(r.error) // modal surfaces it + stays open
+      setOverlayDrift(null) // fully applied — close
+    },
+    [project?.id, refreshLevelsCatalog, setNeedsBuild]
+  )
+
   // Level navigation: forward entry points (dropdown / sub-room / object-finder
   // jump) + back/forward history, the unsaved-changes discard modal, reverse
   // parent-resolution, and the camera/focus channel into Canvas. The two record-
@@ -590,6 +624,7 @@ export default function App(): JSX.Element {
   }, [markRomDirty])
   const levelNameStrings = useStringsEditor('level-name-strings', 'Level Names', projectScope, markRomDirtyAndRefreshCatalog, docHistory)
   const messageStrings = useStringsEditor('message-box-text', 'Message Text', projectScope, markRomDirty, docHistory)
+  const messagePtrs = useMessagePtrTableEditor('message-box-text-ptrs', 'Message Pointers', projectScope, markRomDirty, docHistory)
   // Palette colour-edit document — its `draft` is fed to the canvas as a live
   // render override; its Save (or the global Save / Test Level) persists the
   // delta to the overlay before a build.
@@ -642,11 +677,11 @@ export default function App(): JSX.Element {
       kind === 'palette'
         ? [paletteEditor]
         : kind === 'strings'
-          ? [levelNameStrings, messageStrings]
+          ? [levelNameStrings, messageStrings, messagePtrs]
           : kind === 'world-map'
             ? [worldMapEditor]
             : [],
-    [paletteEditor, levelNameStrings, messageStrings, worldMapEditor]
+    [paletteEditor, levelNameStrings, messageStrings, messagePtrs, worldMapEditor]
   )
   const requestCloseWindow = useCallback(
     (w: WindowDef): void => {
@@ -734,6 +769,25 @@ export default function App(): JSX.Element {
   useEffect(() => {
     void window.shinyEgg.projects.ensureCurrent().then(setProject)
   }, [])
+
+  // On each project launch / switch, check its overlay `.asm` files for drift
+  // against the current editor base (out-of-region changes, or editable regions
+  // added later). If any, raise the upgrade modal. Re-prompts on the next launch
+  // until resolved (dismiss sets it to null without persisting a "skip").
+  useEffect(() => {
+    const id = project?.id
+    if (!id) return
+    let cancelled = false
+    void window.shinyEgg.projects
+      .checkOverlays(id)
+      .then((r) => {
+        if (!cancelled && r.files.length > 0) setOverlayDrift(r)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [project?.id])
 
   useEffect(() => {
     layersStore.save(layers)
@@ -1104,7 +1158,13 @@ export default function App(): JSX.Element {
                   renderRefresh={renderRefresh}
                 />
               ) : w.kind === 'strings' ? (
-                <StringsBody tables={[levelNameStrings, messageStrings]} />
+                <StringsBody
+                  tabs={[
+                    { kind: 'strings', editor: levelNameStrings },
+                    { kind: 'strings', editor: messageStrings },
+                    { kind: 'ptr-table', editor: messagePtrs }
+                  ]}
+                />
               ) : w.kind === 'world-map' ? (
                 <WorldMapBody editor={worldMapEditor} onJump={onWorldMapJump} />
               ) : w.kind === 'picker' ? (
@@ -1137,6 +1197,7 @@ export default function App(): JSX.Element {
                   selection={selection}
                   level={levelState.level}
                   currentLevelRecordId={selectedLevelRecordId}
+                  rootLevelRecordId={rootLevelRecordId}
                   dispatchLevel={dispatchLevel}
                   worldMapSpawn={worldMapSpawn}
                   onSpawnCommit={onSpawnCommit}
@@ -1179,6 +1240,14 @@ export default function App(): JSX.Element {
           onDiscard={onCloseDiscard}
           onCancel={onCloseCancel}
         />
+        {overlayDrift && (
+          <OverlayUpgradeModal
+            report={overlayDrift}
+            onBackup={onOverlayBackup}
+            onUpgrade={onOverlayUpgrade}
+            onDismiss={() => setOverlayDrift(null)}
+          />
+        )}
       </main>
 
       {/* Hard block while a Launch / Test Level chain (save → build → launch →

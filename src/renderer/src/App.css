@@ -1457,6 +1457,24 @@ h3 { margin: 0; }
   gap: 6px;
 }
 
+.se-strings__search {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.se-strings__search:focus {
+  outline: none;
+  border-color: var(--accent-soft);
+}
+
 .se-strings__list {
   flex: 1 1 auto;
   min-height: 0;
@@ -1470,6 +1488,49 @@ h3 { margin: 0; }
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* Message-pointer table: one row per message-ID slot — id · dropdown · preview. */
+.se-strings__ptr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.se-strings__ptr-id {
+  flex: 0 0 auto;
+  width: 44px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  text-align: right;
+}
+
+.se-strings__ptr-select {
+  flex: 0 0 auto;
+  max-width: 280px;
+  padding: 2px 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.se-strings__ptr-select:focus {
+  outline: none;
+  border-color: var(--accent-soft);
+}
+
+.se-strings__ptr-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--ink-2);
 }
 
 .se-strings__entry-name {
@@ -1610,6 +1671,11 @@ h3 { margin: 0; }
 
 .se-strings__budget.is-over {
   color: var(--danger);
+}
+
+.se-strings__count {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
 }
 
 .se-strings__warn {
@@ -1949,6 +2015,11 @@ h3 { margin: 0; }
   margin: 0;
   color: var(--ink);
   word-break: break-word;
+}
+/* Derived / read-only computed sprite properties — slightly muted to read as
+   explanatory (not editable). */
+.se-props__list dd.se-props__computed {
+  color: var(--ink-2);
 }
 .se-props__list code {
   background: var(--bg-elevated);
@@ -2972,6 +3043,61 @@ h3 { margin: 0; }
 }
 .se-modal__actions .se-btn {
   height: 32px;
+}
+
+/* Outdated-overlay upgrade dialog — wider, with a per-file checklist. */
+.se-modal--upgrade {
+  width: 460px;
+  max-width: calc(100vw - 48px);
+}
+.se-upgrade__backup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.se-upgrade__backup-note {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.se-upgrade__files {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  max-height: min(46vh, 360px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.se-upgrade__file {
+  border: 1px solid var(--line-faint);
+  border-radius: 3px;
+  padding: 6px 8px;
+}
+.se-upgrade__file-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.se-upgrade__file-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+.se-upgrade__file-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0 20px;
+}
+.se-upgrade__tag {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.se-upgrade__tag.is-warn {
+  color: var(--danger);
 }
 
 /* Per-panel help dialog — wider than the confirm modals, with a scrollable

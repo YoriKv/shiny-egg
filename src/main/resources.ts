@@ -51,8 +51,10 @@ import {
   levelNameSlotLabels,
   loadFontTable,
   parseLevelNameStrings,
+  parseMessagePtrTable,
   parseMessageText,
   serializeLevelNameStrings,
+  serializeMessagePtrTable,
   serializeMessageText,
   type FontTable,
   type SerializeResult
@@ -65,6 +67,7 @@ import {
 } from 'snes-framework/world-map'
 import type {
   EditableResource,
+  MessagePtrTableModel,
   SaveResourceResult,
   StringTableModel,
   WorldMapModel
@@ -78,17 +81,22 @@ import {
 } from './projects'
 import { getPatchPoolBytes, hasEnabledAsmPatches } from './patches'
 
+/** A loaded asm-region model — either a string/markup table or the message
+ *  pointer table. The renderer narrows on `'kind' in model` / `model.markup`. */
+type AsmRegionModel = StringTableModel | MessagePtrTableModel
+
 /** Registry of editor-owned `;@editable` asm regions (plan step 5). Each maps a
  *  resource id to its backing file (workRoot-relative) and a parse/serialize
  *  pair built on the reusable asm primitives. Add a row to expose a new region
- *  (message-box text, item names, …) — no other wiring needed. */
+ *  (message-box text, item names, …) — no other wiring needed. The serialize
+ *  wrappers narrow the union back to each region's concrete model. */
 interface AsmRegionDef {
   file: string
-  parse: (contentText: string, baseText: string, ft: FontTable) => StringTableModel
+  parse: (contentText: string, baseText: string, ft: FontTable) => AsmRegionModel
   serialize: (
     contentText: string,
     budgetText: string,
-    model: StringTableModel,
+    model: AsmRegionModel,
     ft: FontTable
   ) => SerializeResult
 }
@@ -97,12 +105,17 @@ const ASM_REGIONS: Record<string, AsmRegionDef> = {
   'level-name-strings': {
     file: 'yi/SuperFX/Banks/Bank51.asm',
     parse: parseLevelNameStrings,
-    serialize: serializeLevelNameStrings
+    serialize: (c, b, m, ft) => serializeLevelNameStrings(c, b, m as StringTableModel, ft)
   },
   'message-box-text': {
     file: 'yi/SuperFX/Banks/Bank51.asm',
     parse: parseMessageText,
-    serialize: serializeMessageText
+    serialize: (c, b, m, ft) => serializeMessageText(c, b, m as StringTableModel, ft)
+  },
+  'message-box-text-ptrs': {
+    file: 'yi/SuperFX/Banks/Bank51.asm',
+    parse: parseMessagePtrTable,
+    serialize: (c, b, m, ft) => serializeMessagePtrTable(c, b, m as MessagePtrTableModel, ft)
   }
 }
 
@@ -604,11 +617,43 @@ export function levelRecordOverrides(): Map<number, number> {
 
 /** Load an `;@editable` asm region (overlay-first content, base-derived budget)
  *  into its structured model. */
-export function loadAsmRegionResource(id: string): StringTableModel {
+export function loadAsmRegionResource(id: string): AsmRegionModel {
   const def = ASM_REGIONS[id]
   if (!def) throw new Error(`Unknown asm-region resource: "${id}".`)
   const { contentText, baseText } = readOverlayFirst(def.file)
   return def.parse(contentText, baseText, loadFontTable(frameworkWorkRoot()))
+}
+
+/** The editable CONTENT of an asm-region model — display labels/names dropped, so
+ *  a base change that only relabels a region (e.g. adding friendly aliases inside
+ *  the message-text region) doesn't read as a user edit. */
+function regionEditableSignature(model: AsmRegionModel): string {
+  if ('slots' in model) return JSON.stringify(model.slots)
+  return JSON.stringify(model.entries.map((e) => ({ lines: e.lines, markup: e.markup })))
+}
+
+/**
+ * Whether the overlay's editable content for region `id` genuinely differs from
+ * base — i.e. the user changed it, as opposed to the region merely being
+ * frozen-stale base text. (The shared-file overlay freezes a file's OTHER regions
+ * at save time, so raw-text inequality alone over-reports edits.) Parses both
+ * sides into the region's model and compares editable content only. Unknown
+ * regions, or a parse failure, return true — preserve the overlay, never silently
+ * drop edits. Used by the overlay-drift upgrade to choose keep-overlay vs
+ * adopt-base per region. See src/main/overlay-upgrade.ts.
+ */
+export function regionUserEdited(id: string, baseText: string, overlayText: string): boolean {
+  const def = ASM_REGIONS[id]
+  if (!def) return true
+  try {
+    const ft = loadFontTable(frameworkWorkRoot())
+    return (
+      regionEditableSignature(def.parse(overlayText, overlayText, ft)) !==
+      regionEditableSignature(def.parse(baseText, baseText, ft))
+    )
+  } catch {
+    return true
+  }
 }
 
 /**
@@ -622,7 +667,7 @@ export function loadAsmRegionResource(id: string): StringTableModel {
  */
 export function levelNameOverrides(): Map<number, string> {
   try {
-    const model = loadAsmRegionResource('level-name-strings')
+    const model = loadAsmRegionResource('level-name-strings') as StringTableModel
     const baseText = readFileSync(path.join(frameworkWorkRoot(), ASM_REGIONS['level-name-strings'].file), 'utf8')
     const labelToSlot = new Map<string, number>()
     levelNameSlotLabels(baseText).forEach((label, slot) => {

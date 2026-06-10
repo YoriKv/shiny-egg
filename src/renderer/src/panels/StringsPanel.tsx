@@ -1,5 +1,11 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
-import type { MarkupToken, StringTableModel } from '../../../preload/api'
+import { markupByteSize } from 'snes-framework/msg-markup'
+import type {
+  MarkupToken,
+  MessagePtrOption,
+  MessagePtrTableModel,
+  StringTableModel
+} from '../../../preload/api'
 import { useOverlayDocument, type DocHistory } from '../edit-session/useOverlayDocument'
 import { useCommitOnBlur } from '../hooks/useCommitOnBlur'
 
@@ -14,8 +20,10 @@ export interface StringsEditorState {
   saveError: string | null
   saving: boolean
   dirty: boolean
-  usedChars: number
-  budgetChars: number
+  /** Bytes used / budget. For the line model 1 char = 1 font byte; for the markup
+   *  model the encoded byte size (markupByteSize) — NOT the raw char count. */
+  usedBytes: number
+  budgetBytes: number
   overBudget: boolean
   hasInvalid: boolean
   allowed: ReadonlySet<string>
@@ -55,17 +63,16 @@ export function useStringsEditor(
   })
 
   const draft = doc.draft
-  const isMarkup = !!draft?.markup
   const allowed = useMemo(() => new Set(draft?.allowedChars ?? []), [draft])
 
-  // For the line model this is the exact byte budget (1 font byte per char). For
-  // the markup model it's an informational character tally — the real byte budget
-  // (tokens encode to 1–3 bytes each) is enforced main-side on save, since the
-  // renderer has no font byte-map to encode `[token]`s with.
-  const usedChars = useMemo(() => {
+  // Bytes used. Line model: 1 font byte per char. Markup model: the ENCODED byte
+  // size (markupByteSize — tokens are 1–3 bytes, cosmetic `\n`s are 0), which
+  // matches the on-save budget; a raw char count over-counts multi-char tokens +
+  // newlines and made a pristine cart read as over budget.
+  const usedBytes = useMemo(() => {
     let n = 0
     if (draft) {
-      if (draft.markup) for (const e of draft.entries) n += [...(e.markup ?? '')].length
+      if (draft.markup) for (const e of draft.entries) n += markupByteSize(e.markup ?? '')
       else for (const e of draft.entries) for (const l of e.lines) n += [...l].length
     }
     return n
@@ -80,10 +87,10 @@ export function useStringsEditor(
     return false
   }, [draft, allowed])
 
-  const budgetChars = draft?.budgetChars ?? 0
-  // The markup region's byte budget can't be measured client-side, so never block
-  // Save on it here; the save path re-encodes and rejects an over-budget edit.
-  const overBudget = !!draft && !isMarkup && usedChars > budgetChars
+  const budgetBytes = draft?.budgetChars ?? 0
+  // Both models can now be measured exactly client-side (markupByteSize mirrors
+  // the encoder), so block Save when over — matching the on-save enforcement.
+  const overBudget = !!draft && usedBytes > budgetBytes
 
   // One undo step per committed line edit (blur/Enter) — `doc.commit` snapshots
   // before/after onto the unified history.
@@ -128,8 +135,8 @@ export function useStringsEditor(
     saveError: doc.saveError,
     saving: doc.saving,
     dirty: doc.dirty,
-    usedChars,
-    budgetChars,
+    usedBytes,
+    budgetBytes,
     overBudget,
     hasInvalid,
     allowed,
@@ -140,21 +147,101 @@ export function useStringsEditor(
   }
 }
 
-/** The Strings window body — a tab bar over the App-level table editors, showing
- *  the active one. Each editor stays alive (state in App), so switching tabs
+export interface MessagePtrEditorState {
+  id: string
+  title: string
+  model: MessagePtrTableModel | null
+  status: string
+  error: string | null
+  saveError: string | null
+  saving: boolean
+  dirty: boolean
+  /** Repoint a slot (message ID) at a body option id, or '' for the null slot. */
+  setSlot: (slotIdx: number, optionId: string) => void
+  save: () => Promise<boolean>
+  discard: () => void
+}
+
+/**
+ * Owns the message-pointer-table editing state (DATA_message_box_text_ptrs).
+ * Mirrors `useStringsEditor` — App-level so the draft + EditSession registration
+ * survive the window closing / tab switches, and reloads on project change.
+ * `onSaved` marks the build dirty (asm edits don't render live → Test Level /
+ * Launch rebuild first).
+ */
+export function useMessagePtrTableEditor(
+  id: string,
+  title: string,
+  projectId: string | null,
+  onSaved: () => void,
+  history: DocHistory
+): MessagePtrEditorState {
+  const doc = useOverlayDocument<MessagePtrTableModel>({
+    key: `strings:${id}`,
+    reloadKey: `${id}:${projectId ?? ''}`,
+    load: () =>
+      window.shinyEgg.editor.loadResource({
+        kind: 'asm-region',
+        id
+      }) as Promise<MessagePtrTableModel>,
+    persist: (draft) => window.shinyEgg.editor.saveResource({ kind: 'asm-region', id }, draft),
+    equals: (a, b) => JSON.stringify(a.slots) === JSON.stringify(b.slots),
+    clone: (v) => structuredClone(v),
+    onSaved,
+    history
+  })
+
+  // One undo step per repoint — `doc.commit` snapshots before/after onto the
+  // unified history.
+  const setSlot = useCallback(
+    (slotIdx: number, optionId: string) => {
+      const prev = doc.read()
+      if (!prev) return
+      const next: MessagePtrTableModel = {
+        ...prev,
+        slots: prev.slots.map((s, i) => (i === slotIdx ? optionId : s))
+      }
+      doc.commit(next)
+    },
+    [doc]
+  )
+
+  return {
+    id,
+    title,
+    model: doc.draft,
+    status: doc.status,
+    error: doc.error,
+    saveError: doc.saveError,
+    saving: doc.saving,
+    dirty: doc.dirty,
+    setSlot,
+    save: doc.save,
+    discard: doc.discard
+  }
+}
+
+/** A Strings-panel tab: either a text/markup table editor or the message-pointer
+ *  table editor. Both editors expose `{ id, title, dirty }` for the tab bar. */
+export type StringsTab =
+  | { kind: 'strings'; editor: StringsEditorState }
+  | { kind: 'ptr-table'; editor: MessagePtrEditorState }
+
+/** The Strings window body — a tab bar over the App-level editors, showing the
+ *  active one. Each editor stays alive (state in App), so switching tabs
  *  preserves edits and dirty state. */
-export function StringsBody({ tables }: { tables: StringsEditorState[] }): JSX.Element {
-  const [activeId, setActiveId] = useState<string>(tables[0]?.id ?? '')
-  const active = tables.find((t) => t.id === activeId) ?? tables[0]
+export function StringsBody({ tabs }: { tabs: StringsTab[] }): JSX.Element {
+  const [activeId, setActiveId] = useState<string>(tabs[0]?.editor.id ?? '')
+  const active = tabs.find((t) => t.editor.id === activeId) ?? tabs[0]
 
   return (
     <div className="se-strings">
       <div className="se-tabs">
-        {tables.map((t) => (
+        {tabs.map(({ editor: t }) => (
           <button
             key={t.id}
             type="button"
-            className={`se-tab${t.id === active?.id ? ' is-active' : ''}`}
+            className={`se-tab${t.id === active?.editor.id ? ' is-active' : ''}`}
             onClick={() => setActiveId(t.id)}
             title={t.dirty ? `${t.title} — unsaved changes` : t.title}
           >
@@ -163,7 +250,12 @@ export function StringsBody({ tables }: { tables: StringsEditorState[] }): JSX.E
           </button>
         ))}
       </div>
-      {active && <StringTableView editor={active} />}
+      {active &&
+        (active.kind === 'strings' ? (
+          <StringTableView key={active.editor.id} editor={active.editor} />
+        ) : (
+          <MessagePtrTableView key={active.editor.id} editor={active.editor} />
+        ))}
     </div>
   )
 }
@@ -267,8 +359,8 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
     saveError,
     saving,
     dirty,
-    usedChars,
-    budgetChars,
+    usedBytes,
+    budgetBytes,
     overBudget,
     hasInvalid,
     allowed,
@@ -276,6 +368,7 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
     editMarkup,
     save
   } = editor
+  const [query, setQuery] = useState('')
   const canSave = dirty && !overBudget && !hasInvalid && !saving
 
   if (error) {
@@ -294,12 +387,32 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
   }
 
   const isMarkup = !!model.markup
+  // Filter by the entry's display name + asm label — both carry the friendly
+  // alias and the memory address (e.g. "DATA_msg_minigame_watermelon_seed
+  // (0x5140D3)"), so a name or address substring matches. `ei` is the entry's
+  // index in the FULL model — kept through the filter so the reducer edits the
+  // right entry while a search is active.
+  const q = query.trim().toLowerCase()
+  const visible = model.entries
+    .map((entry, ei) => ({ entry, ei }))
+    .filter(
+      ({ entry }) =>
+        !q || entry.name.toLowerCase().includes(q) || entry.label.toLowerCase().includes(q)
+    )
 
   return (
     <div className="se-strings__panel">
+      <input
+        className="se-strings__search"
+        type="search"
+        value={query}
+        spellCheck={false}
+        placeholder="Search by name or address…"
+        onChange={(e) => setQuery(e.target.value)}
+      />
       <div className="se-strings__list">
         {isMarkup && model.markupGuide && <MarkupGuide guide={model.markupGuide} />}
-        {model.entries.map((entry, ei) => (
+        {visible.map(({ entry, ei }) => (
           <div className="se-strings__entry" key={entry.label} title={entry.label}>
             <span className="se-strings__entry-name">{entry.name}</span>
             {isMarkup ? (
@@ -318,12 +431,132 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
             )}
           </div>
         ))}
+        {q && visible.length === 0 && (
+          <p className="se-strings__hint">No entries match “{query}”.</p>
+        )}
       </div>
       <div className="se-strings__footer">
         <span className={`se-strings__budget${overBudget ? ' is-over' : ''}`}>
-          {isMarkup ? `${usedChars} chars · ${budgetChars} byte budget` : `${usedChars} / ${budgetChars} bytes`}
+          {usedBytes} / {budgetBytes} bytes
         </span>
+        {q && (
+          <span className="se-strings__count">
+            {visible.length} of {model.entries.length}
+          </span>
+        )}
         {hasInvalid && <span className="se-strings__warn">unsupported characters</span>}
+        {saveError && <span className="se-strings__warn">{saveError}</span>}
+        <button
+          type="button"
+          className="se-btn is-primary se-strings__save"
+          disabled={!canSave}
+          onClick={() => void save()}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** The message-pointer-table editor (DATA_message_box_text_ptrs): one row per
+ *  message-ID slot, each a dropdown that repoints the slot at a message body (or
+ *  the null `$0000` option). The preview shows the target's first text line for
+ *  identification; the search box filters by message ID (hex) or target. The
+ *  table is fixed-size (300 slots) — slots are repointed, never added/removed. */
+function MessagePtrTableView({ editor }: { editor: MessagePtrEditorState }): JSX.Element {
+  const { model, status, error, saveError, saving, dirty, setSlot, save } = editor
+  const [query, setQuery] = useState('')
+  const canSave = dirty && !saving
+
+  // Option <option> elements are immutable descriptors, so the same array can be
+  // shared as children of every row's <select> (300 selects × ~80 options is a
+  // lot of DOM — if this ever feels heavy, virtualize the row list).
+  const optionEls = useMemo(
+    () =>
+      (model?.options ?? []).map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.name}
+        </option>
+      )),
+    [model]
+  )
+  const optionById = useMemo(() => {
+    const m = new Map<string, MessagePtrOption>()
+    for (const o of model?.options ?? []) m.set(o.id, o)
+    return m
+  }, [model])
+
+  if (error) {
+    return (
+      <div className="se-strings__panel">
+        <p className="se-strings__warn">Error: {error}</p>
+      </div>
+    )
+  }
+  if (!model) {
+    return (
+      <div className="se-strings__panel">
+        <p className="se-strings__hint">{status}</p>
+      </div>
+    )
+  }
+
+  const idHex = (i: number): string => `0x${i.toString(16).toUpperCase().padStart(2, '0')}`
+  const q = query.trim().toLowerCase()
+  // Match the message ID (hex) or the current target's id / name / preview. `i`
+  // is the message ID (slot index), preserved through the filter for setSlot.
+  const visible = model.slots
+    .map((slot, i) => ({ slot, i }))
+    .filter(({ slot, i }) => {
+      if (!q) return true
+      const opt = optionById.get(slot)
+      return (
+        idHex(i).toLowerCase().includes(q) ||
+        slot.toLowerCase().includes(q) ||
+        (opt?.name.toLowerCase().includes(q) ?? false) ||
+        (opt?.preview.toLowerCase().includes(q) ?? false)
+      )
+    })
+
+  return (
+    <div className="se-strings__panel">
+      <input
+        className="se-strings__search"
+        type="search"
+        value={query}
+        spellCheck={false}
+        placeholder="Search by message ID or target…"
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <div className="se-strings__list">
+        {visible.map(({ slot, i }) => (
+          <div className="se-strings__ptr-row" key={i}>
+            <span className="se-strings__ptr-id" title={`Message ID ${idHex(i)}`}>
+              {idHex(i)}
+            </span>
+            <select
+              className="se-strings__ptr-select"
+              value={slot}
+              onChange={(e) => setSlot(i, e.target.value)}
+            >
+              <option value="">(none — $0000)</option>
+              {optionEls}
+            </select>
+            <span className="se-strings__ptr-preview">{optionById.get(slot)?.preview ?? ''}</span>
+          </div>
+        ))}
+        {q && visible.length === 0 && (
+          <p className="se-strings__hint">No slots match “{query}”.</p>
+        )}
+      </div>
+      <div className="se-strings__footer">
+        <span className="se-strings__budget">{model.slots.length} message slots</span>
+        {q && (
+          <span className="se-strings__count">
+            {visible.length} of {model.slots.length}
+          </span>
+        )}
         {saveError && <span className="se-strings__warn">{saveError}</span>}
         <button
           type="button"

@@ -493,7 +493,10 @@ export interface StringTableEntry {
    *  friendly label is available it's shown with the asm label in parens (e.g.
    *  '1-1 (DATA_514A73)'); otherwise just the asm label, preferring the longest
    *  when a body has several (the descriptive alias, e.g.
-   *  'DATA_welcome_to_yoshis_island'). */
+   *  'DATA_welcome_to_yoshis_island'). For the message-text model the friendly
+   *  alias is shown with the reference-cart memory address in parens (e.g.
+   *  'DATA_msg_minigame_watermelon_seed (0x5140D3)'), or the bare
+   *  'DATA_<bank><offset>' label for a body with no alias. */
   name: string;
   /** The editable text runs (the `"..."` literals), in order. For the
    *  level-name table this is the two centered display lines. Empty for a markup
@@ -533,6 +536,52 @@ export interface MarkupToken {
   /** Human description, e.g. `B button`, `line break`. */
   label: string;
   kind: 'glyph' | 'control';
+}
+
+/** Parsed message font (Main.txt) — char↔byte maps + the encodable char set.
+ *  Lives here (Node- and DOM-free) so the renderer can import codec helpers that
+ *  reference it (e.g. the markup byte-size estimator) without dragging the
+ *  node:fs-backed loader in `scripts/asm/font-table.ts`. */
+export interface FontTable {
+  charToByte: Map<string, number>;
+  byteToChar: Map<number, string>;
+  /** Encodable characters, in the order Main.txt lists them. */
+  chars: string[];
+}
+
+// ── Message-pointer table (DATA_message_box_text_ptrs editor model) ─────────
+// The `$51:10DB` message-ID → message-body pointer table: 300 fixed slots, each
+// a symbolic `dw <body-label>` the engine indexes by message ID. The editor
+// repoints slots via dropdowns (never adds/removes). One `MessagePtrTableModel`
+// per `;@editable:message-box-text-ptrs` region; loaded/saved through the same
+// asm-region resource IPC as the string tables. See scripts/strings.ts.
+
+/** One selectable message body (a dropdown option) — the targets the pointer
+ *  table can reference. */
+export interface MessagePtrOption {
+  /** Stable id = the body's primary asm label (what's written as `dw <id>`),
+   *  e.g. 'DATA_msg_minigame_watermelon_seed' or 'DATA_511D15'. */
+  id: string;
+  /** Display label: friendly alias + reference address, mirroring
+   *  `StringTableEntry.name` (e.g. 'DATA_msg_minigame_watermelon_seed (0x5140D3)'). */
+  name: string;
+  /** First plain-text line of the message (tokens stripped), for quick
+   *  identification in the row. Empty for the bare-$FFFF empty message. */
+  preview: string;
+}
+
+export interface MessagePtrTableModel {
+  /** Discriminates this from `StringTableModel` on the shared asm-region IPC. */
+  kind: 'pointer-table';
+  /** Resource id = the `;@editable` marker id ('message-box-text-ptrs'). */
+  id: string;
+  /** Human label for the tab, e.g. 'Message Pointers'. */
+  title: string;
+  /** The selectable message bodies (dropdown options), in region order. */
+  options: MessagePtrOption[];
+  /** One entry per table slot; index = message ID. Each is an option `id`, or
+   *  '' for a `$0000` null slot. */
+  slots: string[];
 }
 
 // ── World-map entrance table (world-map editor model) ──────────────────────

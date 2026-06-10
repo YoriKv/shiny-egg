@@ -119,6 +119,11 @@ table "Tables/Fonts/Main.txt"
 
 DATA_5110DB:
 DATA_message_box_text_ptrs:              ; message-ID -> message-text pointer (consumed by FXCODE_09B03E via CODE_show_message_box; see docs/mchip.md 3.18)
+;@editable:message-box-text-ptrs begin
+; message-ID (slot index, 0-based) -> message-body label. 300 fixed-size slots;
+; the Shiny Egg editor repoints each `dw <body>`, never adds/removes slots.
+; `dw $0000` = null slot (no message). Format-preserving: only changed slots are
+; re-emitted on save (see scripts/strings.ts parseMessagePtrTable).
 	dw DATA_msg_tutorial_making_eggs
 	dw DATA_msg_tutorial_throwing_eggs_tap
 	dw DATA_511D15
@@ -419,6 +424,7 @@ DATA_message_box_text_ptrs:              ; message-ID -> message-text pointer (c
 	dw DATA_msg_minigame_watermelon_seed
 	dw DATA_msg_minigame_watermelon_seed
 	dw DATA_msg_minigame_throwing_balloons
+;@editable:message-box-text-ptrs end
 
 ;@editable:message-box-text begin
 ; Intro-cutscene + message-box / prompt TEXT STRINGS, edited by the Shiny Egg

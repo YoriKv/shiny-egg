@@ -48,6 +48,8 @@ import type {
   LocateBizhawkResult,
   ObjectInfluenceRequest,
   ObjectInstance,
+  OverlayDriftReport,
+  OverlayUpgradeResult,
   PatchAuthoringPaths,
   PatchImportResult,
   PatchMutationResult,
@@ -55,6 +57,7 @@ import type {
   PatchPreview,
   PatchSummary,
   PrepackagedPatch,
+  ProjectBackupResult,
   ProjectDeleteResult,
   ProjectExportResult,
   ProjectInfo,
@@ -71,7 +74,9 @@ import type {
   RomImportSelection,
   SetExitDestResult,
   Settings,
-  SpriteLayerResponse
+  SpriteLayerResponse,
+  SpriteProperty,
+  SpritePropertiesRequest
 } from '../shared/ipc-types'
 
 // ── Re-exported data shapes ─────────────────────────────────────────────────
@@ -100,6 +105,8 @@ export type {
   LevelSprite,
   LevelsCatalog,
   Map16SubTileUsage,
+  MessagePtrOption,
+  MessagePtrTableModel,
   PaletteEdit,
   PoolBudgetEntry,
   PoolBudgetReport,
@@ -150,6 +157,9 @@ export type {
   PaintCorner,
   ObjectInfluenceRequest,
   ObjectInstance,
+  OverlayDriftFile,
+  OverlayDriftReport,
+  OverlayUpgradeResult,
   PatchAuthoringPaths,
   PatchImportResult,
   PatchMutationResult,
@@ -158,6 +168,7 @@ export type {
   PatchPreviewChunk,
   PatchSummary,
   PrepackagedPatch,
+  ProjectBackupResult,
   ProjectDeleteResult,
   ProjectExportResult,
   ProjectInfo,
@@ -179,7 +190,9 @@ export type {
   RomImportSelection,
   SetExitDestResult,
   Settings,
-  SpriteLayerResponse
+  SpriteLayerResponse,
+  SpriteProperty,
+  SpritePropertiesRequest
 } from '../shared/ipc-types'
 
 // ── API surface (method-bearing; contract-only, no data analogue) ───────────
@@ -209,6 +222,16 @@ export interface ProjectsAPI {
   /** Delete the project folder. On success returns the new current project.
    *  Returns `{ ok:false, error }` on a locked folder (e.g. open in Explorer). */
   delete: (id: string) => Promise<ProjectDeleteResult>
+  /** Scan the project's overlay `.asm` files for drift against the current base
+   *  (out-of-region base changes, or editable regions the base added later).
+   *  Run on project launch; empty `files` ⇒ up to date. */
+  checkOverlays: (id: string) => Promise<OverlayDriftReport>
+  /** Duplicate the project as a `<id>-backup-<date>` restore point (the "back up
+   *  first" step before an upgrade). Does not switch to it. */
+  backup: (id: string) => Promise<ProjectBackupResult>
+  /** Re-splice the listed overlay files' edited regions onto the fresh base,
+   *  adopting base changes outside them + newly-added regions. */
+  upgradeOverlays: (id: string, files: string[]) => Promise<OverlayUpgradeResult>
 }
 
 export interface BizHawkAPI {
@@ -335,6 +358,9 @@ export interface EditorAPI {
   loadResource(resource: { kind: 'level'; recordId: number }): Promise<LevelData>
   loadResource(resource: { kind: 'world-map' }): Promise<WorldMapModel>
   loadResource(resource: EditableResource): Promise<unknown>
+  /** Per-sprite-type computed read-only properties (Properties panel) — `[]` for
+   *  a sprite type with no provider. */
+  spriteProperties: (req: SpritePropertiesRequest) => Promise<SpriteProperty[]>
   /** Persist a resource's model into the active project's overlay. */
   saveResource: (
     resource: EditableResource,

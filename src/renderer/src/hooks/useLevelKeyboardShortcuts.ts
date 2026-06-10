@@ -83,27 +83,29 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
 
     const onKey = (e: KeyboardEvent): void => {
       const t = e.target as HTMLElement | null
-      if (
-        t &&
-        (t.tagName === 'INPUT' ||
-          t.tagName === 'TEXTAREA' ||
-          t.tagName === 'SELECT' ||
-          t.isContentEditable)
-      ) {
-        return
-      }
+      // Text fields keep the browser's own undo while you're editing them, so
+      // global undo/redo must NOT fire there. A <select> isn't a text field — it
+      // has no native undo and its onChange commits immediately — so undo/redo
+      // must reach it while focused (the message-pointer dropdowns); previously
+      // the form-field guard swallowed it until the select lost focus.
+      const inTextField =
+        !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
       const mod = e.ctrlKey || e.metaKey
-      if (mod && (e.key === 'z' || e.key === 'Z')) {
+      if (mod && !inTextField && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
         if (e.shiftKey) globalRedo()
         else globalUndo()
         return
       }
-      if (mod && (e.key === 'y' || e.key === 'Y')) {
+      if (mod && !inTextField && (e.key === 'y' || e.key === 'Y')) {
         e.preventDefault()
         globalRedo()
         return
       }
+      // Every other shortcut (Delete, arrows, copy/paste, Escape, +/- reorder)
+      // stays out of ANY form field — text fields and selects alike, whose own
+      // arrow / type-ahead keys must navigate options, not nudge entities.
+      if (inTextField || t?.tagName === 'SELECT') return
       if (e.key === 'Escape') {
         setSelection([])
         setPlacement(null)

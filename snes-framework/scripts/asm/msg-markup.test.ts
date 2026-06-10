@@ -6,7 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONTROL_CODES, SPECIAL_GLYPHS, decodeMessageBytes, encodeMessageMarkup } from './msg-markup.ts';
+import { CONTROL_CODES, SPECIAL_GLYPHS, decodeMessageBytes, encodeMessageMarkup, markupByteSize } from './msg-markup.ts';
 import {
   loadFontTable,
   parseLevelNameStrings,
@@ -75,6 +75,12 @@ for (const e of model.entries) {
     fails.push(`${e.label}: no $FFFF terminator within bounds`);
     continue;
   }
+  // The font-table-free byte-size estimate (drives the editor's live budget)
+  // must equal the real consumed size, so a pristine cart never reads as over.
+  assert(
+    markupByteSize(dec.markup) === dec.bytesConsumed,
+    `${e.label}: markupByteSize ${markupByteSize(dec.markup)} ≠ bytesConsumed ${dec.bytesConsumed}`
+  );
   const orig = cart.subarray(addr, addr + dec.bytesConsumed);
   const enc = encodeMessageMarkup(dec.markup, ft);
   if (enc.error) {

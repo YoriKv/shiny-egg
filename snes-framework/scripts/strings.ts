@@ -27,7 +27,13 @@ import {
   splitMessageEntries
 } from './asm/msg-asm.ts'
 import { snesToPC } from './engine/symbol-map.ts'
-import type { MarkupToken, StringTableEntry, StringTableModel } from './types.ts'
+import type {
+  MarkupToken,
+  MessagePtrOption,
+  MessagePtrTableModel,
+  StringTableEntry,
+  StringTableModel
+} from './types.ts'
 
 /** The insertable-token guide for the markup editor (glyphs then control codes). */
 const MARKUP_GUIDE: MarkupToken[] = [
@@ -43,6 +49,11 @@ export const LEVEL_NAME_STRINGS_ID = 'level-name-strings'
 /** Marker id of the intro/message-box text region in Bank51 (interleaved with
  *  glyph-bitmap data, which the parser skips — it has no quoted literals). */
 export const MESSAGE_TEXT_ID = 'message-box-text'
+
+/** Marker id of the message-pointer table region in Bank51
+ *  (`DATA_message_box_text_ptrs`: 300 symbolic `dw <body>` slots, message ID →
+ *  message body). */
+export const MESSAGE_PTR_TABLE_ID = 'message-box-text-ptrs'
 
 /** A located editable literal: its text plus its char range within the region
  *  body (`inner`), so the save path can splice new text back in place. */
@@ -245,6 +256,58 @@ function messageRegionBytes(inner: string, ft: FontTable): number {
   return total
 }
 
+/** A message body's address label is the disassembly's `DATA_<bank><offset4>`
+ *  symbol (e.g. `DATA_5140D3` = SNES `$51:40D3`) — the reference-cart memory
+ *  address the body sits at. A friendly-aliased body carries it as a second
+ *  label line right before the alias (an empty-body entry); a non-aliased body
+ *  uses it as its only label. */
+const MSG_ADDR_LABEL_RE = /^DATA_([0-9A-Fa-f]{6})$/
+
+/** A decoded message body: its primary label (the edit/reference key), display
+ *  name, every asm label that resolves to it, and its markup. */
+interface MessageBody {
+  /** Primary label — friendly alias if present, else the address label. */
+  primaryLabel: string
+  /** Display name: friendly alias + reference address, or the bare address label. */
+  name: string
+  /** All labels that resolve to this body (primary + its address sibling). The
+   *  pointer table may reference a body by either, so both map to the primary. */
+  labels: string[]
+  /** Decoded markup string (plain text + `[token]`s). */
+  markup: string
+}
+
+/** Walk a message-text region body into decoded message bodies, pairing each
+ *  body's `DATA_<bank><offset>` address label with its friendly alias (when the
+ *  body carries both). Shared by the message-text editor and the pointer-table
+ *  editor (which needs the alias+address name and label→body resolution). */
+function messageBodies(inner: string, ft: FontTable): MessageBody[] {
+  const bodies: MessageBody[] = []
+  // The `DATA_<bank><offset>` label addressing the next body — for an aliased
+  // body the (empty) entry right before the alias, for a non-aliased one the
+  // body's own label. Reset after each body so a missing address label can't
+  // leak a stale address onto a later message.
+  let addrLabel: string | null = null
+  for (const e of splitMessageEntries(inner)) {
+    if (MSG_ADDR_LABEL_RE.test(e.label)) addrLabel = e.label
+    const bytes = messageBodyToBytes(e.body, ft)
+    if (!bytes) continue
+    const dec = decodeMessageBytes(bytes, 0, ft.byteToChar)
+    if (!dec.ok) continue // not a terminated message body (header/padding)
+    // Prefer the friendly alias for display, with the reference-cart memory
+    // address (from the `DATA_<bank><offset>` symbol) in parens. A body with no
+    // alias is keyed by that address label itself — show it bare (the address is
+    // already the name, so no redundant parenthetical).
+    const m = addrLabel ? MSG_ADDR_LABEL_RE.exec(addrLabel) : null
+    const aliased = !MSG_ADDR_LABEL_RE.test(e.label)
+    const name = aliased && m ? `${e.label} (0x${m[1].toUpperCase()})` : e.label
+    const labels = aliased && addrLabel ? [e.label, addrLabel] : [e.label]
+    bodies.push({ primaryLabel: e.label, name, labels, markup: dec.markup })
+    addrLabel = null
+  }
+  return bodies
+}
+
 /**
  * Parse the message-text region into the MARKUP model: each message body's
  * `dw`/`db` directives are assembled to bytes (msg-asm) then decoded to an
@@ -261,14 +324,12 @@ export function parseMessageText(
   const budgetRegion = findRegion(budgetText, MESSAGE_TEXT_ID)
   if (!budgetRegion) throw new Error(`Base Bank51 is missing the ;@editable:${MESSAGE_TEXT_ID} markers.`)
 
-  const entries: StringTableEntry[] = []
-  for (const e of splitMessageEntries(region.inner)) {
-    const bytes = messageBodyToBytes(e.body, ft)
-    if (!bytes) continue
-    const dec = decodeMessageBytes(bytes, 0, ft.byteToChar)
-    if (!dec.ok) continue // not a terminated message body (header/padding)
-    entries.push({ label: e.label, name: e.label, lines: [], markup: dec.markup })
-  }
+  const entries: StringTableEntry[] = messageBodies(region.inner, ft).map((b) => ({
+    label: b.primaryLabel,
+    name: b.name,
+    lines: [],
+    markup: b.markup
+  }))
   return {
     id: MESSAGE_TEXT_ID,
     title: 'Message Text',
@@ -431,6 +492,151 @@ export function serializeMessageText(
   }
 
   return { ok: true, text: spliceRegion(contentText, MESSAGE_TEXT_ID, applyEdits(region.inner, edits)) }
+}
+
+// ── Message-pointer table (DATA_message_box_text_ptrs) ──────────────────────
+// 300 symbolic `dw <body>` slots indexed by message ID. The editor repoints a
+// slot (swap the label) but never adds/removes — the table is fixed-size, so
+// there's no byte budget. Saves are a format-preserving in-place splice of only
+// the changed slots' label arguments (comments / blank lines / order preserved).
+
+/** First plain-text line of a message (markup tokens stripped, whitespace
+ *  collapsed, clipped) — for identifying a slot's target at a glance. */
+function messagePreview(markup: string): string {
+  const text = markup.replace(/\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim()
+  return text.length > 60 ? `${text.slice(0, 59)}…` : text
+}
+
+/** A located `dw <label>` slot: its target label plus the char range of the
+ *  label argument within the region body, so a save can splice it in place. */
+interface PtrSlot {
+  target: string
+  argStart: number
+  argEnd: number
+}
+
+const PTR_SLOT_RE = /^(\s*dw\s+)(\S+)\s*$/
+
+/** Parse a pointer-table region body into its `dw <label>` slots, in order (slot
+ *  index = message ID). Non-`dw` lines (the region comment, blanks) are skipped. */
+function parsePtrSlots(inner: string): PtrSlot[] {
+  const slots: PtrSlot[] = []
+  let offset = 0
+  for (const raw of inner.split('\n')) {
+    const lineStart = offset
+    offset += raw.length + 1 // + the consumed '\n'
+    const m = PTR_SLOT_RE.exec(stripComment(raw))
+    if (!m) continue
+    const argStart = lineStart + m[1].length
+    slots.push({ target: m[2], argStart, argEnd: argStart + m[2].length })
+  }
+  return slots
+}
+
+/** Resolve a slot's `dw` argument to a model slot value: '' for the `$0000` null
+ *  slot, else the body primary label `labelToPrimary` maps it to, else the raw
+ *  label (a target with no decoded body — preserved as-is). */
+function resolveSlotTarget(target: string, labelToPrimary: Map<string, string>): string {
+  if (/^\$?0+$/.test(target)) return '' // $0000 / $0 / 0 → null slot
+  return labelToPrimary.get(target) ?? target
+}
+
+/** label → primary-body-label map (every alias + address resolves to the body's
+ *  primary label), built from the message-text region's bodies. */
+function messageLabelIndex(msgInner: string, ft: FontTable): Map<string, string> {
+  const labelToPrimary = new Map<string, string>()
+  for (const b of messageBodies(msgInner, ft)) {
+    for (const l of b.labels) labelToPrimary.set(l, b.primaryLabel)
+  }
+  return labelToPrimary
+}
+
+/**
+ * Parse `DATA_message_box_text_ptrs` (the `;@editable:message-box-text-ptrs`
+ * region) into the dropdown model: the selectable message bodies (`options`,
+ * from the sibling message-text region) and the per-slot body each `dw`
+ * resolves to. `budgetText` is unused — the table is fixed-size.
+ */
+export function parseMessagePtrTable(
+  contentText: string,
+  _budgetText: string,
+  ft: FontTable
+): MessagePtrTableModel {
+  const region = findRegion(contentText, MESSAGE_PTR_TABLE_ID)
+  if (!region) throw new Error(`Bank51 is missing the ;@editable:${MESSAGE_PTR_TABLE_ID} markers.`)
+  const msgRegion = findRegion(contentText, MESSAGE_TEXT_ID)
+  if (!msgRegion) throw new Error(`Bank51 is missing the ;@editable:${MESSAGE_TEXT_ID} markers.`)
+
+  const bodies = messageBodies(msgRegion.inner, ft)
+  const labelToPrimary = new Map<string, string>()
+  for (const b of bodies) for (const l of b.labels) labelToPrimary.set(l, b.primaryLabel)
+
+  const options: MessagePtrOption[] = bodies.map((b) => ({
+    id: b.primaryLabel,
+    name: b.name,
+    preview: messagePreview(b.markup)
+  }))
+  const optionIds = new Set(options.map((o) => o.id))
+  const slots = parsePtrSlots(region.inner).map((s) => resolveSlotTarget(s.target, labelToPrimary))
+  // A slot pointing at a label with no decoded body (never in the base cart, but
+  // an out-of-date overlay could) gets a fallback option, so the dropdown can
+  // still show + round-trip it rather than silently dropping the slot.
+  for (const id of slots) {
+    if (id !== '' && !optionIds.has(id)) {
+      optionIds.add(id)
+      options.push({ id, name: id, preview: '' })
+    }
+  }
+  return { kind: 'pointer-table', id: MESSAGE_PTR_TABLE_ID, title: 'Message Pointers', options, slots }
+}
+
+/**
+ * Splice the edited slots back into the pointer-table region: re-emit only the
+ * slots whose target changed (swap the `dw` label argument), preserving every
+ * unchanged slot — and all comments / blank lines / formatting — byte-for-byte.
+ * Writes onto `contentText` (overlay-first). `budgetText` is unused (fixed size).
+ */
+export function serializeMessagePtrTable(
+  contentText: string,
+  _budgetText: string,
+  model: MessagePtrTableModel,
+  ft: FontTable
+): SerializeResult {
+  const region = findRegion(contentText, MESSAGE_PTR_TABLE_ID)
+  if (!region) {
+    return { ok: false, error: `Bank51 is missing the ;@editable:${MESSAGE_PTR_TABLE_ID} markers.` }
+  }
+  const msgRegion = findRegion(contentText, MESSAGE_TEXT_ID)
+  if (!msgRegion) {
+    return { ok: false, error: `Bank51 is missing the ;@editable:${MESSAGE_TEXT_ID} markers.` }
+  }
+  const labelToPrimary = messageLabelIndex(msgRegion.inner, ft)
+  const validIds = new Set(model.options.map((o) => o.id))
+
+  const slots = parsePtrSlots(region.inner)
+  if (slots.length !== model.slots.length) {
+    return {
+      ok: false,
+      error: `Pointer table has ${slots.length} slots; the editor has ${model.slots.length} (out of date?).`
+    }
+  }
+
+  const edits: TextEdit[] = []
+  for (let i = 0; i < slots.length; i++) {
+    const want = model.slots[i] // '' = null ($0000), else a body primary label
+    const orig = resolveSlotTarget(slots[i].target, labelToPrimary)
+    if (want === orig) continue // untouched — preserve the original label byte-for-byte
+    if (want !== '' && !validIds.has(want)) {
+      return { ok: false, error: `Slot ${i} points at unknown message "${want}".` }
+    }
+    edits.push({
+      start: slots[i].argStart,
+      end: slots[i].argEnd,
+      replacement: want === '' ? '$0000' : want
+    })
+  }
+
+  return { ok: true, text: spliceRegion(contentText, MESSAGE_PTR_TABLE_ID, applyEdits(region.inner, edits)) }
 }
 
 /** One foreign message body decoded from a cart. */

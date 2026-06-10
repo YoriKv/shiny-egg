@@ -304,8 +304,8 @@ class BizHawkSupervisor {
     return this.enqueue('DUMP_CGRAM', true)
   }
 
-  // Direct WRAM-stomp level load (ported from yi-shiny's Mesen trace
-  // harness). Lua writes $7E:021A (level slot), $7E:038C ($00 = world-map
+  // Direct WRAM-stomp level load
+  // Lua writes $7E:021A (level slot), $7E:038C ($00 = world-map
   // load type), and $7E:0118 ($0C = level loader), then blocks on
   // emu.frameadvance() until gm$0F is stable (load complete) or a 600-frame
   // safety timeout fires. Returns "OK 0xXX frames=N boot=N warp=N\n<state-dump>"
