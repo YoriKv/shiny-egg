@@ -385,3 +385,102 @@ describe('setHeaderField (level header editor)', () => {
     expect(isDirty(s2)).toBe(false)
   })
 })
+
+describe('addExit (the Place tool "Exit / Special" entry)', () => {
+  test('adds a self-warp on the clicked cell\'s screen and takes nextUid', () => {
+    const s0 = loaded([obj(1, 0, 0)])
+    const s1 = levelReducer(s0, {
+      type: 'addExit',
+      screenIndex: ((0x25 >> 4) << 4) | (0x37 >> 4), // cell (0x37, 0x25) → screen 0x23
+      dest: { levelRecordId: 0x10, x: 0x37, y: 0x25 }
+    })
+    expect(s1.commits).toBe(1)
+    expect(s1.level!.exits).toHaveLength(1)
+    const e = s1.level!.exits[0]!
+    expect(e.variant).toBe('warp')
+    expect(e.screenIndex).toBe(0x23)
+    expect(e.uid).toBe(s0.nextUid)
+    expect(s1.nextUid).toBe(s0.nextUid + 1)
+    if (e.variant === 'warp') {
+      expect(e.destLevelRecordId).toBe(0x10)
+      expect(e.destX).toBe(0x37)
+      expect(e.destY).toBe(0x25)
+      expect(e.entranceType).toBe(0)
+    }
+  })
+
+  test('an occupied screen is a no-op (SAME state — one exit per screen)', () => {
+    const s0 = loaded([obj(1, 0, 0)])
+    const s1 = levelReducer(s0, {
+      type: 'addExit',
+      screenIndex: 0x05,
+      dest: { levelRecordId: 0x10, x: 80, y: 8 }
+    })
+    expect(
+      levelReducer(s1, { type: 'addExit', screenIndex: 0x05, dest: { levelRecordId: 0x10, x: 81, y: 9 } })
+    ).toBe(s1)
+  })
+
+  test('is undoable', () => {
+    const s0 = loaded([obj(1, 0, 0)])
+    const s1 = levelReducer(s0, {
+      type: 'addExit',
+      screenIndex: 0x05,
+      dest: { levelRecordId: 0x10, x: 80, y: 8 }
+    })
+    const s2 = levelReducer(s1, { type: 'undo' })
+    expect(s2.level!.exits).toHaveLength(0)
+    expect(isDirty(s2)).toBe(false)
+  })
+})
+
+describe('setExitVariant (warp ↔ minibattle conversion)', () => {
+  function withExit(): LevelState {
+    const s0 = loaded([obj(1, 0, 0)])
+    return levelReducer(s0, {
+      type: 'addExit',
+      screenIndex: 0x12,
+      dest: { levelRecordId: 0x2a, x: 40, y: 33 }
+    })
+  }
+
+  test('warp → minibattle maps dest → return and seeds minibattleId 0xDE', () => {
+    const s1 = withExit()
+    const uid = s1.level!.exits[0]!.uid!
+    const s2 = levelReducer(s1, { type: 'setExitVariant', uid, variant: 'minibattle' })
+    const e = s2.level!.exits[0]!
+    expect(e.variant).toBe('minibattle')
+    expect(e.screenIndex).toBe(0x12)
+    expect(e.uid).toBe(uid)
+    if (e.variant === 'minibattle') {
+      expect(e.minibattleId).toBe(0xde)
+      expect(e.returnX).toBe(40)
+      expect(e.returnY).toBe(33)
+      expect(e.returnLevelRecordId).toBe(0x2a)
+      // no stale warp keys on the converted record (clean payload swap)
+      expect('destLevelRecordId' in e).toBe(false)
+    }
+  })
+
+  test('round-trips back to warp (return → dest, entranceType reset)', () => {
+    const s1 = withExit()
+    const uid = s1.level!.exits[0]!.uid!
+    const s2 = levelReducer(s1, { type: 'setExitVariant', uid, variant: 'minibattle' })
+    const s3 = levelReducer(s2, { type: 'setExitVariant', uid, variant: 'warp' })
+    const e = s3.level!.exits[0]!
+    expect(e.variant).toBe('warp')
+    if (e.variant === 'warp') {
+      expect(e.destLevelRecordId).toBe(0x2a)
+      expect(e.destX).toBe(40)
+      expect(e.destY).toBe(33)
+      expect(e.entranceType).toBe(0)
+    }
+  })
+
+  test('same variant / unknown uid are no-ops (SAME state)', () => {
+    const s1 = withExit()
+    const uid = s1.level!.exits[0]!.uid!
+    expect(levelReducer(s1, { type: 'setExitVariant', uid, variant: 'warp' })).toBe(s1)
+    expect(levelReducer(s1, { type: 'setExitVariant', uid: 9999, variant: 'minibattle' })).toBe(s1)
+  })
+})

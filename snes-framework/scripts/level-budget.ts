@@ -43,12 +43,23 @@ import { hex0x } from './hex.ts';
 export interface LayoutContext {
   migrated?: ReadonlySet<number>;
   decoupled?: ReadonlySet<number>;
+  /** New-slot records (`$DA`/`$DB`) with imported data — their blobs claim
+   *  free-region capacity, so every budget view must plan them like the build. */
+  newSlots?: ReadonlySet<number>;
 }
 
 const EMPTY: ReadonlySet<number> = new Set();
 /** Resolve a LayoutContext to concrete sets (shared empty when absent). */
-function ctxSets(ctx?: LayoutContext): { migrated: ReadonlySet<number>; decoupled: ReadonlySet<number> } {
-  return { migrated: ctx?.migrated ?? EMPTY, decoupled: ctx?.decoupled ?? EMPTY };
+function ctxSets(ctx?: LayoutContext): {
+  migrated: ReadonlySet<number>;
+  decoupled: ReadonlySet<number>;
+  newSlots: ReadonlySet<number>;
+} {
+  return {
+    migrated: ctx?.migrated ?? EMPTY,
+    decoupled: ctx?.decoupled ?? EMPTY,
+    newSlots: ctx?.newSlots ?? EMPTY
+  };
 }
 
 // ── Pool-map cache ──────────────────────────────────────────────────────────
@@ -160,7 +171,7 @@ export function computeLevelBudget(
   diskSizeOf: (file: string) => number,
   ctx?: LayoutContext
 ): PoolBudgetReport {
-  const { migrated, decoupled } = ctxSets(ctx);
+  const { migrated, decoupled, newSlots } = ctxSets(ctx);
   const sizeOf = (file: string): number => {
     if (files.objFile && file === files.objFile) return liveSizes.objBytes;
     if (files.spriteFile && file === files.spriteFile) return liveSizes.spriteBytes;
@@ -168,7 +179,7 @@ export function computeLevelBudget(
   };
   const tag = `DATA_level_${levelHex(levelRecordId)}_`;
   const fitsRegion = (extra: ReadonlySet<number>): { regions: string[]; ok: boolean } => {
-    const plan = planLayout(map, { migrated: extra, decoupled, sizeOf });
+    const plan = planLayout(map, { migrated: extra, decoupled, newSlots, sizeOf });
     const regions = [...new Set(plan.relocations.filter((r) => r.level === levelRecordId).map((r) => r.regionId))];
     const overflow = plan.violations.some((v) => v.kind === 'region-full' && v.id.startsWith(tag));
     return { regions, ok: !overflow };
@@ -190,7 +201,7 @@ export function computeLevelBudget(
   // migrated-out bank-mates, add any de-coupled spr blob placed home.
   const migratedHex = new Set([...migrated].map(levelHex));
   const decoupleHome = new Map<string, number>();
-  for (const d of planLayout(map, { migrated, decoupled, sizeOf }).decouples) {
+  for (const d of planLayout(map, { migrated, decoupled, newSlots, sizeOf }).decouples) {
     decoupleHome.set(d.placedIn, (decoupleHome.get(d.placedIn) ?? 0) + d.bytes);
   }
   const touched: LevelPool[] = [];
@@ -255,7 +266,10 @@ export function computePoolOverview(
           bytes,
           migratable: migratable(map, rid, decoupled),
           decouplable: biasedSet.has(level),
-          decoupled: decoupled.has(rid)
+          decoupled: decoupled.has(rid),
+          // Only reachable by a level that ALSO appears in `levels` despite being
+          // migrated — i.e. the de-coupled-spr-placed-home residual row.
+          ...(migrated.has(rid) ? { migrated: true } : {})
         };
       })
       .sort((a, b) => b.bytes - a.bytes);
@@ -271,7 +285,12 @@ export function computePoolOverview(
     const migratedOut = [...migratedBytes.entries()].map(([level, bytes]) => ({
       levelRecordId: '0x' + level,
       regionId: plan.relocations.find((r) => levelHex(r.level) === level)?.regionId ?? '',
-      bytes
+      bytes,
+      // A migrated biased level has no resident row, so its de-couple toggle
+      // rides the migrated-out row instead.
+      ...(biasedSet.has(level)
+        ? { decouplable: true, decoupled: decoupled.has(parseInt(level, 16)) }
+        : {})
     }));
     return {
       poolId: pool.id,
@@ -376,4 +395,77 @@ export function checkAllPools(
     }
   }
   return out;
+}
+
+// ── Import auto-migration (need-based) ──────────────────────────────────────
+// The ROM importer writes imported levels at their HOME pool files; a hack's
+// grown levels can overflow those pools. The hack itself relocated its edited
+// streams into ITS free space (GoldenEgg repoints EVERY saved level, fit or
+// not), so "match the hack" can't mean "migrate everything it moved" — a full
+// hack repoints ~185 levels (~227 KB) and our free regions hold ~63 KB. Instead
+// this plans the MINIMAL migration that makes the imported sizes fit: only
+// candidate levels the hack relocated, only when their home pool actually
+// overflows, preferring the picks that cover the overage with the fewest moved
+// bytes.
+
+export interface AutoMigrationPlan {
+  /** Record ids to ADD to the project's migrated set (sorted ascending). */
+  added: number[];
+  /** Violations that REMAIN after the added migrations (pool-over with no
+   *  eligible candidate left, or free regions full) — surfaced as a warning. */
+  violations: PoolViolation[];
+}
+
+/**
+ * Greedy need-based migration over `candidates` (record ids the hack relocated
+ * AND the user imported). Each round re-plans the full layout, then for every
+ * over-budget pool migrates ONE candidate: the largest level that still fits
+ * inside the overage (covers most without overshooting), else the smallest one
+ * above it (minimal overshoot). Replanning between rounds keeps cross-pool
+ * effects (a level's obj+spr in different pools) and free-region capacity
+ * honest. Deterministic; terminates when nothing is over or no candidate helps.
+ */
+export function planAutoMigration(
+  map: PoolMap,
+  sizeOf: (file: string) => number,
+  ctx: LayoutContext,
+  candidates: ReadonlySet<number>
+): AutoMigrationPlan {
+  const decoupled = ctx.decoupled ?? new Set<number>();
+  const newSlots = ctx.newSlots ?? new Set<number>();
+  const migrated = new Set(ctx.migrated ?? []);
+  const added: number[] = [];
+  const levelBytes = (id: number): number => {
+    const hex = levelHex(id);
+    return sizeOf(`DATA_level_${hex}_obj.bin`) + sizeOf(`DATA_level_${hex}_spr.bin`);
+  };
+
+  // Bounded by the candidate count: each round migrates ≥1 candidate or stops.
+  for (let round = 0; round <= candidates.size; round++) {
+    const over = checkAllPools(map, sizeOf, { migrated, decoupled, newSlots }).filter(
+      (v) => v.poolId !== 'free-space'
+    );
+    if (over.length === 0) break;
+    let progressed = false;
+    for (const v of over) {
+      const pool = map.pools.find((p) => p.id === v.poolId);
+      if (!pool) continue;
+      const ids = poolLevels(pool)
+        .map((h) => parseInt(h, 16))
+        .filter((id) => candidates.has(id) && !migrated.has(id) && migratable(map, id, decoupled));
+      if (ids.length === 0) continue;
+      const sized = ids.map((id) => ({ id, bytes: levelBytes(id) })).sort((a, b) => a.bytes - b.bytes);
+      const fitting = sized.filter((s) => s.bytes <= v.overBy);
+      const pick = fitting.length > 0 ? fitting[fitting.length - 1] : sized[0];
+      migrated.add(pick.id);
+      added.push(pick.id);
+      progressed = true;
+    }
+    if (!progressed) break;
+  }
+
+  return {
+    added: added.sort((a, b) => a - b),
+    violations: checkAllPools(map, sizeOf, { migrated, decoupled, newSlots })
+  };
 }

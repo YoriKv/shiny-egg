@@ -7666,13 +7666,13 @@
   "sprites": {
     "0x000": {
       "name": "Log, floating on water / lava",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x001": {
       "name": "Closed door",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": true,
       "spritesetFiles": [],
@@ -7796,7 +7796,7 @@
     },
     "0x00B": {
       "name": "Cannonball of Kaboomba",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "neighborDeps": [
@@ -7826,7 +7826,7 @@
     },
     "0x00E": {
       "name": "G O A L !",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -7887,13 +7887,13 @@
     },
     "0x015": {
       "name": "Torpedo of Yoshi Submarine",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x016": {
       "name": "Bigger Boo",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x61"
@@ -7934,7 +7934,7 @@
     },
     "0x01A": {
       "name": "Ski lift",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x2E"
@@ -7943,7 +7943,7 @@
     },
     "0x01B": {
       "name": "Vertical log, floating on lava",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x48"
@@ -7962,7 +7962,7 @@
     },
     "0x01D": {
       "name": "Dr. Freezegood, with ski lift",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x2E"
@@ -8008,7 +8008,7 @@
     },
     "0x01F": {
       "name": "Rotating Doors",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x31"
@@ -8025,7 +8025,7 @@
     },
     "0x021": {
       "name": "? bucket",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -8129,7 +8129,7 @@
     },
     "0x02E": {
       "name": "Salvo the Slime's eyes",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -8194,7 +8194,7 @@
     },
     "0x034": {
       "name": "Pot for Rogger the Potted Ghost",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x44"
@@ -8203,14 +8203,14 @@
     },
     "0x035": {
       "name": "Rogger the Potted Ghost",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x036": {
       "name": "(BG3) Falling down wall",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": []
     },
@@ -8225,14 +8225,14 @@
     },
     "0x038": {
       "name": "Flame spat by Rogger the Potted Ghost",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "A"
     },
     "0x039": {
       "name": "(BG3) Spinning wooden platform",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": []
     },
@@ -8264,13 +8264,13 @@
     },
     "0x03D": {
       "name": "(BG3) Seesaw",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": []
     },
     "0x03E": {
       "name": "Skinny platform",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B"
@@ -8311,20 +8311,20 @@
     },
     "0x040": {
       "name": "Baby Luigi",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x041": {
       "name": "Stork",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x042": {
       "name": "Vertical pipe entrance",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": false,
       "spritesetFiles": [],
@@ -8370,7 +8370,7 @@
     },
     "0x047": {
       "name": "Shy Guy for Rogger the Potted Ghost",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
@@ -8395,7 +8395,7 @@
     },
     "0x04B": {
       "name": "Hypocenter of the thunder",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -8409,14 +8409,14 @@
     },
     "0x04D": {
       "name": "unknown",
-      "category": "enemy",
+      "category": "unknown",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x04E": {
       "name": "Locked door",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": true,
       "spritesetFiles": [],
@@ -8455,19 +8455,19 @@
     },
     "0x050": {
       "name": "(BG3) Board",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x051": {
       "name": "(BG3) Large log",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": []
     },
     "0x052": {
       "name": "Balloon",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -8510,7 +8510,7 @@
     },
     "0x055": {
       "name": "Green Pinwheel",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -8540,7 +8540,7 @@
     },
     "0x056": {
       "name": "Pink Pinwheel",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -8570,7 +8570,7 @@
     },
     "0x057": {
       "name": "(BG3) Sewer ghost with Flatbed Ferry on its head",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x45"
@@ -8613,19 +8613,19 @@
     },
     "0x05D": {
       "name": "[CRASH]",
-      "category": "enemy",
+      "category": "unknown",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x05E": {
       "name": "(BG3) Plank",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x05F": {
       "name": "(BG3) Plank",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -8649,7 +8649,7 @@
     },
     "0x061": {
       "name": "Baby Mario",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
@@ -8671,7 +8671,7 @@
     },
     "0x064": {
       "name": "Pink Pinwheel, (X: direction) (Y: size)",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B"
@@ -8763,7 +8763,7 @@
     },
     "0x06C": {
       "name": "Large Spring Ball",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "neighborDeps": [
@@ -8795,7 +8795,7 @@
     },
     "0x06F": {
       "name": "Spring Ball",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B",
@@ -8843,7 +8843,7 @@
     },
     "0x073": {
       "name": "(BG3) Balloon Pumper with red balloon",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -8858,7 +8858,7 @@
     },
     "0x075": {
       "name": "Spiked ball",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -8930,7 +8930,7 @@
     },
     "0x07F": {
       "name": "Log seesaw",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -8954,14 +8954,14 @@
     },
     "0x083": {
       "name": "Cloud",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x084": {
       "name": "Teleport sprite",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": false,
       "spritesetFiles": [],
@@ -8987,7 +8987,7 @@
     },
     "0x086": {
       "name": "[CRASH]",
-      "category": "enemy",
+      "category": "unknown",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -9006,14 +9006,14 @@
     },
     "0x089": {
       "name": "Red Flatbed Ferry, moving horizontally",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x08A": {
       "name": "Pink Flatbed Ferry, moving vertically",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B"
@@ -9053,7 +9053,7 @@
     },
     "0x090": {
       "name": "(BG3) Dangling Ghost",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x42",
@@ -9079,7 +9079,7 @@
     },
     "0x093": {
       "name": "Door",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": true,
       "spritesetFiles": [],
@@ -9100,44 +9100,44 @@
     },
     "0x094": {
       "name": "Expansion Block",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x095": {
       "name": "Blue checkered block",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x096": {
       "name": "Red checkered block",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x097": {
       "name": "POW",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x098": {
       "name": "Yoshi Block",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": []
     },
     "0x099": {
       "name": "Spiny Egg",
-      "category": "item",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "A"
     },
     "0x09A": {
       "name": "Chained green Flatbed Ferry",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B"
@@ -9153,19 +9153,19 @@
     },
     "0x09C": {
       "name": "Mace",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x09D": {
       "name": "!-switch",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x09E": {
       "name": "Chomp Rock",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -9179,7 +9179,7 @@
     },
     "0x0A0": {
       "name": "Tulip",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -9192,7 +9192,7 @@
     },
     "0x0A2": {
       "name": "Fireball of Thunder Lakitu",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -9273,13 +9273,13 @@
     },
     "0x0A9": {
       "name": "Shadow of falling Incoming Chomp",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x0AA": {
       "name": "Shy Guy in background",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x1B"
@@ -9288,20 +9288,20 @@
     },
     "0x0AB": {
       "name": "Fill Eggs",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "A"
     },
     "0x0AC": {
       "name": "Sign Arrow and Shadow",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x0AD": {
       "name": "Hint Block",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -9313,37 +9313,37 @@
     },
     "0x0AF": {
       "name": "Morph Bubble, Car",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x0B0": {
       "name": "Morph Bubble, Mole Tank",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x0B1": {
       "name": "Morph Bubble, Helicopter",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x0B2": {
       "name": "Morph Bubble, Train",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x0B3": {
       "name": "Wind of Fuzzy",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x0B4": {
       "name": "Morph Bubble, Submarine",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -9355,7 +9355,7 @@
     },
     "0x0B6": {
       "name": "Winged Cloud, 8 coins",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
@@ -9376,28 +9376,28 @@
     },
     "0x0B9": {
       "name": "Winged Cloud, POW",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x0BA": {
       "name": "Winged Cloud, stairs, right / left",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x0BB": {
       "name": "Winged Cloud, platform, right / left",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x0BC": {
       "name": "Winged Cloud, Bandit",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": null,
       "cel": "B"
@@ -9425,28 +9425,28 @@
     },
     "0x0C0": {
       "name": "Winged Cloud, 3 stars",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x0C1": {
       "name": "Winged Cloud, 5 stars",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x0C2": {
       "name": "Winged Cloud, door",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x0C3": {
       "name": "Winged Cloud, ground eater",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
@@ -9473,21 +9473,21 @@
     },
     "0x0C7": {
       "name": "Winged Cloud, seed of sunflower with 3 leaves",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x0C8": {
       "name": "Winged Cloud, seed of sunflower with 6 leaves",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x0C9": {
       "name": "Winged Cloud, [CRASH]",
-      "category": "enemy",
+      "category": "unknown",
       "dynamicGfx": true,
       "spritesetFiles": null,
       "cel": "B"
@@ -9534,7 +9534,7 @@
     },
     "0x0CC": {
       "name": "Winged Cloud, !-switch / !-switch",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -9559,7 +9559,7 @@
     },
     "0x0D0": {
       "name": "Horizontal entrance, towards right",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": false,
       "spritesetFiles": [],
@@ -9578,7 +9578,7 @@
     },
     "0x0D1": {
       "name": "Hidden entrance, revealed by an ! switch",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": false,
       "spritesetFiles": [],
@@ -9597,7 +9597,7 @@
     },
     "0x0D2": {
       "name": "Marching Milde",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x29"
@@ -9628,7 +9628,7 @@
     },
     "0x0D6": {
       "name": "(BG3) Ghost with Flatbed Ferry on its head",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x53"
@@ -9637,7 +9637,7 @@
     },
     "0x0D7": {
       "name": "Sluggy the Unshaven",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x55"
@@ -9646,7 +9646,7 @@
     },
     "0x0D8": {
       "name": "Chomp signboard",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -9670,13 +9670,13 @@
     },
     "0x0DB": {
       "name": "(BG3) Soft thing",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": []
     },
     "0x0DC": {
       "name": "Snowball",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -9688,7 +9688,7 @@
     },
     "0x0DE": {
       "name": "Falling Rock",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "neighborDeps": [
@@ -9769,7 +9769,7 @@
     },
     "0x0E7": {
       "name": "Burt, two / one",
-      "category": "boss",
+      "category": "enemy",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -9792,7 +9792,7 @@
     },
     "0x0EA": {
       "name": "Cloud Drop, moving vertically",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x2C"
@@ -9801,7 +9801,7 @@
     },
     "0x0EB": {
       "name": "Cloud Drop, moving horizontally",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x2D"
@@ -10005,14 +10005,14 @@
     },
     "0x0FE": {
       "name": "Energy of Zeus Guy",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x0FF": {
       "name": "Poochy",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x3A",
@@ -10029,19 +10029,19 @@
     },
     "0x101": {
       "name": "Spiky mace",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x102": {
       "name": "Spiky mace, double-ended",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x103": {
       "name": "Boo Guys spinning spiky mace",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x3C"
@@ -10130,7 +10130,7 @@
     },
     "0x109": {
       "name": "Tap-Tap",
-      "category": "boss",
+      "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x29"
@@ -10139,7 +10139,7 @@
     },
     "0x10A": {
       "name": "Tap-Tap, stays on ledges",
-      "category": "boss",
+      "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x29"
@@ -10148,7 +10148,7 @@
     },
     "0x10B": {
       "name": "Hopping Tap-tap",
-      "category": "boss",
+      "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x29"
@@ -10157,7 +10157,7 @@
     },
     "0x10C": {
       "name": "Chained spike ball, controlled by Boo Guy",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": [
         "0x3F"
@@ -10172,7 +10172,7 @@
     },
     "0x10E": {
       "name": "Crate, 6 stars",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -10246,7 +10246,7 @@
     },
     "0x116": {
       "name": "Floating round platform on water",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": [
         "0x4C"
@@ -10255,7 +10255,7 @@
     },
     "0x117": {
       "name": "Donut Lift",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x1C",
@@ -10268,7 +10268,7 @@
     },
     "0x118": {
       "name": "Giant Donut Lift",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -10300,51 +10300,51 @@
     },
     "0x11C": {
       "name": "Lakitu's cloud",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x11D": {
       "name": "Spiny Egg",
-      "category": "item",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "A"
     },
     "0x11E": {
       "name": "Brown Arrow Wheel",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x11F": {
       "name": "Blue Arrow Wheel",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x120": {
       "name": "Double-ended arrow lift",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x121": {
       "name": "Explosion of Number Platform",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x122": {
       "name": "? bucket, Bandit",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
     "0x123": {
       "name": "? bucket, 5 coins",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -10368,7 +10368,7 @@
     },
     "0x126": {
       "name": "Spiked log held by chain and pulley",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": [
         "0x4E"
@@ -10377,13 +10377,13 @@
     },
     "0x127": {
       "name": "? Pulley",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x128": {
       "name": "Ground shake",
-      "category": "enemy",
+      "category": "command",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -10417,19 +10417,19 @@
     },
     "0x12D": {
       "name": "Yoshi, in the intro scene",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x12E": {
       "name": "unknown",
-      "category": "enemy",
+      "category": "unknown",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x12F": {
       "name": "Lava Drop, moving horizontally",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x51"
@@ -10438,7 +10438,7 @@
     },
     "0x130": {
       "name": "Lava Drop, moving vertically",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x51"
@@ -10447,7 +10447,7 @@
     },
     "0x131": {
       "name": "Locked door",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": true,
       "spritesetFiles": [],
@@ -10546,7 +10546,7 @@
     },
     "0x137": {
       "name": "3x6 Falling Rock",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x1C",
@@ -10559,7 +10559,7 @@
     },
     "0x138": {
       "name": "3x3 Falling Rock",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x20",
@@ -10568,7 +10568,7 @@
     },
     "0x139": {
       "name": "3x9 Falling Rock",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x1C",
@@ -10581,7 +10581,7 @@
     },
     "0x13A": {
       "name": "6x3 Falling Rock",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x20",
@@ -10590,13 +10590,13 @@
     },
     "0x13B": {
       "name": "Stomach Acid",
-      "category": "enemy",
+      "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x13C": {
       "name": "Flipper, downwards",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -10660,7 +10660,7 @@
     },
     "0x144": {
       "name": "Flipper, rightwards / leftwards",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -10684,7 +10684,7 @@
     },
     "0x147": {
       "name": "Horizontal entrance, towards left",
-      "category": "enemy",
+      "category": "interactive",
       "exitTrigger": true,
       "dynamicGfx": false,
       "spritesetFiles": [],
@@ -10703,7 +10703,7 @@
     },
     "0x148": {
       "name": "Large Spring Ball",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10723,7 +10723,7 @@
     },
     "0x149": {
       "name": "Arrow cloud, up",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x57"
@@ -10732,14 +10732,14 @@
     },
     "0x14A": {
       "name": "Arrow cloud, up right",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x14B": {
       "name": "Arrow cloud, right",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x57"
@@ -10748,14 +10748,14 @@
     },
     "0x14C": {
       "name": "Arrow cloud, down right",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x14D": {
       "name": "Arrow cloud, down",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x57"
@@ -10764,14 +10764,14 @@
     },
     "0x14E": {
       "name": "Arrow cloud, down left",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x14F": {
       "name": "Arrow cloud, left",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x57"
@@ -10780,14 +10780,14 @@
     },
     "0x150": {
       "name": "Arrow cloud, up left",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null,
       "cel": "B"
     },
     "0x151": {
       "name": "Arrow cloud, rotating",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x57"
@@ -10895,7 +10895,7 @@
     },
     "0x15C": {
       "name": "Green switch for green spiked platform",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x2A"
@@ -10918,7 +10918,7 @@
     },
     "0x15D": {
       "name": "Red switch for red spiked platform",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x2A"
@@ -10941,14 +10941,14 @@
     },
     "0x15E": {
       "name": "Pink Pinwheel with Shy Guys, clockwise / anticlockwise",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B"
     },
     "0x15F": {
       "name": "Green spiked platform",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10968,7 +10968,7 @@
     },
     "0x160": {
       "name": "Red spiked platform",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10994,7 +10994,7 @@
     },
     "0x162": {
       "name": "Two spiked platforms with one switch in the center",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": null
     },
@@ -11191,7 +11191,7 @@
     },
     "0x17A": {
       "name": "Baron Von Zeppelin, 5 coins",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B"
@@ -11219,7 +11219,7 @@
     },
     "0x17E": {
       "name": "Baron Von Zeppelin, crate, 6 stars",
-      "category": "enemy",
+      "category": "item",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -11232,7 +11232,7 @@
     },
     "0x180": {
       "name": "Spinning Log",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": []
     },
@@ -11247,7 +11247,7 @@
     },
     "0x182": {
       "name": "Dragonfly",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x5D"
@@ -11255,7 +11255,7 @@
     },
     "0x183": {
       "name": "Butterfly",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x5D"
@@ -11287,7 +11287,7 @@
     },
     "0x185": {
       "name": "Active line guided green Flatbed Ferry, left",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11317,7 +11317,7 @@
     },
     "0x186": {
       "name": "Active line guided green Flatbed Ferry, right",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11347,7 +11347,7 @@
     },
     "0x187": {
       "name": "Active line guided yellow Flatbed Ferry, left",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11377,7 +11377,7 @@
     },
     "0x188": {
       "name": "Active line guided yellow Flatbed Ferry, right",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11407,7 +11407,7 @@
     },
     "0x189": {
       "name": "Line guided green Flatbed Ferry, left",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11437,7 +11437,7 @@
     },
     "0x18A": {
       "name": "Line guided green Flatbed Ferry, right",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11467,7 +11467,7 @@
     },
     "0x18B": {
       "name": "Line guided yellow Flatbed Ferry, left",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11497,7 +11497,7 @@
     },
     "0x18C": {
       "name": "Line guided yellow Flatbed Ferry, right",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11527,7 +11527,7 @@
     },
     "0x18D": {
       "name": "Line guided red Flatbed Ferry, left",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11557,7 +11557,7 @@
     },
     "0x18E": {
       "name": "Line guided red Flatbed Ferry, right",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": [],
       "cel": "B",
@@ -11587,7 +11587,7 @@
     },
     "0x18F": {
       "name": "Whirling lift",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": true,
       "spritesetFiles": [],
       "neighborDeps": [
@@ -11617,7 +11617,7 @@
     },
     "0x190": {
       "name": "Falling icicle",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x1A",
@@ -11679,19 +11679,19 @@
     },
     "0x195": {
       "name": "unknown",
-      "category": "enemy",
+      "category": "unknown",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x196": {
       "name": "Unbalanced snowy platform",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x197": {
       "name": "Arrow sign, up / right / left / down",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x1C"
@@ -11700,7 +11700,7 @@
     },
     "0x198": {
       "name": "Diagonal arrow sign, up left / up right / down left / down right",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x1C"
@@ -11787,7 +11787,7 @@
     },
     "0x1A0": {
       "name": "Firebar, double-ended, clockwise / anticlockwise",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": true,
       "spritesetFiles": [
         "0x65"
@@ -11795,7 +11795,7 @@
     },
     "0x1A1": {
       "name": "Firebar, clockwise / anticlockwise",
-      "category": "enemy",
+      "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x65"
@@ -11819,7 +11819,7 @@
     },
     "0x1A4": {
       "name": "Cork, seals 3D pipe",
-      "category": "enemy",
+      "category": "interactive",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x48"
@@ -11883,7 +11883,7 @@
     },
     "0x1A6": {
       "name": "Grinder, spits seeds of watermelon",
-      "category": "item",
+      "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x64"
@@ -11964,7 +11964,7 @@
     },
     "0x1A9": {
       "name": "Grinder, climbing, spits seeds of watermelon",
-      "category": "item",
+      "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x64"
@@ -12007,7 +12007,7 @@
     },
     "0x1AC": {
       "name": "Frog",
-      "category": "enemy",
+      "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x68"
@@ -12036,7 +12036,7 @@
     },
     "0x1B0": {
       "name": "(BG3) Balloon",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -12061,7 +12061,7 @@
     },
     "0x1B4": {
       "name": "Checkered Platform for Mini Battle",
-      "category": "enemy",
+      "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
@@ -12091,125 +12091,125 @@
     },
     "0x1B9": {
       "name": "possibly Bandit for Mini Battle?",
-      "category": "enemy",
+      "category": "unknown",
       "dynamicGfx": false,
       "spritesetFiles": null
     },
     "0x1BA": {
       "name": "Graphic / Palette Changer 00",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1BB": {
       "name": "Graphic / Palette Changer 01",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1BC": {
       "name": "Graphic / Palette Changer 02",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1BD": {
       "name": "Graphic / Palette Changer 03",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1BE": {
       "name": "Graphic / Palette Changer 04",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1BF": {
       "name": "Graphic / Palette Changer 05",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C0": {
       "name": "Graphic / Palette Changer 06",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C1": {
       "name": "Graphic / Palette Changer 07",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C2": {
       "name": "Graphic / Palette Changer 08",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C3": {
       "name": "Graphic / Palette Changer 09",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C4": {
       "name": "Graphic / Palette Changer 0A",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C5": {
       "name": "Graphic / Palette Changer 0B",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C6": {
       "name": "Graphic / Palette Changer 0C",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C7": {
       "name": "Graphic / Palette Changer 0D",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C8": {
       "name": "Graphic / Palette Changer 0E",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1C9": {
       "name": "Graphic / Palette Changer 0F",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1CA": {
       "name": "Extremely slow auto-scroll",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1CB": {
       "name": "Special auto-scroll 0",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1CC": {
       "name": "Special auto-scroll 1",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1CD": {
       "name": "Special auto-scroll 2",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1CE": {
       "name": "Special auto-scroll 3",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1CF": {
       "name": "Special auto-scroll 4",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1D0": {
       "name": "Special auto-scroll 5",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1D1": {
       "name": "Special auto-scroll 6",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1D2": {
       "name": "Special auto-scroll 7",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1D3": {
       "name": "Special auto-scroll 8",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1D4": {
       "name": "Slow auto-scroll",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1D5": {
       "name": "Broken auto-scroll",
-      "category": "enemy"
+      "category": "unknown"
     },
     "0x1D6": {
       "name": "Lock horizontal scroll",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1D7": {
       "name": "Gusty generator",
@@ -12221,7 +12221,7 @@
     },
     "0x1D9": {
       "name": "Lakitu stopper",
-      "category": "enemy"
+      "category": "generator"
     },
     "0x1DA": {
       "name": "Fuzzy generator stopper",
@@ -12229,7 +12229,7 @@
     },
     "0x1DB": {
       "name": "unknown",
-      "category": "enemy"
+      "category": "unknown"
     },
     "0x1DC": {
       "name": "Fang generator, from right",
@@ -12269,19 +12269,19 @@
     },
     "0x1E1": {
       "name": "unknown",
-      "category": "enemy"
+      "category": "unknown"
     },
     "0x1E2": {
       "name": "Dancing Spear Guy trigger",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1E3": {
       "name": "unknown",
-      "category": "enemy"
+      "category": "unknown"
     },
     "0x1E4": {
       "name": "Thunder Lakitu stopper",
-      "category": "enemy"
+      "category": "generator"
     },
     "0x1E5": {
       "name": "Flutter generator",
@@ -12337,11 +12337,11 @@
     },
     "0x1F2": {
       "name": "Turn off dizzy effect",
-      "category": "enemy"
+      "category": "command"
     },
     "0x1F3": {
       "name": "unknown",
-      "category": "enemy"
+      "category": "unknown"
     },
     "0x1F4": {
       "name": "Fuzzy generator",

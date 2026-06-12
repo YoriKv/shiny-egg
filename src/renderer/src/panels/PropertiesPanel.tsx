@@ -674,6 +674,27 @@ function ExitProps({
         <span className="se-props__id-kind">
           {exit.variant === 'warp' ? 'Exit · Warp' : 'Exit · Minibattle'}
         </span>
+        {/* Variant toggle (E2): converts the record's payload wholesale (the
+            reducer maps dest ↔ return geometry; serializer encodes by byte1
+            range). */}
+        <button
+          type="button"
+          className="se-props__variant-toggle"
+          onClick={() =>
+            dispatchLevel({
+              type: 'setExitVariant',
+              uid: exit.uid!,
+              variant: exit.variant === 'warp' ? 'minibattle' : 'warp'
+            })
+          }
+          title={
+            exit.variant === 'warp'
+              ? 'Convert to a minibattle exit (enters a 2-player minigame room; the dest cell becomes the return point).'
+              : 'Convert to a warp exit (the return point becomes the destination).'
+          }
+        >
+          {exit.variant === 'warp' ? 'Convert to Minibattle' : 'Convert to Warp'}
+        </button>
       </dd>
       {exit.variant === 'warp' && (
         <>

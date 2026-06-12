@@ -25,6 +25,7 @@ import {
   biasedPointers,
   carvePatchPool,
   levelHex,
+  newSlotRows,
   patchPoolGeometry,
   repointMigrations,
   PATCH_POOL_REGION_ID,
@@ -189,6 +190,38 @@ export function repointPtr(text: string, oldExpr: string, newLabel: string): str
   return text.replace(re, newLabel);
 }
 
+/**
+ * Repoint the Nth occurrence of a (non-unique) `Ptrs:` row expression — the
+ * new-slot rows `$DA`/`$DB` share the identical sentinel text
+ * `DATA_15FCEA,DATA_15FFD5`, so a plain first-match replace would always hit
+ * `$DA`. Occurrences are counted in file order (== record order in the table).
+ * Throws when fewer than `occurrence + 1` occurrences exist (fail loud — a
+ * silent miss would boot the sentinel instead of the new level).
+ */
+export function repointPtrRowOccurrence(
+  text: string,
+  rowExpr: string,
+  occurrence: number,
+  replacement: string
+): string {
+  const re = new RegExp(escapeRe(rowExpr) + '\\b', 'g');
+  let n = 0;
+  let replaced = false;
+  const out = text.replace(re, (m) => {
+    if (n++ === occurrence) {
+      replaced = true;
+      return replacement;
+    }
+    return m;
+  });
+  if (!replaced) {
+    throw new Error(
+      `relocate: occurrence ${occurrence} of Ptrs row "${rowExpr}" not found (saw ${n}).`
+    );
+  }
+  return out;
+}
+
 // ── planning ────────────────────────────────────────────────────────────────
 
 export interface PlacedRelocation {
@@ -242,6 +275,9 @@ export interface LayoutPlan {
   homeInserts: HomeInsert[];
   regionAppends: RegionAppend[];
   repoints: { oldExpr: string; newLabel: string }[];
+  /** Occurrence-targeted `Ptrs:` row repoints (the new-slot sentinel rows —
+   *  their text is identical across rows, so `repoints` can't address them). */
+  rowRepoints: { rowExpr: string; occurrence: number; replacement: string }[];
   violations: LayoutViolation[];
 }
 
@@ -250,6 +286,10 @@ export interface LayoutOptions {
   migrated: ReadonlySet<number>;
   /** Level record ids de-coupled (materialise own spr + repoint). */
   decoupled: ReadonlySet<number>;
+  /** New-slot record ids (`$DA`/`$DB`) given real data: their overlay blobs are
+   *  placed in free regions and their sentinel `Ptrs:` row is repointed. A slot
+   *  whose obj blob has no bytes on disk is skipped (nothing to boot). */
+  newSlots?: ReadonlySet<number>;
   /** Current size of a blob `.bin` (overlay-if-saved, base otherwise). */
   sizeOf: (file: string) => number;
   /** Bytes to reserve at FreeRegion51's tail for the asm-patch pool (0 = none).
@@ -279,6 +319,7 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
   const decouples: DecouplePlacement[] = [];
   const deletions: { bankFile: string; label: string }[] = [];
   const repoints: { oldExpr: string; newLabel: string }[] = [];
+  const rowRepoints: { rowExpr: string; occurrence: number; replacement: string }[] = [];
   const violations: LayoutViolation[] = [];
 
   /** First-fit a blob into a free region (stable order); null if none fits. */
@@ -327,6 +368,50 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
       relocations.push({ level, kind, file: rep.fullFile, label: rep.newLabel, bytes: blob.bytes, regionId, homeBankFile: rep.homeBankFile });
       repoints.push({ oldExpr: rep.oldExpr, newLabel: rep.newLabel });
     }
+  }
+
+  // 1.5. New slots: place each flagged sentinel row's overlay blobs into free
+  //      regions + repoint that row (occurrence-targeted — the rows' text is
+  //      identical). No deletion/reclaim: the slot never owned pool bytes; the
+  //      1-byte sentinels stay (other rows/engine paths still reference them).
+  //      Skipped when the obj blob has no bytes on disk (nothing imported yet).
+  const slotRows = newSlotRows(map.romVersion);
+  for (const recordId of [...(opts.newSlots ?? [])].sort((a, b) => a - b)) {
+    const row = slotRows.find((r) => r.recordId === recordId);
+    if (!row) continue; // not a known sentinel slot → ignore (defensive)
+    const objBlob: BlobInsert = {
+      label: `DATA_level_${row.level}_obj`,
+      file: `DATA_level_${row.level}_obj.bin`,
+      bytes: opts.sizeOf(`DATA_level_${row.level}_obj.bin`),
+    };
+    if (objBlob.bytes === 0) continue;
+    const sprBytes = opts.sizeOf(`DATA_level_${row.level}_spr.bin`);
+    const sprBlob: BlobInsert | null =
+      sprBytes > 0
+        ? { label: `DATA_level_${row.level}_spr`, file: `DATA_level_${row.level}_spr.bin`, bytes: sprBytes }
+        : null;
+
+    const objRegion = place(objBlob);
+    if (!objRegion) {
+      violations.push({ kind: 'region-full', id: objBlob.label, bytes: objBlob.bytes });
+      continue;
+    }
+    relocations.push({ level: recordId, kind: 'obj', file: objBlob.file, label: objBlob.label, bytes: objBlob.bytes, regionId: objRegion, homeBankFile: '' });
+    let sprLabel = row.sprSentinel;
+    if (sprBlob) {
+      const sprRegion = place(sprBlob);
+      if (!sprRegion) {
+        violations.push({ kind: 'region-full', id: sprBlob.label, bytes: sprBlob.bytes });
+        continue;
+      }
+      relocations.push({ level: recordId, kind: 'spr', file: sprBlob.file, label: sprBlob.label, bytes: sprBlob.bytes, regionId: sprRegion, homeBankFile: '' });
+      sprLabel = sprBlob.label;
+    }
+    rowRepoints.push({
+      rowExpr: row.rowExpr,
+      occurrence: row.occurrence,
+      replacement: `${objBlob.label},${sprLabel}`,
+    });
   }
 
   // 2. Per movable/reclaimable pool, the signed growth over POST-migration
@@ -401,7 +486,7 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
     if (blobs?.length) regionAppends.push({ region, blobs });
   }
 
-  return { relocations, decouples, moves, deletions, homeInserts, regionAppends, repoints, violations };
+  return { relocations, decouples, moves, deletions, homeInserts, regionAppends, repoints, rowRepoints, violations };
 }
 
 // ── apply ─────────────────────────────────────────────────────────────────--
@@ -466,6 +551,12 @@ export function applyLevelDataLayout(
     }
     if (bankFile === DATATABLE) {
       for (const rp of plan.repoints) text = repointPtr(text, rp.oldExpr, rp.newLabel);
+      // Row repoints AFTER expression repoints: each consumes one occurrence of
+      // the shared sentinel row text, in record order (occurrences are indexed
+      // against the ORIGINAL text, so apply descending to keep indices stable).
+      for (const rr of [...plan.rowRepoints].sort((a, b) => b.occurrence - a.occurrence)) {
+        text = repointPtrRowOccurrence(text, rr.rowExpr, rr.occurrence, rr.replacement);
+      }
     }
 
     const dest = path.join(treeYiRoot, bankFile);

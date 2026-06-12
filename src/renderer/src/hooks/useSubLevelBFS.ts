@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from 'react'
 import { getLevel } from '../data/levels'
-import { walkWarpGraph } from '../lib/warp-graph'
+import { walkWarpGraph, type WarpEdge } from '../lib/warp-graph'
 import type { IncomingExit } from '../types'
 
 export interface SubLevelBFS {
@@ -22,34 +22,42 @@ export interface SubLevelBFS {
   loading: boolean
   /** Reverse map keyed by destination level ID. */
   incomingByLevel: Map<number, IncomingExit[]>
+  /** Every warp edge seen during the walk, in BFS order — the forward view the
+   *  Exits panel's network section renders (source → dest per room). */
+  edges: WarpEdge[]
 }
 
 const EMPTY: SubLevelBFS = {
   subLevels: [],
   loading: false,
-  incomingByLevel: new Map()
+  incomingByLevel: new Map(),
+  edges: []
 }
 
-export function useSubLevelBFS(rootLevelRecordId: number | null): SubLevelBFS {
+export function useSubLevelBFS(rootLevelRecordId: number | null, refreshToken = 0): SubLevelBFS {
   const [subLevels, setSubLevels] = useState<number[]>([])
   const [loading, setLoading] = useState<boolean>(false)
   const [incomingByLevel, setIncomingByLevel] = useState<Map<number, IncomingExit[]>>(
     () => new Map()
   )
+  const [edges, setEdges] = useState<WarpEdge[]>([])
 
   useEffect(() => {
     if (rootLevelRecordId === null) {
       setSubLevels([])
       setIncomingByLevel(new Map())
+      setEdges([])
       setLoading(false)
       return
     }
     let cancelled = false
     setSubLevels([rootLevelRecordId])
     setIncomingByLevel(new Map())
+    setEdges([])
     setLoading(true)
     const result: number[] = [rootLevelRecordId]
     const incomingBuild = new Map<number, IncomingExit[]>()
+    const edgesBuild: WarpEdge[] = []
     ;(async () => {
       // Shared warp-graph walk (lib/warp-graph). `shouldExpand` prunes catalog
       // destinations — they're full translevels, not sub-rooms, so we don't
@@ -68,18 +76,22 @@ export function useSubLevelBFS(rootLevelRecordId: number | null): SubLevelBFS {
           sourceScreenIndex: edge.sourceScreenIndex
         })
         incomingBuild.set(edge.destLevelRecordId, list)
+        edgesBuild.push(edge)
         // A newly-seen, expandable (non-catalog) destination is a sub-room.
         if (expanded) result.push(edge.destLevelRecordId)
         setSubLevels([...result])
         setIncomingByLevel(new Map(incomingBuild))
+        setEdges([...edgesBuild])
       }
       if (!cancelled) setLoading(false)
     })()
     return () => {
       cancelled = true
     }
-  }, [rootLevelRecordId])
+    // refreshToken: bumped after a level save / ROM import so the walk re-reads
+    // the now-changed disk state (cross-level incoming markers refresh).
+  }, [rootLevelRecordId, refreshToken])
 
   if (rootLevelRecordId === null) return EMPTY
-  return { subLevels, loading, incomingByLevel }
+  return { subLevels, loading, incomingByLevel, edges }
 }

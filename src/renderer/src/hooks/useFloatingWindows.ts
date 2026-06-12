@@ -22,6 +22,7 @@ export interface WindowDef {
     | 'patches'
     | 'banks'
     | 'paint'
+    | 'exits'
 }
 
 const INITIAL_WINDOWS: WindowDef[] = [
@@ -105,6 +106,18 @@ const INITIAL_WINDOWS: WindowDef[] = [
     z: 4,
     open: false,
     kind: 'picker'
+  },
+  {
+    id: 'exits',
+    title: 'Exits Map',
+    // Screen-exit minimap + the root cluster's warp network (§B2). Closed by
+    // default; reopen from the toolbar. Sized for the 16×8 grid + a few rooms.
+    pos: { x: 660, y: 72 },
+    width: 380,
+    height: 520,
+    z: 3,
+    open: false,
+    kind: 'exits'
   },
   {
     id: 'finder',

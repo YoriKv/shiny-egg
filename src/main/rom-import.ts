@@ -13,11 +13,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import {
   analyzeForeignRom,
+  mergeForeignIndexWords,
   readForeignWorldMap,
   type AnalyzeResult,
   type ForeignImportItem
 } from 'snes-framework/import'
 import { loadLevelMapPublic, levelMapEntry } from 'snes-framework/level'
+import { newSlotRows } from 'snes-framework/pool-map'
 import { diffPaletteBlob, PALETTE_BLOB_BANK_FILE } from 'snes-framework/palette-edit'
 import { readForeignLevelNames, loadFontMap } from 'snes-framework/levels-catalog'
 import {
@@ -44,10 +46,14 @@ import type {
 import { frameworkWorkRoot, overlayRoot, referenceCartPath } from './framework-paths'
 import { stripCopierHeader } from 'snes-framework/rom-header'
 import { getCurrentProjectId } from './projects'
+import { loadBaseSym } from './patches'
 import {
+  autoMigrateImportedLevels,
   exceptionalSaveBlockReason,
+  registerNewSlotLevel,
   loadPaletteEdits,
   loadWorldMapResource,
+  poolViolationMessage,
   saveAsmRegionResource,
   saveLevelRawResource,
   saveLevelResource,
@@ -66,6 +72,12 @@ interface CachedAnalysis {
   foreignMd5: string
   /** Decoded foreign items keyed by record id (the apply payload). */
   items: Map<number, ForeignImportItem>
+  /** Records the hack RELOCATED (repointed `Ptrs:` rows) — the auto-migration
+   *  candidate set (intersected with what the user actually applies). */
+  relocatedIds: Set<number>
+  /** NEW-SLOT records (`0xDA`/`0xDB`): no base map entry, importable as a brand
+   *  new level — apply writes the overlay blobs + flags the project slot. */
+  newSlotIds: Set<number>
   /** Master-palette colour edits to import (offset → BGR-15). */
   paletteEdits: PaletteEdit[]
   /** Level-name model with imported changes applied, or null when none/can't apply. */
@@ -75,10 +87,11 @@ interface CachedAnalysis {
   messageModel: StringTableModel | null
   messageChanges: number
   messageBlanked: number
-  /** World-map model with imported entrance/midway changes applied, or null when none. */
+  /** World-map model with imported entrance/midway/index changes applied, or null when none. */
   worldMapModel: WorldMapModel | null
   worldMapEntrances: number
   worldMapMidway: number
+  worldMapIndexRemaps: number
 }
 
 function sameLines(a: string[], b: string[]): boolean {
@@ -294,18 +307,25 @@ interface WorldMapAnalysis extends RomImportWorldMap {
 /**
  * Diff the foreign cart's world-map entrance + midway RECORD tables against base
  * and map the changed records onto the editable (overlay-first) world-map model.
- * Covers exactly what the world-map editor edits: per-record level-data id (which
+ * Covers what the world-map editor edits — per-record level-data id (which
  * level a world-map tile plays), spawn X/Y, the main table's progression target,
- * and the midway table's re-entry state. The translevel→record INDEX tables
- * aren't editable, so a re-indexed world map isn't imported (out of scope, like
- * the level-placement importer's other detect-only diffs). Imported records win
- * over the project's existing world-map edits per record (mirrors analyzeNames); a
- * record the hack left at vanilla is never touched, so unrelated user edits
- * survive. Reads at the vanilla table addresses — only valid on a V1.0-derived
- * cart (the caller gates on `baseDerived`).
+ * the midway table's re-entry state — PLUS (RI4) the translevel→record INDEX
+ * tables: a hack that re-pointed which entrance record a world-map slot uses
+ * imports through the raw index-word arrays (editable asm regions). Imported
+ * records win over the project's existing world-map edits per record (mirrors
+ * analyzeNames); a record the hack left at vanilla is never touched, so
+ * unrelated user edits survive. Reads at the vanilla table addresses — only
+ * valid on a V1.0-derived cart (the caller gates on `baseDerived`).
  */
 function analyzeWorldMap(foreign: Buffer, base: Buffer, projectId: string | null): WorldMapAnalysis {
-  const empty: WorldMapAnalysis = { model: null, entrances: 0, midway: 0, hasConflict: false }
+  const empty: WorldMapAnalysis = {
+    model: null,
+    entrances: 0,
+    midway: 0,
+    indexRemaps: 0,
+    indexSkipped: 0,
+    hasConflict: false
+  }
   try {
     const overlayPath = projectId ? path.join(overlayRoot(projectId), WORLD_MAP_REL) : null
     const hasConflict = !!(overlayPath && existsSync(overlayPath))
@@ -314,9 +334,11 @@ function analyzeWorldMap(foreign: Buffer, base: Buffer, projectId: string | null
     const sym = vendoredV10SymbolMap()
     const mainCount = model.entrances.length
     const midwayCount = model.midway.length
+    const mainIdxCount = model.entranceIndexWords?.length ?? 0
+    const midIdxCount = model.midwayIndexWords?.length ?? 0
 
-    const baseWm = readForeignWorldMap(base, sym, mainCount, midwayCount)
-    const hackWm = readForeignWorldMap(foreign, sym, mainCount, midwayCount)
+    const baseWm = readForeignWorldMap(base, sym, mainCount, midwayCount, mainIdxCount, midIdxCount)
+    const hackWm = readForeignWorldMap(foreign, sym, mainCount, midwayCount, mainIdxCount, midIdxCount)
     if (!baseWm.resolved || !hackWm.resolved) return { ...empty, hasConflict }
 
     let entrances = 0
@@ -359,8 +381,28 @@ function analyzeWorldMap(foreign: Buffer, base: Buffer, projectId: string | null
       midway++
     }
 
-    if (entrances === 0 && midway === 0) return { ...empty, hasConflict }
-    return { model, entrances, midway, hasConflict }
+    // RI4: the translevel→record INDEX remap (which entrance record a slot
+    // uses). The framework merge gates per-word validity AND wholesale-clobbered
+    // tables (e.g. Flutter repurposes the midway index for its own data).
+    const mainIdx = mergeForeignIndexWords(
+      model.entranceIndexWords,
+      hackWm.entranceIndexWords,
+      baseWm.entranceIndexWords,
+      mainCount
+    )
+    const midIdx = mergeForeignIndexWords(
+      model.midwayIndexWords,
+      hackWm.midwayIndexWords,
+      baseWm.midwayIndexWords,
+      midwayCount
+    )
+    const indexRemaps = mainIdx.remapped + midIdx.remapped
+    const indexSkipped = mainIdx.skipped + midIdx.skipped
+
+    if (entrances === 0 && midway === 0 && indexRemaps === 0) {
+      return { ...empty, indexSkipped, hasConflict }
+    }
+    return { model, entrances, midway, indexRemaps, indexSkipped, hasConflict }
   } catch {
     return empty
   }
@@ -393,7 +435,10 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     // our own (unheadered) reference stash. See rom-header.ts.
     foreign = stripCopierHeader(readFileSync(foreignPath))
     base = readFileSync(basePath)
-    result = analyzeForeignRom(foreign, base)
+    // The base build's full symbol map refines the diff inventory's attribution
+    // (nearest-label examples); analysis works without it (coarse bands).
+    const symbols = loadBaseSym()
+    result = analyzeForeignRom(foreign, base, symbols ? { symbols } : {})
   } catch (err) {
     return { ok: false, error: `Failed to read/analyse ROM: ${(err as Error).message}` }
   }
@@ -415,7 +460,13 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     overBudget: false,
     hasConflict: false
   }
-  const worldMap: RomImportWorldMap = { entrances: 0, midway: 0, hasConflict: false }
+  const worldMap: RomImportWorldMap = {
+    entrances: 0,
+    midway: 0,
+    indexRemaps: 0,
+    indexSkipped: 0,
+    hasConflict: false
+  }
   let paletteEdits: PaletteEdit[] = []
   let nameModel: StringTableModel | null = null
   let nameChanges = 0
@@ -425,6 +476,7 @@ export function analyzeRom(foreignPath: string): RomImportReport {
   let worldMapModel: WorldMapModel | null = null
   let worldMapEntrances = 0
   let worldMapMidway = 0
+  let worldMapIndexRemaps = 0
   if (analysis.baseDerived) {
     const p = analyzePalette(foreign)
     paletteEdits = p.edits
@@ -451,15 +503,24 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     worldMapModel = wm.model
     worldMapEntrances = wm.entrances
     worldMapMidway = wm.midway
+    worldMapIndexRemaps = wm.indexRemaps
     worldMap.entrances = wm.entrances
     worldMap.midway = wm.midway
+    worldMap.indexRemaps = wm.indexRemaps
+    worldMap.indexSkipped = wm.indexSkipped
     worldMap.hasConflict = wm.hasConflict
   }
+
+  // Mutated by the level classification below (same reference shared with the
+  // cache, so apply sees the final set).
+  const newSlotIds = new Set<number>()
 
   cached = {
     foreignPath,
     foreignMd5: analysis.foreignMd5,
     items: new Map(items.map((i) => [i.recordId, i])),
+    relocatedIds: new Set(analysis.levels.filter((l) => l.relocated).map((l) => l.recordId)),
+    newSlotIds,
     paletteEdits,
     nameModel,
     nameChanges,
@@ -468,21 +529,44 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     messageBlanked,
     worldMapModel,
     worldMapEntrances,
-    worldMapMidway
+    worldMapMidway,
+    worldMapIndexRemaps
   }
 
   const map = loadLevelMapPublic(frameworkWorkRoot())
   const overlayDir = projectId ? path.join(overlayRoot(projectId), LEVEL_DATA_REL) : null
+  // Records with NO base map entry can only import as NEW levels, and only into
+  // the known sentinel slots (0xDA/0xDB) — the build repoints their Ptrs row at
+  // freshly placed free-region blobs. Anything else without an entry is blocked.
+  const newSlotIdSet = new Set(newSlotRows(map.romVersion).map((r) => r.recordId))
 
   const levels: RomImportLevel[] = analysis.levels.map((l) => {
+    const entry = levelMapEntry(map.levels, l.recordId)
     let hasOverlayConflict = false
     if (overlayDir) {
-      const entry = levelMapEntry(map.levels, l.recordId)
-      for (const f of [entry?.objectFile, entry?.spriteFile]) {
+      const files = entry
+        ? [entry.objectFile, entry.spriteFile]
+        : [
+            `DATA_level_${l.recordId.toString(16).toUpperCase().padStart(2, '0')}_obj.bin`,
+            `DATA_level_${l.recordId.toString(16).toUpperCase().padStart(2, '0')}_spr.bin`
+          ]
+      for (const f of files) {
         if (f && existsSync(path.join(overlayDir, f))) {
           hasOverlayConflict = true
           break
         }
+      }
+    }
+    if (!entry && l.importability !== 'blocked') {
+      if (newSlotIdSet.has(l.recordId)) {
+        newSlotIds.add(l.recordId)
+        return { ...l, isNew: true, hasOverlayConflict }
+      }
+      return {
+        ...l,
+        importability: 'blocked',
+        blockedReason: 'No editable slot for this record (not a known sentinel row).',
+        hasOverlayConflict
       }
     }
     // The 5 aliased/oversized records can't be written per-level (the build still
@@ -517,7 +601,8 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     palette,
     names,
     messages,
-    worldMap
+    worldMap,
+    ...(analysis.inventory ? { inventory: analysis.inventory } : {})
   }
 }
 
@@ -541,6 +626,8 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
   let full = 0
   let rawOnly = 0
   const failed: Array<{ recordId: number; error: string }> = []
+  const applied: number[] = []
+  const { relocatedIds, newSlotIds } = cached
 
   for (const recordId of sel.recordIds) {
     const item = cached.items.get(recordId)
@@ -554,10 +641,38 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
         : await saveLevelRawResource(recordId, item.objBytes, item.sprBytes)
     if (!res.ok) {
       failed.push({ recordId, error: res.error })
-    } else if (item.importability === 'full') {
-      full++
-    } else {
-      rawOnly++
+      continue
+    }
+    applied.push(recordId)
+    // A new-slot record's overlay blobs are on disk now — flag the project so
+    // the build's layout pass places them + repoints the sentinel Ptrs row.
+    if (newSlotIds.has(recordId)) {
+      try {
+        registerNewSlotLevel(recordId)
+      } catch (err) {
+        failed.push({ recordId, error: `Imported, but couldn't flag the new slot: ${(err as Error).message}` })
+      }
+    }
+    if (item.importability === 'full') full++
+    else rawOnly++
+  }
+
+  // Migration awareness: the hack relocated these records' streams into ITS
+  // free space; now that their (possibly grown) sizes are on disk, mark the
+  // ones that no longer fit their home pools as migrated so OUR build places
+  // them in the free regions too. Need-based — see autoMigrateImportedLevels.
+  const migration = { applied: 0, recordIds: [] as number[], warning: undefined as string | undefined }
+  // New slots aren't migration candidates — their placement is the newSlots
+  // layout path, not the migrated set (they have no home pool to overflow).
+  const migrationCandidates = applied.filter((id) => relocatedIds.has(id) && !newSlotIds.has(id))
+  if (migrationCandidates.length > 0) {
+    const m = autoMigrateImportedLevels(migrationCandidates)
+    if (m) {
+      migration.applied = m.migrated.length
+      migration.recordIds = m.migrated
+      if (m.violations.length > 0) {
+        migration.warning = poolViolationMessage(m.violations)
+      }
     }
   }
 
@@ -609,6 +724,7 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
     applied: false,
     entrances: 0,
     midway: 0,
+    indexRemaps: 0,
     error: undefined as string | undefined
   }
   if (sel.worldMap && cached.worldMapModel) {
@@ -617,10 +733,23 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
       worldMap.applied = true
       worldMap.entrances = cached.worldMapEntrances
       worldMap.midway = cached.worldMapMidway
+      worldMap.indexRemaps = cached.worldMapIndexRemaps
     } else {
       worldMap.error = r.error
     }
   }
 
-  return { ok: true, applied: full + rawOnly, full, rawOnly, failed, palette, names, messages, worldMap }
+  return {
+    ok: true,
+    applied: full + rawOnly,
+    full,
+    rawOnly,
+    failed,
+    migration,
+    newSlots: applied.filter((id) => newSlotIds.has(id)),
+    palette,
+    names,
+    messages,
+    worldMap
+  }
 }

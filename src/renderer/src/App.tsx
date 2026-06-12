@@ -42,6 +42,7 @@ import { StringsBody, useMessagePtrTableEditor, useStringsEditor } from './panel
 import { useWorldMapEditor } from './edit-session/useWorldMapEditor'
 import { WorldMapBody } from './panels/WorldMapPanel'
 import { PickerBody } from './panels/PickerPanel'
+import { ExitsBody } from './panels/ExitsPanel'
 import { PaintBody } from './panels/PaintPanel'
 import { usePaintTool } from './hooks/usePaintTool'
 import { ObjectFinderBody } from './panels/ObjectFinderBody'
@@ -56,7 +57,7 @@ import { useEmulatorActions } from './hooks/useEmulatorActions'
 import { useLevelNavigation } from './hooks/useLevelNavigation'
 import { refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
-import type { LayerVisibility, PlacementItem, Selection } from './types'
+import type { IncomingExit, LayerVisibility, PlacementItem, Selection } from './types'
 
 type Operation = 'extract' | 'build' | null
 
@@ -165,17 +166,18 @@ const layersStore = persistedState<LayerVisibility>(
 // Panel-toggle buttons (toolbar row 2, right-aligned). Each opens its floating
 // window; disabled (grayed) while that window is already open.
 const PANEL_TOGGLES = [
-  { kind: 'tiles', label: 'Tiles', title: 'Tiles' },
-  { kind: 'palette', label: 'Palette', title: 'Palette' },
-  { kind: 'strings', label: 'Strings', title: 'Strings' },
-  { kind: 'world-map', label: 'World Map', title: 'World-map entrances' },
   { kind: 'props', label: 'Properties', title: 'Properties' },
-  { kind: 'header', label: 'Level Header', title: 'Level header' },
   { kind: 'picker', label: 'Place', title: 'Place panel' },
   // { kind: 'paint', label: 'Paint', title: 'Paint surface' }, // hidden — see TOOLS note
   { kind: 'finder', label: 'Find', title: 'Object finder' },
-  { kind: 'patches', label: 'Patches', title: 'Custom patches' },
-  { kind: 'banks', label: 'Level Banks', title: 'Bank byte budgets' }
+  { kind: 'tiles', label: 'Tiles', title: 'Tiles' },
+  { kind: 'palette', label: 'Palette', title: 'Palette' },
+  { kind: 'exits', label: 'Exits Map', title: 'Exits map + warp network' },
+  { kind: 'header', label: 'Level Header', title: 'Level header' },
+  { kind: 'strings', label: 'Strings', title: 'Strings' },
+  { kind: 'world-map', label: 'World Map', title: 'World-map entrances' },
+  { kind: 'banks', label: 'Level Banks', title: 'Bank byte budgets' },
+  { kind: 'patches', label: 'Patches', title: 'Custom patches' }
 ] as const
 
 // Resolve a finder jump's (kind, id, cell) to the loaded level's matching
@@ -226,8 +228,12 @@ export default function App(): JSX.Element {
   // last main-dropdown pick — anchors the BFS that discovers sub-rooms.
   const [selectedLevelRecordId, setSelectedLevelRecordId] = useState<number | null>(null)
   const [rootLevelRecordId, setRootLevelRecordId] = useState<number | null>(null)
-  const { subLevels, loading: subLevelsLoading, incomingByLevel } =
-    useSubLevelBFS(rootLevelRecordId)
+  // Bumped after a successful level save / ROM import so the warp-graph walk
+  // re-reads disk (cross-level incoming markers + the Exits panel refresh).
+  const [warpGraphRefresh, setWarpGraphRefresh] = useState(0)
+  const { subLevels, loading: subLevelsLoading, incomingByLevel, edges: warpEdges } =
+    useSubLevelBFS(rootLevelRecordId, warpGraphRefresh)
+
   // Canvas selection — an ARRAY so a multi-select (objects + sprites) is just a
   // length > 1 selection. Single-entity behaviours (move/resize/arrow-nudge,
   // links, per-entity Properties) act on `primarySelection` (the sole element
@@ -262,6 +268,31 @@ export default function App(): JSX.Element {
   // dirty + dispatch `saved`. Canvas reads `level` and `dispatchLevel`
   // through props.
   const [levelState, dispatchLevel] = useReducer(levelReducer, INITIAL_LEVEL_STATE)
+  // Live overlay (task: exit↔entrance marker sync): the loaded level's OWN warp
+  // exits replace its on-disk contributions in the incoming map, so placing an
+  // exit or editing destX/destY/destLevel moves/creates/removes the matching
+  // entrance marker in the same commit — no stale "incoming entry" visuals.
+  const liveIncomingByLevel = useMemo(() => {
+    const lvl = levelState.level
+    if (!lvl || lvl.empty || lvl.special) return incomingByLevel
+    const out = new Map<number, IncomingExit[]>()
+    for (const [dest, list] of incomingByLevel) {
+      const kept = list.filter((i) => i.sourceLevelRecordId !== lvl.recordId)
+      if (kept.length > 0) out.set(dest, kept)
+    }
+    for (const e of lvl.exits) {
+      if (e.variant !== 'warp') continue
+      const list = out.get(e.destLevelRecordId) ?? []
+      list.push({
+        sourceLevelRecordId: lvl.recordId,
+        sourceScreenIndex: e.screenIndex,
+        destX: e.destX,
+        destY: e.destY
+      })
+      out.set(e.destLevelRecordId, list)
+    }
+    return out
+  }, [incomingByLevel, levelState.level])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState<boolean>(false)
   const dirty = isDirty(levelState)
@@ -393,12 +424,30 @@ export default function App(): JSX.Element {
           }
         })
         setSelection([{ kind: 'object', uid: newUid }])
-      } else {
+      } else if (placement.kind === 'sprite') {
         dispatchLevel({ type: 'addSprite', template: { num: placement.num, x: cx, y: cy } })
         setSelection([{ kind: 'sprite', uid: newUid }])
+      } else {
+        // Exit: per-screen singleton on the clicked cell's screen. If the screen
+        // already has one, select it instead of silently no-opping; otherwise add
+        // a self-warp to the clicked cell and select the new exit.
+        const lvl = levelState.level
+        if (!lvl) return
+        const screen = ((cy >> 4) << 4) | (cx >> 4)
+        const existing = lvl.exits.find((e) => e.screenIndex === screen)
+        if (existing) {
+          setSelection([{ kind: 'exit', uid: existing.uid! }])
+          return
+        }
+        dispatchLevel({
+          type: 'addExit',
+          screenIndex: screen,
+          dest: { levelRecordId: lvl.recordId, x: cx, y: cy }
+        })
+        setSelection([{ kind: 'exit', uid: newUid }])
       }
     },
-    [placement, levelState.nextUid]
+    [placement, levelState.nextUid, levelState.level]
   )
 
   // Surface-paint tool (dormant in v1 — see usePaintTool). Self-contained hook so
@@ -431,6 +480,9 @@ export default function App(): JSX.Element {
       if (result.ok) {
         dispatchLevel({ type: 'saved' })
         setNeedsBuild(true)
+        // Saved exits are now on disk — re-walk the warp graph so OTHER levels'
+        // incoming markers + the Exits panel reflect them.
+        setWarpGraphRefresh((n) => n + 1)
         return true
       }
       setSaveError(result.error)
@@ -473,12 +525,34 @@ export default function App(): JSX.Element {
       commits: levelState.commits,
       selectedLevelRecordId,
       rootLevelRecordId,
-      incomingByLevel,
+      incomingByLevel: liveIncomingByLevel,
       dispatchLevel,
       appendLog,
       setNeedsBuild,
       setSelection
     })
+
+  // Incoming-marker drag: when the marker's SOURCE is the level being edited
+  // (a self-warp), route the dest change through the reducer — the cross-level
+  // path writes the source level on DISK, which would silently diverge from
+  // the unsaved in-memory copy. Other sources keep the disk path.
+  const onMoveIncomingLive = useCallback(
+    async (inc: IncomingExit, destX: number, destY: number) => {
+      const lvl = levelState.level
+      if (lvl && inc.sourceLevelRecordId === lvl.recordId) {
+        const exit = lvl.exits.find(
+          (e) => e.variant === 'warp' && e.screenIndex === inc.sourceScreenIndex
+        )
+        if (exit) {
+          dispatchLevel({ type: 'setExitFields', uid: exit.uid!, patch: { destX, destY } })
+          setSelection([{ kind: 'incoming', incoming: { ...inc, destX, destY } }])
+          return
+        }
+      }
+      await onMoveIncoming(inc, destX, destY)
+    },
+    [levelState.level, onMoveIncoming]
+  )
 
   // Reset the current level: delete its overlay (discard saved + unsaved edits)
   // and reload the pristine base into the editor. Flags a rebuild only when an
@@ -507,6 +581,7 @@ export default function App(): JSX.Element {
   // currently-loaded level since it may have just been overwritten.
   const onRomImported = useCallback(async () => {
     setNeedsBuild(true)
+    setWarpGraphRefresh((n) => n + 1)
     // Reload the whole project so every panel reflects the freshly-written overlay:
     // bump the reload scope (strings/messages/palette/world-map/patches re-read from
     // disk), refresh the overlay-aware dropdown names, and reload the open level below.
@@ -561,6 +636,7 @@ export default function App(): JSX.Element {
     requestNav,
     selectRootLevel,
     jumpToInstance,
+    focusCell,
     onBack,
     onForward,
     canBack,
@@ -579,6 +655,7 @@ export default function App(): JSX.Element {
   } = useLevelNavigation({
     dirty,
     saveCurrent,
+    selectedLevelRecordId,
     setSelectedLevelRecordId,
     setRootLevelRecordId
   })
@@ -1105,7 +1182,7 @@ export default function App(): JSX.Element {
           onJumpToLevel={(id) => requestNav(() => navigateTo(rootLevelRecordId, id))}
           layers={layers}
           incoming={incoming}
-          onMoveIncoming={onMoveIncoming}
+          onMoveIncoming={onMoveIncomingLive}
           levelState={levelState}
           dispatchLevel={dispatchLevel}
           needsBuild={needsBuild}
@@ -1197,6 +1274,23 @@ export default function App(): JSX.Element {
                 />
               ) : w.kind === 'header' ? (
                 <HeaderBody level={levelState.level} dispatchLevel={dispatchLevel} />
+              ) : w.kind === 'exits' ? (
+                <ExitsBody
+                  level={levelState.level}
+                  selection={selection}
+                  subLevels={subLevels}
+                  edges={warpEdges}
+                  loading={subLevelsLoading}
+                  onSelectExit={(uid) => {
+                    setSelection([{ kind: 'exit', uid }])
+                    openWindow('props')
+                  }}
+                  onSelectIncoming={(inc) => {
+                    setSelection([{ kind: 'incoming', incoming: inc }])
+                    openWindow('props')
+                  }}
+                  onJump={focusCell}
+                />
               ) : w.kind === 'finder' ? (
                 <ObjectFinderBody onJump={jumpToInstance} currentLevelRecordId={selectedLevelRecordId} />
               ) : w.kind === 'patches' ? (

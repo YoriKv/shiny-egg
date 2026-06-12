@@ -88,6 +88,35 @@ const noop = serializeEntranceTable(asm, model, symbols)
 assert(noop.ok, 'no-op serialize ok')
 assert(noop.ok && noop.text === asm, 'no-op serialize is byte-identical (both regions)')
 
+console.log('index tables (RI4 — raw editable words):')
+{
+  assert(!!model.entranceIndexWords && model.entranceIndexWords.length === 69, `entrance index parses 69 words (got ${model.entranceIndexWords?.length})`)
+  assert(!!model.midwayIndexWords && model.midwayIndexWords.length === 69, `midway index parses 69 words (got ${model.midwayIndexWords?.length})`)
+  assert(model.entranceIndexWords![0] === 0x0000 && model.entranceIndexWords![1] === 0x0004, 'entrance index words 0/1 = $0000/$0004')
+  assert(model.entranceIndexWords![10] === 0x00d8, 'entrance index word 10 (1-Extra slot) = $00D8')
+
+  // Remap translevel 1 → record 2 (offset $0008): only that token's bytes change.
+  const editIdx: WorldMapModel = {
+    ...model,
+    entranceIndexWords: model.entranceIndexWords!.map((w, i) => (i === 1 ? 0x0008 : w))
+  }
+  const out = serializeEntranceTable(asm, editIdx, symbols)
+  assert(out.ok, 'index-edit serialize ok')
+  if (out.ok) {
+    const d = firstDiff(asm, out.text)
+    // The only textual change is inside the remapped token ($0004 → $0008 —
+    // possibly a single character) and the file length is unchanged.
+    assert(
+      d !== null && d.end - d.start <= 5 && out.text.length === asm.length,
+      `only the remapped word's text changes (diff ${JSON.stringify(d)})`
+    )
+    const re = parseEntranceTable(out.text, symbols)
+    assert(re.entranceIndexWords![1] === 0x0008, 're-parse round-trips the remapped word')
+    assert(re.translevelToRecordIndex['0x01'] === 2, 'derived translevel→record map follows the remap (0x01 → record 2)')
+    assert(re.entranceIndexWords!.every((w, i) => i === 1 || w === model.entranceIndexWords![i]), 'all other index words unchanged')
+  }
+}
+
 console.log('edit midway (dw word repacking):')
 const editMid: WorldMapModel = {
   ...model,

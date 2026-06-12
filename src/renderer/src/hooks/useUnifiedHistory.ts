@@ -110,6 +110,10 @@ export function useUnifiedHistory({
     if (incomingPatch.size === 0 || base.length === 0) return base
     let changed = false
     const out = base.map((inc) => {
+      // Entries sourced from the LOADED level are live (App overlays its
+      // in-memory exits), so a leftover optimistic patch for them is stale by
+      // definition — the disk edit it mirrored was read back at level load.
+      if (inc.sourceLevelRecordId === selectedLevelRecordId) return inc
       const p = incomingPatch.get(`${inc.sourceLevelRecordId}:${inc.sourceScreenIndex}`)
       if (p && (p.x !== inc.destX || p.y !== inc.destY)) {
         changed = true

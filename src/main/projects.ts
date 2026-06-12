@@ -67,7 +67,8 @@ function readProjectFile(id: string): ProjectSummary | null {
       ...(parsed.romVersion ? { romVersion: parsed.romVersion } : {}),
       ...(parsed.cartMd5 ? { cartMd5: parsed.cartMd5 } : {}),
       ...(Array.isArray(parsed.relocations) ? { relocations: parsed.relocations } : {}),
-      ...(Array.isArray(parsed.decoupled) ? { decoupled: parsed.decoupled } : {})
+      ...(Array.isArray(parsed.decoupled) ? { decoupled: parsed.decoupled } : {}),
+      ...(Array.isArray(parsed.newSlots) ? { newSlots: parsed.newSlots } : {})
     }
   } catch {
     return null
@@ -93,6 +94,20 @@ export function getProjectRelocations(id: string | null): number[] {
 /** The active project's de-coupled level record ids (numbers). */
 export function getProjectDecoupled(id: string | null): number[] {
   return id ? parseHexIds(readProjectFile(id)?.decoupled) : []
+}
+
+/** The active project's new-slot level record ids (numbers) — sentinel rows
+ *  (`0xDA`/`0xDB`) a ROM import gave real overlay data. */
+export function getProjectNewSlots(id: string | null): number[] {
+  return id ? parseHexIds(readProjectFile(id)?.newSlots) : []
+}
+
+/** Flag/unflag a new-slot level (ROM import / reset-to-base). */
+export function setLevelNewSlot(id: string, levelRecordId: number, on: boolean): void {
+  const pf = readProjectFile(id)
+  if (!pf) throw new Error(`Project "${id}" not found.`)
+  const newSlots = setHexFlag(pf.newSlots, levelRecordId, on)
+  writeProjectFile({ ...pf, newSlots, modifiedAt: new Date().toISOString() })
 }
 
 /** Both lists, for the renderer. */

@@ -5,7 +5,9 @@
 // renderer report and applies selected changes through the editor's save paths.
 
 export { analyzeForeignRom } from './analyze.ts';
-export type { AnalyzeResult, ForeignImportItem } from './analyze.ts';
+export type { AnalyzeOptions, AnalyzeResult, ForeignImportItem } from './analyze.ts';
+export { diffInventory } from './inventory.ts';
+export type { InventoryOptions } from './inventory.ts';
 export {
   resolveAnchors,
   vanillaAnchors,
@@ -17,5 +19,5 @@ export {
 } from './anchors.ts';
 export { readForeignStreams } from './foreign-cart.ts';
 export type { ForeignStreams, ForeignRecordStreams } from './foreign-cart.ts';
-export { readForeignWorldMap } from './foreign-world-map.ts';
-export type { ForeignWorldMap } from './foreign-world-map.ts';
+export { mergeForeignIndexWords, readForeignWorldMap } from './foreign-world-map.ts';
+export type { ForeignWorldMap, IndexMergeResult } from './foreign-world-map.ts';

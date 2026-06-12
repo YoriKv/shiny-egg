@@ -103,3 +103,7 @@ export type Selection =
 export type PlacementItem =
   | { kind: 'object'; num: number; exnum?: number; w: number; h: number; label: string }
   | { kind: 'sprite'; num: number; label: string }
+  /** A screen exit (the picker's "Exit / Special" tab): clicking the canvas
+   *  adds a warp exit on the clicked cell's SCREEN (exits are per-screen
+   *  singletons), defaulting to a self-warp at that cell. */
+  | { kind: 'exit'; label: string }

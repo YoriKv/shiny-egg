@@ -1,6 +1,7 @@
 import { useEffect, useState, type JSX } from 'react'
 import type {
   RomImportApplyResult,
+  RomImportInventory,
   RomImportLevel,
   RomImportReport
 } from '../../preload/api'
@@ -114,7 +115,7 @@ export function ImportRomDialog({
       setSelPalette(r.palette.changedWords > 0)
       setSelNames(r.names.changed > 0 && !r.names.overBudget)
       setSelMessages((r.messages.changed > 0 || r.messages.blanked > 0) && !r.messages.overBudget)
-      setSelWorldMap(r.worldMap.entrances > 0 || r.worldMap.midway > 0)
+      setSelWorldMap(r.worldMap.entrances > 0 || r.worldMap.midway > 0 || r.worldMap.indexRemaps > 0)
       setPhase('report')
     } catch (err) {
       setError((err as Error).message)
@@ -298,7 +299,8 @@ function ReportView({
         report.messages.changed > 0 ||
         report.messages.skipped > 0 ||
         report.worldMap.entrances > 0 ||
-        report.worldMap.midway > 0) && (
+        report.worldMap.midway > 0 ||
+        report.worldMap.indexRemaps > 0) && (
         <div className="se-import__cats">
           {report.palette.changedWords > 0 && (
             <label className="se-import__cat">
@@ -382,7 +384,9 @@ function ReportView({
               </span>
             </label>
           )}
-          {(report.worldMap.entrances > 0 || report.worldMap.midway > 0) && (
+          {(report.worldMap.entrances > 0 ||
+            report.worldMap.midway > 0 ||
+            report.worldMap.indexRemaps > 0) && (
             <label className="se-import__cat">
               <input
                 type="checkbox"
@@ -392,11 +396,16 @@ function ReportView({
               />
               <span className="se-import__catname">World map</span>
               <span className="se-import__catinfo">
-                {report.worldMap.entrances > 0 &&
-                  `${report.worldMap.entrances} entrance${report.worldMap.entrances === 1 ? '' : 's'}`}
-                {report.worldMap.entrances > 0 && report.worldMap.midway > 0 ? ' · ' : ''}
-                {report.worldMap.midway > 0 &&
-                  `${report.worldMap.midway} checkpoint${report.worldMap.midway === 1 ? '' : 's'}`}
+                {[
+                  report.worldMap.entrances > 0 &&
+                    `${report.worldMap.entrances} entrance${report.worldMap.entrances === 1 ? '' : 's'}`,
+                  report.worldMap.midway > 0 &&
+                    `${report.worldMap.midway} checkpoint${report.worldMap.midway === 1 ? '' : 's'}`,
+                  report.worldMap.indexRemaps > 0 && `${report.worldMap.indexRemaps} slot remap${report.worldMap.indexRemaps === 1 ? '' : 's'}`,
+                  report.worldMap.indexSkipped > 0 && `${report.worldMap.indexSkipped} remap${report.worldMap.indexSkipped === 1 ? '' : 's'} skipped`
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
                 {report.worldMap.hasConflict && (
                   <span className="se-import__tag se-import__tag--warn" title="Layers on top of your existing world-map edits.">
                     your edits
@@ -460,6 +469,7 @@ function ReportView({
             ))}
           </div>
 
+          {report.inventory && <InventoryTable inventory={report.inventory} />}
         </>
       )}
 
@@ -478,6 +488,24 @@ function ReportView({
                     : ''}
                   .
                 </p>
+              )}
+              {applyResult.newSlots.length > 0 && (
+                <p>
+                  Added <strong>{applyResult.newSlots.length}</strong> brand-new level
+                  {applyResult.newSlots.length === 1 ? '' : 's'} (
+                  {applyResult.newSlots.map((r) => hex(r)).join(', ')}) in previously-unused slots.
+                </p>
+              )}
+              {applyResult.migration.applied > 0 && (
+                <p>
+                  Migrated <strong>{applyResult.migration.applied}</strong> level
+                  {applyResult.migration.applied === 1 ? '' : 's'} to free space (
+                  {applyResult.migration.recordIds.map((r) => hex(r)).join(', ')}) — the hack had
+                  relocated them and they no longer fit their home banks.
+                </p>
+              )}
+              {applyResult.migration.warning && (
+                <p className="se-import__warn">⚠ {applyResult.migration.warning}</p>
               )}
               {applyResult.palette.applied && (
                 <p>
@@ -515,7 +543,10 @@ function ReportView({
                   Imported <strong>{applyResult.worldMap.entrances}</strong> world-map entrance
                   {applyResult.worldMap.entrances === 1 ? '' : 's'}
                   {applyResult.worldMap.midway > 0
-                    ? ` and ${applyResult.worldMap.midway} checkpoint${applyResult.worldMap.midway === 1 ? '' : 's'}`
+                    ? `, ${applyResult.worldMap.midway} checkpoint${applyResult.worldMap.midway === 1 ? '' : 's'}`
+                    : ''}
+                  {applyResult.worldMap.indexRemaps > 0
+                    ? ` and ${applyResult.worldMap.indexRemaps} slot remap${applyResult.worldMap.indexRemaps === 1 ? '' : 's'}`
                     : ''}
                   .
                 </p>
@@ -548,6 +579,58 @@ function ReportView({
         </div>
       )}
     </>
+  )
+}
+
+function fmtBytes(n: number): string {
+  return n >= 4096 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`
+}
+
+/**
+ * The detect-only diff inventory: everything the hack changed, by cart
+ * structure — including the categories the importer does NOT apply (graphics,
+ * Map16, collision, code). Read-only; categories a semantic import covers are
+ * tagged "imported above" so the rest reads as the genuine not-imported diff.
+ */
+function InventoryTable({ inventory }: { inventory: RomImportInventory }): JSX.Element | null {
+  const notImported = inventory.categories.filter((c) => !c.imported)
+  if (inventory.categories.length === 0) return null
+  const notImportedBytes = notImported.reduce((n, c) => n + c.bytes, 0)
+  return (
+    <details className="se-import__anchors">
+      <summary>
+        Full diff inventory ({fmtBytes(inventory.totalDiffBytes)} changed
+        {notImportedBytes > 0 ? `, ${fmtBytes(notImportedBytes)} not imported` : ''})
+      </summary>
+      <div className="se-import__anchortable">
+        {inventory.categories.map((c) => (
+          <div key={c.key} className="se-import__anchorrow">
+            <span className="se-import__anchorname" title={c.examples.join('\n')}>
+              {c.label}
+            </span>
+            <span className="se-import__addr">{fmtBytes(c.bytes)}</span>
+            <span className="se-import__conf">
+              {c.runs} run{c.runs === 1 ? '' : 's'}
+            </span>
+            {c.imported ? (
+              <span className="se-import__tag" title="A semantic import above covers this region — select it there.">
+                imported above
+              </span>
+            ) : (
+              <span className="se-import__tag se-import__tag--raw" title="No import path for this region yet — the change stays in the source ROM only.">
+                not imported
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      {notImportedBytes > 0 && (
+        <p className="se-import__hint">
+          “Not imported” regions (graphics, Map16, collision, custom code …) have no editable
+          import path yet — they are detected and listed so nothing is silently dropped.
+        </p>
+      )}
+    </details>
   )
 }
 
@@ -603,6 +686,11 @@ function LevelRow({
             ? `${f.objects}/${f.sprites}/${f.exits}`
             : '(emptied)'}
       </span>
+      {level.isNew && (
+        <span className="se-import__tag" title="A brand-new level in an unused slot — importing places it in free space and points the slot at it.">
+          new
+        </span>
+      )}
       {level.importability === 'raw-only' && (
         <span className="se-import__tag se-import__tag--raw" title="Decode didn't round-trip — imported as raw bytes; may not edit correctly.">
           raw

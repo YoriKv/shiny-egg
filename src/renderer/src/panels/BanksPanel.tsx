@@ -54,6 +54,36 @@ function LevelJump({
   )
 }
 
+/** The de-couple toggle for the two biased-sprite levels (0x19/0xCB), shared by
+ *  their resident row and their migrated-out row (a coupled level migrated to
+ *  free space has no resident row, and de-coupling it is what frees its partner
+ *  to migrate). */
+function DecoupleButton({
+  decoupled,
+  disabled,
+  onClick
+}: {
+  decoupled: boolean
+  disabled: boolean
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className={`se-banks__act${decoupled ? ' is-on' : ''}`}
+      disabled={disabled}
+      onClick={onClick}
+      title={
+        decoupled
+          ? 'Re-couple: drop its own sprite blob (only if unedited)'
+          : 'De-couple: give it its own sprite blob, freeing its partner to migrate'
+      }
+    >
+      {decoupled ? 'decoupled ✓' : 'de-couple'}
+    </button>
+  )
+}
+
 /** The "← return" action shared by free-region rows + migrated-out rows. */
 function ReturnButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }): JSX.Element {
   return (
@@ -205,29 +235,23 @@ export function BanksBody({ level, currentLevelRecordId, onJump, onLayoutChange 
               {pool.levels.map((lv) => {
                 const id = parseInt(lv.levelRecordId, 16)
                 const here = id === currentLevelRecordId
-                const canMigrate = !!lv.migratable && anyRoom(lv.bytes)
-                const migrateTitle = lv.migratable
-                  ? canMigrate
-                    ? 'Migrate this level into free space (rebuild to apply)'
-                    : 'No free region has room for this level'
-                  : 'This level can’t be migrated (engine-hardcoded, shared/aliased, or in a fixed pool)'
+                const canMigrate = !lv.migrated && !!lv.migratable && anyRoom(lv.bytes)
+                const migrateTitle = lv.migrated
+                  ? 'Already migrated — these bytes are its de-coupled sprite blob, which stays in the home bank'
+                  : lv.migratable
+                    ? canMigrate
+                      ? 'Migrate this level into free space (rebuild to apply)'
+                      : 'No free region has room for this level'
+                    : 'This level can’t be migrated (engine-hardcoded, shared/aliased, or in a fixed pool)'
                 return (
                   <li className="se-banks__level" key={lv.levelRecordId}>
                     <LevelJump id={id} bytes={lv.bytes} here={here} onJump={onJump} />
                     {lv.decouplable && (
-                      <button
-                        type="button"
-                        className={`se-banks__act${lv.decoupled ? ' is-on' : ''}`}
+                      <DecoupleButton
+                        decoupled={!!lv.decoupled}
                         disabled={busy === id}
                         onClick={() => decouple(id, !lv.decoupled)}
-                        title={
-                          lv.decoupled
-                            ? 'Re-couple: drop its own sprite blob (only if unedited)'
-                            : 'De-couple: give it its own sprite blob, freeing its partner to migrate'
-                        }
-                      >
-                        {lv.decoupled ? 'decoupled ✓' : 'de-couple'}
-                      </button>
+                      />
                     )}
                     <button
                       type="button"
@@ -246,6 +270,13 @@ export function BanksBody({ level, currentLevelRecordId, onJump, onLayoutChange 
                 return (
                   <li className="se-banks__level is-migrated" key={`out-${m.levelRecordId}`}>
                     <LevelJump id={id} name={`→ ${regionLabel(m.regionId)}`} bytes={m.bytes} onJump={onJump} />
+                    {m.decouplable && (
+                      <DecoupleButton
+                        decoupled={!!m.decoupled}
+                        disabled={busy === id}
+                        onClick={() => decouple(id, !m.decoupled)}
+                      />
+                    )}
                     <ReturnButton disabled={busy === id} onClick={() => migrate(id, false)} />
                   </li>
                 )

@@ -93,6 +93,26 @@ function objectTip(
   )
 }
 
+/** The "Exit / Special" tab's fixed entries — non-entity placements. Today just
+ *  the screen exit; future specials (spawn point presets, …) slot in here. */
+function specialRows(): Row[] {
+  return [
+    {
+      key: 'x-exit',
+      label: 'Screen Exit',
+      sub: '\u2014',
+      category: 'exit',
+      tip:
+        'Screen Exit \u2014 click a cell to add a warp exit on that SCREEN (one exit per ' +
+        '16\u00d716-cell screen). Defaults to a self-warp at the clicked cell; edit the ' +
+        'destination (or switch it to a minibattle) in Properties.',
+      exit: true,
+      setupRules: [],
+      item: { kind: 'exit', label: 'Screen Exit' }
+    }
+  ]
+}
+
 function spriteRows(): Row[] {
   return listSprites().map(({ id, info }): Row => {
     const label = info.name || fallbackSpriteName(id)
@@ -134,7 +154,7 @@ function sameItem(a: PlacementItem, b: PlacementItem): boolean {
   if (a.kind !== b.kind) return false
   if (a.kind === 'object' && b.kind === 'object') return a.num === b.num && a.exnum === b.exnum
   if (a.kind === 'sprite' && b.kind === 'sprite') return a.num === b.num
-  return false
+  return a.kind === 'exit' && b.kind === 'exit'
 }
 
 // ── Render-validity badges ──────────────────────────────────────────────────
@@ -148,7 +168,7 @@ interface RowValidity {
 const ROW_OK: RowValidity = { failing: false }
 
 function rowValidity(row: Row, validity: EntityValidityView | null): RowValidity {
-  if (!validity) return ROW_OK
+  if (!validity || row.item.kind === 'exit') return ROW_OK
   if (row.item.kind === 'object') {
     const v = validity.objectVerdict(row.item.num, row.item.exnum)
     if (v === 'invalid') {
@@ -243,11 +263,11 @@ export function PickerBody({
   level: LevelData | null
   onPick: (item: PlacementItem) => void
 }): JSX.Element {
-  const [tab, setTab] = useState<'object' | 'sprite'>('object')
+  const [tab, setTab] = useState<'object' | 'sprite' | 'special'>('object')
   const [query, setQuery] = useState('')
   const [prefs, setPrefs] = useState(readPrefs)
   const validity = useEntityRenderValidity(level)
-  const thumbs = usePickerThumbnails(level, tab)
+  const thumbs = usePickerThumbnails(level, tab === 'sprite' ? 'sprite' : 'object')
   // Focus the search box when the panel opens (it mounts on open).
   const searchRef = useRef<HTMLInputElement>(null)
   useEffect(() => searchRef.current?.focus(), [])
@@ -260,7 +280,10 @@ export function PickerBody({
     })
   }
 
-  const rows = useMemo(() => (tab === 'object' ? objectRows() : spriteRows()), [tab])
+  const rows = useMemo(
+    () => (tab === 'object' ? objectRows() : tab === 'sprite' ? spriteRows() : specialRows()),
+    [tab]
+  )
   const categories = useMemo(
     () => [...new Set(rows.map((r) => r.category))].sort(),
     [rows]
@@ -280,16 +303,19 @@ export function PickerBody({
 
   const { filtered, hidden } = useMemo(() => {
     const q = query.trim().toLowerCase()
+    // The special tab carries a handful of fixed entries — only the search
+    // applies (the entity facets/chips are hidden and must not filter it).
     const matched = rows.filter(
       (r) =>
         (!q ||
           r.label.toLowerCase().includes(q) ||
           r.sub.toLowerCase().includes(q) ||
           r.category.includes(q)) &&
-        (!category || r.category === category) &&
-        (!prefs.exits || r.exit) &&
-        (!prefs.usedHere || usedKeys.has(r.key)) &&
-        (!prefs.needsSetup || tab !== 'sprite' || r.setupRules.length > 0)
+        (tab === 'special' ||
+          ((!category || r.category === category) &&
+            (!prefs.exits || r.exit) &&
+            (!prefs.usedHere || usedKeys.has(r.key)) &&
+            (!prefs.needsSetup || tab !== 'sprite' || r.setupRules.length > 0)))
     )
     const annotated = matched.map((r) => ({ row: r, validity: rowValidity(r, validity) }))
     const kept = prefs.thisLevel ? annotated.filter((a) => !a.validity.failing) : annotated
@@ -329,6 +355,13 @@ export function PickerBody({
         >
           Sprites
         </button>
+        <button
+          type="button"
+          className={`se-tab${tab === 'special' ? ' is-active' : ''}`}
+          onClick={() => setTab('special')}
+        >
+          Exit / Special
+        </button>
       </div>
       <input
         ref={searchRef}
@@ -338,6 +371,7 @@ export function PickerBody({
         spellCheck={false}
         onChange={(e) => setQuery(e.target.value)}
       />
+      {tab !== 'special' && (
       <div className="se-picker__chips">
         <label
           className="se-picker__filter"
@@ -376,6 +410,7 @@ export function PickerBody({
           <span className="se-picker__filter-count">{hidden} hidden</span>
         )}
       </div>
+      )}
       <div className="se-picker__list">
         {filtered.map(({ row: r, validity: rv }) => (
           <button
@@ -389,7 +424,9 @@ export function PickerBody({
               img={
                 r.item.kind === 'object'
                   ? thumbs?.objectThumb(r.item.num, r.item.exnum)
-                  : thumbs?.spriteThumb(r.item.num)
+                  : r.item.kind === 'sprite'
+                    ? thumbs?.spriteThumb(r.item.num)
+                    : undefined
               }
             />
             <span className="se-picker__row-name">

@@ -21,6 +21,7 @@ import type {
   ObjectRenderVerdict,
   PaletteEdit,
   PatchSource,
+  RomImportInventory,
   RomVersion,
   SpriteCelBounds
 } from 'snes-framework/types'
@@ -104,6 +105,10 @@ export interface ProjectSummary {
    *  `0xCB`) — materialise their own sprite blob + repoint, freeing their
    *  partner to migrate. Empty/absent = none. */
   decoupled?: string[]
+  /** Hex record ids of NEW-SLOT levels (`0xDA`/`0xDB` — base sentinel rows)
+   *  given real data by a ROM import: their overlay blobs place into free
+   *  regions and their `Ptrs:` row repoints at build. Empty/absent = none. */
+  newSlots?: string[]
 }
 
 /** The active project's free-space migration + de-couple state (both lists, so
@@ -677,6 +682,11 @@ export interface RomImportLevel extends ForeignLevelDiff {
   /** True when the active project ALREADY has an overlay for this level —
    *  importing overwrites the user's edits (the "warnings" the UI surfaces). */
   hasOverlayConflict: boolean
+  /** A brand-NEW level: this record has no base level data (a sentinel `Ptrs:`
+   *  row — `0xDA`/`0xDB`) and the hack put a real level there. Importing writes
+   *  the overlay blobs and the build places them in free space + repoints the
+   *  row. */
+  isNew?: boolean
 }
 
 /** Master-palette colour changes detected in the foreign cart. */
@@ -725,6 +735,11 @@ export interface RomImportWorldMap {
   entrances: number
   /** Midway/checkpoint records that differ from base. */
   midway: number
+  /** Translevel→record INDEX words remapped (which entrance record a world-map
+   *  slot uses — main + midway tables). */
+  indexRemaps: number
+  /** Foreign index words skipped (address a record our fixed tables lack). */
+  indexSkipped: number
   /** The project already has world-map overlay edits importing would layer over. */
   hasConflict: boolean
 }
@@ -746,6 +761,10 @@ export type RomImportReport =
       names: RomImportNames
       messages: RomImportMessages
       worldMap: RomImportWorldMap
+      /** Detect-only diff inventory — EVERY differing byte by cart structure,
+       *  including the categories the importer doesn't apply (graphics, Map16,
+       *  collision, code …). Absent when the pointer table didn't resolve. */
+      inventory?: RomImportInventory
     }
   | { ok: false; error: string }
 
@@ -773,6 +792,13 @@ export type RomImportApplyResult =
       rawOnly: number
       /** Records that failed to write, with why. */
       failed: Array<{ recordId: number; error: string }>
+      /** Migration awareness: imported levels the hack had relocated that were
+       *  auto-marked migrated (their new sizes overflow their home pools — the
+       *  build's layout pass will place them in the free regions). `warning` is
+       *  set when pools still don't fit (no eligible candidate / regions full). */
+      migration: { applied: number; recordIds: number[]; warning?: string }
+      /** Brand-new levels imported into sentinel slots (`0xDA`/`0xDB`). */
+      newSlots: number[]
       /** Palette apply outcome (when selected). */
       palette: { applied: boolean; words: number; error?: string }
       /** Level-name apply outcome (when selected). */
@@ -780,7 +806,7 @@ export type RomImportApplyResult =
       /** Message-box text apply outcome (when selected). `changed` counts text
        *  edits; `blanked` counts slots blanked to match the hack's deletions. */
       messages: { applied: boolean; changed: number; blanked: number; error?: string }
-      /** World-map entrance/midway apply outcome (when selected). */
-      worldMap: { applied: boolean; entrances: number; midway: number; error?: string }
+      /** World-map entrance/midway/index apply outcome (when selected). */
+      worldMap: { applied: boolean; entrances: number; midway: number; indexRemaps: number; error?: string }
     }
   | { ok: false; error: string }

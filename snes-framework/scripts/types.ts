@@ -285,6 +285,12 @@ export interface PoolOverviewLevel {
   decouplable?: boolean;
   /** Whether this level is currently de-coupled. */
   decoupled?: boolean;
+  /** Set on the residual row of a level that is ALSO migrated out: its own
+   *  blobs left this pool, but its de-coupled spr blob is still placed home
+   *  (planLayout places de-couples home-first regardless of migration). The
+   *  "→ free space" button is moot for such a row — the level is already
+   *  migrated — so the panel disables it. */
+  migrated?: boolean;
 }
 
 export interface PoolOverviewEntry {
@@ -313,8 +319,17 @@ export interface PoolOverviewEntry {
    *  "→ region" tag). Their bytes are no longer in `usedBytes` — the
    *  consolidating reclaim handed that room back, so `freeBytes` rises. `bytes` is
    *  what this level's blobs would re-occupy here if migrated back, so the user can
-   *  weigh that against `freeBytes`. */
-  migratedOut?: { levelRecordId: string; regionId: string; bytes: number }[];
+   *  weigh that against `freeBytes`. Biased-sprite levels keep their de-couple
+   *  flags here too: a coupled level migrated to free space has no resident row,
+   *  so this is where the panel's de-couple toggle lives for it (de-coupling it
+   *  is what frees its partner to migrate). */
+  migratedOut?: {
+    levelRecordId: string;
+    regionId: string;
+    bytes: number;
+    decouplable?: boolean;
+    decoupled?: boolean;
+  }[];
 }
 
 /** A free region ($FF tail) as a relocation destination, with live usage. */
@@ -649,6 +664,14 @@ export interface WorldMapModel {
    *  `$0000` offset = no midway, except translevel 0); the renderer derives the
    *  page count per slot from the sorted distinct bases + `midway.length`. */
   midwayIndex: Record<string, number>;
+  /** RAW index-table words (`dw` values, byte offsets ×4 into the record
+   *  tables) — the EDITABLE form behind the two derived maps above. Present
+   *  only when the asm carries the `world-map-(midway-)entrance-indexes`
+   *  markers (older overlays may predate them); the serializer splices changed
+   *  words in place. The ROM importer writes a hack's translevel→record remap
+   *  through these. One word per translevel slot (72 incl. trailing padding). */
+  entranceIndexWords?: number[];
+  midwayIndexWords?: number[];
 }
 
 // ── Per-level Map16 usage (Tiles "Used in this level" view) ─────────────────
@@ -878,10 +901,40 @@ export interface ForeignLevelDiff {
   sprChanged: boolean;
   importability: LevelImportability;
   blockedReason?: string;
+  /** True when the hack REPOINTED this record's streams (its `Ptrs:` row differs
+   *  from vanilla — GoldenEgg's save relocates into its free space). Feeds the
+   *  apply-side auto-migration: an imported level that no longer fits its home
+   *  pool is marked migrated so the build places it in our free regions. */
+  relocated?: boolean;
   /** Base-cart decode summary (null if the base slot is empty/special). */
   base: LevelStreamCounts | null;
   /** Foreign-cart decode summary (null if the foreign slot is empty). */
   foreign: LevelStreamCounts | null;
+}
+
+/** One category row of the detect-only diff inventory: bytes that differ from
+ *  base, grouped by the cart structure they fall in (import/inventory.ts). */
+export interface InventoryCategory {
+  key: string;
+  /** Human label, e.g. `'Compressed graphics (LZ2/LZ16)'`. */
+  label: string;
+  /** Differing bytes attributed to this category. */
+  bytes: number;
+  /** Contiguous diff runs (a rough "how scattered" signal). */
+  runs: number;
+  /** True when a semantic import already covers this category (level data,
+   *  palette colours, strings, world map) — the diff is expected, not dropped. */
+  imported: boolean;
+  /** Up to 3 sample locations, `'label+0x12 (34 B)'`. */
+  examples: string[];
+}
+
+/** Detect-only inventory of EVERY byte the foreign cart changed, including the
+ *  regions the importer can't apply (graphics, Map16, collision, code …). */
+export interface RomImportInventory {
+  totalDiffBytes: number;
+  /** Non-empty categories, descending by bytes. */
+  categories: InventoryCategory[];
 }
 
 /** Result of analysing a foreign cart against the base V1.0 cart. */
@@ -895,4 +948,7 @@ export interface RomAnalysis {
   levelPtrsResolved: boolean;
   /** Only the records whose streams differ from base. */
   levels: ForeignLevelDiff[];
+  /** Full-cart diff inventory (absent when the pointer table didn't resolve —
+   *  nothing aligns, so per-structure attribution would be noise). */
+  inventory?: RomImportInventory;
 }

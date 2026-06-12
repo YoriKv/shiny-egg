@@ -134,6 +134,28 @@ export const PANEL_HELP: PanelHelp = {
       </p>
     </>
   ),
+  exits: (
+    <>
+      <p>
+        The Exits Map draws the whole warp network reachable from the current root
+        level as one picture: every room is a small 16&times;8 screen grid, laid
+        out left&nbsp;&rarr; right by warp depth, with a line from each warp exit
+        to the screen it lands on in its destination. Blue&nbsp;= warp exit, violet&nbsp;= minibattle (no
+        line &mdash; it enters a minigame, not a room), amber outline&nbsp;= an
+        entrance (a screen some warp lands in &mdash; same amber as the canvas
+        markers).
+      </p>
+      <p>
+        Clicking anywhere scrolls the canvas to the clicked screen &mdash; in place
+        on the loaded level (accent label), or jumping levels first on any other
+        grid. Clicking an exit <i>or</i> an amber entrance on the loaded level also
+        selects it in Properties; selecting either end highlights its connection
+        line. Compact boxes are destinations outside this cluster (other world-map
+        levels). To <i>add</i> an exit, use the Place panel&rsquo;s{' '}
+        <b>Exit&nbsp;/&nbsp;Special</b> tab and click a screen.
+      </p>
+    </>
+  ),
   banks: (
     <>
       <p>

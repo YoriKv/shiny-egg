@@ -179,6 +179,26 @@ export type LevelAction =
   | { /** Clone one exit (by uid) onto the first free screen; takes `nextUid`. */
       type: 'duplicateExit'; uid: number }
   | {
+      /** Place a new WARP exit on a screen (the Place tool's "Exit / Special"
+       *  entry). One exit per screen — an occupied screen is a no-op (the
+       *  caller selects the existing exit instead). Defaults to a self-warp
+       *  back to the clicked cell: immediately valid, obviously editable. */
+      type: 'addExit'
+      /** Screen index (0x00–0x7F) the exit sits on. */
+      screenIndex: number
+      /** Initial warp destination (the level itself at the clicked cell). */
+      dest: { levelRecordId: number; x: number; y: number }
+    }
+  | {
+      /** Convert one exit (by uid) between warp ↔ minibattle — a clean payload
+       *  swap (the serializer encodes the variant by byte1 range). Geometry
+       *  maps across (dest ↔ return cell; the OTHER side's level id seeds the
+       *  counterpart); same-variant ⇒ no-op. */
+      type: 'setExitVariant'
+      uid: number
+      variant: 'warp' | 'minibattle'
+    }
+  | {
       /** Batch-remove objects and/or sprites in one commit — the Erase tool's
        *  sweep. One commit = a single undo step + one render re-decode (vs. one
        *  per entity). Unmatched uids are ignored; an all-empty match is a no-op.
@@ -496,6 +516,58 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
         ...commit(state, { ...state.level, exits: nextExits }),
         nextUid: state.nextUid + 1
       }
+    }
+    case 'addExit': {
+      if (!state.level) return state
+      const exits = state.level.exits
+      const screen = Math.max(0, Math.min(MAX_LEVEL_EXITS - 1, action.screenIndex))
+      // One exit per screen + the per-level cap (every screen occupied).
+      if (exits.length >= MAX_LEVEL_EXITS) return state
+      if (exits.some((e) => e.screenIndex === screen)) return state
+      const { x, y } = clampCell(action.dest.x, action.dest.y)
+      const exit: ScreenExit = {
+        uid: state.nextUid,
+        variant: 'warp',
+        screenIndex: screen,
+        destLevelRecordId: Math.max(0, Math.min(0xff, action.dest.levelRecordId)),
+        destX: x,
+        destY: y,
+        entranceType: 0
+      }
+      return {
+        ...commit(state, { ...state.level, exits: [...exits, exit] }),
+        nextUid: state.nextUid + 1
+      }
+    }
+    case 'setExitVariant': {
+      if (!state.level) return state
+      const exits = state.level.exits
+      const idx = exits.findIndex((e) => e.uid === action.uid)
+      const e = exits[idx]
+      if (idx < 0 || !e || e.variant === action.variant) return state
+      const next: ScreenExit =
+        e.variant === 'warp'
+          ? {
+              uid: e.uid,
+              variant: 'minibattle',
+              screenIndex: e.screenIndex,
+              minibattleId: 0xde,
+              returnX: e.destX,
+              returnY: e.destY,
+              returnLevelRecordId: e.destLevelRecordId
+            }
+          : {
+              uid: e.uid,
+              variant: 'warp',
+              screenIndex: e.screenIndex,
+              destLevelRecordId: e.returnLevelRecordId,
+              destX: e.returnX,
+              destY: e.returnY,
+              entranceType: 0
+            }
+      const nextExits = exits.slice()
+      nextExits[idx] = next
+      return commit(state, { ...state.level, exits: nextExits })
     }
     case 'deleteEntities': {
       if (!state.level) return state

@@ -406,9 +406,36 @@ export interface LoadLevelOptions {
   overlayRoot?: string;
 }
 
+/**
+ * Synthetic map entry for a NEW-SLOT level — a record with no base level data
+ * (its cart `Ptrs:` row points at the 1-byte sentinels: `$DA`/`$DB`) that a ROM
+ * import (or a future "add level") gave overlay `.bin`s. The base level-map is
+ * extract-derived and never lists these, so the overlay files THEMSELVES are
+ * the marker: when `DATA_level_XX_obj.bin` exists in the project overlay, the
+ * slot loads/renders like any other level. Build-side placement + the `Ptrs:`
+ * row repoint are handled by the layout pass (relocate.ts `newSlots`).
+ */
+function syntheticNewSlotEntry(
+  overlayRoot: string | undefined,
+  levelRecordId: number
+): LevelMapEntry | undefined {
+  if (!overlayRoot) return undefined;
+  const hex = levelRecordId.toString(16).toUpperCase().padStart(2, '0');
+  const dir = path.join(overlayRoot, 'assets', 'yi', 'LevelData');
+  const objectFile = `DATA_level_${hex}_obj.bin`;
+  if (!fs.existsSync(path.join(dir, objectFile))) return undefined;
+  const spriteFile = `DATA_level_${hex}_spr.bin`;
+  return {
+    objectFile,
+    spriteFile: fs.existsSync(path.join(dir, spriteFile)) ? spriteFile : null
+  };
+}
+
 export function loadLevel(opts: LoadLevelOptions): LevelData {
   const map = loadLevelMap(opts.workRoot);
-  const entry: LevelMapEntry | undefined = levelMapEntry(map.levels, opts.levelRecordId);
+  const entry: LevelMapEntry | undefined =
+    levelMapEntry(map.levels, opts.levelRecordId) ??
+    syntheticNewSlotEntry(opts.overlayRoot, opts.levelRecordId);
   const empty = !entry || (entry.objectFile === null && entry.spriteFile === null);
   const special = SPECIAL_LEVELS.has(opts.levelRecordId);
 

@@ -20,12 +20,14 @@ import {
   computeLevelBudget,
   computePoolOverview,
   loadPoolMap,
+  planAutoMigration,
   type PoolViolation
 } from 'snes-framework/level-budget'
 import { computeBoundaryMoves, type BoundaryMove } from 'snes-framework/boundary-move'
 import { applyLevelDataLayout, type LayoutPlan } from 'snes-framework/relocate'
 import {
   carvePatchPool,
+  newSlotRows,
   patchPoolGeometry,
   PATCH_POOL_REGION_ID,
   type PatchPoolGeometry
@@ -77,7 +79,10 @@ import {
   ensureProjectBaseCompatible,
   getCurrentProjectId,
   getProjectDecoupled,
-  getProjectRelocations
+  getProjectNewSlots,
+  getProjectRelocations,
+  setLevelNewSlot,
+  setLevelRelocation
 } from './projects'
 import { getPatchPoolBytes, hasEnabledAsmPatches } from './patches'
 
@@ -123,6 +128,25 @@ export type SaveLevelResult =
   | { ok: true; objectFile: string | null; spriteFile: string | null }
   | { ok: false; error: string }
 
+/**
+ * The level-map entry a record EFFECTIVELY has: the real extract-derived entry,
+ * or — for a known new-slot record (`0xDA`/`0xDB`, base `Ptrs:` sentinel rows;
+ * pool-map `newSlotRows`) — a synthetic entry naming the conventional
+ * per-level files. New-slot levels exist only as project-overlay `.bin`s (a ROM
+ * import writes them); the build's layout pass places the blobs in a free
+ * region and repoints the row. Mirrors `loadLevel`'s own synthesis.
+ */
+function effectiveLevelMapEntry(
+  map: ReturnType<typeof loadLevelMapPublic>,
+  levelRecordId: number
+): { objectFile: string | null; spriteFile: string | null } | undefined {
+  const real = levelMapEntry(map.levels, levelRecordId)
+  if (real) return real
+  if (!newSlotRows(map.romVersion).some((r) => r.recordId === levelRecordId)) return undefined
+  const hex = levelRecordId.toString(16).toUpperCase().padStart(2, '0')
+  return { objectFile: `DATA_level_${hex}_obj.bin`, spriteFile: `DATA_level_${hex}_spr.bin` }
+}
+
 /** Load a level's `LevelData`, overlay-first for the active project. */
 export function loadLevelResource(levelRecordId: number): LevelData {
   const projectId = getCurrentProjectId()
@@ -139,7 +163,7 @@ export async function saveLevelResource(
   level: LevelData
 ): Promise<SaveLevelResult> {
   const map = loadLevelMapPublic(frameworkWorkRoot())
-  const entry = levelMapEntry(map.levels, levelRecordId)
+  const entry = effectiveLevelMapEntry(map, levelRecordId)
   if (!entry) {
     return { ok: false, error: `Level 0x${levelRecordId.toString(16)} has no map entry.` }
   }
@@ -202,7 +226,7 @@ export async function saveLevelRawResource(
   spriteBytes: Buffer | null
 ): Promise<SaveLevelResult> {
   const map = loadLevelMapPublic(frameworkWorkRoot())
-  const entry = levelMapEntry(map.levels, levelRecordId)
+  const entry = effectiveLevelMapEntry(map, levelRecordId)
   if (!entry) {
     return { ok: false, error: `Level 0x${levelRecordId.toString(16)} has no map entry.` }
   }
@@ -239,7 +263,7 @@ export async function resetLevelResource(levelRecordId: number): Promise<ResetLe
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project.' }
   const map = loadLevelMapPublic(frameworkWorkRoot())
-  const entry = levelMapEntry(map.levels, levelRecordId)
+  const entry = effectiveLevelMapEntry(map, levelRecordId)
   if (!entry) return { ok: false, error: `Level 0x${levelRecordId.toString(16)} has no map entry.` }
 
   const dir = path.join(overlayRoot(projectId), 'assets', 'yi', 'LevelData')
@@ -251,6 +275,11 @@ export async function resetLevelResource(levelRecordId: number): Promise<ResetLe
       await rm(p, { force: true })
       removed = true
     }
+  }
+  // A reset new-slot level has no base to fall back to — clear its flag so the
+  // build stops planning a blob/repoint for it (the sentinel row returns).
+  if (removed && !levelMapEntry(map.levels, levelRecordId)) {
+    setLevelNewSlot(projectId, levelRecordId, false)
   }
   return { ok: true, removed }
 }
@@ -365,7 +394,7 @@ function liveStreamSizes(
 ): { objFile: string | null; spriteFile: string | null; objBytes: number; spriteBytes: number } | null {
   if (level.empty || level.special) return null
   const fwMap = loadLevelMapPublic(frameworkWorkRoot())
-  const entry = levelMapEntry(fwMap.levels, levelRecordId)
+  const entry = effectiveLevelMapEntry(fwMap, levelRecordId)
   if (!entry) return null
   const serialized = serializeLevel({
     level,
@@ -455,6 +484,34 @@ export function checkActivePoolBudgets(): PoolViolation[] {
   return checkAllPools(map, diskSizeOf(getCurrentProjectId()), activeLayoutCtx())
 }
 
+/**
+ * ROM-import migration awareness: after the importer writes its overlay
+ * `.bin`s, mark just-imported levels migrated when their new sizes overflow
+ * their home pools. `candidateIds` = imported records the HACK itself
+ * relocated (its `Ptrs:` rows differ from vanilla) — the need-based planner
+ * (`planAutoMigration`) picks the minimal subset that makes every pool fit and
+ * the flags are persisted on the active project, so the next build's layout
+ * pass places them in our free regions like the hack placed them in its own.
+ * Returns the migrated ids + any violations that remain (no eligible candidate
+ * left / free regions full); null when there's no pool map or project.
+ */
+export function autoMigrateImportedLevels(
+  candidateIds: number[]
+): { migrated: number[]; violations: PoolViolation[] } | null {
+  const pm = activePoolMap()
+  const projectId = getCurrentProjectId()
+  if (!pm || !projectId || candidateIds.length === 0) return null
+  const map = carvePatchPool(pm.map, activePatchPoolBytes())
+  const plan = planAutoMigration(
+    map,
+    diskSizeOf(projectId),
+    activeLayoutCtx(),
+    new Set(candidateIds)
+  )
+  for (const id of plan.added) setLevelRelocation(projectId, id, true)
+  return { migrated: plan.added, violations: plan.violations }
+}
+
 /** A one-line, actionable message for a set of pre-build pool violations. The
  *  free-space (region-full) case names the stranded blob(s) and the levers that
  *  free room (shrinking the patch pool is one — it competes with relocation). */
@@ -480,10 +537,14 @@ export function activeBoundaryMoves(): BoundaryMove[] {
   return computeBoundaryMoves(pm.map, diskSizeOf(getCurrentProjectId()))
 }
 
-/** The active project's free-space migration + de-couple context (numeric ids). */
-function activeLayoutCtx(): { migrated: Set<number>; decoupled: Set<number> } {
+/** The active project's free-space migration + de-couple + new-slot context. */
+function activeLayoutCtx(): { migrated: Set<number>; decoupled: Set<number>; newSlots: Set<number> } {
   const id = getCurrentProjectId()
-  return { migrated: new Set(getProjectRelocations(id)), decoupled: new Set(getProjectDecoupled(id)) }
+  return {
+    migrated: new Set(getProjectRelocations(id)),
+    decoupled: new Set(getProjectDecoupled(id)),
+    newSlots: new Set(getProjectNewSlots(id))
+  }
 }
 
 /** Active free-space migrations (record ids) — for the buildProject trigger. */
@@ -494,6 +555,18 @@ export function activeRelocations(): number[] {
 /** Active de-couples (record ids) — for the buildProject trigger. */
 export function activeDecoupled(): number[] {
   return getProjectDecoupled(getCurrentProjectId())
+}
+
+/** Active new-slot levels (record ids) — for the buildProject trigger. */
+export function activeNewSlots(): number[] {
+  return getProjectNewSlots(getCurrentProjectId())
+}
+
+/** Flag an imported NEW-SLOT level (`0xDA`/`0xDB`) on the active project so the
+ *  build's layout pass places its overlay blobs + repoints its sentinel row. */
+export function registerNewSlotLevel(levelRecordId: number): void {
+  const id = getCurrentProjectId()
+  if (id) setLevelNewSlot(id, levelRecordId, true)
 }
 
 /**

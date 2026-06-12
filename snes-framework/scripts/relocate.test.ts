@@ -22,12 +22,13 @@ import {
   insertBeforeFreeBytes,
   appendRegionBlobs,
   repointPtr,
+  repointPtrRowOccurrence,
   reservePatchPool,
   planLayout,
   applyLevelDataLayout
 } from './relocate.ts';
 import { rewriteFreeBytesText } from './boundary-move.ts';
-import { computePoolOverview, computeFreeRegionsOverview, checkAllPools, computeLevelBudget } from './level-budget.ts';
+import { computePoolOverview, computeFreeRegionsOverview, checkAllPools, computeLevelBudget, planAutoMigration } from './level-budget.ts';
 import { outputSfcName } from './rom-versions.ts';
 
 const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -290,6 +291,49 @@ const usedMig = computeLevelBudget(map, y, yFiles, yLive, baseSizeOf, { migrated
 check(usedMig.usedBytes === usedNoMig.usedBytes - (obj01 + spr01), `Bank4C used in 0x${yHex}'s report should drop by ${obj01 + spr01} when 0x01 migrates (no-mig ${usedNoMig.usedBytes}, mig ${usedMig.usedBytes})`);
 check(!usedMig.otherLevels.includes('0x01'), 'migrated 0x01 should leave the report\'s otherLevels list');
 
+// Occurrence-targeted row repoint (the two identical sentinel rows).
+{
+  const t =
+    '\tdl DATA_15FCEA,DATA_15FFD5    ; $DA seed contest A\n' +
+    '\tdl DATA_15FCEA,DATA_15FFD5    ; $DB seed contest B\n';
+  const o1 = repointPtrRowOccurrence(t, 'DATA_15FCEA,DATA_15FFD5', 1, 'DATA_level_DB_obj,DATA_level_DB_spr');
+  check(o1.includes('DATA_15FCEA,DATA_15FFD5    ; $DA'), 'occurrence 1: the $DA row stays sentinel');
+  check(o1.includes('DATA_level_DB_obj,DATA_level_DB_spr    ; $DB'), 'occurrence 1: the $DB row repoints');
+  const o0 = repointPtrRowOccurrence(t, 'DATA_15FCEA,DATA_15FFD5', 0, 'X,Y');
+  check(o0.startsWith('\tdl X,Y'), 'occurrence 0: the $DA row repoints');
+  let threw = false;
+  try { repointPtrRowOccurrence(t, 'DATA_15FCEA,DATA_15FFD5', 2, 'X,Y'); } catch { threw = true; }
+  check(threw, 'occurrence past the end should throw');
+}
+
+// New-slot planning: blobs place into free regions, the sentinel row repoints,
+// nothing is deleted, and a 0-byte obj (nothing imported) is skipped.
+{
+  const newSizeOf = (f: string): number =>
+    f === 'DATA_level_DA_obj.bin' ? 500 : f === 'DATA_level_DA_spr.bin' ? 80 : baseSizeOf(f);
+  const planN = planLayout(map, { migrated: new Set(), decoupled: new Set(), newSlots: new Set([0xda]), sizeOf: newSizeOf });
+  check(planN.relocations.length === 2 && planN.relocations.every((r) => r.regionId === 'FreeRegion51'), 'new-slot 0xDA places obj+spr in FreeRegion51');
+  check(planN.deletions.length === 0, 'new-slot placement deletes nothing');
+  check(
+    planN.rowRepoints.length === 1 &&
+      planN.rowRepoints[0].occurrence === 0 &&
+      planN.rowRepoints[0].replacement === 'DATA_level_DA_obj,DATA_level_DA_spr',
+    `new-slot 0xDA repoints its row (got ${JSON.stringify(planN.rowRepoints)})`
+  );
+  // spr missing on disk → row keeps the sprite sentinel.
+  const objOnly = (f: string): number => (f === 'DATA_level_DB_obj.bin' ? 300 : baseSizeOf(f));
+  const planO = planLayout(map, { migrated: new Set(), decoupled: new Set(), newSlots: new Set([0xdb]), sizeOf: objOnly });
+  check(
+    planO.rowRepoints.length === 1 &&
+      planO.rowRepoints[0].occurrence === 1 &&
+      planO.rowRepoints[0].replacement === 'DATA_level_DB_obj,DATA_15FFD5',
+    `obj-only new slot keeps the spr sentinel (got ${JSON.stringify(planO.rowRepoints)})`
+  );
+  // no data on disk at all → slot skipped entirely.
+  const planZ = planLayout(map, { migrated: new Set(), decoupled: new Set(), newSlots: new Set([0xda]), sizeOf: baseSizeOf });
+  check(planZ.relocations.length === 0 && planZ.rowRepoints.length === 0, 'a new slot with no overlay bytes is skipped');
+}
+
 // Empty sets ⇒ no edits at all (byte-identity invariant).
 const planE = planLayout(map, { migrated: new Set(), decoupled: new Set(), sizeOf: baseSizeOf });
 check(
@@ -347,8 +391,77 @@ try {
   const migBoundary = (0x515348 + usedAfter01).toString(16).toUpperCase().padStart(6, '0');
   const migFill = 36024 - usedAfter01;
   check(b51carved.includes(`%FREE_BYTES($${migBoundary}, ${migFill}, $FF)`), `carved migration fill should run up to the pool, got fill ${migFill}`);
+  // (f) new-slot apply: the DATATABLE's $DA row repoints (the $DB row keeps its
+  //     sentinel), Bank51 gains the new incbins, and an empty re-apply restores.
+  const newSizeOf = (f: string): number =>
+    f === 'DATA_level_DA_obj.bin' ? 500 : f === 'DATA_level_DA_spr.bin' ? 80 : baseSizeOf(f);
+  applyLevelDataLayout(yiRoot, null, tmp, map, {
+    migrated: new Set(), decoupled: new Set(), newSlots: new Set([0xda]), sizeOf: newSizeOf
+  });
+  const dt = fs.readFileSync(path.join(tmp, 'Routines/DATATABLE_YI_LevelDataPtrsAndEntranceData.asm'), 'utf8');
+  const daLine = dt.split('\n').find((l) => l.includes('; $DA'));
+  const dbLine = dt.split('\n').find((l) => l.includes('; $DB'));
+  check(!!daLine && daLine.includes('DATA_level_DA_obj,DATA_level_DA_spr'), `the $DA row should repoint (got: ${daLine})`);
+  check(!!dbLine && dbLine.includes('DATA_15FCEA,DATA_15FFD5'), `the $DB row should keep its sentinel (got: ${dbLine})`);
+  const b51new = fs.readFileSync(path.join(tmp, 'Banks/Bank51.asm'), 'utf8');
+  check(b51new.includes('DATA_level_DA_obj:\n\tincbin "LevelData/DATA_level_DA_obj.bin"'), 'Bank51 should incbin the new obj');
+  check(b51new.includes('DATA_level_DA_spr:\n\tincbin "LevelData/DATA_level_DA_spr.bin"'), 'Bank51 should incbin the new spr');
+  applyLevelDataLayout(yiRoot, null, tmp, map, { migrated: new Set(), decoupled: new Set(), sizeOf: baseSizeOf });
+  check(
+    fs.readFileSync(path.join(tmp, 'Routines/DATATABLE_YI_LevelDataPtrsAndEntranceData.asm'), 'utf8') ===
+      fs.readFileSync(path.join(yiRoot, 'Routines/DATATABLE_YI_LevelDataPtrsAndEntranceData.asm'), 'utf8'),
+    'empty re-apply should restore the DATATABLE to base'
+  );
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// ── import auto-migration (need-based planner, synthetic pool) ───────────────
+{
+  // Three same-shape levels in one pool; A1's obj grew by 700 so the pool is
+  // 700 over. Of the candidates the planner migrates the cheapest set that
+  // fits and leaves the rest at home; with no candidates the violation stays.
+  const mkBlob = (lv: string, kind: 'obj' | 'spr', addr: number, bytes: number) => ({
+    level: lv, kind, label: `DATA_level_${lv}_${kind}`, file: `DATA_level_${lv}_${kind}.bin`,
+    snesAddr: addr, baseBytes: bytes
+  });
+  const blobs = [
+    mkBlob('A0', 'obj', 0x10e000, 1000), mkBlob('A0', 'spr', 0x10e400, 100),
+    mkBlob('A1', 'obj', 0x10e800, 1000), mkBlob('A1', 'spr', 0x10ec00, 100),
+    mkBlob('A2', 'obj', 0x10f000, 1000), mkBlob('A2', 'spr', 0x10f400, 100)
+  ];
+  const pool: LevelPool = {
+    id: 'Bank10', bank: 0x10, capacityBytes: 3300, headroomBytes: 0,
+    tail: { bankFile: 'Banks/Bank10.asm', boundary: 0x10ffa3, fillSize: 0, movable: true, reclaimable: true },
+    blobs
+  };
+  const region51 = { id: 'FreeRegion51', bankFile: 'Banks/Bank51.asm', boundary: 0x515348, capacityBytes: 4000 };
+  const synth: PoolMap = {
+    romVersion: 'YI_U1', pools: [pool],
+    poolByFile: new Map(blobs.map((b) => [b.file, pool])), freeRegions: [region51]
+  };
+  const sizeOf = (f: string): number => {
+    if (f === 'DATA_level_A1_obj.bin') return 1700;
+    const b = blobs.find((x) => x.file === f);
+    return b ? b.baseBytes : 0;
+  };
+
+  // Overage is 700; no level footprint (1100/1800) fits inside it, so the
+  // SMALLEST candidate above it migrates — one level, no residuals.
+  const all = planAutoMigration(synth, sizeOf, { migrated: new Set(), decoupled: new Set() }, new Set([0xa0, 0xa1, 0xa2]));
+  check(all.added.length === 1, `one migration suffices (got ${all.added.length})`);
+  check(all.added[0] === 0xa0, `the smallest covering candidate migrates (got ${all.added.map((i) => i.toString(16)).join(',')})`);
+  check(all.violations.length === 0, 'no residual violations after auto-migration');
+
+  // Only the grown level as candidate: it migrates itself.
+  const grown = planAutoMigration(synth, sizeOf, { migrated: new Set(), decoupled: new Set() }, new Set([0xa1]));
+  check(grown.added.length === 1 && grown.added[0] === 0xa1, 'grown-level candidate migrates itself');
+  check(grown.violations.length === 0, 'pool fits after migrating the grown level');
+
+  // No candidates: nothing migrates, the violation is surfaced.
+  const none = planAutoMigration(synth, sizeOf, { migrated: new Set(), decoupled: new Set() }, new Set());
+  check(none.added.length === 0, 'no candidates ⇒ nothing migrated');
+  check(none.violations.some((v) => v.poolId === 'Bank10'), 'residual pool-over violation reported');
 }
 
 if (failures > 0) {

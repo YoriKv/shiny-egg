@@ -83,6 +83,8 @@ namespace YI_LevelDataPtrsAndEntranceData
 ;-------------------------------------------------------------------------
 DATA_17F3E7:
 DATA_level_entrance_indexes:
+	; editor-owned span (Shiny Egg ROM importer / world-map remap); see snes-framework/scripts/world-map.ts
+	;@editable:world-map-entrance-indexes begin
 	dw $0000,$0004,$0008,$000C,$0010,$0014,$0018,$001C
 	dw $0020,$0000,$00D8,$00DC,$0024,$0028,$002C,$0030
 	dw $0034,$0038,$003C,$0040,$0044,$0000,$0000,$0000
@@ -92,6 +94,7 @@ DATA_level_entrance_indexes:
 	dw $0090,$0094,$0098,$009C,$00A0,$00A4,$00A8,$00AC
 	dw $00B0,$0000,$0000,$0000,$00B4,$00B8,$00BC,$00C0
 	dw $00C4,$00C8,$00CC,$00D0,$00D4
+	;@editable:world-map-entrance-indexes end
 
 ;-------------------------------------------------------------------------
 ; DATA_map_level_entrances -- 56 records, 4 bytes each. Selected by the index table above
@@ -180,6 +183,8 @@ DATA_map_level_entrances:
 ;-------------------------------------------------------------------------
 DATA_17F551:
 DATA_level_midway_entrance_indexes:
+	; editor-owned span (Shiny Egg ROM importer / world-map remap); see snes-framework/scripts/world-map.ts
+	;@editable:world-map-midway-entrance-indexes begin
 	dw $0000,$0004,$000C,$0014,$001C,$0020,$0024,$0028
 	dw $0000,$0000,$0000,$0000,$0038,$003C,$0044,$004C
 	dw $005C,$0064,$0074,$0084,$0000,$0000,$0000,$0000
@@ -189,6 +194,7 @@ DATA_level_midway_entrance_indexes:
 	dw $011C,$0124,$0130,$0140,$014C,$0158,$0160,$0168
 	dw $0178,$0000,$0000,$0000,$0188,$0194,$01A0,$01A8
 	dw $01B8,$01C4,$01C8,$01D0,$01E0
+	;@editable:world-map-midway-entrance-indexes end
 
 ;-------------------------------------------------------------------------
 ; DATA_map_level_midway_entrances -- 122 records, 4 bytes each (written here as 2-word dw rows).

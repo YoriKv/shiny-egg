@@ -228,8 +228,9 @@ export function patchAuthoringPaths(): PatchAuthoringPaths {
 }
 
 /** The base V1.0 build's merged symbols — the "reference cart" the importer
- *  reverse-looks-up offsets against. Null when no base build exists yet. */
-function loadBaseSym(): SymbolMap | null {
+ *  reverse-looks-up offsets against. Null when no base build exists yet.
+ *  (Exported for the ROM importer's diff-inventory label attribution.) */
+export function loadBaseSym(): SymbolMap | null {
   const state = readExtractionState(frameworkWorkRoot())
   if (!state) return null
   const { main, fx } = symPair(buildOutputDir(), state.romVersion)

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.6 - 2026-06-12
+
+- ROM import upgrades: hacks that add brand-new levels now import into unused slots, relocated levels that no longer fit their original banks are migrated to free space automatically, world-map slot remaps carry over, and the report includes a full inventory of everything the hack changed.
+- Screen exits can now be placed, not just duplicated. Properties can convert an exit between warp and minibattle.
+- New Exits Map panel: the level's whole warp network drawn as linked screen grids, with exits, entrance landings, and the connections between them.
+- Fix: Entrance markers stay in sync while editing: placing or retargeting a warp exit moves the matching entrance marker immediately, and markers in other levels refresh after a save or import.
+- Fix: Level Banks: the sprite-data de-couple control now stays available for levels migrated to free space.
+
 ## v0.3.5 - 2026-06-11
 
 - Add picker: per-entry thumbnails rendered from the cart graphics, plus render-validity badges. Entries whose art can't render under the current level's header are flagged and hidden by the "In Level Tileset" filter.

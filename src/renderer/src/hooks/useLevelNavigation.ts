@@ -31,6 +31,9 @@ export interface LevelNavigationParams {
   dirty: boolean
   /** Persist the current level — used by the discard modal's Save. */
   saveCurrent: () => Promise<boolean>
+  /** The currently loaded record — lets `focusCell` pan in place (camera-only,
+   *  no nav record / discard prompt) instead of a full jump. */
+  selectedLevelRecordId: number | null
   setSelectedLevelRecordId: Dispatch<SetStateAction<number | null>>
   setRootLevelRecordId: Dispatch<SetStateAction<number | null>>
 }
@@ -52,6 +55,8 @@ export interface LevelNavigationApi {
   onForward: () => void
   canBack: boolean
   canForward: boolean
+  /** Camera-only pan for the loaded level; full jump for any other. */
+  focusCell: (levelRecordId: number, x: number, y: number, zoom?: number) => void
   /** Clear the level selection + nav trail (on a project switch). */
   clearLevelSelection: () => void
   /** True while a reverse parent-search is in flight (drives a "finding parent…" hint). */
@@ -82,6 +87,7 @@ export interface LevelNavigationApi {
 export function useLevelNavigation({
   dirty,
   saveCurrent,
+  selectedLevelRecordId,
   setSelectedLevelRecordId,
   setRootLevelRecordId
 }: LevelNavigationParams): LevelNavigationApi {
@@ -90,6 +96,8 @@ export function useLevelNavigation({
   const [navError, setNavError] = useState<string | null>(null)
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
+  const selectedRef = useRef(selectedLevelRecordId)
+  selectedRef.current = selectedLevelRecordId
   // Camera-focus request for the debug object finder: bump the nonce so Canvas
   // re-focuses even when re-jumping to the same cell.
   const [focusReq, setFocusReq] = useState<FocusRequest | null>(null)
@@ -205,7 +213,7 @@ export function useLevelNavigation({
   // nav; reverse-resolves the parent for sub-room instances.
   const jumpToInstance = useCallback(
     (
-      inst: { levelRecordId: number; x: number; y: number },
+      inst: { levelRecordId: number; x: number; y: number; zoom?: number },
       select?: { kind: FindInstanceKind; id: number }
     ) => {
       requestNav(() => {
@@ -215,9 +223,10 @@ export function useLevelNavigation({
             levelRecordId: inst.levelRecordId,
             x: inst.x,
             y: inst.y,
-            // Zoom in 2× more than the standard jump (which holds zoom at 1) so the
-            // located object is easy to pick out.
-            zoom: 2,
+            // Default: zoom in 2× more than the standard jump (which holds zoom
+            // at 1) so a located object is easy to pick out. Callers that pan
+            // for orientation rather than inspection (focusCell) override it.
+            zoom: inst.zoom ?? 2,
             select,
             nonce: ++focusNonceRef.current
           })
@@ -268,11 +277,28 @@ export function useLevelNavigation({
     nav.clear()
   }, [nav, setRootLevelRecordId, setSelectedLevelRecordId])
 
+  /** Pan/zoom to a cell. Same level ⇒ camera-only (no history entry, no
+   *  unsaved-changes prompt — Canvas pans in place via focusReq); another
+   *  level ⇒ the full nav-recorded, dirty-guarded `jumpToInstance`. The warp-
+   *  network panel's click-to-scroll. Both paths land at the SAME zoom
+   *  (default 1 — orientation pans, not the finder's 2× inspection zoom). */
+  const focusCell = useCallback(
+    (levelRecordId: number, x: number, y: number, zoom = 1) => {
+      if (levelRecordId === selectedRef.current) {
+        setFocusReq({ levelRecordId, x, y, zoom, nonce: ++focusNonceRef.current })
+        return
+      }
+      jumpToInstance({ levelRecordId, x, y, zoom })
+    },
+    [jumpToInstance]
+  )
+
   return {
     navigateTo,
     requestNav,
     selectRootLevel,
     jumpToInstance,
+    focusCell,
     onBack,
     onForward,
     canBack: nav.canBack,

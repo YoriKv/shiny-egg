@@ -28,6 +28,10 @@ export { loadLevelIdSymbols, parseLevelIdSymbols, type LevelIdSymbols } from './
 export const WORLD_MAP_ENTRANCES_ID = 'world-map-entrances'
 /** Marker id of the midway/checkpoint entrance table region. */
 export const WORLD_MAP_MIDWAY_ENTRANCES_ID = 'world-map-midway-entrances'
+/** Marker id of the translevel→record index table (`DATA_level_entrance_indexes`). */
+export const WORLD_MAP_ENTRANCE_INDEXES_ID = 'world-map-entrance-indexes'
+/** Marker id of the midway index table (`DATA_level_midway_entrance_indexes`). */
+export const WORLD_MAP_MIDWAY_ENTRANCE_INDEXES_ID = 'world-map-midway-entrance-indexes'
 
 /** Operands per entrance record: `db levelDataId, entX, entY, progTarget`. */
 const FIELDS_PER_RECORD = 4
@@ -82,6 +86,73 @@ function parseIndexTable(
   return out
 }
 
+/** One `$XXXX` word token inside an index region, with its inner-text span. */
+interface IndexWordToken {
+  value: number
+  start: number
+  end: number
+}
+
+/** Scan an index region's inner text for its `dw $XXXX` word tokens (in file
+ *  order, comment-aware), keeping each token's span for the in-place splice. */
+function parseIndexWordTokens(inner: string): IndexWordToken[] {
+  const out: IndexWordToken[] = []
+  let lineStart = 0
+  for (const line of inner.split('\n')) {
+    const code = stripComment(line)
+    if (/^\s*dw\s/.test(code)) {
+      const re = /\$([0-9A-Fa-f]{1,4})/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(code)) !== null) {
+        out.push({ value: parseInt(m[1], 16), start: lineStart + m.index, end: lineStart + m.index + m[0].length })
+      }
+    }
+    lineStart += line.length + 1
+  }
+  return out
+}
+
+/** Raw word values of an index region, or undefined when the markers are
+ *  absent (an overlay written before the regions were marked). */
+function parseIndexWords(fileText: string, regionId: string): number[] | undefined {
+  const region = findRegion(fileText, regionId)
+  if (!region) return undefined
+  return parseIndexWordTokens(region.inner).map((t) => t.value)
+}
+
+/** Splice changed index words back into their region (format-preserving:
+ *  unchanged tokens keep their original text). No-op when the model carries no
+ *  words or the markers are absent; errors on a length mismatch. */
+function spliceIndexWords(
+  fileText: string,
+  regionId: string,
+  words: number[] | undefined
+): SerializeResult {
+  if (!words) return { ok: true, text: fileText }
+  const region = findRegion(fileText, regionId)
+  if (!region) {
+    return {
+      ok: false,
+      error:
+        `Missing ;@editable:${regionId} markers — the overlay predates the editable ` +
+        'index tables. Upgrade the overlay (Project menu) and retry.'
+    }
+  }
+  const tokens = parseIndexWordTokens(region.inner)
+  if (tokens.length !== words.length) {
+    return { ok: false, error: `Model has ${words.length} index words; the file has ${tokens.length} (out of date?).` }
+  }
+  const edits: TextEdit[] = []
+  for (let i = 0; i < words.length; i++) {
+    const v = words[i]
+    if (!Number.isInteger(v) || v < 0 || v > 0xffff) {
+      return { ok: false, error: `Index word #${i} value ${v} is not a word (0–65535).` }
+    }
+    if (v !== tokens[i].value) edits.push({ start: tokens[i].start, end: tokens[i].end, replacement: formatWord(v) })
+  }
+  return { ok: true, text: spliceRegion(fileText, regionId, applyEdits(region.inner, edits)) }
+}
+
 /** Decode a midway `dw`-packed record into its 4 byte-fields. word0 =
  *  (spawnX<<8)|levelDataId, word1 = (entranceState<<8)|spawnY. */
 function decodeMidway(index: number, w0: number, w1: number): WorldMapMidwayEntrance {
@@ -114,6 +185,11 @@ export function parseEntranceTable(fileText: string, symbols: LevelIdSymbols): W
     decodeMidway(r.index, r.words[0].value, r.words[1].value)
   )
 
+  // Raw editable index words (absent when an older overlay predates the markers
+  // — the derived maps below still work via the label scan).
+  const entranceIndexWords = parseIndexWords(fileText, WORLD_MAP_ENTRANCE_INDEXES_ID)
+  const midwayIndexWords = parseIndexWords(fileText, WORLD_MAP_MIDWAY_ENTRANCE_INDEXES_ID)
+
   return {
     entrances,
     // dropZeroPadding: a `$0000` main offset means "no main entrance" (bonus /
@@ -122,7 +198,9 @@ export function parseEntranceTable(fileText: string, symbols: LevelIdSymbols): W
     // collide with 1-1. Translevel 0 legitimately maps to record 0.
     translevelToRecordIndex: parseIndexTable(fileText, 'DATA_level_entrance_indexes', true),
     midway,
-    midwayIndex: parseIndexTable(fileText, 'DATA_level_midway_entrance_indexes', true)
+    midwayIndex: parseIndexTable(fileText, 'DATA_level_midway_entrance_indexes', true),
+    ...(entranceIndexWords ? { entranceIndexWords } : {}),
+    ...(midwayIndexWords ? { midwayIndexWords } : {})
   }
 }
 
@@ -202,9 +280,11 @@ function spliceMidway(
  * (overlay-first, so a sibling region's edits in the same file survive). Only
  * operands whose value changed are rewritten; unchanged operands (incl.
  * `!Define_*` symbols) are byte-preserved. Validates each field is a byte
- * (0..255). Records are fixed-size so there's no budget check. The two regions
+ * (0..255). Records are fixed-size so there's no budget check. The regions
  * are spliced in sequence (each `spliceRegion` re-locates its markers in the
- * updated text, so the earlier splice's length change is harmless).
+ * updated text, so an earlier splice's length change is harmless). The raw
+ * index-word tables splice only when the model carries them (a model parsed
+ * from a pre-marker overlay doesn't, and then never writes them).
  */
 export function serializeEntranceTable(
   fileText: string,
@@ -213,5 +293,9 @@ export function serializeEntranceTable(
 ): SerializeResult {
   const main = spliceMain(fileText, model.entrances, symbols)
   if (!main.ok) return main
-  return spliceMidway(main.text, model.midway, symbols)
+  const mid = spliceMidway(main.text, model.midway, symbols)
+  if (!mid.ok) return mid
+  const idx = spliceIndexWords(mid.text, WORLD_MAP_ENTRANCE_INDEXES_ID, model.entranceIndexWords)
+  if (!idx.ok) return idx
+  return spliceIndexWords(idx.text, WORLD_MAP_MIDWAY_ENTRANCE_INDEXES_ID, model.midwayIndexWords)
 }

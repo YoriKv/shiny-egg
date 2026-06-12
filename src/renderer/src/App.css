@@ -3489,6 +3489,110 @@ h3 { margin: 0; }
 .se-linkbtn:hover {
   color: var(--accent);
 }
+/* Exit warp↔minibattle kind toggle, inline after the kind chip. */
+.se-props__variant-toggle {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.se-props__variant-toggle:hover {
+  border-color: var(--ink-3);
+  color: var(--accent);
+}
+
+/* ── Exits panel (combined warp-network map: one half-size screen grid per
+   room, BFS columns, exit→entrance connection lines) ─────────────────────── */
+.se-exits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  height: 100%;
+}
+.se-exits__heading {
+  margin: 4px 0 2px;
+  color: var(--ink-2);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.se-exits__map {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-base);
+}
+.se-exits__svglabel {
+  fill: var(--ink-2);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  user-select: none;
+}
+.se-exits__svglabel.is-current {
+  fill: var(--accent);
+  cursor: default;
+}
+.se-exits__svggrid {
+  fill: var(--bg-elevated);
+  stroke: var(--line-strong);
+  cursor: pointer;
+}
+.se-exits__svggrid.is-current {
+  stroke: var(--accent);
+  cursor: default;
+}
+.se-exits__svglines {
+  stroke: var(--line-faint);
+  stroke-width: 1;
+  fill: none;
+  pointer-events: none;
+}
+.se-exits__svgexit {
+  cursor: pointer;
+}
+.se-exits__stub rect {
+  fill: var(--bg-overlay);
+  stroke: var(--line-strong);
+  cursor: pointer;
+}
+.se-exits__stub text {
+  fill: var(--ink-2);
+  font-size: 9px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  user-select: none;
+}
+.se-exits__legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.se-exits__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-left: 10px;
+}
+.se-exits__swatch:first-child {
+  margin-left: 0;
+}
+.se-exits__swatch--ring {
+  background: none;
+  border: 2px solid;
+}
 
 .se-import__list {
   display: flex;

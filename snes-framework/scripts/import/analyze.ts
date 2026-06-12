@@ -23,6 +23,8 @@ import {
   vanillaAnchors
 } from './anchors.ts';
 import { readForeignStreams, type ForeignRecordStreams, type ForeignStreams } from './foreign-cart.ts';
+import { diffInventory } from './inventory.ts';
+import type { SymbolMap } from '../engine/symbol-map.ts';
 
 /** Record 0x38 ("Kamek's Revenge") is hardcoded in the engine — can't be saved. */
 const SPECIAL_RECORDS = new Set<number>([0x38]);
@@ -118,13 +120,23 @@ function roundTrips(level: LevelData, streams: ForeignRecordStreams, src: Foreig
   return objOk && sprOk;
 }
 
+export interface AnalyzeOptions {
+  /** Full base-build symbol map (main + superfx merged) — refines the diff
+   *  inventory's leftover attribution. Optional; coarse bands without it. */
+  symbols?: SymbolMap;
+}
+
 /**
  * Diff a foreign cart against the base V1.0 cart. Returns the report (anchors +
- * per-changed-record diff) and the apply payload. When the level-data pointer
- * table can't be re-anchored, returns an empty level set with
- * `levelPtrsResolved: false` so the UI can explain why.
+ * per-changed-record diff + the detect-only diff inventory) and the apply
+ * payload. When the level-data pointer table can't be re-anchored, returns an
+ * empty level set with `levelPtrsResolved: false` so the UI can explain why.
  */
-export function analyzeForeignRom(foreignCart: Buffer, baseCart: Buffer): AnalyzeResult {
+export function analyzeForeignRom(
+  foreignCart: Buffer,
+  baseCart: Buffer,
+  opts: AnalyzeOptions = {}
+): AnalyzeResult {
   const foreignMd5 = crypto.createHash('md5').update(foreignCart).digest('hex');
   const { anchors, resolved, baseDerived } = resolveAnchors(foreignCart, baseCart);
 
@@ -170,6 +182,11 @@ export function analyzeForeignRom(foreignCart: Buffer, baseCart: Buffer): Analyz
     // a genuine in-place edit.
     const fObj = u24le(foreignCart, resolved.levelPtrsPc + recordId * 6);
     const fSpr = u24le(foreignCart, resolved.levelPtrsPc + recordId * 6 + 3);
+    const bObj = u24le(baseCart, vanilla.levelPtrsPc + recordId * 6);
+    const bSpr = u24le(baseCart, vanilla.levelPtrsPc + recordId * 6 + 3);
+    // Repointed streams = the hack relocated this record's data (GoldenEgg saves
+    // into its free space). A same-pointer changed stream is an in-place edit.
+    const relocated = fObj !== bObj || fSpr !== bSpr;
     const foreignEmpty = !f.objBytes && !f.sprBytes;
     const wellFormed =
       pointsAtValidObjStream(foreignCart, fObj, foreign.standardObjectInfo) &&
@@ -201,6 +218,7 @@ export function analyzeForeignRom(foreignCart: Buffer, baseCart: Buffer): Analyz
       sprChanged,
       importability,
       ...(blockedReason ? { blockedReason } : {}),
+      relocated,
       base: baseCounts,
       foreign: foreignCounts
     });
@@ -216,8 +234,26 @@ export function analyzeForeignRom(foreignCart: Buffer, baseCart: Buffer): Analyz
     }
   }
 
+  // Detect-only diff inventory: classify EVERY differing byte, with the level
+  // stream spans (both sides) claimed first so they read as "level data".
+  const levelExtents: Array<[number, number]> = [];
+  for (const src of [foreign, base]) {
+    for (const rec of src.records.values()) {
+      if (rec.objBytes && rec.objStartPc !== undefined) {
+        levelExtents.push([rec.objStartPc, rec.objStartPc + rec.objBytes.length]);
+      }
+      if (rec.sprBytes && rec.sprStartPc !== undefined) {
+        levelExtents.push([rec.sprStartPc, rec.sprStartPc + rec.sprBytes.length]);
+      }
+    }
+  }
+  const inventory = diffInventory(foreignCart, baseCart, {
+    levelExtents,
+    ...(opts.symbols ? { symbols: opts.symbols } : {})
+  });
+
   return {
-    analysis: { foreignMd5, baseDerived, anchors, levelPtrsResolved: true, levels },
+    analysis: { foreignMd5, baseDerived, anchors, levelPtrsResolved: true, levels, inventory },
     items
   };
 }

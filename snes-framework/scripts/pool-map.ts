@@ -243,6 +243,39 @@ const REPOINT_MIGRATIONS: Partial<Record<RomVersion, RepointMigration[]>> = {
   ],
 };
 
+/** A record slot with NO backing level data in the base cart — its `Ptrs:` row
+ *  points both pointers at the 1-byte sentinels (`dl DATA_15FCEA,DATA_15FFD5`).
+ *  The new-level path (ROM import / future "add level") gives such a slot real
+ *  data by writing overlay `DATA_level_XX_{obj,spr}.bin` files, placing them in
+ *  a free region at build time, and repointing the row at the new labels. The
+ *  sentinel bytes themselves are never touched (other engine paths use them as
+ *  null-pointer targets). Both rows share IDENTICAL text, so the repoint targets
+ *  the Nth occurrence of `rowExpr` rather than a unique expression. */
+export interface NewSlotRow {
+  /** Level id, uppercase hex, no prefix (e.g. `"DA"`). */
+  level: string;
+  recordId: number;
+  /** The vanilla row expression (object + sprite pointer operands). */
+  rowExpr: string;
+  /** Which occurrence of `rowExpr` in the DATATABLE is this record's row. */
+  occurrence: number;
+  /** The sprite-side sentinel label, kept when an import has no sprite blob. */
+  sprSentinel: string;
+}
+
+/** V1.0's two sentinel rows — `$DA`/`$DB` ("seed contest A/B"). */
+const NEW_SLOT_ROWS: Partial<Record<RomVersion, NewSlotRow[]>> = {
+  YI_U1: [
+    { level: 'DA', recordId: 0xda, rowExpr: 'DATA_15FCEA,DATA_15FFD5', occurrence: 0, sprSentinel: 'DATA_15FFD5' },
+    { level: 'DB', recordId: 0xdb, rowExpr: 'DATA_15FCEA,DATA_15FFD5', occurrence: 1, sprSentinel: 'DATA_15FFD5' },
+  ],
+};
+
+/** New-slot rows for a ROM version (`[]` if none). */
+export function newSlotRows(romVersion: RomVersion): NewSlotRow[] {
+  return NEW_SLOT_ROWS[romVersion] ?? [];
+}
+
 /** Levels excluded from migration for a non-symbolic reason unrelated to biasing:
  *  0x38 engine-hardcoded (Kamek's Revenge); 0xBF/0xD0 share one pointer
  *  (`DATA_11DB2EEnd`). Biased levels + their partners are gated separately via the

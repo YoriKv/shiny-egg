@@ -17,6 +17,10 @@ import {
 export interface ForeignRecordStreams {
   objBytes: Buffer | null;
   sprBytes: Buffer | null;
+  /** Cart PC offset each stream was sliced from (absent when the side is null).
+   *  Feeds the diff inventory's level-extent attribution. */
+  objStartPc?: number;
+  sprStartPc?: number;
 }
 
 export interface ForeignStreams {
@@ -53,12 +57,17 @@ export function readForeignStreams(cart: Buffer, anchors: ImportAnchors): Foreig
 
     let objBytes: Buffer | null = null;
     let sprBytes: Buffer | null = null;
+    let objStartPc: number | undefined;
+    let sprStartPc: number | undefined;
 
     if (objSnes !== 0 && objSnes !== SENTINEL_OBJ_SNES) {
       const start = snesToPC(objSnes);
       if (start >= 0 && start < cart.length) {
         const end = findObjStreamEndPC(cart, start, headerBitWidths, standardObjectInfo);
-        if (end > start) objBytes = cart.subarray(start, end);
+        if (end > start) {
+          objBytes = cart.subarray(start, end);
+          objStartPc = start;
+        }
       }
     }
 
@@ -66,11 +75,21 @@ export function readForeignStreams(cart: Buffer, anchors: ImportAnchors): Foreig
       const start = snesToPC(sprSnes);
       if (start >= 0 && start < cart.length) {
         const end = findSprStreamEndPC(cart, start);
-        if (end > start) sprBytes = cart.subarray(start, end);
+        if (end > start) {
+          sprBytes = cart.subarray(start, end);
+          sprStartPc = start;
+        }
       }
     }
 
-    if (objBytes || sprBytes) records.set(id, { objBytes, sprBytes });
+    if (objBytes || sprBytes) {
+      records.set(id, {
+        objBytes,
+        sprBytes,
+        ...(objStartPc !== undefined ? { objStartPc } : {}),
+        ...(sprStartPc !== undefined ? { sprStartPc } : {})
+      });
+    }
   }
 
   return { headerBitWidths, standardObjectInfo, records };
