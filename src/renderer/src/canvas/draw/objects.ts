@@ -1,8 +1,8 @@
 import type { LevelObject } from '../../../../preload/api'
 import { getObjectInfo } from '../../data/obj-metadata'
 import type { LayerVisibility } from '../../types'
-import { CELL_PX, objectVisualBox } from '../geometry'
-import { drawSelectionBox } from './selection'
+import { objectVisualBox } from '../geometry'
+import { drawAnchorDot, drawSelectionBox, HOVER_ACCENT } from './selection'
 import { beginIdLabels, drawIdLabel } from './text'
 import { hex } from '../../lib/hex'
 
@@ -71,7 +71,7 @@ export function drawObjects(
     if (isSelected(o)) {
       continue // selection rendered with its own marker below
     } else if (isSameObj(o, hovered)) {
-      ctx.strokeStyle = 'rgba(212, 225, 87, 0.85)'
+      ctx.strokeStyle = HOVER_ACCENT
     } else {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'
     }
@@ -109,11 +109,11 @@ export function drawObjects(
 }
 
 /**
- * Subtle dot at an object's anchor (root) corner — the `(x, y)` its size grows
- * from. For a negative w/h the anchor is NOT the box's top-left, so this reveals
+ * Dot at an object's anchor (root) corner — the `(x, y)` its size grows from.
+ * For a negative w/h the anchor is NOT the box's top-left, so this reveals
  * negative sizes at a glance; on the selected object it also marks the fixed
- * pivot the resize handles pull against. Self-contained (save/restore) so it
- * can't leak fill/stroke state into the caller's loop.
+ * pivot the resize handles pull against. Orange idle tint distinguishes
+ * objects from sprites' amber (shared shape via `drawAnchorDot`).
  */
 function drawAnchor(
   ctx: CanvasRenderingContext2D,
@@ -121,16 +121,5 @@ function drawAnchor(
   zoom: number,
   emphasis: boolean
 ): void {
-  const ax = o.x * CELL_PX
-  const ay = o.y * CELL_PX
-  const r = (emphasis ? 3 : 2.25) / zoom
-  ctx.save()
-  ctx.beginPath()
-  ctx.arc(ax, ay, r, 0, Math.PI * 2)
-  ctx.fillStyle = emphasis ? '#d4e157' : 'rgba(255, 193, 110, 0.9)'
-  ctx.fill()
-  ctx.lineWidth = 1 / zoom
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
-  ctx.stroke()
-  ctx.restore()
+  drawAnchorDot(ctx, o.x, o.y, zoom, emphasis, 'rgba(255, 193, 110, 0.9)')
 }

@@ -11,6 +11,7 @@ import type { IncomingExit, Selection } from '../../types'
 import { CELL_PX, EXIT_MARKER_HALF_PX, exitCenterX, exitCenterY } from '../geometry'
 import { hex0x } from '../../lib/hex'
 import { monoAdvance } from './text'
+import { SELECTION_ACCENT, selectionAccent } from './selection'
 
 
 /**
@@ -37,7 +38,7 @@ export function drawExits(
     const cx = exitCenterX(e.screenIndex)
     const cy = exitCenterY(e.screenIndex)
     const isSelected = e.uid === selectedUid
-    const stroke = isSelected ? '#d4e157' : '#22d3ee'
+    const stroke = isSelected ? SELECTION_ACCENT : '#22d3ee'
 
     // Marker: a door-glyph diamond with an arrow inside, distinctive enough
     // to read at small sizes. Drawn at fixed world-pixel size so it scales
@@ -82,7 +83,7 @@ export function drawExits(
       const ly = cy + half + 2 / zoom
       ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
       ctx.fillRect(lx, ly, lw, lh)
-      ctx.strokeStyle = isSelected ? 'rgba(212, 225, 87, 0.6)' : 'rgba(34, 211, 238, 0.6)'
+      ctx.strokeStyle = isSelected ? selectionAccent(0.6) : 'rgba(34, 211, 238, 0.6)'
       ctx.lineWidth = 1 / zoom
       ctx.strokeRect(lx, ly, lw, lh)
       ctx.fillStyle = stroke
@@ -116,7 +117,7 @@ export function drawIncomingExits(
   // A bit smaller than outgoing markers so they don't fight for attention.
   const half = EXIT_MARKER_HALF_PX * 0.85
   const amber = '#fb923c'
-  const lime = '#d4e157'
+  const lime = SELECTION_ACCENT
   // Label style is constant for the pass; measure one glyph (monospace) once.
   ctx.font = `${9 / zoom}px 'JetBrains Mono', monospace`
   ctx.textBaseline = 'top'

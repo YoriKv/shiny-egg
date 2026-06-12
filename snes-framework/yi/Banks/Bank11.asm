@@ -6678,7 +6678,7 @@ CODE_11BB55:
 	LDA.w $7AF6,x
 	BNE.b CODE_11BBD9
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BRA.b CODE_11BBB0
 
 CODE_11BB98:
@@ -8018,7 +8018,7 @@ YI_NorSpr1B9_P2SeedSpittingMinigameBandit_Main:
 	LDA.w $7A38,y
 	BNE.b CODE_11C6D8
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BRA.b CODE_11C6BA
 
 CODE_11C6A2:

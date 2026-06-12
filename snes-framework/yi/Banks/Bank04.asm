@@ -128,7 +128,7 @@ CODE_048041:
 	LDA.w $7D38,y
 	BEQ.b CODE_04809C
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 CODE_048060:
 	LDA.w #$FD00
@@ -1525,7 +1525,7 @@ main_shy_guy:                                     ; Raidenthequick: main_shy_guy
 	LDA.w $7860,x
 	AND.w #$000C
 	BEQ.b CODE_048A8E
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_048A8A:
 	JSL.l CODE_03AF23
@@ -1542,7 +1542,7 @@ CODE_048A8E:
 	LDA.w $7AF6,x
 	BNE.b CODE_048AA8
 	JSR.w CODE_048B8D
-	JSR.w CODE_048BDF
+	JSR.w sprite_scan_for_thrown_hit
 CODE_048AA8:
 	JSR.w CODE_048AAC
 CODE_048AAB:
@@ -1685,7 +1685,7 @@ CODE_048BAB:
 	BNE.b CODE_048BB4
 CODE_048BAF:
 	PLA
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_048BB4:
 	CPY.b #$05
@@ -1710,9 +1710,10 @@ CODE_048BD0:
 	RTS
 
 CODE_048BDB:
-	JSR.w CODE_048BDF
+	JSR.w sprite_scan_for_thrown_hit
 	RTL
 
+sprite_scan_for_thrown_hit:                       ; victim-side scan: GSU FXCODE_099011 walks all 24 slots for one whose hitbox overlaps this sprite (slot in R1, candidate back in R14). Shared by many enemy Mains, not Shy-Guy-specific.
 CODE_048BDF:
 	TXA
 	STA.w !REGISTER_SuperFX_R1_PLOTXCoordinateLo
@@ -1723,7 +1724,7 @@ CODE_048BEC:
 	LDX.b $12
 	LDY.w !REGISTER_SuperFX_R14_GETGamePakROMAddressPtrLo
 	BMI.b CODE_048BF5
-	BNE.b CODE_048C01
+	BNE.b sprite_thrown_hit_handle_candidate
 CODE_048BF5:
 	RTS
 
@@ -1733,6 +1734,7 @@ CODE_048BF6:
 	JSL.l !RAM_YI_Global_BeginSuperFXProcessingRt
 	BRA.b CODE_048BEC
 
+sprite_thrown_hit_handle_candidate:               ; overlap candidate found (Y = slot): if this sprite is already tumbling ($76,x = 2, or 3 for Spike) take the re-hit shortcut at CODE_048CED, else filter the candidate below
 CODE_048C01:
 	LDA.w !EXRAM_YI_Level_NorSpr_SpriteID|!EXRAMBankMirror,x
 	CMP.w #!Define_YI_NorSpr074_Spike
@@ -1740,16 +1742,17 @@ CODE_048C01:
 	LDA.b $76,x
 	AND.w #$00FF
 	CMP.w #$0003
-	BNE.b CODE_048C23
+	BNE.b sprite_thrown_hit_filter
 	JMP.w CODE_048CED
 
 CODE_048C16:
 	LDA.b $76,x
 	AND.w #$00FF
 	CMP.w #$0002
-	BNE.b CODE_048C23
+	BNE.b sprite_thrown_hit_filter
 	JMP.w CODE_048CED
 
+sprite_thrown_hit_filter:                         ; candidate must be a live thrown projectile ($6FA0,y bit $0200, status $10, $7D38,y nonzero = thrown by Yoshi); Cactus Jack ignored, Shy-Guy-likes/Spike kill both, others knock this sprite into a tumble
 CODE_048C23:
 	LDA.w $6FA0,y
 	AND.w #$0200
@@ -1772,9 +1775,9 @@ CODE_048C23:
 	BNE.b CODE_048C5E
 CODE_048C54:
 	TYX
-	JSL.l CODE_03B273
+	JSL.l CODE_kill_sprite_by_hit
 	PLA
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_048C5E:
 	LDA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,y
@@ -1786,7 +1789,7 @@ CODE_048C5E:
 CODE_048C6B:
 	STA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,x
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDA.w #$FF00
 	STA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,x
 	LDA.w #!Define_YI_SoundID67_EnemyTumbling
@@ -3092,7 +3095,7 @@ CODE_04963F:
 CODE_04965C:
 	STA.b $0E
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BCC.b CODE_04966C
 	LDA.w #$4E00
 	STA.w $6FA0,x
@@ -3246,7 +3249,7 @@ CODE_049756:
 	BEQ.b CODE_049789
 	DEY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDY.w $7402,x
 	CPY.b #$02
 	BEQ.b CODE_049789
@@ -7614,7 +7617,7 @@ CODE_04B82E:
 	BCS.b CODE_04B82D
 	PHY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	PLY
 	LDA.w $7A36,x
 	CMP.b $16,x
@@ -9184,7 +9187,7 @@ CODE_04C8C3:
 	BEQ.b CODE_04C92D
 	DEY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_04C8DD:
 	LDA.w $7CD6,x
 	SEC
@@ -9728,7 +9731,7 @@ CODE_04CCDC:
 	LDA.w $7860,x
 	AND.w #$000C
 	BEQ.b CODE_04CD05
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_04CD01:
 	JSL.l CODE_03AF23
@@ -9749,7 +9752,7 @@ CODE_04CD18:
 	STA.w $7400,x
 CODE_04CD1C:
 	JSR.w CODE_048B8D
-	JSR.w CODE_048BDF
+	JSR.w sprite_scan_for_thrown_hit
 CODE_04CD22:
 	RTL
 

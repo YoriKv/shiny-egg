@@ -127,13 +127,14 @@ const COLOR = {
   SK_FILL: SOLID_RED,      // slope solid mass
 } as const;
 
-// Secondary-tag index for the enemy-spawn pipe mouth. Enemy sprites (Shy Guy,
-// Lantern Ghost, Cactus Jack, Boo Guy) read this tag at init (engine routine
-// CODE_0EB8AE) to turn themselves into generators that emit enemies from the
-// pipe. It is NOT an exit trigger and the player does not enter via it — player
-// pipe-entry is sprite-driven (entrance sprites + the screen-exit list) and
-// never reads this tag.
-const ENEMY_PIPE_TAG = SECONDARY_TAG_NAMES.indexOf('enemy-pipe');
+// Secondary-tag index for pipe mouths. Two consumers: the PLAYER pipe-entry
+// probes (GSU Bank0B — tag + the per-tile DATA_0AEBBC entry bit = tile-driven
+// warp, see editor data/exit-triggers.ts) and the enemy-generator gate
+// (CODE_0EB8AE — enemy inits standing on it emit enemies from the pipe).
+// Whether a specific TILE is player-enterable is per-tile (DATA_0AEBBC), not
+// per-page — this page-keyed overlay can't honour that split, so tagged cells
+// get the uniform cyan outline rather than an exit-green fill.
+const PIPE_MOUTH_TAG = SECONDARY_TAG_NAMES.indexOf('pipe-mouth');
 
 // Secondary-tag indices for collectibles — pass-through tiles collected on
 // overlap (no physics): regular coins and the !-switch ("switch-coin") variant.
@@ -160,7 +161,7 @@ const DAMAGE_TAGS = new Set([
 
 const OUTLINE_ALPHA = 0xf0; // dotted-outline opacity — sits clearly above fills
 const TAG_OUTLINE = {
-  enemyPipe:    rgba(0x3d, 0xe8, 0xe8, OUTLINE_ALPHA), // cyan
+  pipeMouth:    rgba(0x3d, 0xe8, 0xe8, OUTLINE_ALPHA), // cyan
   door:         rgba(0xe0, 0x52, 0xd6, OUTLINE_ALPHA), // magenta
   bonusDoor:    rgba(0xf2, 0x9a, 0x28, OUTLINE_ALPHA), // orange
   fallingFloor: rgba(0xf2, 0xf2, 0xf2, OUTLINE_ALPHA), // white
@@ -170,11 +171,11 @@ const TAG_OUTLINE = {
 } as const;
 
 /** Dotted-outline color for a cell's meaningful behavioural subclass, or null
- *  if it carries none. Priority: enemy-pipe > bonus-door > door > falling-floor >
+ *  if it carries none. Priority: pipe-mouth > bonus-door > door > falling-floor >
  *  switch-block > damage > water/lava (the exit-trigger green/red fills don't
  *  distinguish these, so the outline does). */
 function tagOutlineColor(entry: CollisionEntry): number | null {
-  if (entry.tag === ENEMY_PIPE_TAG) return TAG_OUTLINE.enemyPipe;
+  if (entry.tag === PIPE_MOUTH_TAG) return TAG_OUTLINE.pipeMouth;
   if (entry.doors.bd) return TAG_OUTLINE.bonusDoor;
   if (entry.doors.dr) return TAG_OUTLINE.door;
   if (entry.tag === FALLING_FLOOR_TAG) return TAG_OUTLINE.fallingFloor;
@@ -199,10 +200,11 @@ function drawDottedOutline(cell: Uint8Array, color: number): void {
 }
 
 /** A cell that fires a screen exit when entered: a door (DR / bonus-door BD bit).
- *  Rendered green, distinct from solid red. NOTE: the enemy-pipe tag is NOT an
- *  exit trigger — enemies spawn out of it; the player never enters via the tag
- *  (player pipe-entry is sprite-driven, independent of collision tags). It gets
- *  its own cyan behavioural outline via `tagOutlineColor`, not a green fill. */
+ *  Rendered green, distinct from solid red. NOTE: pipe-mouth-tagged cells CAN
+ *  be player exits too (tile-driven pipe entry — but only for tiles whose
+ *  DATA_0AEBBC byte carries entry bits, a per-tile fact this page-keyed
+ *  renderer can't express). They keep the cyan behavioural outline via
+ *  `tagOutlineColor` instead of a green fill. */
 function isExitTrigger(entry: CollisionEntry): boolean {
   return entry.doors.dr || entry.doors.bd;
 }

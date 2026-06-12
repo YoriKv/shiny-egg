@@ -281,7 +281,7 @@ CODE_07815C:
 	JMP.w (DATA_egg_plant_variant_ptr,x)
 
 DATA_07817B:
-DATA_egg_plant_variant_ptr:                     ; 2-entry egg-plant visual variant dispatch (indexed by spawn-bit flag)
+DATA_egg_plant_variant_ptr:                     ; 2-entry egg-plant PROJECTILE variant dispatch (by $70E2 bit-4 / cell-column parity: even = spits Green Eggs $025, odd = spits Bouncing Needlenoses $163). NOT a visual variant (old misgloss).
 	dw CODE_07817F
 	dw CODE_078297
 
@@ -819,7 +819,7 @@ CODE_0785A8:
 	ORA.w $7002,y
 	STA.w $7002,y
 	JSL.l CODE_0CFF61
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_07860A:
 	LDA.b $16,x
@@ -997,7 +997,7 @@ CODE_078754:
 	BPL.b CODE_07878C
 	PHY
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLY
 	LDX.b $12
 	LDA.w $7CD6,x
@@ -1025,7 +1025,7 @@ CODE_078798:
 	ROR
 	STA.b $00
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w #!Define_YI_AmbSpr1F7
 	JSL.l CODE_spawn_ambient_sprite
@@ -1060,7 +1060,7 @@ CODE_078798:
 	SBC.w #$0020
 	STA.w $7182,x
 	PLA
-	JML.l CODE_03B25B
+	JML.l CODE_kill_sprite_by_hit_special_cases
 
 CODE_07880B:
 	LDA.w DATA_078534,y
@@ -1079,7 +1079,7 @@ DATA_078822:
 
 CODE_078826:
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 ;-------------------------------------------------------------------------
 ; Shyguy On Stilts ($0F2) -- Stomp/head-bop routine.
@@ -1879,7 +1879,7 @@ CODE_078EC3:
 	BPL.b CODE_078EDA
 	LDA.w !EXRAM_YI_Player_SuperBabyMarioTimerLo|!EXRAMBankMirror
 	BEQ.b CODE_078ED1
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_078ED1:
 	JSL.l CODE_07FC2F
@@ -2209,7 +2209,7 @@ CODE_0790E1:
 	LDA.w $7D38,y
 	BEQ.b CODE_079135
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	JSR.w CODE_079377
 CODE_079135:
 	TXY
@@ -2381,13 +2381,13 @@ CODE_079279:
 
 CODE_0792A3:
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	LDA.w #!Define_YI_SoundID3B_Pop
 	JSL.l CODE_push_sound_queue
 	JSR.w CODE_0791E7
 	PLA
-	JML.l CODE_03B24B
+	JML.l CODE_kill_sprite_by_hit_checked
 
 CODE_0792B9:
 	TXA
@@ -3746,7 +3746,7 @@ CODE_079CD6:
 	BIT.w #$6000
 	BNE.b CODE_079CF7
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 CODE_079CF6:
 	RTS
@@ -4690,7 +4690,7 @@ CODE_07A54E:
 	BPL.b CODE_07A565
 	LDA.w !EXRAM_YI_Player_SuperBabyMarioTimerLo|!EXRAMBankMirror
 	BEQ.b CODE_07A55C
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_07A55C:
 	JSL.l CODE_07FC2A
@@ -5284,7 +5284,7 @@ CODE_07AA37:
 	LDA.w $7D38,y
 	BEQ.b CODE_07AA59
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	PLA
 	JMP.w CODE_07A945
@@ -5933,7 +5933,7 @@ CODE_07AF4A:
 	CMP.w #$0040
 	BPL.b CODE_07AFE3
 	PHY
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLY
 	LDA.w #$FE00
 	STA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,x
@@ -5946,7 +5946,7 @@ CODE_07AF4A:
 	PHY
 	JSL.l CODE_03B53D
 	PLX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_07AF8F:
 	RTL
@@ -7592,7 +7592,7 @@ CODE_07BC08:
 	LDA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,y
 	STA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,x
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_07BC1B:
 	LDA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,x
@@ -7842,7 +7842,7 @@ CODE_07BE4F:
 	LDA.w $7D38,y
 	BEQ.b CODE_07BE68
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_07BE68:
 	RTL
@@ -8333,7 +8333,7 @@ CODE_07C285:
 	LDA.w $7D38,y
 	BEQ.b CODE_07C2AE
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w #$0008
 	STA.b $18,x
@@ -8749,7 +8749,7 @@ CODE_07C5D8:
 	LDA.w $7D38,y
 	BEQ.b CODE_07C5F8
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	BRA.b CODE_07C60C
 
@@ -9113,7 +9113,7 @@ CODE_07C876:
 	PHY
 	JSL.l CODE_03B53D
 	PLX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w #!Define_YI_AmbSpr207
 	JSL.l CODE_spawn_ambient_sprite
@@ -9177,7 +9177,7 @@ CODE_07C923:
 	LDA.w $7D38,y
 	BEQ.b CODE_07C962
 	PHY
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLY
 	LDA.w #$FE00
 	STA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,x
@@ -9190,7 +9190,7 @@ CODE_07C923:
 	PHY
 	JSL.l CODE_03B53D
 	PLX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	PLY
 	PLA
@@ -10835,7 +10835,7 @@ CODE_07D694:
 	CMP.b $04
 	BCS.b CODE_07D6A2
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	INC.w !EXRAM_YI_Level_NorSpr_GenericTable701900|!EXRAMBankMirror,x
 	LDX.b $12
 CODE_07D6A2:
@@ -10970,7 +10970,7 @@ CODE_07D79D:
 	ROR
 	STA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,x
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_07D7CE:
 	LDA.w #$000E
@@ -11083,7 +11083,7 @@ CODE_07D8A8:
 
 CODE_07D8AB:
 	PLP
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_07D8B0:
 	LDA.w #$0010
@@ -11498,7 +11498,7 @@ CODE_07DBB9:
 	PHY
 	TYX
 	JSL.l CODE_0CFF61
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLY
 	LDX.b $12
 	SEP.b #$20
@@ -11529,7 +11529,7 @@ CODE_07DBB9:
 
 CODE_07DC05:
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BCS.b CODE_07DC42
 	JSL.l CODE_03B288
 	SEP.b #$20
@@ -11581,7 +11581,7 @@ CODE_07DC65:
 	INC.b $00
 CODE_07DC74:
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BCS.b CODE_07DC8B
 	LDX.b $12
 	LDY.b $00
@@ -12352,7 +12352,7 @@ CODE_07E2BB:
 	INC.b $00
 CODE_07E2CA:
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w !EXRAM_YI_Level_NorSpr_SpriteID|!EXRAMBankMirror,x
 	CMP.w #!Define_YI_NorSpr16B_GreenKoopa
@@ -12419,7 +12419,7 @@ CODE_07E336:
 	JSL.l CODE_0CFF61
 	PLY
 	PLA
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_07E35A:
 	RTL
@@ -12439,7 +12439,7 @@ CODE_07E35B:
 	JSL.l CODE_0CFF61
 	PLY
 	PLA
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_07E37F:
 	LDA.w #!Define_YI_SoundID1C_StompEnemy
@@ -12868,7 +12868,7 @@ CODE_07E6B7:
 	BCC.b CODE_07E6E8
 CODE_07E6D9:
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w #$000E
 	STA.w !EXRAM_YI_Level_NorSpr_CurrentStatus|!EXRAMBankMirror,x
@@ -13925,7 +13925,7 @@ CODE_07EF98:
 	LDA.w $7D38,y
 	BEQ.b CODE_07EFD1
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w $7CD6,x
 	STA.b $00
@@ -14525,7 +14525,7 @@ CODE_07F412:
 	LDA.w $7D38,y
 	BEQ.b CODE_07F497
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDY.w $7A36,x
 	LDA.w DATA_07F3F8,y
@@ -14625,7 +14625,7 @@ CODE_07F4F4:
 	CMP.w #$0040
 	BCC.b CODE_07F507
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_07F507:
 	LDA.w #!Define_YI_SoundID3B_Pop
@@ -14785,7 +14785,7 @@ CODE_07F62C:
 	CMP.w #$0040
 	BCC.b CODE_07F63F
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_07F63F:
 	LDA.w #!Define_YI_SoundID3B_Pop
@@ -15515,7 +15515,7 @@ CODE_07FB8B:
 	LDA.w $7D38,y
 	BEQ.b CODE_07FBD2
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w #!Define_YI_SoundID3B_Pop
 	JSL.l CODE_push_sound_queue
@@ -15965,7 +15965,7 @@ CODE_07FEE5:
 	LDA.w $7D38,x
 	BEQ.b CODE_07FEE4
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	RTL
 

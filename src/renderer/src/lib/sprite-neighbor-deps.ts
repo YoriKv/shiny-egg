@@ -36,14 +36,23 @@ export interface NeighborContext {
    *  Optional: a context with no class-F dep can omit it; the `tileLiterals`
    *  fallback still resolves the common $79F1/$79F2 pipe mouth without it. */
   collisionTagOfPage?: (page: number) => number | undefined
+  /** Sprite nums placed anywhere in the warp-reachable level group (forward
+   *  BFS from this record over its screen-exit warps) — the `carried` deps'
+   *  fallback: a locked door is satisfied by a Key in a connected sub-room,
+   *  not just its own record. Optional: when absent, `carried` resolves
+   *  against the own record only (the harness and hook both supply it).
+   *  Info-grade regardless — 14/33 shipped doors have NO placed Key anywhere
+   *  in their component (keys also spawn from containers, e.g. winged
+   *  clouds), so absence is never an error. */
+  carriedGroupNums?: Set<number>
 }
 
 export interface DepResult {
   dep: SpriteNeighborDep
   status: DepStatus
   /** Cell the target sits at (when `met`) or is expected at (when `missing`) —
-   *  only for cell-spatial deps (`same-cell` / `offset-cell` / `path`). The
-   *  editor draws the expected-location marker here. */
+   *  only for cell-spatial deps (`same-cell` / `offset-cell` / `path` / `row`,
+   *  and `level` when met). The editor draws the expected-location marker here. */
   targetCell?: { cx: number; cy: number }
   /** The partner sprite that satisfied a sprite-target dep, if any. */
   targetSprite?: PlacedSprite
@@ -61,9 +70,11 @@ function tileMatches(id: number | undefined, m: { mask: string; value: string })
 }
 
 /** True if the Map16 id at a cell satisfies a tile-target dep — via its
- *  `tileMatch` mask/value, OR (class F) any of its `tileLiterals`, OR (class F)
- *  its page's collision secondary-tag equalling `collisionTag`. Mirrors the asm
- *  gate `CODE_0EB8AE` (tile == $79F1/$79F2 || page-tag == $14). */
+ *  `tileMatch` mask/value, OR any of its `tileLiterals`, OR its page's
+ *  collision secondary-tag equalling `collisionTag`. Mirrors the asm idioms:
+ *  the pipe gate `CODE_0EB8AE` (tile == $79F1/$79F2 || page-tag == $14), the
+ *  ice-snap prologue `CODE_02A007` (page-tag == $17), exact-tile probes
+ *  (icicle $8E00-02, cork $7D24), and tag-only probes (falling rock $0E). */
 function cellTargetMatches(
   id: number | undefined,
   dep: SpriteNeighborDep,
@@ -72,6 +83,7 @@ function cellTargetMatches(
   if (id === undefined) return false
   if (dep.tileMatch && tileMatches(id, dep.tileMatch)) return true
   if (dep.tileLiterals?.some((h) => id === parseInt(h, 16))) return true
+  if (id !== 0 && dep.pageLiterals?.some((h) => ((id >> 8) & 0xff) === parseInt(h, 16))) return true
   if (dep.collisionTag != null && ctx.collisionTagOfPage) {
     const tag = ctx.collisionTagOfPage((id >> 8) & 0xff)
     if (tag !== undefined && tag === parseInt(dep.collisionTag, 16)) return true
@@ -127,11 +139,75 @@ export function resolveDep(sprite: PlacedSprite, dep: SpriteNeighborDep, ctx: Ne
       }
       return { dep, status: 'missing', targetCell: { cx: sprite.x, cy: sprite.y } }
     }
+    case 'row': {
+      // Horizontal scan of the OWN row, own cell outward to ±rowSpan (the
+      // boo-guys-bomb path-marker: the asm walks the whole row from a side
+      // cell; every shipped placement matches within ±2, span 4 adds margin).
+      // Nearest match wins so the marker points at the closest target.
+      const span = dep.rowSpan ?? 4
+      for (let d = 0; d <= span; d++) {
+        for (const cx of d === 0 ? [sprite.x] : [sprite.x - d, sprite.x + d]) {
+          if (cellTargetMatches(ctx.map16At(cx, sprite.y), dep, ctx)) {
+            return { dep, status: 'met', targetCell: { cx, cy: sprite.y } }
+          }
+        }
+      }
+      return { dep, status: 'missing', targetCell: { cx: sprite.x, cy: sprite.y } }
+    }
+    case 'level': {
+      // Anywhere-in-level tile scan (wall-lakitu generator: spawns only at
+      // cells whose tile matches, probed camera-relative at runtime — the
+      // per-record check is "does the level contain any such tile"). Marker =
+      // the match nearest the sprite (Manhattan), so the connector is useful.
+      let best: { cx: number; cy: number } | undefined
+      let bestDist = Infinity
+      for (let cy = 0; cy < 128; cy++) {
+        for (let cx = 0; cx < 256; cx++) {
+          if (!cellTargetMatches(ctx.map16At(cx, cy), dep, ctx)) continue
+          const dist = Math.abs(cx - sprite.x) + Math.abs(cy - sprite.y)
+          if (dist < bestDist) {
+            bestDist = dist
+            best = { cx, cy }
+          }
+        }
+      }
+      if (best) return { dep, status: 'met', targetCell: best }
+      return { dep, status: 'missing' }
+    }
+    case 'note':
+      // Pure annotation (tree-climbing monkeys, dirt diggers, the unresolved
+      // frog-pirate exit) — no geometric check; the panel shows the rule text.
+      return { dep, status: 'met' }
     case 'proximity':
     case 'global':
     case 'carried': {
+      // Pick the NEAREST matching partner (Chebyshev cells), not the first in
+      // stream order — the asm by-ID probe (FXCODE_098EBF) homes on the
+      // nearest active sprite, and the selection drives the editor's
+      // connector, which should point at the obvious partner. The sprite
+      // under test is excluded by identity so self-pairings don't trivially
+      // satisfy themselves. `radiusCells` (when set) bounds how far a partner
+      // may sit — by-ID homing only sees partners co-active in the spawn
+      // window, so e.g. the mouser's nest must be within ~a screen.
       const ids = new Set(dep.targetIds.map((s) => parseInt(s, 16)))
-      const partner = ctx.sprites.find((s) => ids.has(s.num))
+      let partner: PlacedSprite | undefined
+      let best = Infinity
+      for (const s of ctx.sprites) {
+        if (!ids.has(s.num)) continue
+        if (s.num === sprite.num && s.x === sprite.x && s.y === sprite.y) continue
+        const d = Math.max(Math.abs(s.x - sprite.x), Math.abs(s.y - sprite.y))
+        if (d < best) {
+          best = d
+          partner = s
+        }
+      }
+      if (partner && dep.radiusCells !== undefined && best > dep.radiusCells) partner = undefined
+      // `carried` fallback: no partner in this record, but one is placed in a
+      // warp-connected room the player can carry it in from.
+      if (!partner && dep.spatial === 'carried' && ctx.carriedGroupNums) {
+        const inGroup = dep.targetIds.some((s) => ctx.carriedGroupNums!.has(parseInt(s, 16)))
+        if (inGroup) return { dep, status: 'met' }
+      }
       return { dep, status: partner ? 'met' : 'missing', targetSprite: partner }
     }
     case 'screen': {

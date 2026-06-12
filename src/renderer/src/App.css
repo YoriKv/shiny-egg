@@ -2021,6 +2021,11 @@ h3 { margin: 0; }
 .se-props__list dd.se-props__computed {
   color: var(--ink-2);
 }
+/* Engine instance-cap row when the level's placed count exceeds the cap —
+   amber, matching the canvas's warning badge. */
+.se-props__list dd.se-props__cap--exceeded {
+  color: #f5c83c;
+}
 .se-props__list code {
   background: var(--bg-elevated);
   padding: 0 4px;
@@ -2064,6 +2069,68 @@ h3 { margin: 0; }
   font-size: 10px;
   color: var(--ink-2);
   letter-spacing: 0.04em;
+}
+/* Collision block — the dl is a 2-col grid; spanning both columns lets the
+   chips row use the panel's full width (the chips flex-wrap to whatever room
+   the floating window gives them). */
+.se-props__collision {
+  grid-column: 1 / -1;
+}
+.se-props__collision-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.se-props__chip {
+  padding: 1px 6px;
+  border: 1px solid;
+  border-radius: 3px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.se-props__chip-count {
+  opacity: 0.7;
+}
+/* Fill classes — same color families as the canvas collision overlay
+   (engine/render-collision.ts): solid red, exit green, collectible yellow,
+   tunnel blue, pass-through neutral. */
+.se-props__chip--solid   { border-color: rgba(230, 58, 58, 0.75);  background: rgba(230, 58, 58, 0.16);  color: #f0a6a6; }
+.se-props__chip--exit    { border-color: rgba(53, 200, 85, 0.75);  background: rgba(53, 200, 85, 0.14);  color: #93dcaa; }
+.se-props__chip--collect { border-color: rgba(238, 204, 42, 0.75); background: rgba(238, 204, 42, 0.14); color: #e6d489; }
+.se-props__chip--tunnel  { border-color: rgba(60, 156, 232, 0.75); background: rgba(60, 156, 232, 0.16); color: #9ac8ef; }
+.se-props__chip--none    { border-color: var(--line); background: var(--bg-elevated); color: var(--ink-2); }
+/* Behavioural-subclass groups — dashed border in the overlay's dotted-outline
+   color (the fill answers "can Yoshi pass?", the outline "what does it DO?"). */
+.se-props__chip--o-pipe-mouth    { border-style: dashed; border-color: #3de8e8; }
+.se-props__chip--o-door          { border-style: dashed; border-color: #e052d6; }
+.se-props__chip--o-bonus-door    { border-style: dashed; border-color: #f29a28; }
+.se-props__chip--o-falling-floor { border-style: dashed; border-color: #f2f2f2; }
+.se-props__chip--o-switch-block  { border-style: dashed; border-color: #4d9aff; }
+.se-props__chip--o-damage        { border-style: dashed; border-color: #ff467a; }
+.se-props__chip--o-water-lava    { border-style: dashed; border-color: #a86cf0; }
+.se-props__collision-none {
+  color: var(--ink-2);
+}
+.se-props__collision-note {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-props__collision-detail {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--ink-2);
+}
+.se-props__collision-detail summary {
+  cursor: pointer;
+  color: var(--ink-3);
+}
+.se-props__collision-detail ul {
+  margin: 3px 0 0;
+  padding-left: 14px;
+}
+.se-props__collision-detail li {
+  margin: 1px 0;
 }
 /* Editable numeric fields (position / size) in the Properties panel. */
 .se-props__fields {
@@ -2157,13 +2224,29 @@ h3 { margin: 0; }
 }
 .se-picker__row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 6px;
   padding: 3px 6px;
   text-align: left;
   color: var(--ink-2);
   border-radius: 3px;
+}
+/* Per-row thumbnail letterbox (§B5): the bitmap canvas scales down inside a
+ * fixed box (pixelated) so rows stay aligned; entries with no faithful bitmap
+ * (command objects, glyph-tier sprites) keep an empty box. */
+.se-picker__thumb {
+  width: 26px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.se-picker__thumb canvas {
+  max-width: 26px;
+  max-height: 22px;
+  image-rendering: pixelated;
 }
 .se-picker__row:hover {
   color: var(--ink);
@@ -2185,6 +2268,84 @@ h3 { margin: 0; }
 }
 .se-picker__row.is-armed .se-picker__row-id {
   color: var(--bg-base);
+}
+/* Render-validity + facet filters: the chip row under the search box and the
+ * per-row badges. Red = the entry's gfx aren't loaded under this level's
+ * header (hidden by the "This level" toggle); amber = partial / unknown
+ * (always visible, badge only); "setup" = the sprite reads surrounding placed
+ * data (neighbour-deps). */
+.se-picker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.se-picker__filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+.se-picker__filter-count {
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-picker__chip {
+  padding: 1px 7px;
+  font: inherit;
+  font-size: 10px;
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.se-picker__chip:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.se-picker__chip.is-active {
+  color: var(--bg-base);
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+}
+.se-picker__category {
+  font: inherit;
+  font-size: 10px;
+  color: var(--ink-2);
+  background: var(--bg-base);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 2px;
+  max-width: 110px;
+}
+.se-picker__badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 13px;
+  border-radius: 3px;
+  vertical-align: 1px;
+}
+.se-picker__badge--error {
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.se-picker__badge--warn {
+  color: #d2a83e;
+  border: 1px solid rgba(210, 168, 62, 0.45);
+}
+.se-picker__badge--setup {
+  color: var(--ink-3);
+  border: 1px solid var(--line-strong);
+}
+.se-picker__row.is-armed .se-picker__badge {
+  color: var(--bg-base);
+  border-color: var(--bg-base);
 }
 .se-picker__hint {
   font-size: 10px;

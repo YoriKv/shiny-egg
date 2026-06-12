@@ -793,7 +793,7 @@ CODE_028650:
 	LDA.w $7D38,y
 	BEQ.b CODE_028660
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_028660:
 	RTL
 
@@ -3397,6 +3397,7 @@ CODE_02A006:
 	RTL
 
 CODE_02A007:
+CODE_init_ice_block_snap:                       ; shared Init prologue: probe the sprite's own cell (FXCODE_0ACE2F); if the page's collision secondary-tag is $17 = ice-block (R7 & $F800 == $B800, pages $89/$8C), centre the sprite inside the ice cube + force a re-init -- the frozen-enemy set-piece of 5-3. NOT a "$B8xx keyhole snap" (old misreading -- R7 is the attribute word, not the tile id). See docs/sprite-neighbor-dependencies.md Class B.
 	LDA.w $70E2,x
 	AND.w #$FFF0
 	ORA.w #$0008
@@ -7426,7 +7427,7 @@ CODE_02C055:
 	LDA.w #$FFFF
 	STA.w $7A38,x
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_02C06B:
 	LDY.b #$20
 	LDA.w $7AF6,x
@@ -8404,7 +8405,7 @@ CODE_02CC51:
 	STA.w $7A98,x
 	STA.w $61C8
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	PLA
 	ASL
 	CLC
@@ -9596,7 +9597,7 @@ DATA_sluggy_hit_base_offset:
 ;     reset combat tick via CODE_sluggy_reset_combat_tick.
 ;   - SuperFX FXCODE_0A8FE2 redraws Sluggy's stretched body each frame.
 ;   - Egg-hit detection: if linked sprite ($7D36,x) is an egg (status $10
-;     and $7D38 non-zero) and inside arena, call CODE_03B25B (kill linked
+;     and $7D38 non-zero) and inside arena, call CODE_kill_sprite_by_hit_special_cases (kill linked
 ;     sprite), play HurtBoss sfx, INC $7A38,x.  After 4 hits ($7A38 == 4),
 ;     INC $18,x advances to state 3 (defeat) and re-primes the body-scale
 ;     ramp via DATA_02D109.
@@ -9712,7 +9713,7 @@ CODE_sluggy_combat_check_egg:
 	LDA.w $7D38,y
 	BEQ.b CODE_02D5ED                           ; not actually hit
 	TYX                                         ; X = egg slot
-	JSL.l CODE_03B25B                           ; kill sprite (despawn egg)
+	JSL.l CODE_kill_sprite_by_hit_special_cases                           ; kill sprite (despawn egg)
 	LDA.w #!Define_YI_SoundID78_HurtBoss        ; HurtBoss sfx
 	JSL.l CODE_push_sound_queue
 	INC.w $7A38,x                               ; bump egg-hit count
@@ -12044,7 +12045,7 @@ CODE_02E81A:
 	LDY.w $7D36,x
 	TYX
 	DEX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDA.w #!Define_YI_SoundID0B_ShellHit1
 	JSL.l CODE_push_sound_queue
 	RTS
@@ -12094,7 +12095,7 @@ CODE_02E84D:
 	BCS.b CODE_02E88E
 CODE_02E881:
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDA.w #!Define_YI_SoundID0B_ShellHit1
 	JSL.l CODE_push_sound_queue
 	RTS

@@ -20,16 +20,9 @@ import { ROM_VERSIONS, type RomVersion } from './rom-versions.ts';
 import { stripCopierHeader } from './rom-header.ts';
 import { clearExtractionState, writeExtractionState } from './state.ts';
 import { hex, hex0x, hexDollar } from './hex.ts';
+import { u24le } from './engine/rom-read.ts';
 import type { ExtractResult } from './types.ts';
 export type { ExtractResult } from './types.ts';
-
-// Exported so the ROM-import reader/validators (scripts/import/) can walk a
-// FOREIGN cart's level streams with the exact same byte logic as a normal
-// extract — the import path re-anchors the top-level tables but reuses these
-// format-driven primitives verbatim.
-export function readU24LE(buf: Buffer, offset: number): number {
-  return buf[offset] | (buf[offset + 1] << 8) | (buf[offset + 2] << 16);
-}
 
 interface Category {
   pointerSet: number;
@@ -329,8 +322,8 @@ function buildLevelMap(
 
   for (let id = 0; id < POINTER_COUNT; id++) {
     const entryPC = ptrsPC + id * 6;
-    const objSnes = readU24LE(cart, entryPC);
-    const sprSnes = readU24LE(cart, entryPC + 3);
+    const objSnes = u24le(cart, entryPC);
+    const sprSnes = u24le(cart, entryPC + 3);
 
     let objectFile: string | null = null;
     let spriteFile: string | null = null;
@@ -466,18 +459,18 @@ export function extractAssets(opts: ExtractOptions): ExtractResult {
   const levelBinSlices: LevelBinSlice[] = [];
 
   for (const cat of CATEGORIES) {
-    const categoryTableSNES = readU24LE(temp, cat.pointerSet);
-    const entryCount = readU24LE(temp, cat.pointerSet + 3);
+    const categoryTableSNES = u24le(temp, cat.pointerSet);
+    const entryCount = u24le(temp, cat.pointerSet + 3);
     const tableBasePC = snesToPC(categoryTableSNES);
     const outBase = path.join(assetsRoot, cat.outDir);
     fs.mkdirSync(outBase, { recursive: true });
 
     for (let i = 0; i < entryCount; i++) {
       const entryPC = tableBasePC + i * 12;
-      const srcStartSnes = readU24LE(temp, entryPC + 0);
-      const srcEndSnes   = readU24LE(temp, entryPC + 3);
-      const fnameStart   = snesToPC(readU24LE(temp, entryPC + 6));
-      const fnameEnd     = snesToPC(readU24LE(temp, entryPC + 9));
+      const srcStartSnes = u24le(temp, entryPC + 0);
+      const srcEndSnes   = u24le(temp, entryPC + 3);
+      const fnameStart   = snesToPC(u24le(temp, entryPC + 6));
+      const fnameEnd     = snesToPC(u24le(temp, entryPC + 9));
       const fname        = temp.subarray(fnameStart, fnameEnd).toString('ascii');
 
       let data: Buffer;

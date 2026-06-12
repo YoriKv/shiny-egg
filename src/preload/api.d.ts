@@ -37,9 +37,12 @@ import type {
   CaptureAtResult,
   CollisionLayerResponse,
   CollisionRenderResult,
+  CollisionTableResult,
   DecodedLevelLayout,
   DecodedObjectInfluence,
   DecodedPalette,
+  EntityRenderValidity,
+  EntityValidityRequest,
   FindInstanceKind,
   FitSurfaceRequest,
   FitTileset,
@@ -56,6 +59,8 @@ import type {
   PatchPoolSettings,
   PatchPreview,
   PatchSummary,
+  PickerThumbnails,
+  PickerThumbnailsRequest,
   PrepackagedPatch,
   ProjectBackupResult,
   ProjectDeleteResult,
@@ -107,6 +112,7 @@ export type {
   Map16SubTileUsage,
   MessagePtrOption,
   MessagePtrTableModel,
+  ObjectRenderVerdict,
   PaletteEdit,
   PoolBudgetEntry,
   PoolBudgetReport,
@@ -143,9 +149,13 @@ export type {
   CaptureAtResult,
   CollisionLayerResponse,
   CollisionRenderResult,
+  CollisionTableResult,
   DecodedLevelLayout,
   DecodedObjectInfluence,
   DecodedPalette,
+  EntityRenderValidity,
+  EntityValidityCandidate,
+  EntityValidityRequest,
   FindInstanceKind,
   FitSurfaceRequest,
   FitTileset,
@@ -167,6 +177,8 @@ export type {
   PatchPreview,
   PatchPreviewChunk,
   PatchSummary,
+  PickerThumbnails,
+  PickerThumbnailsRequest,
   PrepackagedPatch,
   ProjectBackupResult,
   ProjectDeleteResult,
@@ -339,12 +351,26 @@ export interface RenderAPI {
    *  decoded from `override` at its pending position. Drag-transient (no
    *  patching). Null for empty/special slots. */
   objectInfluence: (req: ObjectInfluenceRequest) => Promise<DecodedObjectInfluence | null>
+  /** Picker render-validity: per std/ext-object verdicts under this level's
+   *  header (each candidate probe-decoded alone main-side, cached per
+   *  gfx-header tuple) plus the level's 6 variable spriteset file ids for the
+   *  renderer-local sprite check (lib/sprite-render-validity). Pass `override`
+   *  so live header edits are honoured. Null for empty/special slots. */
+  entityRenderValidity: (req: EntityValidityRequest) => Promise<EntityRenderValidity | null>
+  /** Picker thumbnails (§B5): per-catalog-entry bitmaps under this level's
+   *  header — objects probe-decoded alone with their stamped cells blitted,
+   *  sprites via the static cel pipeline (parity-0 variant). One tab per call:
+   *  `candidates` (objects) or `spriteNums` + cel-gate sets. An absent key has
+   *  no faithful bitmap (no-visual object / glyph-tier sprite) — keep the
+   *  text-only row. Cached main-side per gfx-header tuple. Null for
+   *  empty/special slots. */
+  pickerThumbnails: (req: PickerThumbnailsRequest) => Promise<PickerThumbnails | null>
   bgLayers: (req: LevelRenderRequest) => Promise<BgLayersResult | null>
   /** Collision overlay. Returns a `full | patch` response (Tier 2). Collision
    *  pixels are tileset-independent, so a patch is valid for any same-level edit
    *  (the grid diff captures every decode change). Null for empty/special slots. */
   collisionLayer: (req: LevelRenderRequest) => Promise<CollisionLayerResponse | null>
-  collisionTable: () => Promise<CollisionEntry[]>
+  collisionTable: () => Promise<CollisionTableResult>
   /** 256-byte standard-object property table (low 2 bits = size-encoding flag).
    *  Per-cart static; cache once renderer-side. */
   objectPropertyTable: () => Promise<Uint8Array>

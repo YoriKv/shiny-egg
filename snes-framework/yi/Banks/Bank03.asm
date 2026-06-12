@@ -4236,7 +4236,7 @@ CODE_039F7D:
 	AND.w #$0020
 	BNE.b CODE_039F8C
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 CODE_039F8C:
 	RTL
@@ -5608,7 +5608,7 @@ CODE_03A858:
 	BEQ.b CODE_03A865
 	LDY.w $7972
 	BEQ.b CODE_03A899
-	JMP.w CODE_03B25B
+	JMP.w CODE_kill_sprite_by_hit_special_cases
 
 CODE_03A865:
 	LDA.w $61D6
@@ -6699,7 +6699,7 @@ CODE_03B0DF:
 	AND.w #$0020
 	BNE.b CODE_03B118
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BCS.b CODE_03B118
 CODE_03B0EE:
 	LDA.w $7542,x
@@ -6720,7 +6720,7 @@ CODE_03B10B:
 	JML.l CODE_03B595
 
 CODE_03B114:
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 CODE_03B118:
 	PLA
 	PLY
@@ -6883,16 +6883,18 @@ CODE_03B248:
 CODE_03B249:
 	DEY
 	TYX
+CODE_kill_sprite_by_hit_checked:                ; guarded entry: bails (carry set) for Shy-Guy-likes (CODE_04906C) and Cactus Jack, which keep their own death paths
 CODE_03B24B:
 	JSL.l CODE_04906C
 	BEQ.b CODE_03B257
 	JSL.l CODE_0EBE8D
-	BNE.b CODE_03B25B
+	BNE.b CODE_kill_sprite_by_hit_special_cases
 CODE_03B257:
 	LDX.b $12
 	SEC
 	RTL
 
+CODE_kill_sprite_by_hit_special_cases:          ; per-ID redirects (Huffin Puffin always, Green Giant Egg when $75E2 >= $0401) before the generic kill below
 CODE_03B25B:
 	LDA.w !EXRAM_YI_Level_NorSpr_SpriteID|!EXRAMBankMirror,x
 	CMP.w #!Define_YI_NorSpr028_HuffinPuffin
@@ -6902,10 +6904,11 @@ CODE_03B263:
 
 CODE_03B266:
 	CMP.w #!Define_YI_NorSpr02B_GreenGiantEgg
-	BNE.b CODE_03B273
+	BNE.b CODE_kill_sprite_by_hit
 	LDA.w $75E2,x
 	CMP.w #$0401
 	BCS.b CODE_03B263
+CODE_kill_sprite_by_hit:                        ; canonical die-by-hit: status $0C death-spin, speeds cleared, then the shared tail applies knockback (XSpeed +-$0100 away from the hit, YSpeed $FE00) with per-ID variations
 CODE_03B273:
 	LDA.w #$000C
 	STA.w !EXRAM_YI_Level_NorSpr_CurrentStatus|!EXRAMBankMirror,x
@@ -7252,7 +7255,7 @@ CODE_03B4DF:
 ;---------------------------------------------------------------------------
 
 CODE_03B507:
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_03B50B:
 	LDA.w $70E2,x
 	CLC
@@ -7265,7 +7268,7 @@ CODE_03B50B:
 	BRA.b CODE_spawn_ambient_stomp_puff
 
 CODE_03B51F:
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_03B523:
 	LDA.w $70E2,x
 	CLC
@@ -7988,7 +7991,7 @@ CODE_03BA57:
 	LDA.w #$0060
 	STA.w $61C6
 	JSL.l CODE_0294B4
-	JSL.l CODE_03B273
+	JSL.l CODE_kill_sprite_by_hit
 	STZ.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,x
 	LDA.w #!Define_YI_SoundID47_Explosion
 	JSL.l CODE_push_sound_queue
@@ -8777,7 +8780,7 @@ CODE_03C0B3:
 	CMP.w #$00CC
 	BCS.b CODE_03C0FC
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_03C0CC:
 	LDA.w #!Define_YI_SoundID27_CollectSuperStar
 	JSL.l CODE_push_sound_queue
@@ -9149,7 +9152,7 @@ CODE_03C363:
 	TYX
 	LDA.w #!Define_YI_SoundID32_HitMessageBox
 	JSL.l CODE_03B212
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDA.w #$0002
 	STA.w $74A2,x
 	JSL.l CODE_03CC6B
@@ -14110,7 +14113,7 @@ CODE_03EB9B:
 	LDA.w $70E2,y
 	STA.b $00
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w #!Define_YI_SoundID67_EnemyTumbling
 	JSL.l CODE_push_sound_queue
@@ -14736,7 +14739,7 @@ CODE_03F07F:
 	LDA.w $7D38,y
 	BEQ.b CODE_03F0D0
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	JSR.w CODE_03EEF6
 	SEP.b #$20
@@ -14838,7 +14841,7 @@ CODE_03F15D:
 	LDA.w $7D38,y
 	BEQ.b CODE_03F182
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	JSL.l CODE_0CFF61
 	PLA
@@ -14969,12 +14972,12 @@ CODE_03F35E:
 	CMP.w #$0040
 	BCS.b CODE_03F380
 	JSL.l CODE_0CFF61
-	JML.l CODE_03B24B
+	JML.l CODE_kill_sprite_by_hit_checked
 
 CODE_03F380:
 	PHX
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLX
 	RTL
 

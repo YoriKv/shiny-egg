@@ -12,6 +12,7 @@
 import type { LevelObject } from '../../../../preload/api'
 import type { SizeMode } from '../../data/object-record'
 import { CELL_PX, objectVisualBox } from '../geometry'
+import { SELECTION_ACCENT } from './selection'
 
 /** Which handle was grabbed: the free corner (both axes), the free vertical edge
  *  (width only), or the free horizontal edge (height only). */
@@ -117,7 +118,7 @@ export function drawResizeHandles(
   if (handles.length === 0) return
   const s = HANDLE_PX / zoom
   ctx.save()
-  ctx.fillStyle = '#d4e157'
+  ctx.fillStyle = SELECTION_ACCENT
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)'
   ctx.lineWidth = 1 / zoom
   for (const h of handles) {

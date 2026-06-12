@@ -52,6 +52,11 @@ export interface RenderResult {
  * pixels with palette index 0 are LEFT UNTOUCHED (caller's background
  * shows through); otherwise the actual color is written.
  */
+// Shared decode scratch: decode4bppTile/decode2bppTile overwrite all 64 bytes
+// and everything here is synchronous, so one module-level buffer replaces a
+// per-tile allocation across the gallery's grid renders.
+const tileIndicesScratch = new Uint8Array(64);
+
 function blit4bppTile(
   vram: Uint8Array,
   tileByteOff: number,
@@ -64,7 +69,7 @@ function blit4bppTile(
   dx: number,
   dy: number
 ): void {
-  const indices = new Uint8Array(64);
+  const indices = tileIndicesScratch;
   decode4bppTile(vram, tileByteOff, hflip, vflip, indices, 0);
   // Reinterpret RGBA buffer as Uint32Array for one-write-per-pixel.
   // Note: requires byte-aligned dx; for our gallery layouts dx is always a
@@ -95,7 +100,7 @@ function blit2bppTile(
   dx: number,
   dy: number
 ): void {
-  const indices = new Uint8Array(64);
+  const indices = tileIndicesScratch;
   decode2bppTile(vram, tileByteOff, hflip, vflip, indices, 0);
   const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, rgba.length >>> 2);
   for (let row = 0; row < TILE_PIXELS_H; row++) {

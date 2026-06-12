@@ -18,11 +18,13 @@ import type {
   LevelData,
   LevelObject,
   LevelMap16Usage,
+  ObjectRenderVerdict,
   PaletteEdit,
   PatchSource,
   RomVersion,
   SpriteCelBounds
 } from 'snes-framework/types'
+import type { CollisionEntry } from 'snes-framework/collision'
 
 // ── Cart lifecycle ──────────────────────────────────────────────────────────
 
@@ -303,6 +305,17 @@ export interface DecodedObjectInfluence {
   cells: { x: number; y: number; cls: InfluenceClass; mid: number }[]
 }
 
+/** `render:collisionTable` response — the cart's per-page `bg_type_table`
+ *  plus the per-TILE pipe-entry bits (`DATA_0AEBBC`, indexed by a Map16 id's
+ *  low byte; meaningful only for pages tagged `pipe-mouth`). Both cart-static.
+ *  The bits let the renderer tell player-enterable mouth tiles (low-nibble
+ *  direction bits set — a tile-driven screen exit) apart from plain tagged
+ *  pipe terrain; see data/exit-triggers.ts for the mechanism. */
+export interface CollisionTableResult {
+  table: CollisionEntry[]
+  pipeEntryBits: Uint8Array
+}
+
 /** `render:objectInfluence` request — decode `override` (the level with the
  *  dragged object(s) at their pending position) recording provenance for the
  *  objects at `targetIndices` in `override.objects` (one index for a single
@@ -399,6 +412,69 @@ export interface LevelRenderRequest {
    *  Format-A path for them (resolves the ~few sprites that carry both a
    *  `special_chr` and an `object_data`, e.g. the Key). Other handlers ignore it. */
   formatANums?: number[]
+}
+
+// ── Entity render-validity (picker filter) ──────────────────────────────────
+// Would a picker entry render correctly in-game under the current level's
+// header? Objects are probed main-side (decode alone + VRAM coverage — see
+// snes-framework entity-render-validity.ts, model lessons in its header);
+// sprites are a renderer-local set inclusion over obj-metadata
+// `spritesetFiles`, fed by the result's `spritesetFiles`.
+
+/** One picker-catalog candidate to probe: a std/ext object id plus its
+ *  metadata default size (the synthetic probe level places it alone at that
+ *  size). The catalog is renderer-owned (obj-metadata), so candidates ride
+ *  the request instead of main importing renderer data. */
+export interface EntityValidityCandidate {
+  kind: 'std' | 'ext'
+  id: number
+  w: number
+  h: number
+}
+
+/** `render:entityRenderValidity` request. `override` mirrors
+ *  `LevelRenderRequest` (live header edits are honoured). */
+export interface EntityValidityRequest {
+  levelRecordId: number
+  override?: LevelData
+  candidates: EntityValidityCandidate[]
+}
+
+/** `render:entityRenderValidity` result. `objects`/`extended` are keyed by hex
+ *  id (`"0x4A"` — the Record hex-key rule). `spritesetFiles` is the level's 6
+ *  variable sprite-gfx file ids as hex strings (the same format as
+ *  obj-metadata's `spritesetFiles`), so the sprite-side check stays a
+ *  synchronous renderer-local set inclusion. `mode7` ⇒ PPU mode-7 arena
+ *  (levelMode $09): no normal BG1 rendering — the verdict maps are empty and
+ *  the picker must not gate objects on them. */
+export interface EntityRenderValidity {
+  objects: Record<string, ObjectRenderVerdict>
+  extended: Record<string, ObjectRenderVerdict>
+  spritesetFiles: string[]
+  mode7: boolean
+}
+
+/** `render:pickerThumbnails` request — per-catalog-entry bitmaps under this
+ *  level's header (§B5 picker thumbnails). One tab per call: pass `candidates`
+ *  for the objects tab, or `spriteNums` (+ the cel-gate num sets, the same
+ *  convention as `render:spriteLayer`) for the sprites tab. `override` mirrors
+ *  LevelRenderRequest. */
+export interface PickerThumbnailsRequest {
+  levelRecordId: number
+  override?: LevelData
+  candidates?: EntityValidityCandidate[]
+  spriteNums?: number[]
+  celRenderableNums?: number[]
+  formatANums?: number[]
+}
+
+/** `render:pickerThumbnails` result — hex-id-keyed bitmaps; an ABSENT key
+ *  means no faithful bitmap exists (object stamps nothing / mode-7, or a
+ *  glyph-tier sprite) and the picker keeps the text-only row. */
+export interface PickerThumbnails {
+  objects: Record<string, RenderImage>
+  extended: Record<string, RenderImage>
+  sprites: Record<string, RenderImage>
 }
 
 /** A paintable tileset (has fit-metadata): numeric BG1 tileset + human label.

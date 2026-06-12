@@ -45,6 +45,8 @@
     "./sprite-tile-base": "./scripts/engine/sprite-tile-base.ts",
     "./render-sprite-layer": "./scripts/engine/render-sprite-layer.ts",
     "./map16": "./scripts/engine/map16.ts",
+    "./entity-render-validity": "./scripts/engine/entity-render-validity.ts",
+    "./entity-thumbnails": "./scripts/engine/entity-thumbnails.ts",
     "./load-graphics": "./scripts/engine/load-graphics.ts",
     "./load-palettes": "./scripts/engine/load-palettes.ts",
     "./load-tile-animation": "./scripts/engine/load-tile-animation.ts",

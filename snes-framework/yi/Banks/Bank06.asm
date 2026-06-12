@@ -1040,7 +1040,7 @@ CODE_0687C5:
 	BNE.b CODE_0687EE
 CODE_0687E3:
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 CODE_0687E8:
 	LDY.b #$FF
 	STY.w $10BA
@@ -4894,7 +4894,7 @@ CODE_06A860:
 	STA.w $7C76,y
 	PHX
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLX
 	LDA.w #$0200
 	LDY.b $01
@@ -5833,7 +5833,7 @@ CODE_06AFD9:
 	STA.w $7C76,x
 	PHX
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLX
 	LDA.w $7A36,x
 	CMP.w #$0006
@@ -8104,7 +8104,7 @@ CODE_06C741:
 	LDA.w $7D38,y
 	BEQ.b CODE_06C784
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDY.b #$02
 	STY.w $7AF6
 	LDA.w #$0400
@@ -10209,7 +10209,7 @@ CODE_06D8F4:
 	LDA.b $0E
 	PHA
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	PLA
 	ORA.w #$0800
 	STA.b $0E
@@ -10300,7 +10300,7 @@ CODE_06D9A2:
 	LDA.b $0E
 	PHA
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	PLA
 	ORA.w #$0800
 	STA.b $0E
@@ -10630,7 +10630,7 @@ CODE_06DD2B:
 	LDA.w $7D38,y
 	BEQ.b CODE_06DD48
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDA.w !EXRAM_YI_Level_NorSpr_GenericTable701902|!EXRAMBankMirror,x
 	ORA.w #$0800
@@ -13567,7 +13567,7 @@ UNK_06F91F:
 
 ;-------------------------------------------------------------------------
 ; LZ2-compressed graphics pointer table. (Cart asm + framework call this
-; format "lz1"; verified it's actually LC_LZ2 — see
+; format "lz1"; verified 2026-05-26 it's actually LC_LZ2 — see
 ; yi/SuperFX/Banks/Bank08.asm header on CODE_lz2_decompress.)
 ; Indexed by an 8-bit file ID (* 3 for the 3-byte stride). Each entry is
 ; a 24-bit `dl` pointer into the LZ2 source-data region (SuperFX-mapped

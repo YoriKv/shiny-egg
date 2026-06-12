@@ -36,10 +36,6 @@ export const LEVEL_PX_H = LEVEL_CELLS_H * CELL_PX
 /** Half-extent of an exit marker, in world (pre-zoom) pixels. */
 export const EXIT_MARKER_HALF_PX = 12
 
-/** Half-extent (world px) of a sprite's clickable square. The visible glyph
- *  is a 4-px-radius circle; this gives a forgiving 16×16 click target. */
-export const SPRITE_HIT_HALF_PX = 8
-
 /** Half-extent (world px) of the spawn flag's clickable square. The pole
  *  extends ~9 px up from the cell center, so we offset / size accordingly. */
 export const SPAWN_HIT_HALF_PX = 10

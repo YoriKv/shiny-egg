@@ -8,7 +8,7 @@
 ;#   - Math: COS/SIN/LCOS/LSIN tables (16-bit and 8-bit slow-attack subpixel
 ;#     variants) used by every transform routine.
 ;#   - Decompression: the LC_LZ2-style decompressor invoked by 65816 LoadGraphics
-;#     paths. (Cart + framework misname this format "lz1"; verified
+;#     paths. (Cart + framework misname this format "lz1"; verified 2026-05-26
 ;#     it's LC_LZ2 — see CODE_lz2_decompress block comment below.)
 ;#   - OAM packing for Mode-7 bosses.
 ;#

@@ -32,24 +32,42 @@ function neighborTarget(d: SpriteNeighborDep): string {
  *  per spatial mechanism with the real target name interpolated from the data,
  *  so it stays correct per-sprite rather than hardcoding entity names. */
 export function neighborSummary(d: SpriteNeighborDep): string {
-  // Class F (pipe-spawner) is behaviour-enabling, not a snap/requirement — give
-  // it its own line rather than the generic same-cell "snaps to …" phrasing.
-  if (d.cls === 'F') return 'Becomes a pipe spawner — emits copies — if placed on a pipe mouth'
+  // Tile-conditional behaviours get behaviour-phrased lines rather than the
+  // generic "snaps to …": pipe spawners (same-cell), the pipe-centring
+  // piranhas (offset-cell), and the ice-block snap.
+  if (d.cls === 'tile-behavior' && d.spatial === 'same-cell')
+    return 'Becomes a pipe spawner — emits copies — if placed on a pipe mouth'
+  if (d.cls === 'tile-behavior' && d.spatial === 'offset-cell')
+    return 'Auto-centres on a pipe mouth placed under it'
+  if (d.cls === 'ice-snap') return 'Encased in the cube if placed on an ice-block tile'
   const t = neighborTarget(d)
   switch (d.spatial) {
     case 'same-cell':
-      return `Snaps to ${aOrAn(t)} ${t} if placed on one`
+      return `Needs ${aOrAn(t)} ${t} at its own cell`
     case 'path':
-      return `Follows ${t} if placed on one`
+      return d.enforce ? `Follows ${t} if placed on one` : `Travels ${t} when placed on one`
     case 'offset-cell':
       return `Locks onto ${aOrAn(t)} ${t} placed near it`
+    case 'row':
+      return d.enforce
+        ? `Needs ${aOrAn(t)} ${t} on its row`
+        : `Connects to ${t} beside it when present`
+    case 'level':
+      return `Needs ${t} somewhere in the level`
     case 'proximity':
-      return `Needs ${aOrAn(t)} ${t} within reach`
+      // radiusCells 0 = same-cell pairing (the mouser sits ON its hole).
+      return d.radiusCells === 0
+        ? `Sits on ${aOrAn(t)} ${t} (same cell)`
+        : `Needs ${aOrAn(t)} ${t} within reach`
     case 'global':
-      return `Pairs with ${aOrAn(t)} ${t} in the level`
+      return d.enforce
+        ? `Pairs with ${aOrAn(t)} ${t} in the level`
+        : `Interacts with ${aOrAn(t)} ${t} placed in the level`
     case 'carried':
       return `Needs ${aOrAn(t)} ${t} carried in from another room`
     case 'screen':
       return 'Uses the exit set for its screen'
+    case 'note':
+      return d.designerRule
   }
 }

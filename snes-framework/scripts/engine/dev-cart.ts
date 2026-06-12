@@ -27,7 +27,8 @@ const STEM = "Super Mario World 2 - Yoshi's Island (USA V1.0)";
 export interface DevCart {
   /** ROM bytes for the engine decode/render functions (they take Uint8Array). */
   rom: Uint8Array;
-  /** Same bytes as a Buffer — catalog/name parsing uses `readUInt16LE`. */
+  /** Same bytes as a Buffer (the `fs.readFileSync` output) — for callers whose
+   *  signatures take `Buffer` (catalog/name parsing, level-map walks). */
   cart: Buffer;
   /** Main `.sym` with the SuperFX `.sym` overlaid (see `mergeSymbolMaps`). */
   symbols: SymbolMap;

@@ -5,17 +5,15 @@
 import type { LevelData, LevelObject, LevelSprite, SpriteCelBounds } from '../../../preload/api'
 import type { IncomingExit, LayerVisibility, Selection } from '../types'
 import { isLayerVisible } from './draw/objects'
-import { spriteCelBoundsFor } from './draw/sprites'
+import { spriteCelBoundsFor, spriteOutlineBox } from './draw/sprites'
 import {
   CELL_PX,
   EXIT_MARKER_HALF_PX,
   INCOMING_HIT_HALF_PX,
   SPAWN_HIT_HALF_PX,
-  SPRITE_HIT_HALF_PX,
   exitCenterX,
   exitCenterY,
-  objectVisualBox,
-  spriteCelBox
+  objectVisualBox
 } from './geometry'
 import type { View } from './view'
 
@@ -24,10 +22,12 @@ import type { View } from './view'
 export type SpriteBoundsMap = Map<number, SpriteCelBounds> | null | undefined
 
 /**
- * True when (wx, wy) — world pixels — falls on sprite `s`. Cel-backed sprites
- * use their size-matched box so the click area matches the drawn graphic;
- * marker/flag sprites (cel-less + completion landmarks) keep the forgiving
- * SPRITE_HIT_HALF_PX square. Shared by every sprite hit path.
+ * True when (wx, wy) — world pixels — falls on sprite `s`. The hit region IS
+ * the drawn outline box (`spriteOutlineBox` — the size-matched cel box when
+ * cel-backed, the 1-cell square otherwise), so the click area provably can't
+ * drift from the drawn box. The cel-less square keeps inclusive far edges (a
+ * click exactly on the box's right/bottom edge still counts), matching the
+ * old forgiving marker-square behavior. Shared by every sprite hit path.
  */
 export function spriteHit(
   s: LevelSprite,
@@ -35,29 +35,11 @@ export function spriteHit(
   wy: number,
   bounds: SpriteBoundsMap
 ): boolean {
-  const cel = spriteCelBoundsFor(s, bounds)
-  if (cel) {
-    const b = spriteCelBox(s.x, s.y, cel)
+  const b = spriteOutlineBox(s, bounds)
+  if (spriteCelBoundsFor(s, bounds)) {
     return wx >= b.x0 && wx < b.x0 + b.w && wy >= b.y0 && wy < b.y0 + b.h
   }
-  const sx = (s.x + 0.5) * CELL_PX
-  const sy = (s.y + 0.5) * CELL_PX
-  return Math.abs(wx - sx) <= SPRITE_HIT_HALF_PX && Math.abs(wy - sy) <= SPRITE_HIT_HALF_PX
-}
-
-/** World-pixel box for a sprite's hit region — the size-matched cel box for
- *  cel-backed sprites, the forgiving marker square otherwise. Shared by the
- *  rect (marquee) test; `spriteHit` keeps its own point form for exact inclusive
- *  edges. */
-function spriteBoxFor(
-  s: LevelSprite,
-  bounds: SpriteBoundsMap
-): { x0: number; y0: number; w: number; h: number } {
-  const cel = spriteCelBoundsFor(s, bounds)
-  if (cel) return spriteCelBox(s.x, s.y, cel)
-  const cx = (s.x + 0.5) * CELL_PX
-  const cy = (s.y + 0.5) * CELL_PX
-  return { x0: cx - SPRITE_HIT_HALF_PX, y0: cy - SPRITE_HIT_HALF_PX, w: SPRITE_HIT_HALF_PX * 2, h: SPRITE_HIT_HALF_PX * 2 }
+  return wx >= b.x0 && wx <= b.x0 + b.w && wy >= b.y0 && wy <= b.y0 + b.h
 }
 
 /** Axis-aligned box overlap (half-open — touching edges don't count). */
@@ -200,8 +182,8 @@ export function hitTestAll(
         hits.push({ kind: 'spawn', spawn })
       }
     }
-    // Cel-backed sprites use their size-matched box; cel-less sprites use the
-    // forgiving 8-px half-extent square (= the 1-cell outline box; see spriteHit).
+    // The hit region is the drawn outline box (see spriteHit) — the
+    // size-matched cel box when cel-backed, the 1-cell square otherwise.
     for (const s of level.sprites) {
       if (spriteHit(s, wx, wy, spriteBounds)) {
         hits.push({ kind: 'sprite', uid: s.uid! })
@@ -278,7 +260,7 @@ export function hitTestRect(
   const hits: Selection[] = []
   if (layers.spriteOutlines) {
     for (const s of level.sprites) {
-      const box = spriteBoxFor(s, spriteBounds)
+      const box = spriteOutlineBox(s, spriteBounds)
       if (rectsOverlap(rx0, ry0, rx1, ry1, box.x0, box.y0, box.x0 + box.w, box.y0 + box.h)) {
         hits.push({ kind: 'sprite', uid: s.uid! })
       }

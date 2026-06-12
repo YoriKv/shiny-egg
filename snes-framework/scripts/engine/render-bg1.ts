@@ -103,6 +103,11 @@ function buildPalettes(cgram: Uint8Array): Uint32Array[] {
   return out;
 }
 
+// Shared decode scratch: decode4bppTile overwrites all 64 bytes and everything
+// here is synchronous, so one module-level buffer replaces a per-sub-tile
+// allocation (~130k per full-level render — pure GC churn).
+const tileIndicesScratch = new Uint8Array(64);
+
 /** Blit a 4bpp 8×8 tile into the RGBA output at (dx, dy). Skips palette
  *  index 0 (treated as transparent — leaves alpha=0 in the output). */
 function blit4bppTileTransparent0(
@@ -116,7 +121,7 @@ function blit4bppTileTransparent0(
   dx: number,
   dy: number
 ): void {
-  const indices = new Uint8Array(64);
+  const indices = tileIndicesScratch;
   decode4bppTile(vram, tileByteOff, hflip, vflip, indices, 0);
   for (let row = 0; row < TILE_PX; row++) {
     const dstRow = (dy + row) * outStride + dx;

@@ -1078,7 +1078,7 @@ CODE_0586C8:
 	LDA.w $7D38,y
 	BEQ.b CODE_058710
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	DEC.w !EXRAM_YI_Level_NorSpr_GenericTable701902|!EXRAMBankMirror,x
 	LDY.w !EXRAM_YI_Level_NorSpr_GenericTable701902|!EXRAMBankMirror,x
 	BNE.b CODE_058709
@@ -1721,7 +1721,7 @@ CODE_clawdaddy_claw_collision_check:
 	CMP.b $0E
 	BCS.b CODE_058B48
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_058B48:
 	LDA.w $7C16,x
 	CLC
@@ -2869,7 +2869,7 @@ CODE_05934D:
 	TYX
 	LDA.w #!Define_YI_SoundID79_HurtGhost
 	JSL.l CODE_push_sound_queue
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDA.w #$0001
 	STA.b $16,x
 	LDY.b #$01
@@ -4538,7 +4538,7 @@ CODE_059EF3:
 	LDA.w $7D38,y
 	BEQ.b CODE_059F4F
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	BRA.b CODE_059F19
 
 CODE_059F10:
@@ -4757,7 +4757,7 @@ CODE_05A07B:
 	LDA.w $7D38,y
 	BEQ.b CODE_05A0A2
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDY.b #$10
 	STY.b $76,x
 	BRA.b CODE_05A0A2
@@ -5872,7 +5872,7 @@ CODE_05A96C:
 	LDA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,y
 	PHP
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDA.w #!Define_YI_SoundID0B_ShellHit1
 	JSL.l CODE_push_sound_queue
 	LDY.b #$00
@@ -6139,7 +6139,7 @@ CODE_05AB77:
 	STA.w $74A0,x
 	REP.b #$20
 	PLA
-	JML.l CODE_03B25B
+	JML.l CODE_kill_sprite_by_hit_special_cases
 
 CODE_05AB92:
 	STA.w $7A36,x
@@ -6436,7 +6436,7 @@ CODE_05ADD2:
 	AND.w #$4000
 	BNE.b CODE_05ADC7
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_05ADDF:
 	JSL.l CODE_05AE0B
 	LDY.w !EXRAM_YI_Level_NorSpr_GenericTable701901|!EXRAMBankMirror,x
@@ -6451,7 +6451,7 @@ CODE_05ADF1:
 	STA.w $74A0,x
 	REP.b #$20
 	PLA
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 DATA_05ADFF:
 	dw $0000,$FE6B,$0195
@@ -9504,7 +9504,7 @@ CODE_05C571:
 	LDA.w $7D38,y
 	BEQ.b CODE_05C590
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDA.w #!Define_YI_SoundID2E_ClankSound7
 	JSL.l CODE_push_sound_queue
 CODE_05C590:
@@ -10425,7 +10425,7 @@ CODE_05CC68:
 	STA.b $00
 	TYX
 	DEX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BCC.b CODE_05CC9C
 	LDA.w $6FA0,x
 	ORA.w #$0200
@@ -12356,7 +12356,7 @@ CODE_05DB46:
 	LDA.w $7D38,y
 	BEQ.b CODE_05DB60
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	BRA.b CODE_05DB24
 
 CODE_05DB60:
@@ -13556,7 +13556,7 @@ CODE_05E3B4:
 	AND.w #$4000
 	BNE.b CODE_05E388
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	BRA.b CODE_05E388
 
 CODE_05E3C3:
@@ -13889,7 +13889,7 @@ CODE_05E68F:
 	LDA.w $7D38,y
 	BNE.b CODE_05E6BC
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDA.w #!Define_YI_SoundID1D_ObjectLanding
 	JSL.l CODE_push_sound_queue
 	LDX.b #FXCODE_098FFE>>16
@@ -15256,7 +15256,7 @@ CODE_05F145:
 	BNE.b CODE_05F1BB
 	PHY
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLY
 	LDA.w #$0000
 	STA.w $7540,y
@@ -15660,7 +15660,7 @@ CODE_05F47B:
 	STZ.w !EXRAM_YI_Level_NorSpr_GenericTable701902|!EXRAMBankMirror,x
 	PHY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	PLY
 	LDA.w #$0020
 	STA.w $7A96,x
@@ -16395,7 +16395,7 @@ CODE_05F9F6:
 	CMP.w #!Define_YI_NorSpr02B_GreenGiantEgg+$01
 	BPL.b CODE_05FA13
 	TYX
-	JML.l CODE_03B24B
+	JML.l CODE_kill_sprite_by_hit_checked
 
 CODE_05FA13:
 	CMP.w #!Define_YI_NorSpr167_GreenKoopaShell
@@ -16704,7 +16704,7 @@ CODE_05FC3C:
 	LDA.w !EXRAM_YI_Level_NorSpr_GenericTable7019D8|!EXRAMBankMirror,y
 	BNE.b CODE_05FC9C
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	JMP.w CODE_05FD58
 
 CODE_05FC79:
@@ -16749,7 +16749,7 @@ CODE_05FCB0:
 CODE_05FCC0:
 	PHY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	PLY
 CODE_05FCC7:
 	LDA.w !EXRAM_YI_Level_NorSpr_GenericTable701900|!EXRAMBankMirror,x
@@ -16803,7 +16803,7 @@ CODE_05FD1A:
 	PHY
 	TYX
 	JSL.l CODE_0CFF61
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLY
 	LDA.w $7CD6,x
 	LDX.b #$00
@@ -16982,7 +16982,7 @@ CODE_05FE7A:
 	AND.w #$0800
 	BEQ.b CODE_05FE9D
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 CODE_05FE9D:
 	LDA.w $7A38,x
 	BPL.b CODE_05FEC2

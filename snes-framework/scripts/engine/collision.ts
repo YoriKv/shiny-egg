@@ -101,7 +101,7 @@ export const SECONDARY_TAG_NAMES = [
   'tube-block',         // 0x11 TK
   'countdown-block',    // 0x12 CT
   'waterfall-floor',    // 0x13 WF
-  'enemy-pipe',         // 0x14 DK — enemy-spawn pipe mouth (enemy inits read it to become generators; NOT player-enterable)
+  'pipe-mouth',         // 0x14 DK — pipe-mouth tiles (page $7D). TWO consumers: (1) PLAYER pipe entry — the GSU collision probes (Bank0B) accept a tagged tile whose per-tile DATA_0AEBBC byte has the pressed direction's entry bit, then CODE_0BDC20 commits the warp (tile-driven, no sprite); (2) enemy-spawn gate — enemy inits (CODE_0EB8AE) standing on it become pipe generators. Full model: editor data/exit-triggers.ts
   'cedar-tree',         // 0x15 SG
   'switch-coin',        // 0x16 CC — dashed coin, collectible only while ! switch on
   'ice-block',          // 0x17 IC
@@ -195,6 +195,33 @@ export function loadCollisionTable(
     out[p] = decodeCollisionEntry(p, rom[off]!, rom[off + 1]!, rom[off + 2]!);
   }
   return out;
+}
+
+/** Direction bits (low nibble) of a `DATA_0AEBBC` pipe-entry byte —
+ *  `$01`/`$02` horizontal, `$04` down-entry, `$08` up-entry. High bits are
+ *  alignment / orientation markers the probes use, not entry gates. */
+export const PIPE_ENTRY_DIRECTION_MASK = 0x0f;
+
+/**
+ * Load `DATA_0AEBBC` — the per-tile pipe-entry bits for the pipe-mouth page
+ * ($7D), indexed by a Map16 id's LOW byte. The GSU player collision probes
+ * (Bank0B) accept a tile as a pipe entrance iff its page collision tag is
+ * $14 `pipe-mouth` AND this byte carries the pressed direction's entry bit;
+ * `CODE_0BDC20` then commits the warp (PipeTransitionType + PlayerState $06).
+ * Enterability is therefore per-TILE, not per-page — e.g. mouth $7D08/$7D09
+ * ($04/$84, the Enterable vertical pipe) vs body tiles ($00/$01/$02).
+ * Tiles past the table's end have no entry bits (treat as 0).
+ * Full mechanism: src/renderer/src/data/exit-triggers.ts.
+ */
+export function loadPipeEntryBits(
+  rom: Uint8Array,
+  symbols: SymbolMap
+): Uint8Array {
+  const basePC = symbols.pc('DATA_0AEBBC');
+  // Length = distance to the next data label (38 bytes on the stock cart);
+  // derive it from the symbols so an asm splice can't silently truncate.
+  const endPC = symbols.tryPc('DATA_0AEBE2') ?? basePC + 38;
+  return rom.subarray(basePC, Math.min(endPC, basePC + 256));
 }
 
 /** Raw slope_panels_table buffer + base address — handed to slope-profile

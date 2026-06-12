@@ -79,7 +79,7 @@ JSL.l !RAM_YI_Global_BeginSuperFXProcessingRt
 **SuperFX inputs (on entry to `lz16_decompress`):**
 - `R0` = source ROM bank (8-bit, e.g. `$5C` for the first GFX entry)
 - `R1` = source ROM offset within bank (16-bit, e.g. `$BA89`)
-- `R3` = number of output **rows** (verified: §9.5 Q1).
+- `R3` = number of output **rows** (verified 2026-05-26: §9.5 Q1).
   Each row = 128 nibbles → 8 horizontal 2bpp tiles of width 16. With
   R3=2, the decoder produces 2 rows × 128 = 256 nibbles = 64 bytes of
   2bpp tile data at `$70:5800+`.
@@ -178,7 +178,7 @@ By the time we reach `CODE_0A805B` (the main-loop top), the decoder has:
 - A bit-count register (R10) tracking how many fresh bits R0 still has
 - An output cursor (R1) and a graphics-mode helper (R12, the LOOP iter)
 
-### 2.1 Pre-main-loop bit consumption (verified)
+### 2.1 Pre-main-loop bit consumption (verified 2026-05-26)
 
 After the LUT setup, the prologue's `IBT R10, #$05 ; LSR ; LSR ;
 IWT R15, #$8116 : LSR` plus the initial `WITH R9 ; ROL ; DEC R10 ;
@@ -201,7 +201,7 @@ of src[+3]. The encoder controls back-reference gating for **row 0**
 via src[+3]'s bit 4 (set bit 4 = 1 to enable back-ref for row 0;
 typical files leave it clear).
 
-Verified by trace:
+Verified by trace 2026-05-26:
 - Entry $00 (src[+3]=$40, bit 4=0): R9 = $0000 at branch #1. ✓
 - Entry $1D (src[+3] with lo nib=$7, bit 4=0): R9 = $0007 at branch #1. ✓
 
@@ -231,7 +231,7 @@ This gives the decoder **branch-on-each-bit** semantics. The tree of
 **token format** directly — there's no separate "control byte" being
 masked; the control bits drive control flow.
 
-## 4. Token tree (the format spec, derived from runtime trace)
+## 4. Token tree (the format spec, derived from runtime trace 2026-05-26)
 
 Confirmed via Mesen2 bit-by-bit trace of `lz16_decompress` against the
 first GFX dispatcher entry (`$5C:BA89`, 50 source bytes, 128 output
@@ -268,7 +268,7 @@ with BNE refill-check branches).
 R6/R7/R8/R9 are the four nibble-LUT registers loaded by the prologue
 from the first 4 source bytes (§5).
 
-**Gating note (verified with trace of dispatcher entry $14):**
+**Gating note (verified 2026-05-26 with trace of dispatcher entry $14):**
 The path above (`$0A:8128` dispatch tree) is taken when R9's sign bit
 is **clear** after the length-decode exit. When R9's sign bit is
 **set** (which accumulates over the run via the ROR at `$0A:8121`
@@ -291,7 +291,7 @@ bits become the emitted nibble (first bit read = MSB, last = LSB).
 This path emits any nibble value, including ones not cached in the
 LUTs.
 
-### 4.3 Run-length prefix (Elias-gamma, verified)
+### 4.3 Run-length prefix (Elias-gamma, verified 2026-05-26)
 
 Before the dispatch prefix, every token carries a **run length** R12
 decoded by the loop at `$0A:80AC-$0A:80B4` + `$0A:809C-$0A:80A9`.
@@ -338,7 +338,7 @@ match this encoding bit-for-bit (52/52 — run
 emits 39 copies of its nibble, walking R1 from $003F to $0018 = 39
 decrements).
 
-### 4.4 Back-reference tokens (verified with entry $14)
+### 4.4 Back-reference tokens (verified 2026-05-26 with entry $14)
 
 When R9 has its sign bit set at the post-length-decode test (`MOVES
 R9, R9 ; BPL CODE_0A8128` at `$0A:80B7`), the decoder skips the 3-bit
@@ -371,7 +371,7 @@ Three behaviors:
 **Critical:** the `$0A:80D0-$0A:80E7` path has **no STB instruction**.
 The token does NOT emit new bytes. It only advances R1 backward
 through the buffer. Verified by Mesen2 write-callback trace
-(entry $14): the first LZ-back token walks R1 from $7F
+(2026-05-26, entry $14): the first LZ-back token walks R1 from $7F
 to $65 (26 positions) across 29 branch events without firing a
 single write to `$700000-$7000FF`. Writes resume only at the next
 token's first STB.
@@ -416,13 +416,13 @@ adjacent rows often differ in only a few positions.
   scan boundary, NOT the previous-row preservation behavior LZ-back
   does).
 
-  Verified with trace (entry $14 token #22, R12=3):
+  Verified with trace 2026-05-26 (entry $14 token #22, R12=3):
   writes `$64=01, $63=01, $62=01, $61=09` (R5=$01, R0=$09).
 
 - **"LDW-variant"** (`$0A:8085`-`$0A:8092`, bit=1): same byte-by-byte
   scan as LDB-variant (despite the misleading asar mnemonic — see
   note below), but with a different post-scan emit structure.
-  Verified via trace (entry $1D, token starting at branch
+  Verified via trace 2026-05-26 (entry $1D, token starting at branch
   191, R12=$24):
   ```
   R5 = byte at (R1); R1 -= 1                ; capture last-emitted byte
@@ -482,7 +482,7 @@ value (2^K) going into the main dispatch and emit.
 Observed twice in the entry-$14 trace (tokens emitting $07 ×2 and
 $01 ×8).
 
-**R9-sign accumulator mechanism (verified, entry $1D).** The
+**R9-sign accumulator mechanism (verified 2026-05-26, entry $1D).** The
 row-flush epilogue at `$0A:8114-$0A:8121` does this:
 
 ```
@@ -539,7 +539,7 @@ the byte at the new R15 = `$0A:8096` = `$00`. IBT R12 then executes
 with operand = `$00` (not `$14`), so **R12 = $00 across LZ-back exit**,
 matching the behavior of normal STB-exit through `$0A:8107 BPL`.
 
-Verified by trace: branch 434 (LZ-back exit at `$0A:80E7`)
+Verified by trace 2026-05-26: branch 434 (LZ-back exit at `$0A:80E7`)
 followed by branch 435 (`$0A:80AC`, length-decode loop) both show
 R12=$0000. The byte at `$0A:80EA` (`$14`) is dead — it would only be
 read as an operand if the BRA jumped to `$0A:80EA-1` = `$0A:80E9`,
@@ -582,7 +582,7 @@ addr = $700000 | (ScreenBase << 10) | (tileIndex * (PlotBpp << 3)) | ((y & 7) * 
 per `Gsu.Instructions.cpp:609-624`. So a row of 128 PLOT calls
 populates the bitplane bytes of (128/8) = 16 tile columns × 2 rows.
 
-**Verified by write-callback trace** (entry $00, R3=2):
+**Verified by write-callback trace 2026-05-26** (entry $00, R3=2):
 
 - 386 writes to `$70:0000-$70:007F` (row buffer, from STB emits)
 - 64 writes to `$70:5800-$70:583F` (PLOT pixel-cache flushes)
@@ -652,7 +652,7 @@ token.
 
 ## 5. The nibble LUTs (R6 / R7 / R8 / R9)
 
-**Confirmed from trace.** Earlier draft of this section was
+**Confirmed from trace 2026-05-26.** Earlier draft of this section was
 wrong — see corrected layout below.
 
 Each of R6/R7/R8 is set to the high and low nibbles of **one** source
@@ -737,7 +737,7 @@ the colon execute in parallel. This is what makes `BNE target : IBT R10, #$08`
 work — the IBT happens regardless of which branch is taken (it's a
 side effect on the same cycle).
 
-### 6.1 Bank-wrap semantics (asm-verified)
+### 6.1 Bank-wrap semantics (asm-verified 2026-05-26)
 
 **No write-back to $0080.** The wrap path loads R10 from RAM[$0080]
 (= the *initial* bank, saved by `SM ($0080), R0` in the prologue),
@@ -796,11 +796,11 @@ A faithful host-language port needs four pieces:
      accumulator).
    - Increment row counter R2; stop when R2 == R3.
 
-## 8. Final step — ground-truth validation (RESOLVED)
+## 8. Final step — ground-truth validation (RESOLVED 2026-05-26)
 
 The model in §1-§7 is **trace-consistent**: every claim has been
 verified against runtime observation of the GSU executing real LZ16
-inputs (see §9). It is **also externally validated
+inputs (see §9). As of 2026-05-26 it is **also externally validated
 against the canonical FORMAT=15 decoder** (`lc200/decomp.exe`, the
 closed-source Lunar Compress reference) via a three-way byte-for-byte
 comparison across every entry in `DATA_06FC79`.
@@ -912,7 +912,7 @@ below. The remaining questions are §9.5 (R3 semantics confirmed:
 output rows) and the precise bit-by-bit construction of R12 inside the
 run-length prefix.
 
-### 9.1 RESOLVED — Exact bit assignment per token
+### 9.1 RESOLVED — Exact bit assignment per token (2026-05-26)
 
 **Resolution path:** Mesen2 Lua trace of `lz16_decompress` with full
 GSU register state captured at every branch in the bit-reader. Trace
@@ -980,7 +980,7 @@ Token-type distribution from one entry-0 run (54 tokens):
 | R6-lo    | 3     | 3  |
 | PLOT-row | 2     | 2 row-flushes (R3=2 means decoder halts after these) |
 
-### 9.2 Trace harness retrospective
+### 9.2 Trace harness retrospective (2026-05-26)
 
 The bit-precise spec was extracted via **Mesen2 Lua trace** (not via
 hand-reading the asm). Two traces — dispatcher entry $00 (no
@@ -1012,7 +1012,7 @@ is easier to maintain but loses GSU-fidelity for edge cases.
 
 ### 9.5 Secondary open questions
 
-1. **Role of R3 (size hint) — RESOLVED.** R3 = **output row
+1. **Role of R3 (size hint) — RESOLVED 2026-05-26.** R3 = **output row
    count**. The trace ran with R3=$0002 and decompressed exactly 2 rows
    = 256 nibbles total (128 nibbles per row, with a PLOT-row flush at
    the end of each row). The check at `$0A:80F2` (`FROM R2 ; CMP R3 ;
@@ -1022,7 +1022,7 @@ is easier to maintain but loses GSU-fidelity for edge cases.
    row width to 64 (× 2 bytes per STW = 128 nibbles per row), which is
    independent of R3.
 
-2. **Termination condition — RESOLVED.** `STOP : NOP` at
+2. **Termination condition — RESOLVED 2026-05-26.** `STOP : NOP` at
    `$0A:80FB` (after RPIX). Reached when R2 == R3 in the
    end-of-row check at `$0A:80F2`. The trace confirms: after the
    second `$0A:80EC` PLOT-row event, no further branches fire, and
@@ -1031,7 +1031,7 @@ is easier to maintain but loses GSU-fidelity for edge cases.
    (R3 rows × 128 nibbles each), and the 65816 side knows the
    expected output size from R3 at dispatch time.
 
-3. **Run-length-prefix bit encoding — RESOLVED.** See §4.3
+3. **Run-length-prefix bit encoding — RESOLVED 2026-05-26.** See §4.3
    for the full encoding. The loop at `$0A:80AC-$0A:80B4` +
    `$0A:809C-$0A:80A9` reads 2 bits per iteration (`bit_a`, `bit_b`);
    `bit_a=0` exits with `R12 |= R4`, `bit_a=1` continues; `bit_b`
@@ -1040,39 +1040,40 @@ is easier to maintain but loses GSU-fidelity for edge cases.
    LSB-first packing of K `bit_b` values. Validated against 52/52
    tokens in the captured trace.
 
-4. **Back-reference gating mechanism — RESOLVED.** R9's
+4. **Back-reference gating mechanism — RESOLVED 2026-05-26.** R9's
    sign bit at `MOVES R9, R9 ; BPL CODE_0A8128` gates between regular
    dispatch and back-ref dispatch. The MSB is updated each row by the
    epilogue at `$0A:8114-$0A:8121` (`MOVE R0, R4 ; WITH R9 ; ROL ;
    ... ; WITH R9 ; ROR`) from R4 bit-0 of the LAST emit token. See
    §4.4 R9-sign accumulator.
 
-5. **LZ-prev LDW-variant emit semantics — RESOLVED.**
+5. **LZ-prev LDW-variant emit semantics — RESOLVED 2026-05-26.**
    Verified via entry $1D trace: emits exactly 1 byte at offset
    `mismatch_position + R12`, value = R0 low byte (the mismatching
    word's low byte). See §4.4.
 
-6. **R12=$14 pre-load after LZ-back — RESOLVED (claim was wrong).** The asar `: IBT R12, #$14` at `$0A:80E7` is the
+6. **R12=$14 pre-load after LZ-back — RESOLVED (claim was wrong)
+   2026-05-26.** The asar `: IBT R12, #$14` at `$0A:80E7` is the
    linear-disassembly mnemonic; the GSU's prefetch-routed execution
    reads the IBT R12 operand from the BRA target, not from the
    source `$14` byte (see `docs/mchip.md` §7.7). R12 actually
    resets to 0 across LZ-back
    exit (the operand byte read at the BRA target = `$00`). See §4.4.
 
-7. **PLOT pipeline output format — RESOLVED.** Verified
+7. **PLOT pipeline output format — RESOLVED 2026-05-26.** Verified
    via write-callback trace: PLOT writes go to
    `$700000 | (ScreenBase << 10)` (= `$70:5800` for typical
    ScreenBase=$16), in standard SNES 2bpp/4bpp tile-byte format.
    See §4.5.
 
-8. **lz16_refill bank-wrap — DOCUMENTED (asm-verified).**
+8. **lz16_refill bank-wrap — DOCUMENTED 2026-05-26 (asm-verified).**
    The wrap path loads R10 from RAM[$0080] = initial bank, increments,
    uses as new bank for both SBK and ROMB; resets R14 to $00. No
    write-back, so only single-wrap per decode is supported by design.
    See §6.1.
 
 9. **Ground-truth validation against `lc200/decomp.exe FORMAT=15`** —
-   **RESOLVED**. All 187 entries match byte-for-byte
+   **RESOLVED 2026-05-26**. All 187 entries match byte-for-byte
    across three independent decoders: `decomp.exe`, the TS port at
    `scripts/lz16-decoder.ts` (vendored from shiny-egg), and Mesen
    running the cart's own `lz16_decompress` at `$0A:8000`. See **§8**

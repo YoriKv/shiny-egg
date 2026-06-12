@@ -18,7 +18,7 @@ import type { LevelSprite, SpriteCelBounds } from '../../../../preload/api'
 import { getSprite } from '../../data/obj-metadata'
 import { CELL_PX, spriteCelBox } from '../geometry'
 import { drawFlagGlyph, glyphZoomScale } from './glyphs'
-import { drawSelectionBox } from './selection'
+import { drawAnchorDot, drawSelectionBox, HOVER_ACCENT } from './selection'
 import { beginIdLabels, drawIdLabel } from './text'
 import { hex } from '../../lib/hex'
 
@@ -76,10 +76,10 @@ function spriteHex(s: LevelSprite): string {
   return hex(s.num, 3)
 }
 
-/** World-pixel box for a sprite's outline: its size-matched cel box when
- *  cel-backed, else the 1-cell square at its (x, y) anchor. The 1-cell box is
- *  identical to the cel-less click area in `spriteHit`, so outline and hit-test
- *  always agree. */
+/** World-pixel box for a sprite: its size-matched cel box when cel-backed,
+ *  else the 1-cell square at its (x, y) anchor. The single source for the
+ *  drawn outline AND the hit-tests (`spriteHit` / the marquee box), so the
+ *  click area provably can't drift from the drawn box. */
 export function spriteOutlineBox(
   s: LevelSprite,
   bounds: Map<number, SpriteCelBounds> | null | undefined
@@ -141,7 +141,7 @@ export function drawSpriteOutlines(
     // Amber by default so sprite outlines read as distinct from objects'
     // white; chartreuse on hover to match the object / exit hover style.
     ctx.strokeStyle =
-      s.uid === hoveredUid ? 'rgba(212, 225, 87, 0.85)' : 'rgba(255, 205, 92, 0.6)'
+      s.uid === hoveredUid ? HOVER_ACCENT : 'rgba(255, 205, 92, 0.6)'
     ctx.strokeRect(box.x0 + inset, box.y0 + inset, box.w - inset * 2, box.h - inset * 2)
   }
   ctx.restore()
@@ -176,11 +176,11 @@ export function drawSpriteOutlines(
 }
 
 /**
- * Subtle dot at a sprite's `(x, y)` anchor — the origin point its cel is placed
+ * Dot at a sprite's `(x, y)` anchor — the origin point its cel is placed
  * from (`render-sprite-layer` lands the cel's `(0, 0)` here). For cel-backed
  * sprites the outline box is offset from this by the cel origin, so the dot
- * reveals where the sprite is actually anchored. The sprite analog of objects'
- * `drawAnchor`; self-contained (save/restore) so it can't leak state.
+ * reveals where the sprite is actually anchored. Amber idle tint distinguishes
+ * sprites from objects' orange (shared shape via `drawAnchorDot`).
  */
 function drawSpriteAnchor(
   ctx: CanvasRenderingContext2D,
@@ -188,18 +188,7 @@ function drawSpriteAnchor(
   zoom: number,
   emphasis: boolean
 ): void {
-  const ax = s.x * CELL_PX
-  const ay = s.y * CELL_PX
-  const r = (emphasis ? 3 : 2.25) / zoom
-  ctx.save()
-  ctx.beginPath()
-  ctx.arc(ax, ay, r, 0, Math.PI * 2)
-  ctx.fillStyle = emphasis ? '#d4e157' : 'rgba(255, 205, 92, 0.9)'
-  ctx.fill()
-  ctx.lineWidth = 1 / zoom
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
-  ctx.stroke()
-  ctx.restore()
+  drawAnchorDot(ctx, s.x, s.y, zoom, emphasis, 'rgba(255, 205, 92, 0.9)')
 }
 
 /**

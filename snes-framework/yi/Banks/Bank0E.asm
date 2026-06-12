@@ -106,7 +106,7 @@ CODE_0E803E:
 	BNE.b CODE_0E8055
 	TYX
 	DEX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	BRA.b CODE_0E809E
 
 CODE_0E8055:
@@ -671,7 +671,7 @@ CODE_0E8464:
 	LDA.w $7D38,y
 	BEQ.b CODE_0E848E
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_0E848E:
 	JSL.l CODE_03D127
 CODE_0E8492:
@@ -2968,7 +2968,7 @@ CODE_0E967A:
 	AND.w #$4000
 	BNE.b CODE_0E9647
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_0E9687:
 	JSR.w CODE_0E9885
 	INC.b $18,x
@@ -4802,7 +4802,7 @@ CODE_0EA5D5:
 	BEQ.b CODE_0EA5F1
 	DEY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	BRA.b CODE_0EA62D
 
 CODE_0EA5F1:
@@ -6505,10 +6505,10 @@ CODE_0EB23F:
 	LDA.w $7D38,y
 	BEQ.b CODE_0EB26F
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_0EB257:
 	PLA
-	JML.l CODE_03B25B
+	JML.l CODE_kill_sprite_by_hit_special_cases
 
 CODE_0EB25C:
 	INY
@@ -6815,7 +6815,7 @@ CODE_0EB47F:
 	BEQ.b CODE_0EB47E
 	DEY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_0EB494:
 	JSL.l CODE_0EB4AE
 	RTS
@@ -7585,7 +7585,7 @@ CODE_0EBA54:
 CODE_0EBA67:
 	INY
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	STZ.w $6FA2,x
 	PLP
 	BMI.b CODE_0EBA76
@@ -8816,7 +8816,7 @@ CODE_0EC413:
 	STA.w $7040,y
 	PHY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	PLX
 	LDA.w !EXRAM_YI_Level_NorSpr_CurrentStatus|!EXRAMBankMirror,x
 	CMP.w #$000C
@@ -9836,13 +9836,13 @@ CODE_0ECBFE:
 	LDY.w $7D36,x
 	DEY
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	JSR.w CODE_0ECC34
 	BCC.b CODE_0ECC12
 CODE_0ECC0C:
 	PLA
 	PLA
-	JML.l CODE_03B24B
+	JML.l CODE_kill_sprite_by_hit_checked
 
 CODE_0ECC12:
 	LDA.w #!Define_YI_SoundID1C_StompEnemy
@@ -11513,7 +11513,7 @@ CODE_0ED979:
 CODE_0ED9B6:
 	JSR.w CODE_0ECB73
 	PLA
-	JML.l CODE_03B24B
+	JML.l CODE_kill_sprite_by_hit_checked
 
 DATA_0ED9BE:
 	dw $FE00,$0200
@@ -11556,7 +11556,7 @@ CODE_0EDA0F:
 	LDY.w $7D36,x
 	DEY
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	JSR.w CODE_0ED9C2
 	INC.b $78,x
 	LDY.w $7D36,x
@@ -12923,7 +12923,7 @@ CODE_0EE411:
 	CMP.b $00
 	BCS.b CODE_0EE410
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 CODE_0EE458:
 	LDA.w #!Define_YI_SoundID65_JumpOnFrog
 	JSL.l CODE_push_sound_queue
@@ -14892,7 +14892,7 @@ CODE_0EFAF6:
 	LDA.w $7D38,y
 	BEQ.b CODE_0EFAF5
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	JSR.w CODE_0EF97B
 	PLA
 	RTL

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { LevelData } from '../../../preload/api'
+import { getCollisionTable } from '../data/collision-info'
 import { getSpriteNeighborDeps } from '../data/obj-metadata'
 import {
   resolveDep,
@@ -12,16 +13,42 @@ import {
  *  that actually have neighbour-dependencies appear. */
 export type NeighborStatusMap = Map<number, DepResult[]>
 
-// The cart collision table is static (doesn't change per level/edit), so fetch
-// it once and reuse. Class-F (pipe-spawner) deps match a cell's page collision
-// secondary-tag, so the resolver needs page→tag; all other classes resolve
-// without it. Returns a page→tag lookup.
-let collisionTagPromise: Promise<(page: number) => number | undefined> | null = null
+// Class-F (pipe-spawner) deps match a cell's page collision secondary-tag, so
+// the resolver needs page→tag; all other classes resolve without it. Derived
+// from the shared cached table fetch (data/collision-info.ts).
 function getCollisionTagOfPage(): Promise<(page: number) => number | undefined> {
-  collisionTagPromise ??= window.shinyEgg.render
-    .collisionTable()
-    .then((table) => (page: number) => table[page]?.tag)
-  return collisionTagPromise
+  return getCollisionTable().then((table) => (page: number) => table[page]?.tag)
+}
+
+// Sprite nums placed anywhere in the warp-reachable level group: forward BFS
+// over screen-exit warps from the current record (live `level` for the edited
+// record; saved data for connected rooms via loadResource). Feeds the
+// `carried` deps' fallback — a locked door's Key usually lives in a connected
+// sub-room. Depth-capped like the sub-level discovery BFS.
+async function carriedGroupNums(level: LevelData, maxDepth = 8): Promise<Set<number>> {
+  const nums = new Set<number>(level.sprites.map((s) => s.num))
+  const visited = new Set<number>([level.recordId])
+  let frontier = level.exits
+    .filter((e) => e.variant === 'warp')
+    .map((e) => (e as { destLevelRecordId: number }).destLevelRecordId)
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
+    const next: number[] = []
+    for (const id of frontier) {
+      if (visited.has(id)) continue
+      visited.add(id)
+      try {
+        const data = await window.shinyEgg.editor.loadResource({ kind: 'level', recordId: id })
+        for (const s of data.sprites) nums.add(s.num)
+        for (const e of data.exits) {
+          if (e.variant === 'warp') next.push(e.destLevelRecordId)
+        }
+      } catch {
+        // unloadable slot (empty / special) — skip
+      }
+    }
+    frontier = next
+  }
+  return nums
 }
 
 // Map16 cell reader over a decoded layout. The indexing mirrors
@@ -71,11 +98,15 @@ export function useNeighborDependencies(
       return
     }
     let cancelled = false
+    const needsGroup = relevant.some((s) =>
+      getSpriteNeighborDeps(s.num).some((d) => d.spatial === 'carried')
+    )
     void Promise.all([
       window.shinyEgg.render.decodeLevelLayout({ levelRecordId: level.recordId, override: level }),
-      getCollisionTagOfPage()
+      getCollisionTagOfPage(),
+      needsGroup ? carriedGroupNums(level) : Promise.resolve(undefined)
     ])
-      .then(([layout, collisionTagOfPage]) => {
+      .then(([layout, collisionTagOfPage, groupNums]) => {
         if (cancelled) return
         if (!layout) {
           setStatus(new Map())
@@ -86,7 +117,8 @@ export function useNeighborDependencies(
           sprites: level.sprites.map((s) => ({ num: s.num, x: s.x, y: s.y })),
           map16At: makeMap16At(layout.levelDataBuffer, layout.screenPageMap),
           hasExitForScreen: (sc) => exitScreens.has(sc),
-          collisionTagOfPage
+          collisionTagOfPage,
+          carriedGroupNums: groupNums
         }
         const map: NeighborStatusMap = new Map()
         for (const s of relevant) {

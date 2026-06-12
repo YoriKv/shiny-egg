@@ -1422,7 +1422,7 @@ CODE_0190DA:
 	LDA.w $7542,y
 	STA.b $02
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDY.b $76,x
 	CPY.b #$0B
 	BPL.b CODE_019120
@@ -1555,7 +1555,7 @@ CODE_0191D3:
 	STA.b $02
 	TYX
 	PHY
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLY
 	LDA.b $00
 	BNE.b CODE_0191CA
@@ -4614,7 +4614,7 @@ CODE_01A607:
 	RTL
 
 CODE_01A60B:
-CODE_georgette_jelly_per_frame_l:              ; JSL-callable Georgette Jelly housekeeping: bail (pull caller) if freeze active; else run SuperFX FXCODE_099011 (per-sprite damage scan), kill any caught sprite via CODE_03B24B, handle ground/wall collisions
+CODE_georgette_jelly_per_frame_l:              ; JSL-callable Georgette Jelly housekeeping: bail (pull caller) if freeze active; else run SuperFX FXCODE_099011 (per-sprite damage scan), kill any caught sprite via CODE_kill_sprite_by_hit_checked, handle ground/wall collisions
 	LDA.w !EXRAM_YI_Level_FreezeSpritesFlagLo|!EXRAMBankMirror
 	ORA.w !RAM_YI_Level_TouchedFuzzyMosaicTimerLo
 	ORA.w !RAM_YI_Level_ItemBeingUsed
@@ -4660,7 +4660,7 @@ CODE_01A63F:
 	BEQ.b CODE_01A6A0
 	PHY
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	PLY
 	LDA.w #$0000
 	STA.w $7540,y
@@ -5434,7 +5434,7 @@ CODE_01AC06:
 	LDA.w $7D38,y
 	BEQ.b CODE_01AC29
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	STZ.w $7A96,x
 CODE_01AC29:
 	LDY.w $7A96,x
@@ -5770,7 +5770,7 @@ CODE_01AE54:
 	LDA.w $61D6
 	BNE.b CODE_01AE71
 	JSL.l CODE_03A858
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDA.w #$0001
 	STA.w $03BC
 CODE_01AE71:
@@ -5787,8 +5787,9 @@ CODE_01AE71:
 
 ;-------------------------------------------------------------------------
 ; Boo Guy on Pulley Init.
-; Snaps X to nearest 32px boundary via $70E2 & $0010, sets $7400 (facing)
-; from bit 4 of X, OAM $7040 = $1885 (pulley sprite palette/tile).
+; Sets $7400 (facing) from bit 4 of X ($70E2 & $0010 — the X-cell parity;
+; no position snap happens here, despite the parity read), OAM $7040 =
+; $1885 (pulley sprite palette/tile).
 ; INPUTS:   X = slot; $70E2,x = X-position.
 ; CALLERS:  Sprite Init dispatcher for sprite $10D.
 ;-------------------------------------------------------------------------

@@ -24,3 +24,10 @@ export function hex0x(n: number, width = 2): string {
 export function hexDollar(n: number, width = 6): string {
   return '$' + hex(n, width);
 }
+
+/** 24-bit SNES address as `"BB:AAAA"` (bank:offset, no prefix) — the WLA `.sym`
+ *  / disassembly-listing style used by the codegraph cache keys and the xref
+ *  CLI output. e.g. `hexAddr24(0x515348)` → `"51:5348"`. */
+export function hexAddr24(addr: number): string {
+  return hex((addr >>> 16) & 0xff, 2) + ':' + hex(addr & 0xffff, 4);
+}

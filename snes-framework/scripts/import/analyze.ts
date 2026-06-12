@@ -6,7 +6,7 @@
 // §6-7.
 
 import * as crypto from 'node:crypto';
-import { readU24LE } from '../extract.ts';
+import { u24le } from '../engine/rom-read.ts';
 import { decodeLevelStreams } from '../level.ts';
 import { serializeLevel } from '../serialize-level.ts';
 import type {
@@ -168,8 +168,8 @@ export function analyzeForeignRom(foreignCart: Buffer, baseCart: Buffer): Analyz
     // GoldenEgg can re-allocate an edited level back into its own just-freed
     // region, keeping the pointer, so a same-pointer changed stream is frequently
     // a genuine in-place edit.
-    const fObj = readU24LE(foreignCart, resolved.levelPtrsPc + recordId * 6);
-    const fSpr = readU24LE(foreignCart, resolved.levelPtrsPc + recordId * 6 + 3);
+    const fObj = u24le(foreignCart, resolved.levelPtrsPc + recordId * 6);
+    const fSpr = u24le(foreignCart, resolved.levelPtrsPc + recordId * 6 + 3);
     const foreignEmpty = !f.objBytes && !f.sprBytes;
     const wellFormed =
       pointsAtValidObjStream(foreignCart, fObj, foreign.standardObjectInfo) &&

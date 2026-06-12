@@ -2,7 +2,7 @@
 // markers (amber/violet) and by the world-map spawn flag (green).
 
 import { CELL_PX } from '../geometry'
-import { drawSelectionBox } from './selection'
+import { drawSelectionBox, HOVER_ACCENT } from './selection'
 import { beginIdLabels, drawIdLabel } from './text'
 
 /** How aggressively flag / landmark glyphs enlarge as the level is zoomed out
@@ -120,7 +120,7 @@ export function drawSpawnOutline(
     ctx.lineWidth = 1 / zoom
     const inset = 0.5 / zoom
     // Amber default / chartreuse hover — same treatment as drawSpriteOutlines.
-    ctx.strokeStyle = hovered ? 'rgba(212, 225, 87, 0.85)' : 'rgba(255, 205, 92, 0.6)'
+    ctx.strokeStyle = hovered ? HOVER_ACCENT : 'rgba(255, 205, 92, 0.6)'
     ctx.strokeRect(x0 + inset, y0 + inset, CELL_PX - inset * 2, CELL_PX - inset * 2)
     ctx.restore()
   }

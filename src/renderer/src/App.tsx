@@ -50,7 +50,7 @@ import { PatchesBody } from './panels/PatchesBody'
 import { useSubLevelBFS } from './hooks/useSubLevelBFS'
 import { useFloatingWindows, type WindowDef } from './hooks/useFloatingWindows'
 import { useLevelTileUsage } from './hooks/useLevelTileUsage'
-import { useSelectedObjectBlocks } from './hooks/useSelectedObjectBlocks'
+import { influenceBlockIds, useSelectedObjectInfluence } from './hooks/useSelectedObjectInfluence'
 import { useUnifiedHistory } from './hooks/useUnifiedHistory'
 import { useEmulatorActions } from './hooks/useEmulatorActions'
 import { useLevelNavigation } from './hooks/useLevelNavigation'
@@ -284,7 +284,11 @@ export default function App(): JSX.Element {
     (w) => w.open && (w.kind === 'tiles' || w.kind === 'palette')
   )
   const tileUsage = useLevelTileUsage(levelState.level, tilePanelsOpen)
-  const selectedObjectBlockIds = useSelectedObjectBlocks(levelState.level, primarySelection)
+  const selectedObjectInfluence = useSelectedObjectInfluence(levelState.level, primarySelection)
+  const selectedObjectBlockIds = useMemo(
+    () => influenceBlockIds(selectedObjectInfluence),
+    [selectedObjectInfluence]
+  )
   const selectedObjectRows = useMemo(() => {
     if (!selectedObjectBlockIds || !tileUsage) return null
     const rows = new Set<number>()
@@ -293,6 +297,16 @@ export default function App(): JSX.Element {
     }
     return rows
   }, [selectedObjectBlockIds, tileUsage])
+
+  // The level's CGRAM is a function of only the palette-relevant header fields:
+  // BG color (0), the BG1/BG2/BG3/sprite palette rows (2/4/6/8), and level mode
+  // (9) — the inputs to `paletteHeaderFromLevel`. Keying the Palette panel's live
+  // refresh on just these re-skins the swatch grid when one is edited, without
+  // re-fetching CGRAM on every object/sprite edit.
+  const paletteHeaderVersion = useMemo(() => {
+    const h = levelState.level?.header
+    return h ? [0, 2, 4, 6, 8, 9].map((i) => h[i] ?? 0).join(',') : ''
+  }, [levelState.level])
 
   // Unsaved-changes guards. Switching levels / following an exit discards the
   // current level's edits, so hold the navigation behind a confirm modal when
@@ -1156,6 +1170,8 @@ export default function App(): JSX.Element {
                   highlightRows={selectedObjectRows}
                   editor={paletteEditor}
                   renderRefresh={renderRefresh}
+                  override={levelState.level}
+                  headerVersion={paletteHeaderVersion}
                 />
               ) : w.kind === 'strings' ? (
                 <StringsBody
@@ -1168,7 +1184,7 @@ export default function App(): JSX.Element {
               ) : w.kind === 'world-map' ? (
                 <WorldMapBody editor={worldMapEditor} onJump={onWorldMapJump} />
               ) : w.kind === 'picker' ? (
-                <PickerBody armed={placement} onPick={onPickPlacement} />
+                <PickerBody armed={placement} level={levelState.level} onPick={onPickPlacement} />
               ) : w.kind === 'paint' ? (
                 <PaintBody
                   tileset={paint.tileset}
@@ -1198,6 +1214,7 @@ export default function App(): JSX.Element {
                   level={levelState.level}
                   currentLevelRecordId={selectedLevelRecordId}
                   rootLevelRecordId={rootLevelRecordId}
+                  selectedObjectInfluence={selectedObjectInfluence}
                   dispatchLevel={dispatchLevel}
                   worldMapSpawn={worldMapSpawn}
                   onSpawnCommit={onSpawnCommit}

@@ -88,6 +88,36 @@ export function deriveBg1Direction(sprites: ReadonlyArray<ChangerSprite>): Rende
  * `[0, totalCells)`. A level with no changer sprites yields a single band at
  * the header tileset/palette. `direction` defaults to `deriveBg1Direction`.
  */
+/** All BG1 tilesets a level can show: the header tileset plus every
+ *  gfx-changer band's target. The render-validity theme gate's effective set —
+ *  pick-time has no placement position, so an entry valid under ANY band is
+ *  offered (level 0x58's large line-guide corners are valid only inside its
+ *  ts15 changer band). */
+export function effectiveBg1Tilesets(
+  sprites: ReadonlyArray<ChangerSprite>,
+  header: Bg1RegionHeader
+): Set<number> {
+  const set = new Set<number>([header.bg1Tileset & 0x0f]);
+  for (const band of computeBg1Bands(sprites, header)) set.add(band.bg1Tileset & 0x0f);
+  return set;
+}
+
+/** The BG1 tileset in effect at a cell position (band-resolved along the
+ *  level's render axis). The render-validity EVIDENCE resolver: a shipped
+ *  placement proves its art under the band's tileset, not the header's. */
+export function effectiveBg1TilesetAt(
+  sprites: ReadonlyArray<ChangerSprite>,
+  header: Bg1RegionHeader,
+  x: number,
+  y: number
+): number {
+  const direction = deriveBg1Direction(sprites);
+  const bands = computeBg1Bands(sprites, header, direction);
+  const axisCell = direction === 'vertical' ? y : x;
+  const band = bands.find((b) => axisCell >= b.minCell && axisCell <= b.maxCell);
+  return (band?.bg1Tileset ?? header.bg1Tileset) & 0x0f;
+}
+
 export function computeBg1Bands(
   sprites: ReadonlyArray<ChangerSprite>,
   header: Bg1RegionHeader,

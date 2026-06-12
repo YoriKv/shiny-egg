@@ -772,7 +772,7 @@ CODE_0F85CB:
 	CMP.w #$0040
 	BCC.b CODE_0F85EF
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_0F85EF:
 	LDA.w #$000E
@@ -1237,7 +1237,7 @@ CODE_0F88DE:
 	LDA.w $7D38,y
 	BEQ.b CODE_0F88DD
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	LDY.w !EXRAM_YI_Level_NorSpr_GenericTable701900|!EXRAMBankMirror,x
 	TYA
@@ -3245,7 +3245,7 @@ CODE_0F97E2:
 	LDY.w $7D36,x
 	DEY
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_0F97ED:
 	RTS
@@ -5001,7 +5001,7 @@ CODE_0FA6B5:
 	DEY
 	TYX
 	STZ.w $7D38,x
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 CODE_0FA6D0:
 	SEP.b #$20

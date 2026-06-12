@@ -410,7 +410,7 @@ CODE_0C8282:
 	BNE.b CODE_0C8281
 	TYX
 	JSL.l CODE_0CFF61
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	RTS
 
@@ -1476,7 +1476,7 @@ CODE_0C8AA0:
 	BEQ.b CODE_0C8A9F
 	TYX
 	JSL.l CODE_0CFF61
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	RTS
 
@@ -1520,7 +1520,7 @@ CODE_0C8B28:
 	LDA.w $7D38,y
 	BEQ.b CODE_0C8B60
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	LDA.w #!Define_YI_SoundID13_SpringBounce
 	JSL.l CODE_push_sound_queue
@@ -1955,12 +1955,12 @@ CODE_0C8E70:
 	JSR.w CODE_0C8EBF
 	BCS.b CODE_0C8E8C
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BRA.b CODE_0C8E91
 
 CODE_0C8E8C:
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_0C8E91:
 	LDX.b $12
 	LDY.b #$00
@@ -2050,7 +2050,7 @@ CODE_0C8F21:
 	PLX
 CODE_0C8F2A:
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.w $7972
 	LDY.b $76,x
 	LDA.w DATA_boo_guy_shell_hit_sound_ids,y
@@ -2073,6 +2073,7 @@ CODE_0C8F3F:
 	JML.l CODE_despawn_sprite_free_slot
 
 CODE_0C8F5D:
+CODE_boo_guy_pipe_generator:                    ; pipe enemy generator (Boo Guy twin of CODE_shy_guy_state_08_pipe_generator): init_boo_guy sets the on-pipe flag when spawned on a pipe-mouth tile; when Yoshi nears (and <7 live) spawns a Boo Guy ($19A) that emerges from the pipe
 	JSL.l CODE_03AF23
 	LDA.w $7A96,x
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
@@ -2478,7 +2479,7 @@ CODE_0C9284:
 	LDA.w $7D38,y
 	BEQ.b CODE_0C92CF
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	LDA.w #$0001
 	STA.w $7402,x
@@ -2513,7 +2514,7 @@ CODE_0C92D0:
 	LDA.w $7D38,y
 	BEQ.b CODE_0C9305
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	STZ.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,x
 	STZ.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,x
@@ -2984,7 +2985,7 @@ CODE_0C9621:
 	LDA.w !EXRAM_YI_Player_SuperBabyMarioTimerLo|!EXRAMBankMirror
 	BEQ.b CODE_0C962B
 	PLA
-	JML.l CODE_03B25B
+	JML.l CODE_kill_sprite_by_hit_special_cases
 
 CODE_0C962B:
 	LDA.w $7C18,x
@@ -3412,7 +3413,7 @@ CODE_0C9935:
 	BEQ.b CODE_0C9940
 	PLY
 	PLA
-	JML.l CODE_03B25B
+	JML.l CODE_kill_sprite_by_hit_special_cases
 
 CODE_0C9940:
 	LDA.w $7C18,x
@@ -3671,7 +3672,7 @@ CODE_0C9B11:
 	BEQ.b CODE_0C9B1C
 	PLY
 	PLA
-	JML.l CODE_03B25B
+	JML.l CODE_kill_sprite_by_hit_special_cases
 
 CODE_0C9B1C:
 	LDA.w $7C18,x
@@ -3823,7 +3824,7 @@ CODE_0C9C23:
 	LDA.w $7D38,y
 	BEQ.b CODE_0C9C47
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	LDA.w #$000E
 	STA.w !EXRAM_YI_Level_NorSpr_CurrentStatus|!EXRAMBankMirror,x
@@ -4137,7 +4138,7 @@ CODE_0C9E74:
 	STA.w !EXRAM_YI_Level_NorSpr_CurrentStatus|!EXRAMBankMirror,y
 	JSL.l CODE_0C9C7B
 	JSL.l CODE_0CFF61
-	JML.l CODE_03B273
+	JML.l CODE_kill_sprite_by_hit
 
 CODE_0C9EC2:
 	JSL.l CODE_03A5B7
@@ -4420,7 +4421,7 @@ init_little_mouser_in_nest:
 	JMP.w (DATA_peeking_mouser_init_variant_ptr,x)
 
 DATA_0CA099:
-DATA_peeking_mouser_init_variant_ptr:           ; 2-entry Peeking Little Mouser init variant (by $70E2 bit-4: left-facing / right-facing)
+DATA_peeking_mouser_init_variant_ptr:           ; 2-entry Peeking Little Mouser init variant (by $70E2 bit-4 / cell-column parity: even = peek-animation loop forever, odd = emerge-and-hop sequence). NOT left/right-facing (old misgloss).
 	dw CODE_0CA119
 	dw CODE_0CA09D
 
@@ -7002,7 +7003,7 @@ CODE_0CB424:
 	STA.w $7A36,x
 	REP.b #$20
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	PLA
 	RTL
@@ -8137,7 +8138,7 @@ CODE_0CBE06:
 	LDA.w $7D38,y
 	BEQ.b CODE_0CBE2C
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	SEP.b #$20
 	LDA.b #$0E
@@ -8473,7 +8474,7 @@ CODE_0CC072:
 	ASL
 	STA.b $02
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDY.b $00
 	LDA.w DATA_0CC276,y
 	STA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,x
@@ -8868,14 +8869,15 @@ CODE_0CC3A4:
 	JMP.w (DATA_kamek_shoots_magic_state_ptr,x)
 
 DATA_0CC3AE:
-DATA_kamek_shoots_magic_state_ptr:              ; 6-entry Magic-Shooting Kamek state ptr (target / appear / cast / shoot / vanish / despawn)
-	dw CODE_0CC3BA
-	dw CODE_0CC53D
-	dw CODE_0CC580
-	dw CODE_0CC478
-	dw CODE_0CC5BC
-	dw CODE_0CC5E0
+DATA_kamek_shoots_magic_state_ptr:              ; 6-entry Magic-Shooting Kamek state ptr ($00 pick-spot / $02 scale-in / $04 wavy-in / $06 cast+volley / $08 scale-out / $0A wavy-out)
+	dw kamek_shoots_magic_state_pick_spot
+	dw kamek_shoots_magic_state_scale_in
+	dw kamek_shoots_magic_state_wavy_in
+	dw kamek_shoots_magic_state_cast_volley
+	dw kamek_shoots_magic_state_scale_out
+	dw kamek_shoots_magic_state_wavy_out
 
+kamek_shoots_magic_state_pick_spot:             ; state $00: GSU floor probe (FXCODE_0AE921) picks a landing column near the camera; re-places Kamek there, then enters scale-in ($02) or wavy-in ($04) on $10 sign
 CODE_0CC3BA:
 	LDX.b $12
 	LDA.w $7A96,x
@@ -8963,10 +8965,11 @@ DATA_0CC46D:
 DATA_0CC474:
 	dw $FFF0,$0010
 
+kamek_shoots_magic_state_cast_volley:           ; state $06: cast animation ($19,x over DATA_0CC466/46D); spawns a $01AE MagicShot at frame index 1, repeats while $77C0 volleys remain, then picks scale-out ($08) or wavy-out ($0A)
 CODE_0CC478:
 	LDX.b $12
-	JSR.w CODE_0CC6F9
-	JSR.w CODE_0CC6F3
+	JSR.w kamek_shoots_magic_dodge_if_threatened
+	JSR.w kamek_shoots_magic_noop_stub
 	LDA.w $7A96,x
 	BNE.b CODE_0CC4D7
 	SEP.b #$20
@@ -9055,6 +9058,7 @@ CODE_0CC524:
 	STA.b $78,x
 	RTL
 
+kamek_shoots_magic_state_scale_in:              ; state $02: grows the GSU scale factor $16,x by $10/frame up to $0100, then advances to the cast state ($06)
 CODE_0CC53D:
 	LDX.b $12
 	JSR.w CODE_0CC5F4
@@ -9089,6 +9093,7 @@ CODE_0CC550:
 	REP.b #$20
 	RTL
 
+kamek_shoots_magic_state_wavy_in:               ; state $04: wavy-distortion materialize -- advances phase $16,x by $76,x (mod $40) while $78,x counts down, then advances to the cast state ($06)
 CODE_0CC580:
 	LDX.b $12
 	JSR.w CODE_0CC679
@@ -9120,6 +9125,7 @@ CODE_0CC594:
 	REP.b #$20
 	RTL
 
+kamek_shoots_magic_state_scale_out:             ; state $08: shrinks $16,x by $10/frame down to $30, then arms the $20-frame re-appear cooldown and resets to state $00
 CODE_0CC5BC:
 	LDX.b $12
 	JSR.w CODE_0CC5F4
@@ -9141,6 +9147,7 @@ CODE_0CC5CF:
 	REP.b #$20
 	RTL
 
+kamek_shoots_magic_state_wavy_out:              ; state $0A: wavy-distortion vanish ($78,x countdown), then joins state $08's tail to reset to state $00
 CODE_0CC5E0:
 	LDX.b $12
 	JSR.w CODE_0CC640
@@ -9261,12 +9268,14 @@ CODE_0CC6C4:
 CODE_0CC6F2:
 	RTS
 
+kamek_shoots_magic_noop_stub:                   ; reads $7D36,x then branches to the fall-through either way -- no effect (vestigial)
 CODE_0CC6F3:
 	LDY.w $7D36,x
 	BPL.b CODE_0CC6F8
 CODE_0CC6F8:
 	RTS
 
+kamek_shoots_magic_dodge_if_threatened:         ; forces the vanish path when Yoshi, or the nearest in-flight thrown object (GSU FXCODE_098F33), is inside a $40x$40 px box around Kamek
 CODE_0CC6F9:
 	LDA.w $70E2,x
 	SEC
@@ -10233,7 +10242,7 @@ main_piscatory_pete:
 	JMP.w (DATA_piscatory_pete_state_ptr,x)
 
 DATA_0CCE98:
-DATA_piscatory_pete_state_ptr:                  ; 2-entry Piscatory Pete state ptr (left-jump / right-jump variant dispatch)
+DATA_piscatory_pete_state_ptr:                  ; 2-entry Piscatory Pete state ptr (fixed-direction-leap / homing-leap variant dispatch)
 	dw CODE_0CCE9C
 	dw CODE_0CCEA8
 
@@ -11029,7 +11038,7 @@ CODE_0CD435:
 	LDA.w $7D38,y
 	BEQ.b CODE_0CD45D
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDX.b $12
 	BRA.b CODE_0CD46C
 
@@ -14959,7 +14968,7 @@ CODE_0CF52B:
 	INC.b $00
 CODE_0CF550:
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	LDA.w #!Define_YI_SoundID09_Coin
 	JSL.l CODE_push_sound_queue
@@ -15162,7 +15171,7 @@ CODE_0CF6E6:
 	LDA.w $7D38,y
 	BEQ.b CODE_0CF728
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	LDA.w #!Define_YI_SoundID8F_Correct
 	JSL.l CODE_push_sound_queue
@@ -15252,7 +15261,7 @@ CODE_0CF7A4:
 	BCC.b CODE_0CF7A3
 	PLA
 	PLA
-	JML.l CODE_03B25B
+	JML.l CODE_kill_sprite_by_hit_special_cases
 
 DATA_0CF7B4:
 DATA_fly_guy_stomp_state_ptr:                   ; 2-entry Fly Guy head-bop state ptr (drop-coin / despawn)
@@ -16021,7 +16030,7 @@ CODE_0CFE28:
 	ASL
 	STA.b $00
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	PLA
 	LDA.w #!Define_YI_SoundID67_EnemyTumbling
@@ -16084,10 +16093,10 @@ CODE_0CFEAA:
 	LDA.w $7182,y
 	STA.b $02
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDX.b $12
 	PLA
-	JML.l CODE_03B24B
+	JML.l CODE_kill_sprite_by_hit_checked
 
 CODE_0CFEC0:
 	RTS

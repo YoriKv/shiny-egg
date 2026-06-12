@@ -7,9 +7,12 @@ import type {
   CartIdentification,
   CaptureAtResult,
   CollisionLayerResponse,
+  CollisionTableResult,
   DecodedLevelLayout,
   DecodedObjectInfluence,
   DecodedPalette,
+  EntityRenderValidity,
+  EntityValidityRequest,
   FindInstanceKind,
   FitSurfaceRequest,
   FitTileset,
@@ -19,6 +22,8 @@ import type {
   LocateBizhawkResult,
   ObjectInfluenceRequest,
   ObjectInstance,
+  PickerThumbnails,
+  PickerThumbnailsRequest,
   PatchAuthoringPaths,
   PatchImportResult,
   PatchMutationResult,
@@ -51,7 +56,7 @@ import type {
   SpritePropertiesRequest
 } from '../shared/ipc-types'
 import type { GfxFilesResult } from 'snes-framework/render-gfx-files'
-import type { CollisionEntry } from 'snes-framework/collision'
+
 import type { BuildResult } from 'snes-framework/build'
 import type { ExtractResult } from 'snes-framework/extract'
 import type { ExtractionState } from 'snes-framework/state'
@@ -168,6 +173,23 @@ const api = {
       req: ObjectInfluenceRequest
     ): Promise<DecodedObjectInfluence | null> =>
       ipcRenderer.invoke('render:objectInfluence', req),
+    /** Picker render-validity: per std/ext-object verdicts under this level's
+     *  header (each candidate probe-decoded alone, main-side, cached per
+     *  gfx-header tuple) + the level's 6 variable spriteset file ids for the
+     *  renderer-local sprite check. Pass `override` so live header edits are
+     *  honoured. Null for empty/special slots. */
+    entityRenderValidity: (
+      req: EntityValidityRequest
+    ): Promise<EntityRenderValidity | null> =>
+      ipcRenderer.invoke('render:entityRenderValidity', req),
+    /** Picker thumbnails (§B5): per-catalog-entry bitmaps under this level's
+     *  header. One tab per call — `candidates` (objects) or `spriteNums` (+
+     *  cel-gate sets). Absent key = no faithful bitmap (text-only row). Cached
+     *  main-side per header tuple. Null for empty/special slots. */
+    pickerThumbnails: (
+      req: PickerThumbnailsRequest
+    ): Promise<PickerThumbnails | null> =>
+      ipcRenderer.invoke('render:pickerThumbnails', req),
     /** Render BG2 + BG3 + backdrop for a level. Returns RGBA bitmaps the
      *  canvas can draw under the BG1 layer. Null for empty / special
      *  level slots. Header-driven; pass `override` to reflect edited
@@ -194,11 +216,11 @@ const api = {
      *  slots. Pass `override` for live edit preview. */
     collisionLayer: (req: LevelRenderRequest): Promise<CollisionLayerResponse | null> =>
       ipcRenderer.invoke('render:collisionLayer', req),
-    /** The full decoded 168-entry collision (`bg_type_table`) for the
-     *  current cart. Independent of level — cache once at the App level
-     *  and reuse across selections. ~5 KB struct vs the ~33 MB
-     *  `collisionLayer` bitmap. */
-    collisionTable: (): Promise<CollisionEntry[]> =>
+    /** The full decoded 168-entry collision (`bg_type_table`) plus the
+     *  per-tile pipe-entry bits (`DATA_0AEBBC`) for the current cart.
+     *  Independent of level — cache once at the App level and reuse across
+     *  selections. ~5 KB struct vs the ~33 MB `collisionLayer` bitmap. */
+    collisionTable: (): Promise<CollisionTableResult> =>
       ipcRenderer.invoke('render:collisionTable'),
     /** The 256-byte standard-object property table (low 2 bits = size-encoding
      *  flag). Per-cart static; cache once renderer-side. Drives which W/H the

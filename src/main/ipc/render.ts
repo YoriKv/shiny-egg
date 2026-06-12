@@ -30,11 +30,12 @@ import {
   compositeSpriteFull,
   renderSpritePatch
 } from 'snes-framework/render-sprite-layer'
-import { type CollisionEntry } from 'snes-framework/collision'
+
 import { renderCollisionLayer, renderCollisionPatch } from 'snes-framework/render-collision'
 import { resolveCellGrid, diffCellGrids } from 'snes-framework/cell-grid'
 import { loadSceneRegs } from 'snes-framework/scene-regs'
-import { loadLevelGfx, type GfxFileEntry } from 'snes-framework/load-graphics'
+import { loadSpritesetFileIds, type GfxFileEntry } from 'snes-framework/load-graphics'
+import { hex0x } from 'snes-framework/hex'
 import { loadLevel } from 'snes-framework/level'
 import { frameworkWorkRoot, overlayRoot } from '../framework-paths'
 import { getCurrentProjectId } from '../projects'
@@ -42,9 +43,14 @@ import type {
   Bg1LayerResponse,
   BgLayersResult,
   CollisionLayerResponse,
+  CollisionTableResult,
   DecodedLevelLayout,
   DecodedObjectInfluence,
   DecodedPalette,
+  EntityRenderValidity,
+  EntityValidityRequest,
+  PickerThumbnails,
+  PickerThumbnailsRequest,
   FitSurfaceRequest,
   FitTileset,
   LevelRenderRequest,
@@ -73,12 +79,13 @@ import {
   spriteInputKey,
   influenceClass,
   cssFromBgr15,
-  gfxHeaderFromLevel,
   renderHeaderFromLevel,
   isWorld6,
   buildLevelCgram,
   buildLevelVramCgram,
   changerSpriteSig,
+  getEntityValidity,
+  getPickerThumbnails,
   logMap16Diagnostics,
   PATCH_CELL_THRESHOLD,
 } from '../render/render-core'
@@ -234,20 +241,20 @@ export function registerRenderIpc(): void {
 
   // The level's gfx-file manifest (the Tiles "Header" tab): which compressed
   // files scene_gfx_layout loads into VRAM, with their layer (dpSlot), VRAM
-  // destination, format, and size. Runs the real gfx loader but discards the
-  // pixels — only the manifest collector is kept. `override` ⇒ tracks live
-  // header edits; isWorld6 resolves correctly via gfxHeaderFromLevel.
+  // destination, format, and size. Served from the shared VRAM/CGRAM cache
+  // (same key the spriteLayer handler uses, so the two share one build) —
+  // tile animation doesn't touch the manifest, so animate:false is exact.
+  // `override` ⇒ tracks live header edits; isWorld6 resolves inside the build.
   ipcMain.handle(
     'render:gfxManifest',
     async (_event, req: LevelRenderRequest): Promise<GfxFileEntry[] | null> => {
       const ctx = loadLevelContext(req)
       if (!ctx) return null
       const { rom, symbols, level } = ctx
-      const gfxHeader = gfxHeaderFromLevel(level.header, req.levelRecordId, frameworkWorkRoot())
-      const vram = new Uint8Array(0x10000)
-      const manifest: GfxFileEntry[] = []
-      loadLevelGfx(rom, symbols, gfxHeader, vram, manifest)
-      return manifest
+      return buildLevelVramCgram(
+        rom, symbols, level, req.levelRecordId, frameworkWorkRoot(),
+        { animate: false, paletteEdits: req.paletteOverride }
+      ).manifest
     }
   )
 
@@ -420,9 +427,10 @@ export function registerRenderIpc(): void {
 
   ipcMain.handle(
     'render:collisionTable',
-    async (): Promise<CollisionEntry[]> => {
+    async (): Promise<CollisionTableResult> => {
       const { rom, symbols } = loadRomAndSymbols()
-      return getCollisionData(rom, symbols).table
+      const { table, pipeEntryBits } = getCollisionData(rom, symbols)
+      return { table, pipeEntryBits }
     }
   )
 
@@ -566,6 +574,42 @@ export function registerRenderIpc(): void {
         mid: c.mid
       }))
       return { cells }
+    }
+  )
+
+  // Picker render-validity: per std/ext-object verdicts (probe-decoded alone
+  // under this level's header — engine entity-render-validity.ts) plus the
+  // level's 6 variable spriteset file ids for the renderer-local sprite check.
+  // Override-aware so HeaderPanel edits are honoured; the verdict matrix is
+  // cached per gfx-header tuple in render-core (~16 keys ever).
+  ipcMain.handle(
+    'render:entityRenderValidity',
+    async (_event, req: EntityValidityRequest): Promise<EntityRenderValidity | null> => {
+      const ctx = loadLevelContext(req)
+      if (!ctx) return null
+      const { rom, symbols, level } = ctx
+      const verdicts = getEntityValidity(
+        rom, symbols, level, req.levelRecordId, frameworkWorkRoot(), req.candidates
+      )
+      const spritesetFiles = loadSpritesetFileIds(rom, symbols, level.header[7] ?? 0)
+        .map((f) => hex0x(f, 2))
+      return { ...verdicts, spritesetFiles }
+    }
+  )
+
+  // Picker thumbnails (§B5): per-catalog-entry bitmaps under this level's
+  // header — objects probe-decoded alone + their stamped cells blitted,
+  // sprites via the static cel pipeline. Cached per header tuple in
+  // render-core. One tab per call (candidates XOR spriteNums).
+  ipcMain.handle(
+    'render:pickerThumbnails',
+    async (_event, req: PickerThumbnailsRequest): Promise<PickerThumbnails | null> => {
+      const ctx = loadLevelContext(req)
+      if (!ctx) return null
+      const { rom, symbols, level } = ctx
+      return getPickerThumbnails(
+        rom, symbols, level, req.levelRecordId, frameworkWorkRoot(), req
+      )
     }
   )
 

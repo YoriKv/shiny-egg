@@ -5,7 +5,8 @@
 // foreign cart's OWN header-bit-widths + property table. See plan-rom-import.md §6.
 
 import { snesToPC } from '../engine/symbol-map.ts';
-import { readU24LE, findObjStreamEndPC, findSprStreamEndPC } from '../extract.ts';
+import { findObjStreamEndPC, findSprStreamEndPC } from '../extract.ts';
+import { u24le } from '../engine/rom-read.ts';
 import {
   LEVEL_COUNT,
   SENTINEL_OBJ_SNES,
@@ -47,8 +48,8 @@ export function readForeignStreams(cart: Buffer, anchors: ImportAnchors): Foreig
   for (let id = 0; id < LEVEL_COUNT; id++) {
     const entryPc = anchors.levelPtrsPc + id * 6;
     if (entryPc + 6 > cart.length) break;
-    const objSnes = readU24LE(cart, entryPc);
-    const sprSnes = readU24LE(cart, entryPc + 3);
+    const objSnes = u24le(cart, entryPc);
+    const sprSnes = u24le(cart, entryPc + 3);
 
     let objBytes: Buffer | null = null;
     let sprBytes: Buffer | null = null;

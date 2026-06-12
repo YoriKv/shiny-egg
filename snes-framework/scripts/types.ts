@@ -480,6 +480,16 @@ export interface LayerCellPatch {
   rgba: Uint8Array;
 }
 
+/** Object render-validity verdict (`entity-render-validity.ts`): would this
+ *  std/ext object's stamped Map16 tiles have their graphics in VRAM under a
+ *  given level header? `ok` = every stamped block's sub-tiles are covered
+ *  (gfx-loaded or tile-animation-filled) · `degraded` = some blocks miss ·
+ *  `invalid` = no block renders · `no-visual` = a ported handler stamped
+ *  nothing (command / screen-effect objects — never filtered out) · `unknown`
+ *  = handler unported or the probe decode failed (shown, badged, never
+ *  hidden). */
+export type ObjectRenderVerdict = 'ok' | 'degraded' | 'invalid' | 'no-visual' | 'unknown';
+
 // ── Asm string tables (string-editor model — plan step 5) ──────────────────
 // The structured model the string editor loads/saves through the generic
 // asm-region resource IPC. One `StringTableModel` per editable `;@editable`

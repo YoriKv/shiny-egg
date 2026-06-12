@@ -4,6 +4,9 @@ name: Release
 # GitHub Release with two artifacts:
 #   - shiny-egg-<version>-setup.exe  (NSIS installer)
 #   - shiny-egg-<version>-win.zip    (zipped portable app = win-unpacked contents)
+# The release body is the matching `## v<version>` section of CHANGELOG.md
+# (auto-generated commit notes are appended after it; if the section is
+# missing, the release falls back to the auto notes alone).
 # A manual run (workflow_dispatch) just builds and uploads the artifacts to the
 # run (no release), handy for testing the build.
 
@@ -38,11 +41,27 @@ jobs:
       - name: Build Windows app (NSIS installer + zip)
         run: pnpm run build:win
 
+      # Tag push → pull this version's section out of CHANGELOG.md for the
+      # release body. Matches the heading's second field against the tag
+      # (`## v0.3.5 — …`), so the trailing date/"unreleased" note is ignored.
+      # No matching section ⇒ empty file ⇒ auto-generated notes only.
+      - name: Extract changelog section
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          awk -v tag="${GITHUB_REF_NAME}" '
+            /^## / { on = ($2 == tag) ; next }
+            on' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::warning::CHANGELOG.md has no \"## ${GITHUB_REF_NAME}\" section — release body will be auto-generated notes only."
+          fi
+
       # Tag push → publish a release with exactly the two artifacts.
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release-notes.md
           files: |
             dist/*-setup.exe
             dist/*-win.zip

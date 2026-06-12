@@ -26,6 +26,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { snesToPC, type SymbolMap } from './engine/symbol-map.ts';
+import { u16le } from './engine/rom-read.ts';
 import { levelIdHexKey } from './level.ts';
 import { SLOT_SHAPE, WORLD_ORDER, type SlotShape } from './levels-slot-shape.ts';
 import type {
@@ -72,7 +73,7 @@ export function parseLevelNamesFromCart(
 
   const byId = new Map<number, string>();
   for (let id = 0; id < POINTER_COUNT; id++) {
-    const ptr = cart.readUInt16LE(tablePC + id * 2);
+    const ptr = u16le(cart, tablePC + id * 2);
     if (ptr === placeholderPtr) continue;
     const namePC = snesToPC((NAME_STRING_BANK << 16) | ptr);
     const name = decodeLevelNameString(cart, namePC, fontMap);
@@ -143,7 +144,7 @@ export function readForeignLevelNames(
   const placeholderPtr = symbols.pc('DATA_level_name_garbage_sentinel') & 0xffff;
   const out = new Map<number, ForeignLevelName>();
   for (let id = 0; id < POINTER_COUNT; id++) {
-    const ptr = cart.readUInt16LE(tablePC + id * 2);
+    const ptr = u16le(cart, tablePC + id * 2);
     if (ptr === placeholderPtr) continue; // unused slot — no name
     const namePC = snesToPC((NAME_STRING_BANK << 16) | ptr);
     out.set(id, decodeNameLines(cart, namePC, fontMap));

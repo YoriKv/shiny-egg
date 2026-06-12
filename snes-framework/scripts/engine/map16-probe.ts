@@ -17,6 +17,7 @@ import { loadMap16Tables, decodeMap16Alloc } from './map16.ts';
 import { loadSceneRegs } from './scene-regs.ts';
 import { loadLevelGfx, type GfxFileEntry } from './load-graphics.ts';
 import { loadTileAnimation } from './load-tile-animation.ts';
+import { makeVramCoverage } from './vram-coverage.ts';
 import { parseHexId } from './cli-util.ts';
 import { hex } from '../hex.ts';
 
@@ -50,12 +51,7 @@ const vram = new Uint8Array(0x10000);
 const gfxManifest: GfxFileEntry[] = [];
 loadLevelGfx(rom, symbols, { bg1Tileset: h[1], bg2Tileset: h[3], bg3Tileset: h[5], spriteTileset: h[7], isWorld6 }, vram, gfxManifest);
 loadTileAnimation(rom, symbols, { animationTileset: h[10], bg1Tileset: h[1], levelMode: h[9] }, vram);
-const gfxRanges: Array<[number, number]> = gfxManifest.map((e) => [e.vramByteOffset, e.vramByteOffset + e.sizeBytes]);
-const coveredGfx = (off: number, len = 32) => gfxRanges.some(([s, e]) => off >= s && off + len <= e);
-const nonZeroVram = (off: number, len = 32) => {
-  for (let k = 0; k < len; k++) if (vram[off + k] !== 0) return true;
-  return false;
-};
+const coverage = makeVramCoverage(gfxManifest, vram);
 
 console.log(`level ${hx(id)}  bg1CharAddr=$${hx(regs.bg1CharAddr, 4)}  levelMode=$${hx(h[9])}  isWorld6=${isWorld6}`);
 console.log(`GFX manifest (${gfxManifest.length} chunks):`);
@@ -94,7 +90,7 @@ for (const mid of [...counts.keys()].sort((a, b) => a - b)) {
     subs = st
       .map((s) => {
         const v = (regs.bg1CharAddr + s.tileIndex * 32) & 0xffff;
-        const cov = coveredGfx(v) ? '' : nonZeroVram(v) ? '~anim' : '!MISS';
+        const cov = coverage.placeholder(v) ? '!X' : coverage.covered(v) ? '' : coverage.nonZero(v) ? '~anim' : '!MISS';
         return `${hx(s.tileIndex, 3)}/${s.paletteRow}${s.hflip ? 'H' : ' '}${s.vflip ? 'V' : ' '}@$${hx(v, 4)}${cov}`;
       })
       .join(' ');

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { hex as hexFmt, hex0x } from '../lib/hex'
-import type { DecodedPalette, PaletteEdit } from '../../../preload/api'
+import type { DecodedPalette, LevelData, PaletteEdit } from '../../../preload/api'
 import { bgr15ToHex, hexToBgr15 } from '../lib/bgr15'
 import { type PaletteEditorApi } from '../edit-session/usePaletteEditor'
 import { useThrottledCallback } from '../lib/throttle'
@@ -36,6 +36,14 @@ interface PaletteBodyProps {
   /** Bumped on every successful build. Re-fetches the BASE CGRAM (the built ROM
    *  changed) and re-checks the palette-stale warning. */
   renderRefresh: number
+  /** The live (in-memory edited) level, so a header edit's CGRAM is rebuilt from
+   *  the override rather than the on-disk header. Null when no level is loaded. */
+  override: LevelData | null
+  /** A primitive that changes iff a palette-relevant header field changes (BG
+   *  color + BG1/BG2/BG3/sprite palette rows + level mode — the inputs to
+   *  `paletteHeaderFromLevel`). Editing one re-skins CGRAM, so the swatch grid
+   *  re-fetches; object edits (which don't touch these) leave it untouched. */
+  headerVersion: string
 }
 
 /**
@@ -60,7 +68,9 @@ export function PaletteBody({
   paletteRowsUsed,
   highlightRows,
   editor,
-  renderRefresh
+  renderRefresh,
+  override,
+  headerVersion
 }: PaletteBodyProps): JSX.Element {
   // Base (unedited) CGRAM + provenance for the selected level. Fetched on level
   // change only — the draft is applied locally for display, so a colour edit
@@ -162,6 +172,46 @@ export function PaletteBody({
       cancelled = true
     }
   }, [renderRefresh, selectedLevelRecordId])
+
+  // Live header refresh: editing a palette-relevant header field (BG color, the
+  // BG1/BG2/BG3/sprite palette rows, or level mode) reloads a different colour
+  // block into CGRAM — the canvas re-skins immediately via the override, and this
+  // keeps the swatch grid in lockstep. The edit rides the in-memory `override`,
+  // so re-fetch the override-aware CGRAM and update only the colours (selection /
+  // status preserved, like the rebuild refresh above). `override` sits in deps
+  // for closure freshness, but the `headerVersion` guard limits the actual fetch
+  // to a header change: an object edit (which also changes the override identity)
+  // no-ops, and a level change is left to the level-load effect (which resets the
+  // selection) rather than double-fetching here.
+  const prevHeaderRef = useRef(headerVersion)
+  const prevLevelForHeaderRef = useRef(selectedLevelRecordId)
+  useEffect(() => {
+    if (prevLevelForHeaderRef.current !== selectedLevelRecordId) {
+      prevLevelForHeaderRef.current = selectedLevelRecordId
+      prevHeaderRef.current = headerVersion
+      return
+    }
+    if (prevHeaderRef.current === headerVersion) return
+    prevHeaderRef.current = headerVersion
+    if (selectedLevelRecordId === null) return
+    let cancelled = false
+    void window.shinyEgg.render
+      .editablePalette({
+        levelRecordId: selectedLevelRecordId,
+        override: override?.recordId === selectedLevelRecordId ? override : undefined
+      })
+      .then((res: DecodedPalette | null) => {
+        if (cancelled || !res || res.cgram.length < 512) return
+        setCgram(Uint8Array.from(res.cgram))
+        setProvenance(res.provenance)
+      })
+      .catch(() => {
+        /* keep the existing CGRAM; next level load / rebuild re-syncs */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [headerVersion, selectedLevelRecordId, override])
 
   /** The displayed BGR-15 word for CGRAM index `i` = the draft edit if any, else
    *  the base colour. */

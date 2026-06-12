@@ -33,6 +33,8 @@ import { formatLevelId, getLevel } from './data/levels'
 import type { IncomingExit, LayerVisibility, Selection } from './types'
 import { useObjectInfluence } from './hooks/useObjectInfluence'
 import { useNeighborDependencies } from './hooks/useNeighborDependencies'
+import { useBehaviorProbes } from './hooks/useBehaviorProbes'
+import { useEntityRenderValidity } from './hooks/useEntityRenderValidity'
 import {
   hitResizeHandle,
   extentFromHandle,
@@ -458,6 +460,14 @@ export function Canvas({
   // always-on error badge + selected-sprite overlay. Rides the Sprite-Editing
   // layer; recomputed per edit-commit (see the hook).
   const neighborStatus = useNeighborDependencies(level, layers.spriteOutlines)
+  // Probe-derived behavior geometry (chain lengths, march tracks, rail traces)
+  // for the selected-sprite overlay — measured against the live level data, so
+  // it tracks both sprite drags and terrain edits.
+  const behaviorProbes = useBehaviorProbes(level, layers.spriteOutlines)
+  // Render-validity for the loaded level (gfx-missing markers on placed
+  // entities). Header-keyed + main-side cached, so it refetches only on a
+  // level/header change — not per edit commit.
+  const renderValidity = useEntityRenderValidity(level)
   // Right-click context menu — anchored at viewport coords, acting on the hit
   // object/sprite/exit. `null` when closed.
   const [ctxMenu, setCtxMenu] = useState<{
@@ -712,7 +722,7 @@ export function Canvas({
   useEffect(() => {
     drawScene(canvasRef.current, {
       size, view, level, layers, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
-      spriteBounds, neighborStatus, influence, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
+      spriteBounds, neighborStatus, behaviorProbes, renderValidity, influence, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
       incoming, testSpawn, spawnOverride: spawnDragOverlay ?? spawnOverride, paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
       exitDrag, incomingOverlay, marquee, paintDrag
     })
@@ -735,6 +745,8 @@ export function Canvas({
     resizeOverlay,
     influence,
     neighborStatus,
+    behaviorProbes,
+    renderValidity,
     exitDrag,
     incomingOverlay,
     propTable,
@@ -1555,14 +1567,16 @@ export function Canvas({
         hitTestIncoming(lvl, v, layers, incomingRef.current, rect, e.clientX, e.clientY)
       )
       // Cursor level cell for the bottom-right readout — null when off-grid.
+      // Identity-preserving: this runs at mousemove rate, and a fresh {x,y}
+      // object per move would re-render the whole component even while the
+      // cell is unchanged — return the previous object so React bails.
       const { x: cwx, y: cwy } = clientToWorld(v, e.clientX - rect.left, e.clientY - rect.top)
       const ccx = Math.floor(cwx / CELL_PX)
       const ccy = Math.floor(cwy / CELL_PX)
-      setCursorCell(
-        lvl && ccx >= 0 && ccx < LEVEL_CELLS_W && ccy >= 0 && ccy < LEVEL_CELLS_H
-          ? { x: ccx, y: ccy }
-          : null
-      )
+      setCursorCell((prev) => {
+        if (!lvl || ccx < 0 || ccx >= LEVEL_CELLS_W || ccy < 0 || ccy >= LEVEL_CELLS_H) return null
+        return prev && prev.x === ccx && prev.y === ccy ? prev : { x: ccx, y: ccy }
+      })
       // Resize-handle hover → cursor hint (single selected object only).
       let rc: string | null = null
       if (primary?.kind === 'object' && lvl) {

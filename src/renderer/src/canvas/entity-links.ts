@@ -14,7 +14,9 @@
 
 import type { LevelData, LevelObject, LevelSprite, ScreenExit } from '../../../preload/api'
 import { isExitTriggerObject, isExitTriggerSprite } from '../data/exit-triggers'
+import { getObjectInfo } from '../data/obj-metadata'
 import { CELL_PX, exitCenterX, exitCenterY, objectVisualBox, screenOf } from './geometry'
+import { objectCellBox } from './limits'
 import type { Selection } from '../types'
 
 /** A resolved selected entity — one of the three editable kinds. */
@@ -36,12 +38,13 @@ export interface LinkLine {
 export type AssociationRule = (sel: EntityRef, level: LevelData) => EntityRef[]
 
 /**
- * Exit ↔ the pipe/door object or entrance sprite on the same screen. Two engine
- * mechanisms fire a screen exit: an OBJECT that stamps a pipe/door collision
- * tile (the `pipe` tag / DR-BD door class), or a door / pipe / teleport SPRITE whose Main
- * handler funnels into the shared warp routine (`CODE_02A4B5`). Either way there
- * is no byte-level link to the exit, so we reconstruct it by co-location on the
- * exit's screen. See data/exit-triggers.ts.
+ * Exit ↔ the exit-trigger object or entrance sprite on the same screen. Three
+ * engine mechanisms fire a screen exit (see data/exit-triggers.ts): an OBJECT
+ * stamping a DOOR tile (DR/BD bits) or a player-enterable PIPE-MOUTH tile
+ * (tag $14 + DATA_0AEBBC entry bits — tile-driven, no sprite), or a door /
+ * pipe / teleport SPRITE whose Main funnels into the shared warp routine
+ * (`CODE_02A4B5`). Either way there is no byte-level link to the exit, so we
+ * reconstruct it by co-location on the exit's screen.
  */
 const exitPipeDoorRule: AssociationRule = (sel, level) => {
   if (sel.kind === 'exit') {
@@ -72,8 +75,52 @@ const exitPipeDoorRule: AssociationRule = (sel, level) => {
   return []
 }
 
+/** True when sprite `s` sits inside pipe-category object `o`'s cell box. */
+function pipeHostsSprite(o: LevelObject, s: LevelSprite): boolean {
+  if (getObjectInfo(o.num, o.exnum).category !== 'pipe') return false
+  const b = objectCellBox(o)
+  return s.x >= b.x0 && s.x < b.x0 + b.w && s.y >= b.y0 && s.y < b.y0 + b.h
+}
+
+/**
+ * Exit ↔ the PIPE OBJECT hosting its entrance sprite. The UN-enterable pipe
+ * family ($F4 …) stamps no enterable mouth tiles (see data/exit-triggers.ts),
+ * so designers make those warp by placing an entrance SPRITE on the mouth —
+ * the rule above only reaches that (often invisible) sprite. The pipe is the
+ * landmark the designer sees, so link it too: for every exit-trigger sprite on
+ * the exit's screen, any pipe-category object whose cell box contains that
+ * sprite joins the link set — and selecting such a pipe links back to its
+ * sprite's screen exit. (Tile-enterable pipes — $3C etc. — link directly via
+ * the exitTrigger rule above instead.) Sharing a screen is deliberately NOT
+ * enough: decorative pipes near a door / hidden entrance stay unlinked.
+ * (Verified across the shipped levels: every Vertical-pipe-entrance sprite
+ * sits exactly on its host pipe's anchor cell; pipes unrelated to the exit
+ * never contain the entrance sprite.)
+ */
+const exitPipeHostRule: AssociationRule = (sel, level) => {
+  if (sel.kind === 'exit') {
+    const screen = sel.exit.screenIndex
+    const out: EntityRef[] = []
+    for (const s of level.sprites) {
+      if (!isExitTriggerSprite(s.num) || screenOf(s.x, s.y) !== screen) continue
+      for (const o of level.objects) {
+        if (pipeHostsSprite(o, s)) out.push({ kind: 'object', obj: o })
+      }
+    }
+    return out
+  }
+  if (sel.kind === 'object') {
+    for (const s of level.sprites) {
+      if (!isExitTriggerSprite(s.num) || !pipeHostsSprite(sel.obj, s)) continue
+      const exit = level.exits.find((e) => e.screenIndex === screenOf(s.x, s.y))
+      if (exit) return [{ kind: 'exit', exit }]
+    }
+  }
+  return []
+}
+
 /** The active association rules. Append to extend. */
-const RULES: AssociationRule[] = [exitPipeDoorRule]
+const RULES: AssociationRule[] = [exitPipeDoorRule, exitPipeHostRule]
 
 /** World-px center anchor for a link endpoint at this entity. */
 export function entityAnchorPx(ref: EntityRef): { x: number; y: number } {

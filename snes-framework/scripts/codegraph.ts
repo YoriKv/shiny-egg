@@ -22,7 +22,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { buildSymbolTable, type SymbolTable } from './mem-symbols.ts';
-import { hex } from './hex.ts';
+import { hexAddr24 } from './hex.ts';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -122,7 +122,7 @@ export interface LoadOrBuildOptions {
   onProgress?: (msg: string) => void;
 }
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6; // 6: GSU LM/LMS/SM/SMS memory indexing + $6000-window ↔ $70:xxxx bridging
 const DEFAULT_ASM_ROOTS = ['yi', 'global'];
 
 // -----------------------------------------------------------------------------
@@ -267,6 +267,23 @@ const WRITE_MNEMONICS = new Set([
 const RMW_MNEMONICS = new Set([
   'INC', 'DEC', 'ASL', 'LSR', 'ROL', 'ROR', 'TSB', 'TRB',
 ]);
+/**
+ * SuperFX (GSU) STATIC RAM accesses. `LM Rn, ($xxxx)` / `LMS Rn, ($xx)` load
+ * from a literal GSU-RAM byte offset; `SM ($xxxx), Rn` / `SMS ($xx), Rn`
+ * store to one. The GSU's RAM bank is the cart SRAM ($70:0000-), so
+ * `SMS ($AC), R0` writes $70:00AC — the SAME byte 65816 code reaches through
+ * the $00:6000-$7FFF window (`STA $60AC`). Both forms are indexed and bridged
+ * so define- and address-keyed queries surface accesses from EITHER CPU
+ * (the gap that hid CODE_0BDC20's pipe-entry PlayerState write).
+ * Register-indirect GSU forms (STB/STW/LDB/LDW via `(Rm)`), `SBK` (re-store
+ * to the last-used address), and the second op of a dual-issue `X : Y` line
+ * have no statically-known address and are NOT indexed — same caveat as
+ * 65816 indirect stores.
+ */
+const GSU_READ_MNEMONICS = new Set(['LM', 'LMS']);
+const GSU_WRITE_MNEMONICS = new Set(['SM', 'SMS']);
+/** GSU RAM bank base — YI maps the GSU's RAM to cart SRAM $70:0000. */
+const GSU_RAM_BASE = 0x700000;
 /**
  * Branches that take a label operand and stay within a routine boundary.
  * Conditional branches (Bcc) almost always do; the unconditional BRA/BRL
@@ -838,7 +855,7 @@ function buildGraph(args: BuildArgs): CodeGraph {
   let memRmwEdges = 0;
 
   for (const [addr, names] of sym.byAddr) {
-    addressIndex[fmtAddr(addr)] = names.slice();
+    addressIndex[hexAddr24(addr)] = names.slice();
   }
 
   for (const [name, addr] of sym.byName) {
@@ -858,7 +875,7 @@ function buildGraph(args: BuildArgs): CodeGraph {
     memRmwEdges += rmw.length;
     labels[name] = {
       address: addr,
-      addressHex: fmtAddr(addr),
+      addressHex: hexAddr24(addr),
       source,
       aliases: aliasGroup.slice(),
       calls,
@@ -889,7 +906,7 @@ function buildGraph(args: BuildArgs): CodeGraph {
       }
     }
     const keys = [...accum.keys()].sort((a, b) => a - b);
-    for (const a of keys) dst[fmtAddr(a)] = [...accum.get(a)!].sort();
+    for (const a of keys) dst[hexAddr24(a)] = [...accum.get(a)!].sort();
   };
   invertAddrMap(addrReadsOf, addrReadsBy);
   invertAddrMap(addrWritesOf, addrWritesBy);
@@ -995,10 +1012,38 @@ function analyzeInstruction(
       const off = addr & 0xFFFF;
       if (bank === 0x00 && off < 0x2000) addrDest.add(0x7E0000 | off);
       else if (bank === 0x7E && off < 0x2000) addrDest.add(off);
+      // GSU-RAM window bridging: $00:6000-$7FFF is the 65816's window onto
+      // the cart SRAM the GSU calls its RAM bank ($70:0000-$1FFF). A raw
+      // `STA $6106` is the same byte as the GSU's `SM ($106)` and the
+      // !EXRAM_* defines (stored at $70:xxxx) — bridge so all three unify.
+      if (bank === 0x00 && off >= 0x6000 && off < 0x8000) {
+        const exAddr = GSU_RAM_BASE | (off - 0x6000);
+        addrDest.add(exAddr);
+        const exBucket = addrIndex.get(exAddr);
+        if (exBucket) for (const name of exBucket) defineDest.add(name);
+      }
       const bucket = addrIndex.get(addr);
       if (!bucket) continue;
       for (const name of bucket) defineDest.add(name);
     }
+  };
+
+  /** GSU static RAM access: the parenthesized literal is a byte offset into
+   * the GSU RAM bank ($70:0000-). Index it at the $70:xxxx address (where
+   * the !EXRAM_* defines live) AND at its 65816 window form ($00:6000+off)
+   * so accesses from either CPU answer the same query. */
+  const addGsuRamAccess = (defineDest: Set<string>, addrDest: Set<number>): void => {
+    const pm = operand.match(/\(\s*\$([0-9A-Fa-f]+)\s*\)/);
+    if (!pm) return;
+    const off = parseInt(pm[1]!, 16) & 0xFFFF;
+    const candidates = [GSU_RAM_BASE | off];
+    if (off < 0x2000) candidates.push(0x006000 + off);
+    for (const addr of candidates) {
+      addrDest.add(addr);
+      const bucket = addrIndex.get(addr);
+      if (bucket) for (const name of bucket) defineDest.add(name);
+    }
+    for (const d of extractDefineRefs(operand)) defineDest.add(d);
   };
 
   if (CALL_MNEMONICS.has(mnem)) {
@@ -1020,6 +1065,10 @@ function analyzeInstruction(
   } else if (RMW_MNEMONICS.has(mnem)) {
     for (const d of extractDefineRefs(operand)) rmw.add(d);
     addLiterals(rmw, addrRmw);
+  } else if (GSU_READ_MNEMONICS.has(mnem)) {
+    addGsuRamAccess(reads, addrReads);
+  } else if (GSU_WRITE_MNEMONICS.has(mnem)) {
+    addGsuRamAccess(writes, addrWrites);
   }
 
   // Indirect / non-call references: any bare label identifier appearing in
@@ -1053,10 +1102,6 @@ function extractLabelRefs(operand: string, sym: ParsedSym): string[] {
 function sortSet(s: Set<string> | undefined): string[] {
   if (!s || s.size === 0) return [];
   return [...s].sort();
-}
-
-function fmtAddr(addr: number): string {
-  return hex((addr >>> 16) & 0xff, 2) + ':' + hex(addr & 0xffff, 4);
 }
 
 // -----------------------------------------------------------------------------

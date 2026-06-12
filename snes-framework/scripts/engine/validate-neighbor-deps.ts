@@ -54,6 +54,41 @@ const ids = Object.entries(map.levels)
   .filter((id) => Number.isFinite(id))
   .sort((a, b) => a - b);
 
+// Warp-reachable group sprite nums per record (forward BFS over screen-exit
+// warps) — the `carried` deps' fallback, mirroring the editor hook's
+// carriedGroupNums. Pre-load every backed level once; memoize per record.
+const allLevels = new Map<number, ReturnType<typeof loadLevel>>();
+for (const id of ids) {
+  try {
+    const l = loadLevel({ workRoot: FRAMEWORK_ROOT, levelRecordId: id });
+    if (!l.empty && !l.special) allLevels.set(id, l);
+  } catch {
+    /* unloadable slot */
+  }
+}
+const groupCache = new Map<number, Set<number>>();
+function carriedGroupNums(root: number): Set<number> {
+  const hit = groupCache.get(root);
+  if (hit) return hit;
+  const nums = new Set<number>();
+  const visited = new Set<number>();
+  const queue = [root];
+  for (let depth = 0; depth <= 8 && queue.length > 0; depth++) {
+    for (const id of queue.splice(0)) {
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const l = allLevels.get(id);
+      if (!l) continue;
+      for (const s of l.sprites) nums.add(s.num);
+      for (const e of l.exits) {
+        if (e.variant === 'warp') queue.push(e.destLevelRecordId);
+      }
+    }
+  }
+  groupCache.set(root, nums);
+  return nums;
+}
+
 interface Finding {
   level: number;
   sprite: PlacedSprite;
@@ -82,6 +117,7 @@ for (const id of ids) {
       cx < 0 || cy < 0 || cx >= GRID_COLS || cy >= GRID_ROWS ? undefined : grid[cy * GRID_COLS + cx],
     hasExitForScreen: (s) => exitScreens.has(s),
     collisionTagOfPage,
+    carriedGroupNums: carriedGroupNums(id),
   };
 
   levelsWithDeps++;
@@ -106,25 +142,50 @@ for (const id of ids) {
 // ── report ──────────────────────────────────────────────────────────────────
 console.log(`levels with deps: ${levelsWithDeps}, placements checked: ${placementsChecked}`);
 console.log('by class (met / error-missing / info-only):');
-for (const cls of ['A', 'B1', 'C', 'D', 'E', 'F']) {
+const CLASSES = ['rail-follower', 'ice-snap', 'tile-read', 'sprite-pair', 'screen-exit', 'tile-behavior'];
+for (const cls of CLASSES) {
   const t = byClass.get(cls);
   if (t) console.log(`  ${cls}: ${t.met} met / ${t.missing} error / ${t.info} info-only`);
 }
 
-// Class F (pipe-spawner) is info-only (never an enforce error), so the
-// zero-false-error gate below can't guard it. Pin the positive count instead:
-// the shipped pipe-spawner placements that resolve `met` (sprite sits on a
-// pipe-mouth tile). 57 = 47 on the literal mouth $79F1 + 10 on page-$7D tag.
-// A drift here means the collision-tag / tile-literal matcher changed behaviour.
-const EXPECTED_F_MET = 57;
-const fMet = byClass.get('F')?.met ?? 0;
-if (fMet !== EXPECTED_F_MET) {
-  console.log(
-    `\n✗ Class F pipe-spawner: expected ${EXPECTED_F_MET} shipped spawner placements to resolve met, got ${fMet}.`
-  );
-  process.exit(1);
+// Info-only relationships (never an enforce error) escape the zero-false-error
+// gate below, so pin every class's positive `met` count instead — a drift means
+// a matcher/metadata change altered behaviour. Derivations (the 2026-06-10
+// neighbour-dependency audit — docs/sprite-neighbor-dependencies.md):
+//   rail-follower: 104 flatbed/spiral rail placements + 3 rotating-platform-
+//      on-rail ($2A/$58/$7B) = 107 (the 37 off-rail rotating placements are
+//      info).
+//   ice-snap: 16 ice-block snaps (12 shyguy + 2 bumpty + 2 flower, $26/$5D).
+//   tile-read: 3 slime + 21 icicle + 28 boo-bomb + 1 cork + 1 wall-lakitu-gen
+//      + 0 falling-rock + 68 grinders adjacent to a tree (checked row scan,
+//      pages $99/$9A; the other 80 roam — info) + 14 chomp `note` annotations
+//      = 136.
+//   sprite-pair: 30 prior (cloud/switch/doors-with-key-in-record) + 22
+//      mouser→hole + 9 slugger-with-rock + 5 carried-Key-in-warp-group
+//      (forward BFS fallback; lvls $3C/$63/$AA/$C1×2) = 66. The 28 info
+//      misses include the doors whose keys spawn from CONTAINERS (winged
+//      clouds etc.) — why `carried` can never be enforced.
+//   screen-exit: 144 warp-screen rows + 7 frog-pirate notes = 151.
+//   tile-behavior: 57 pipe spawners (47 on $79F1 + 10 on page-$7D tag) + 5
+//      piranha pipe-centring + 15 dirt-digger note placements = 77.
+const EXPECTED_MET: Record<string, number> = {
+  'rail-follower': 107,
+  'ice-snap': 16,
+  'tile-read': 136,
+  'sprite-pair': 66,
+  'screen-exit': 151,
+  'tile-behavior': 77,
+};
+let pinFailed = false;
+for (const [cls, expected] of Object.entries(EXPECTED_MET)) {
+  const met = byClass.get(cls)?.met ?? 0;
+  if (met !== expected) {
+    console.log(`\n✗ Class ${cls}: expected ${expected} shipped placements to resolve met, got ${met}.`);
+    pinFailed = true;
+  }
 }
-console.log(`✓ Class F pipe-spawner: ${fMet} shipped spawner placements resolve met (pinned).`);
+if (pinFailed) process.exit(1);
+console.log('✓ per-class met counts match the pinned audit values.');
 
 if (findings.length) {
   console.log(`\n✗ ${findings.length} FALSE ERROR(S) — shipped placements that resolved 'missing':`);

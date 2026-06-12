@@ -617,7 +617,7 @@ SuperFX (see `docs/mchip.md` §3.2):
   - **150 tilemap files** (`Tilemaps/*.lz2`) — arrays of 16-bit Map16
     indices that get DMA'd to VRAM tilemap regions.
 
-  Verified by a three-way byte-exact sweep across
+  Verified 2026-05-26 by a three-way byte-exact sweep across
   `lc200/decomp.exe FORMAT=1`, the TS port at `scripts/lz2-decoder.ts`,
   and the cart's runtime in Mesen — the GETB/SWAP/OR sequence in the
   GSU asm builds backref offsets big-endian, which is LC_LZ2 semantics

@@ -727,7 +727,11 @@ is YI's *only* per-instance variant knob, which is why so many Inits lean on it.
 read is `LDA $70E2,x : AND #$0010 : LSR` (x3 for a `dw` table, x4 for a `db` table)
 `: TAY : LDA table,y`; the 2-axis form ORs X bit-4 with Y bit-4 into a 4-entry index.
 (Inits read it *before* any centering `ADC #$0008`, and `+8` only touches bit-3, so
-the raw placement parity survives.)
+the raw placement parity survives. **Exception:** a parity read in a *Main* sees any
+init-time re-centering, and a `SBC #$0008` borrows *through* bit-4 — `$064`'s
+orbit-radius read (Bank04.asm:8426) runs after the shared init's Y−8, so its
+resolved variant is the INVERSE of the placed-row parity: even row = wide orbit.
+In-game verified 2026-06-11.)
 
 **This is overwhelmingly a BEHAVIOUR switch, not the "cosmetic palette/mirror" earlier
 drafts implied.** A ground-truth sweep found **~70 sprites** using the idiom (an early
@@ -874,11 +878,11 @@ code:
 
 ## 11. Open questions
 
-1. **State `$04` vs `$02`** — **RESOLVED.** State $04 is **never written by the YI engine.** A grep of all 36 banks + Routines/ for `STA NorSpr_CurrentStatus` (159 sites total) tallies the immediately-preceding `LDA.w` immediate values: `#$0002` 51x, `#$0010` 49x, `#$000E` 32x, `#$000A` 7x, etc. `#$0004` appears **zero** times before a state-byte STA. The three `LDA.w #$0004` in the codebase (`Bank04.asm:4582`, `Bank05.asm:14717`, `Bank0F.asm:7631`) all store $0004 to **timer/scratch addresses** (`$7A98,x`, `$76`, etc.); in each case a different LDA loads the actual state ($10 or $1C) before the STA. The state $04 slot in `sprite_state_routines` aliases to the same `spr_state_init` target as $02 (`Bank03.asm:2713-2714`) — a structural alias preserved for defensive dispatch (so a corrupted state byte landing on $04 still works), but the engine never writes it. `CODE_spawn_sprite_init` writes `#$0002`; level-data sprite-stream spawner in Bank10/11 also writes $02. The "$02 = level-list, $04 = programmatic" hypothesis is wrong — both routes write $02.
+1. **State `$04` vs `$02`** — **RESOLVED 2026-05-25.** State $04 is **never written by the YI engine.** A grep of all 36 banks + Routines/ for `STA NorSpr_CurrentStatus` (159 sites total) tallies the immediately-preceding `LDA.w` immediate values: `#$0002` 51x, `#$0010` 49x, `#$000E` 32x, `#$000A` 7x, etc. `#$0004` appears **zero** times before a state-byte STA. The three `LDA.w #$0004` in the codebase (`Bank04.asm:4582`, `Bank05.asm:14717`, `Bank0F.asm:7631`) all store $0004 to **timer/scratch addresses** (`$7A98,x`, `$76`, etc.); in each case a different LDA loads the actual state ($10 or $1C) before the STA. The state $04 slot in `sprite_state_routines` aliases to the same `spr_state_init` target as $02 (`Bank03.asm:2713-2714`) — a structural alias preserved for defensive dispatch (so a corrupted state byte landing on $04 still works), but the engine never writes it. `CODE_spawn_sprite_init` writes `#$0002`; level-data sprite-stream spawner in Bank10/11 also writes $02. The "$02 = level-list, $04 = programmatic" hypothesis is wrong — both routes write $02.
 
-2. **`spr_state_on_head_bop` does NOT call `spr_state_main` first** — **RESOLVED.** Hypothesis confirmed and sharpened: per-sprite head-bop handlers **deliberately opt out of Main**. The trampoline at `Bank03.asm:4429-4443` is the only state handler in the 9-entry dispatch that doesn't open with `JSL CODE_spr_state_main` — all six other state handlers (`init`, `main`, `tongued`, `die_collision`, `die_burning`, `ride_yoshi`, `turn_star`) do. The shared body `CODE_head_bop_common` at `$03:9F9F` opts back in by calling Main as its first instruction; 28 ordinary sprites alias directly to it (`_StompRt:` labels at lines 4274-4302) and one sprite (FlashingEgg $022) does a small prologue then falls through. **Custom head-bop handlers universally bypass Main**: a grep for `JSL.l CODE_spr_state_main` across Bank04/05/06/07/0C/0E/0F returns **zero hits**. Bank01/Bank02 (bosses) have no `_StompRt` labels at all — bosses can't be stomp-bopped. The design intent is: shared `head_bop_common` is the easy "stomp + keep animating" path, custom handlers want fully-frozen sprite during the stomp animation.
+2. **`spr_state_on_head_bop` does NOT call `spr_state_main` first** — **RESOLVED 2026-05-25.** Hypothesis confirmed and sharpened: per-sprite head-bop handlers **deliberately opt out of Main**. The trampoline at `Bank03.asm:4429-4443` is the only state handler in the 9-entry dispatch that doesn't open with `JSL CODE_spr_state_main` — all six other state handlers (`init`, `main`, `tongued`, `die_collision`, `die_burning`, `ride_yoshi`, `turn_star`) do. The shared body `CODE_head_bop_common` at `$03:9F9F` opts back in by calling Main as its first instruction; 28 ordinary sprites alias directly to it (`_StompRt:` labels at lines 4274-4302) and one sprite (FlashingEgg $022) does a small prologue then falls through. **Custom head-bop handlers universally bypass Main**: a grep for `JSL.l CODE_spr_state_main` across Bank04/05/06/07/0C/0E/0F returns **zero hits**. Bank01/Bank02 (bosses) have no `_StompRt` labels at all — bosses can't be stomp-bopped. The design intent is: shared `head_bop_common` is the easy "stomp + keep animating" path, custom handlers want fully-frozen sprite during the stomp animation.
 
-3. **State `$0A` (ride_yoshi) trigger inventory** — **RESOLVED.** 7 transition sites across 3 banks write `#$000A` to `NorSpr_CurrentStatus`:
+3. **State `$0A` (ride_yoshi) trigger inventory** — **RESOLVED 2026-05-25.** 7 transition sites across 3 banks write `#$000A` to `NorSpr_CurrentStatus`:
    - **Bank04** `main_shy_guy` (`:1874`), `grim_leecher_state_01_hop_at_yoshi` (`:4271`), `CODE_04DC2E` Baby Mario respawn (`:11715`)
    - **Bank06** `main_baby_mario` (`:7718, :7894, :8886`) — two preceded by `SoundID43_MountYoshi`
    - **Bank0D** `main_baby_bowser` (`:9166`) — Baby Bowser fight intro cinema, also stashes `$7E48 = X`
@@ -891,7 +895,7 @@ code:
 
    The hypothesis that the tongue chain in Bank04 is the trigger was partly right — shy-guy pickup IS in Bank04 — but state $0A is reused for non-tongue paths too (Baby Mario respawn, Baby Bowser mount-cinema). Per-sprite handlers add tick logic on top of the engine's universal carry-offset positioning (state-$0A dispatcher at `$03:A11D` reads `DATA_03F8E1`/`DATA_03F6DE` indexed by `$60BE`, see Q5).
 
-4. **Per-slot sprite timer semantics** — **RESOLVED.** The five timers are a **generic countdown pool**, not statically-assigned behaviours. Each sprite picks whichever timer(s) it needs:
+4. **Per-slot sprite timer semantics** — **RESOLVED 2026-05-25.** The five timers are a **generic countdown pool**, not statically-assigned behaviours. Each sprite picks whichever timer(s) it needs:
 
    | Timer | Role | Pause-gated? |
    |---|---|---|
@@ -903,7 +907,7 @@ code:
 
    The four freeze-gated timers (`$7A96/$7A98/$7AF6/$7AF8`) are decremented together inside the `BNE CODE_039A49` skip block (`Bank03.asm:2643-2657`), so they all pause together. `$77C1` is decremented in `CODE_039A49:` AFTER the freeze branch (`Bank03.asm:2658-2661`), keeping it always-ticking. The Raidenthequick reference disassembly already names these `!s_spr_timer_1..4` and `!s_spr_timer_nopause`, confirming the engine intent. Usage patterns: minor enemies use just $7A96; ChainChomp/Bubble pair $7A96+$7A98; bosses (Hookbill) spread across all four for distinct sub-states (head-back, spit, dive i-frames, run).
 
-5. **Carry-offset tables `DATA_03F6DE` (X) and `DATA_03F8E1` (Y)** — **RESOLVED.** Both are **256-byte tables of signed bytes** (`db` directives), indexed by `$60BE` (`!EXRAM_YI_Player_CurrentAnimFrameLo`, Yoshi's current animation frame). Confirmed by counting: each is 16 rows × 16 bytes = $100, and the next table `DATA_03FAE5` starts exactly $200 later.
+5. **Carry-offset tables `DATA_03F6DE` (X) and `DATA_03F8E1` (Y)** — **RESOLVED 2026-05-25.** Both are **256-byte tables of signed bytes** (`db` directives), indexed by `$60BE` (`!EXRAM_YI_Player_CurrentAnimFrameLo`, Yoshi's current animation frame). Confirmed by counting: each is 16 rows × 16 bytes = $100, and the next table `DATA_03FAE5` starts exactly $200 later.
 
    The consumer `CODE_spr_state_ride_yoshi` (`Bank03.asm:4521`) fetches sign-extended bytes via a one-instruction load+extend idiom: `LDA table,y / AND #$FF00 / BPL... ORA #$00FF / XBA`. Net effect: carried-sprite world position = Yoshi's position + signed per-frame offset from the table. X is negated when `$60C4` (facing) is left-facing. The X-byte's bit `$40` is repurposed as a **draw-priority flag** stored at `$74A2,x` (masked off with `#$BF00`) — that's why X values like `$46` / `$42` show up: the carried sprite swaps draw priority on those frames.
 

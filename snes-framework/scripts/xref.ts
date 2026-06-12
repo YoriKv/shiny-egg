@@ -26,7 +26,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { loadOrBuildGraph, type CodeGraph, type GraphLabel } from './codegraph.ts';
-import { hex } from './hex.ts';
+import { hexAddr24 } from './hex.ts';
 
 function fail(msg: string): never {
   console.error(`error: ${msg}`);
@@ -146,11 +146,6 @@ function parseAddrRange(s: string): { lo: number; hi: number } | null {
   return null;
 }
 
-/** Format a 24-bit address as "BB:AAAA". */
-function fmtAddr24(addr: number): string {
-  return hex((addr >>> 16) & 0xff, 2) + ':' + hex(addr & 0xffff, 4);
-}
-
 /**
  * Find the label nearest below (or equal to) `addr` in the same bank.
  * Returns the label name + byte distance, or null if no label in-bank
@@ -267,7 +262,7 @@ async function main(): Promise<void> {
         for (const label of labels) hits.push({ addr: hex, label });
       }
       hits.sort((a, b) => a.addr === b.addr ? a.label.localeCompare(b.label) : a.addr.localeCompare(b.addr));
-      const rangeLabel = range.lo === range.hi ? `$${fmtAddr24(range.lo)}` : `$${fmtAddr24(range.lo)}..$${fmtAddr24(range.hi)}`;
+      const rangeLabel = range.lo === range.hi ? `$${hexAddr24(range.lo)}` : `$${hexAddr24(range.lo)}..$${hexAddr24(range.hi)}`;
       console.log(`${flag} ${rangeLabel}  →  ${hits.length} hit(s)`);
       for (const h of hits) {
         const rec = graph.labels[h.label]!;
@@ -296,7 +291,7 @@ async function main(): Promise<void> {
         const range = parseAddrRange(a);
         if (!range) { console.log(`(skip) ${a}: not an address or range`); continue; }
         if (range.lo === range.hi) {
-          const hex = fmtAddr24(range.lo);
+          const hex = hexAddr24(range.lo);
           const names = graph.addressIndex[hex] ?? [];
           console.log(`$${hex}  →  ${names.length} label(s)`);
           for (const n of names) {
@@ -322,7 +317,7 @@ async function main(): Promise<void> {
           }
           hits.sort((a, b) => a.addr.localeCompare(b.addr));
           const totalLabels = hits.reduce((s, h) => s + h.names.length, 0);
-          console.log(`$${fmtAddr24(range.lo)}..$${fmtAddr24(range.hi)}  →  ${hits.length} address(es) with labels (${totalLabels} label(s) total)`);
+          console.log(`$${hexAddr24(range.lo)}..$${hexAddr24(range.hi)}  →  ${hits.length} address(es) with labels (${totalLabels} label(s) total)`);
           for (const h of hits) {
             for (const n of h.names) {
               const rec = graph.labels[n]!;

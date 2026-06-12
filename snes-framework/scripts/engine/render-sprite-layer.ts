@@ -30,7 +30,7 @@
 // tileset switch (and proven equal to a full render by render-sprite-patch.test.ts).
 
 import { renderSpriteCel } from './sprite-cel.ts';
-import { resolveSpriteCel } from './sprite-tile-base.ts';
+import { parityCelVariantIndex, resolveSpriteCel } from './sprite-tile-base.ts';
 import { DYNAMIC_BODY_SOURCES } from './sprite-dynamic-gfx.ts';
 import { GRID_COLS, GRID_ROWS } from './cell-grid.ts';
 import type { GfxFileEntry, GfxHeader } from './load-graphics.ts';
@@ -78,7 +78,8 @@ export interface RenderSpriteLayerArgs {
 
 /** One sprite instance placed in the layer: its composited cel pixels (shared by
  *  `num` — the bitmap is identical for every instance of a num within a level's
- *  gfx) plus where it lands and its z (draw index = position in the sprite list;
+ *  gfx, except placement-parity sprites, which share per (num, parity)) plus
+ *  where it lands and its z (draw index = position in the sprite list;
  *  later = painted on top). */
 interface PlacedSprite {
   num: number;
@@ -136,9 +137,11 @@ export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRende
   const { rom, symbols, header, sprites, vram, cgram, manifest, celRenderableNums, formatANums, levelSpritePaletteId } = args;
   const boundsByNum = new Map<number, SpriteCelBounds>();
   const placed: PlacedSprite[] = [];
-  // Cel bitmap per num (null = resolved-but-empty / gated out, cached so we don't
-  // re-resolve a repeated num). `preferFormatA` is a pure function of num, so num
-  // alone keys the cache.
+  // Cel bitmap per cache key (null = resolved-but-empty / gated out, cached so we
+  // don't re-resolve a repeat). The key is normally the num (`preferFormatA` is a
+  // pure function of num); placement-parity sprites (the arrow signs — see
+  // `parityCelVariantIndex`) resolve a DIFFERENT cel per cell parity, so their
+  // key folds the variant index in above the 9-bit num range.
   const celByNum = new Map<number, { pixels: Uint32Array; width: number; height: number; originX: number; originY: number } | null>();
 
   for (let i = 0; i < sprites.length; i++) {
@@ -148,9 +151,14 @@ export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRende
       const renderable = celRenderableNums.has(spr.num) || preferFormatA || spr.num in DYNAMIC_BODY_SOURCES;
       if (!renderable) continue;
     }
-    let cel = celByNum.get(spr.num);
+    const parityIdx = parityCelVariantIndex(spr.num, spr.x, spr.y);
+    const celKey = parityIdx === null ? spr.num : spr.num + (parityIdx + 1) * 0x10000;
+    let cel = celByNum.get(celKey);
     if (cel === undefined) {
-      const resolved = resolveSpriteCel(rom, symbols, header, spr.num, manifest, preferFormatA, levelSpritePaletteId);
+      const resolved = resolveSpriteCel(
+        rom, symbols, header, spr.num, manifest, preferFormatA, levelSpritePaletteId,
+        parityIdx === null ? undefined : { x: spr.x, y: spr.y }
+      );
       if (!resolved) {
         cel = null;
       } else {
@@ -165,11 +173,21 @@ export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRende
               originY: img.originY
             };
       }
-      celByNum.set(spr.num, cel);
+      celByNum.set(celKey, cel);
     }
     if (!cel) continue;
-    if (!boundsByNum.has(spr.num)) {
+    const prev = boundsByNum.get(spr.num);
+    if (!prev) {
       boundsByNum.set(spr.num, { num: spr.num, originX: cel.originX, originY: cel.originY, width: cel.width, height: cel.height });
+    } else if (prev.width !== cel.width || prev.height !== cel.height || prev.originX !== cel.originX || prev.originY !== cel.originY) {
+      // Parity-variant cels differ per placement (e.g. the arrow sign's vertical
+      // 16×24 vs horizontal 24×16 frames) but the canvas hit-test box is per num —
+      // grow it to the union of every variant seen, in anchor-relative space.
+      const left = Math.max(prev.originX, cel.originX);
+      const top = Math.max(prev.originY, cel.originY);
+      const right = Math.max(prev.width - prev.originX, cel.width - cel.originX);
+      const bottom = Math.max(prev.height - prev.originY, cel.height - cel.originY);
+      boundsByNum.set(spr.num, { num: spr.num, originX: left, originY: top, width: left + right, height: top + bottom });
     }
     placed.push({
       num: spr.num,

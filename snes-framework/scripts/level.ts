@@ -64,6 +64,20 @@ export function recordToTranslevel(map: LevelMap, recordId: number): number | nu
 }
 
 /**
+ * The level-data record a world-map translevel resolves to, or null for
+ * bonus/intro slots (no data record). Forward lookup over `translevelToRecord`
+ * — the pair of `recordToTranslevel` — tolerant of both hex-string keys
+ * (current) and decimal-string keys (older extracts), like `levelMapEntry`.
+ */
+export function recordForTranslevel(map: LevelMap, translevelId: number): number | null {
+  return (
+    map.translevelToRecord[levelIdHexKey(translevelId)] ??
+    map.translevelToRecord[String(translevelId)] ??
+    null
+  );
+}
+
+/**
  * World-6 (dark BG1 tileset/palette) test for a RECORD id: resolve the record's
  * world-map translevel, then apply `isWorld6Translevel`.
  *

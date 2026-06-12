@@ -9,10 +9,13 @@
 //      This is a behaviour annotation, NOT an error (class F is `enforce:false`).
 //   3. SELECTION overlay — for the selected sprite, teal (satisfied) / red
 //      (missing) boxes at the target cell + connectors to a partner sprite.
-// Only `enforce` deps draw the selection boxes/connectors (the ones the editor
-// can verify); other info-only deps (keyholes, locked-door→Key) are described in
-// the Properties "Neighbours" section instead, since their target isn't visible
-// to a per-record check. See lib/sprite-neighbor-deps.ts + the validation harness.
+// Enforce deps draw both states; info-only deps draw POSITIVE connections only
+// (met, non-own-cell target — grinder↔tree, Slugger↔ChompRock, piranha↔pipe);
+// and nothing ever draws at the sprite's own cell when met (mouser-on-hole,
+// ice-snap, spawners — noise; the met state is implied by the absent red
+// badge). Deps with no resolvable target (carried Key in another record, the
+// note annotations) live only in the Properties "Neighbours" section.
+// See lib/sprite-neighbor-deps.ts + the validation harness.
 
 import type { LevelSprite, SpriteCelBounds } from '../../../../preload/api'
 import type { DepResult } from '../../lib/sprite-neighbor-deps'
@@ -30,11 +33,16 @@ export function hasNeighborError(results: DepResult[] | undefined): boolean {
   return !!results?.some((r) => r.dep.enforce && r.status === 'missing')
 }
 
-/** Is this sprite an ACTIVE pipe-spawner — a class-F dep resolved `met` (it sits
- *  on a pipe-mouth tile, so it continuously emits copies of itself)? Drives the
- *  always-on cyan spawner badge. Not an error — class F is `enforce:false`. */
+/** Is this sprite an ACTIVE pipe-spawner — its class-F SAME-CELL dep resolved
+ *  `met` (it sits on a pipe-mouth tile, so it continuously emits copies of
+ *  itself)? Drives the always-on cyan spawner badge. Not an error — class F is
+ *  `enforce:false`. The same-cell gate matters: class F also carries the
+ *  piranha pipe-centring (offset-cell, cosmetic) and the dirt-digger notes
+ *  (spatial `note`, always met) — neither is a spawner. */
 export function hasActiveSpawner(results: DepResult[] | undefined): boolean {
-  return !!results?.some((r) => r.dep.cls === 'F' && r.status === 'met')
+  return !!results?.some(
+    (r) => r.dep.cls === 'tile-behavior' && r.dep.spatial === 'same-cell' && r.status === 'met'
+  )
 }
 
 function cellCenter(cx: number, cy: number): { x: number; y: number } {
@@ -104,7 +112,16 @@ export function drawNeighborIndicators(
 
 /** Selection-only: for the selected sprite, draw its enforce deps — teal when
  *  satisfied, red when missing — as a box at the target/expected cell plus a
- *  connector, or a connector + ring to a partner sprite. */
+ *  connector, or a connector + ring to a partner sprite.
+ *
+ *  Two cross-cutting rules (one positive, one negative):
+ *  - Info-only deps draw a POSITIVE connection only: met + a target that isn't
+ *    at the sprite's own cell (grinder ↔ tree trunk, Slugger ↔ Chomp Rock,
+ *    piranha ↔ pipe mouth, pinwheel ↔ rail below, door ↔ same-record Key).
+ *    Absence is never an error, so missing info deps draw nothing.
+ *  - ANY target at the sprite's own cell draws nothing — a box/ring under the
+ *    sprite is pure noise (mouser ON its hole, ice-snap, pipe spawners; the
+ *    met state is implied by the absent red badge). */
 export function drawNeighborSelectionOverlay(
   ctx: CanvasRenderingContext2D,
   sprite: LevelSprite,
@@ -114,7 +131,10 @@ export function drawNeighborSelectionOverlay(
   const from = cellCenter(sprite.x, sprite.y)
   ctx.save()
   for (const r of results) {
-    if (!r.dep.enforce) continue // info-only deps are panel-only
+    const target = r.targetCell ?? (r.targetSprite && { cx: r.targetSprite.x, cy: r.targetSprite.y })
+    const ownCell = target !== undefined && target.cx === sprite.x && target.cy === sprite.y
+    if (!r.dep.enforce && (r.status !== 'met' || !target)) continue
+    if (ownCell && r.status === 'met') continue
     const color = r.status === 'met' ? OK : ERROR
     const met = r.status === 'met'
     if (r.targetCell) {

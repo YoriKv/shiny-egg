@@ -148,8 +148,17 @@ export function objectFields(_o: LevelObject, sizeMode: SizeMode): PropertyField
   ]
 }
 
-export function spriteFields(_s: LevelSprite): PropertyField<LevelSprite>[] {
-  return [
+/** Graphic/Palette-Changer family ($1BA-$1C9): the changer VALUE (target BG1
+ *  tileset or palette) is encoded in the sprite id itself (`num - $1BA`), and
+ *  whether it swaps the tileset or the palette is the spawn column's parity
+ *  (engine/bg1-regions.ts — verified byte-exact against a live VRAM dump).
+ *  Engine-side mirrors of these bounds: `BG1_CHANGER_LO/HI`. */
+const CHANGER_LO = 0x1ba
+const CHANGER_HI = 0x1c9
+const isChanger = (num: number): boolean => num >= CHANGER_LO && num <= CHANGER_HI
+
+export function spriteFields(s: LevelSprite): PropertyField<LevelSprite>[] {
+  const fields: PropertyField<LevelSprite>[] = [
     {
       key: 'num',
       label: 'Sprite ID',
@@ -175,6 +184,23 @@ export function spriteFields(_s: LevelSprite): PropertyField<LevelSprite>[] {
       hint: 'Vertical position in 16-px cells (0-127).'
     }
   ]
+  if (isChanger(s.num)) {
+    // Editing the value rewrites the sprite id ($1BA + value); the BG1 band
+    // render recomputes through the existing num-edit path. Which header field
+    // it targets (tileset vs palette) is the column parity — surfaced as a
+    // parity-variant row in sprite-parity-variants.ts.
+    fields.push({
+      key: 'changerValue',
+      label: 'Changer value',
+      field: { kind: 'num', min: 0, max: CHANGER_HI - CHANGER_LO, hex: true },
+      get: (sp) => sp.num - CHANGER_LO,
+      patch: (v) => ({ num: CHANGER_LO + v }),
+      hint:
+        'Target BG1 tileset (even column) or BG1 palette (odd column) this changer swaps to, ' +
+        'encoded in the sprite id ($1BA + value). Applies from this column onward until the next changer.'
+    })
+  }
+  return fields
 }
 
 const warp = (e: ScreenExit): ScreenExitWarp => e as ScreenExitWarp

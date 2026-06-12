@@ -4716,7 +4716,7 @@ CODE_00AD6C:
 ;     decompress as LZ16 with extra 2-byte uncompressed-size header in the
 ;     DATA_scene_gfx_layout stream itself (CODE_decompress_gfx_file path);
 ;     otherwise => LZ2 (LC_LZ2) decompression. (Cart asm + framework label
-;     this format "lz1"; verified it's LC_LZ2 — see Bank08.asm
+;     this format "lz1"; verified 2026-05-26 it's LC_LZ2 — see Bank08.asm
 ;     header on CODE_lz2_decompress.)
 ;
 ; Indexed by a Y offset that varies per scene (each scene starts at a

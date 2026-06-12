@@ -18,10 +18,10 @@
 import {
   loadLevelMapPublic,
   recordToTranslevel,
+  recordForTranslevel,
   isWorld6Translevel,
   isWorld6Record,
-  levelMapEntry,
-  levelIdHexKey
+  levelMapEntry
 } from './level.ts';
 import { buildLevelsCatalog } from './levels-catalog.ts';
 import { loadDevCart, type DevCart } from './engine/dev-cart.ts';
@@ -75,14 +75,6 @@ function readEntrance(
   const recSize = midPC != null ? midPC - recPC : Number.POSITIVE_INFINITY;
   if ((entOff === 0 && translevelId !== 0) || entOff >= recSize) return null;
   return { dataId: cart[recPC + entOff], entX: cart[recPC + entOff + 1], entY: cart[recPC + entOff + 2] };
-}
-
-function recordForTranslevel(map: LevelMap, translevelId: number): number | null {
-  return (
-    map.translevelToRecord[levelIdHexKey(translevelId)] ??
-    map.translevelToRecord[String(translevelId)] ??
-    null
-  );
 }
 
 function printAsRecord(value: number, map: LevelMap, names: LevelNameIndex | null): void {

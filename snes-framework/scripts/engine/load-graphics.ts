@@ -127,6 +127,22 @@ function resolveGfxSrcPC(
 }
 
 /**
+ * The 6 variable sprite-gfx file IDs a spriteset selects — stage-1 DP slots
+ * 7–12 (`DATA_spriteset_files[spriteTileset*6..]`), DMA'd to the variable
+ * sprite VRAM region. The sprite-side render-validity input: a sprite renders
+ * iff its metadata `spritesetFiles` ⊆ this set (see the editor's
+ * sprite-render-validity lib + engine/validity-report.ts).
+ */
+export function loadSpritesetFileIds(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  spriteTileset: number
+): number[] {
+  const base = symbols.pc('DATA_spriteset_files') + spriteTileset * 6;
+  return Array.from(rom.subarray(base, base + 6));
+}
+
+/**
  * Run the cart's graphics interpreter for an in-level scene and write the
  * resulting 64-KB VRAM payload into `vram`. Vram is modified in-place
  * starting at offset 0.

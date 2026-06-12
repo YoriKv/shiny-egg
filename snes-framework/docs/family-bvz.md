@@ -598,7 +598,7 @@ See `docs/mchip.md` for the SuperFX register conventions and the
 ## 8. Open questions / unclarities / LABEL-LIKELY-WRONG candidates
 
 1. **~~$026 in `DATA_bvz_payload_sprite_ids[$18]` but $029 actually
-   spawned~~ -- RESOLVED (deep-trace).** Asm trace confirms
+   spawned~~ -- RESOLVED 2026-05-27 (deep-trace).** Asm trace confirms
    `$026` IS the spawned sprite ID (`CODE_07F9AD` does `JSL
    CODE_spawn_sprite` with A = `DATA_bvz_payload_sprite_ids[$18]` =
    `$026`). The deeper finding: `$026` is NOT functionally equivalent
@@ -632,7 +632,7 @@ See `docs/mchip.md` for the SuperFX register conventions and the
    animation (the empty balloon flies up while the payload falls
    down). Visual confirmation needed.
 
-3. **~~`CODE_07F8C9` Crate spawn path~~ -- RESOLVED (deep-trace).**
+3. **~~`CODE_07F8C9` Crate spawn path~~ -- RESOLVED 2026-05-27 (deep-trace).**
    `YI_NorSpr003_CrateWithKey_Init` and `YI_NorSpr10E_CrateWith6Stars_Init`
    are *literally the same label* at the same address (`init_crate`
    at Bank0D:1905-1906) -- the `$003` label in the `JSL` is just the

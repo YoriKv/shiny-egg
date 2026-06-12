@@ -228,12 +228,17 @@ timer).
 
 | `$18,x` | Handler | Role |
 |---------|---------|------|
-| `$00` | `CODE_0CC3BA` | **Target / appear.** When the re-appear timer `$7A96` expires, picks a screen-X from `DATA_0CC349` (32-byte table) indexed by `$10 AND $0F`. Calls SuperFX `FXCODE_0AE921` for a valid-tile probe; on success, places Kamek at that X / Y, plays `SoundID31_EnterPipe`, sets palette `$05`, arms $0030 frame hold-timer, sets state $02 (`$18,x = 2`). On failure (`R10 != 0`), retries next frame. |
-| `$02` | `CODE_0CC53D` | **Appear (rise).** Walks `$16,x` from `<$0100` up by `$0010` each frame, scaling the OAM Y-position by SuperFX `CODE_0CC5F4` (Bank0C:9156). On `$16,x = $0100` (fully visible), arms `$7A96 = $10`, sets initial frame `DATA_0CC466[$06] = $01`, advances to state $04. |
-| `$04` | `CODE_0CC478` | **Cast.** Iterates `$19,x` from 6 down, indexing `DATA_0CC466` (7-byte frame-table $01,$06,$05,$04,$03,$02,$01 -- the cast animation sequence) and `DATA_0CC46D` (7-byte per-frame duration $10,$08,$10,$02,$02,$02,$30). When `$19,x = $01`, spawns the magic-shot child: picks side from `$7400,x` via `DATA_0CC474` ({-$10, +$10}), spawns sprite `$01AE` via `CODE_spawn_sprite_active`, stamps position into the child slot. On `$19,x` underflow with `$77C0` still positive, decrements `$77C0` and re-arms cast (a 6-shot volley). When `$77C0` exhausts, picks "vanish forward" or "vanish backward" (state $08 or $0A) via random + `$10 AND $01`. |
-| `$06` | `CODE_0CC580` | **Shoot (alt path).** Decrements `$78,x` per frame, scales `$16,x` by `$76,x` AND $003F. Used by some boss-Kameks for a continuous-volley path; on underflow re-arms volley like state $04. |
-| `$08` | `CODE_0CC5BC` | **Vanish.** Walks `$16,x` from `$0100` down by `$0010`; on reaching `< $0030`, arms `$7A96 = $20` (next-volley cooldown), zeros `$18,x` -- back to state $00 for the next pop-up. |
-| `$0A` | `CODE_0CC5E0` | **Despawn.** Decrements `$78,x`; on underflow, jumps into state $08's tail. |
+| `$00` | `kamek_shoots_magic_state_pick_spot` (`CODE_0CC3BA`) | **Pick spot.** When the re-appear timer `$7A96` expires, picks a screen-X from `DATA_0CC349` (32-byte table) indexed by `$10 AND $0F`. Calls SuperFX `FXCODE_0AE921` for a standable-floor probe; on success, places Kamek at that column, plays `SoundID31_EnterPipe`, then enters scale-in (state $02, `$16,x = $0030`) or wavy-in (state $04, `$78,x = $3F`) depending on the sign of the frame counter `$10`. On probe failure (`R10 != 0`), retries next frame. |
+| `$02` | `kamek_shoots_magic_state_scale_in` (`CODE_0CC53D`) | **Appear (scale-in).** Walks the GSU scale factor `$16,x` up by `$0010` each frame to `$0100` (full size), rendering through `CODE_0CC5F4`. On completion arms the cast sequence (`$19,x = 6`) and adds `$04` to `$18,x` -- to state $06. |
+| `$04` | `kamek_shoots_magic_state_wavy_in` (`CODE_0CC580`) | **Appear (wavy-in).** Wavy-distortion materialize: advances phase `$16,x` by `$76,x` (mod $40) while `$78,x` counts down, rendering through `CODE_0CC679`. On completion arms the cast sequence and double-increments `$18,x` -- to state $06. |
+| `$06` | `kamek_shoots_magic_state_cast_volley` (`CODE_0CC478`) | **Cast / volley.** Runs `kamek_shoots_magic_dodge_if_threatened` each frame. Iterates `$19,x` from 6 down, indexing `DATA_0CC466` (7-byte frame-table $01,$06,$05,$04,$03,$02,$01 -- the cast animation sequence) and `DATA_0CC46D` (7-byte per-frame duration $10,$08,$10,$02,$02,$02,$30). When `$19,x = $01`, spawns the magic-shot child: picks side from `$7400,x` via `DATA_0CC474` ({-$10, +$10}), spawns sprite `$01AE` via `CODE_spawn_sprite_active`, stamps position into the child slot. On `$19,x` underflow, decrements `$77C0` (volleys remaining; Init sets 2): nonzero re-arms the sequence for another shot; zero resets `$77C0 = 2` and picks scale-out or wavy-out (state $08 or $0A) via random + `$10 AND $01`. |
+| `$08` | `kamek_shoots_magic_state_scale_out` (`CODE_0CC5BC`) | **Vanish (scale-out).** Walks `$16,x` from `$0100` down by `$0010`; on reaching `< $0030`, arms `$7A96 = $20` (re-appear cooldown), zeros `$18,x` -- back to state $00 for the next pop-up. |
+| `$0A` | `kamek_shoots_magic_state_wavy_out` (`CODE_0CC5E0`) | **Vanish (wavy-out).** Wavy-distortion vanish: decrements `$78,x` with the same phase advance as wavy-in; on underflow, jumps into state $08's tail (cooldown + reset to state $00). |
+
+Runtime-traced (`trace-harness/scenarios/kamek-boss/`): the live loop
+is `$00 -> $04 -> $06 -> $08 -> $00`, with the `$01AE` shots spawning
+during state $06; the scale-in state $02 appears only on some cycles
+(e.g. after a forced vanish interrupts the loop).
 
 Head-bop is a bare `RTL` at `$0C:C795` -- Kamek $1AD is immortal.
 Yoshi cannot hurt him in this combat mode; the only "win" condition
@@ -690,17 +695,17 @@ $048 itself).
   game; the design intent (vs other immortal sprites like
   Brick-Block etc.) is unclear.
 
-- **State $06 of $1AD vs state $04.** Both states call into
-  `CODE_0CC679` (the SuperFX OAM stamper) and `CODE_0CC6F3`
-  (overlap probe), and both can spawn `$01AE` shots. The only
-  difference is state $06 decrements `$78,x` per frame -- a
-  separate cooldown -- so state $06 appears to be a "continuous
-  fire" mode whereas state $04 is the discrete 6-shot volley. But
-  no caller in the codebase ever sets `$18,x = 6` (state $06) --
-  the state-table entry is technically dead. Likely a vestigial
-  test path or a future-use entry. Worth verifying by checking
-  whether any boss-arena Kamek sets `$18,x = 6` programmatically
-  (e.g. as part of Hookbill / Naval Piranha pre-fight setup).
+- **State $06 of $1AD vs state $04 -- resolved (runtime-traced).**
+  An earlier draft of §2.5 had the two table rows swapped and
+  concluded state $06 was never set / dead. The dispatch table
+  (`DATA_kamek_shoots_magic_state_ptr`) actually orders
+  `kamek_shoots_magic_state_wavy_in` (`CODE_0CC580`) at $04 and
+  `kamek_shoots_magic_state_cast_volley` (`CODE_0CC478`) at $06,
+  and the runtime trace (`trace-harness/scenarios/kamek-boss/`)
+  confirmed the live loop `$00 -> $04 -> $06 -> $08 -> $00` with
+  the `$01AE` shots spawning during state $06. Both states are
+  live; states never set `$18,x = 6` directly because the appear
+  states reach it by arithmetic (`+$04` / double-`INC`).
 
 - **$1AE's `$701902,x` overlap pointer.** The Map16 overlap probe
   reads `!EXRAM..._701902,x` as a pointer into `$700000` (an EXRAM

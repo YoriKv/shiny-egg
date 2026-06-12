@@ -27,6 +27,10 @@ import {drawCollisionLayer} from './collision'
 import {drawBgLayers, drawBgOverlays, type BgLayerBitmaps} from './bg-layers'
 import {drawSpriteGlyphs, drawSpriteOutlines} from './sprites'
 import {drawNeighborIndicators, drawNeighborSelectionOverlay} from './sprite-neighbors'
+import {drawBehaviorSelectionOverlay, drawCapWarnings} from './sprite-behavior'
+import type {BehaviorProbeMap} from '../../hooks/useBehaviorProbes'
+import {drawObjectValidityIndicators, drawSpriteValidityIndicators} from './render-validity'
+import type {EntityValidityView} from '../../hooks/useEntityRenderValidity'
 import {drawSpriteVariantHints} from './sprite-variant-hints'
 import type {NeighborStatusMap} from '../../hooks/useNeighborDependencies'
 import {drawLinks} from './links'
@@ -34,6 +38,7 @@ import {drawObjectInfluence} from './object-influence'
 import {drawResizeHandles, objectResizeHandles} from './handles'
 import {drawExits, drawIncomingExits} from './exits'
 import {drawSpawnGlyph, drawSpawnOutline, drawTestSpawnGlyph} from './glyphs'
+import {selectionAccent} from './selection'
 
 // Live drag/preview overlays the draw effect shadows (formerly inline useState
 // shapes in Canvas.tsx — named here so SceneParams and that state share a type).
@@ -98,6 +103,12 @@ export interface SceneParams {
     bgLayers: BgLayerBitmaps | null
     spriteBounds: SpriteBoundsMap
     neighborStatus: NeighborStatusMap | null
+    /** Probe-derived behavior geometry (chain lengths, march tracks, rail
+     *  traces) for the selected-sprite overlay. Null until resolved. */
+    behaviorProbes: BehaviorProbeMap | null
+    /** Render-validity view for the loaded level (gfx-missing markers on placed
+     *  entities). Null until the first fetch resolves — no markers. */
+    renderValidity: EntityValidityView | null
     influence: DecodedObjectInfluence | null
     hovered: LevelObject | null
     hoveredSprite: LevelSprite | null
@@ -137,6 +148,8 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         bgLayers,
         spriteBounds,
         neighborStatus,
+        behaviorProbes,
+        renderValidity,
         influence,
         hovered,
         hoveredSprite,
@@ -294,6 +307,11 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // off saves a per-object pass.
         if (layers.bg1Outlines) {
             drawObjects(ctx, drawObjs, hovered, selObjUids, view.zoom, layers)
+            // Gfx-missing markers (render-validity) ride the same layer as the
+            // outlines they annotate.
+            if (renderValidity) {
+                drawObjectValidityIndicators(ctx, drawObjs, renderValidity, view.zoom)
+            }
             // Resize handles only for a SINGLE selected object (resize is single-only).
             // Drawn from `drawObjs` so they track the live resize preview.
             if (primary?.kind === 'object') {
@@ -337,6 +355,23 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             drawSpriteOutlines(ctx, drawSprs, hoveredSprite, selSprUids, view.zoom, spriteBounds)
             // Position-derived variant badges (e.g. pinwheel spin direction from X-cell parity).
             drawSpriteVariantHints(ctx, drawSprs, view.zoom, spriteBounds)
+            // Gfx-missing markers — after the variant hints so the error badge
+            // wins the top-right corner over the Winged-Cloud prize hint.
+            if (renderValidity) {
+                drawSpriteValidityIndicators(ctx, drawSprs, renderValidity, spriteBounds, view.zoom)
+            }
+        }
+        // Behavior-extent visuals (Sprite-Editing layer): always-on cap warnings
+        // (amber n/max badge when the engine's instance cap is exceeded), plus the
+        // selected sprite's trigger-zone / patrol-extent / orbit / runtime-snap
+        // geometry. Drawn BEFORE the neighbour visuals so a red error badge and
+        // the neighbour target markers win their corners/cells.
+        if (layers.spriteOutlines) {
+            drawCapWarnings(ctx, drawSprs, view.zoom, spriteBounds)
+            if (primary?.kind === 'sprite' && !moveOverlay && !groupMove) {
+                const spr = drawSprs.find((s) => s.uid === primary.uid)
+                if (spr) drawBehaviorSelectionOverlay(ctx, spr, view.zoom, behaviorProbes?.get(primary.uid))
+            }
         }
         // Neighbour-dependency visuals ride the Sprite-Editing layer: an always-on
         // red "!" badge on any sprite with an unmet enforce dependency, plus a
@@ -434,11 +469,11 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             const mw = Math.abs(marquee.x1 - marquee.x0)
             const mh = Math.abs(marquee.y1 - marquee.y0)
             ctx.save()
-            ctx.fillStyle = 'rgba(212, 225, 87, 0.12)'
+            ctx.fillStyle = selectionAccent(0.12)
             ctx.fillRect(mx, my, mw, mh)
             ctx.lineWidth = 1 / view.zoom
             ctx.setLineDash([4 / view.zoom, 3 / view.zoom])
-            ctx.strokeStyle = 'rgba(212, 225, 87, 0.95)'
+            ctx.strokeStyle = selectionAccent(0.95)
             ctx.strokeRect(mx, my, mw, mh)
             ctx.restore()
         }

@@ -100,14 +100,23 @@ chase a phantom dual-meaning $042.
 
 ## 2. The pipe-entry mechanic
 
-> **Not to be confused with the "pipe" BG collision tag.** Player pipe-*entry*
-> is entirely sprite-driven (the variants below) and reads the screen-exit
-> list, never a collision tag. The Map16 collision tag `$14` (DK), confusingly
-> glossed "pipe" (`docs/mchip.md` §3.3.2), is an *enemy-generator* marker:
-> pipe objects stamp it on pipe terrain (enterable and un-enterable alike),
-> and enemy sprites that spawn on it (Shy Guy/Lantern Ghost/Cactus Jack/Boo
-> Guy) become generators that emit enemies out of the pipe (`docs/family-
-> shyguys.md` §2.4). The two mechanics are independent.
+> **Sprites are only ONE of the two pipe-entry roads.** An earlier revision
+> of this note claimed entry is "entirely sprite-driven, never a collision
+> tag" -- **wrong** (counterexample: level `$3B` obj[279], an Enterable
+> vertical pipe with no sprite anywhere in the level -- it warps). The
+> tile-driven road: the GSU player collision probes (Bank0B, head/foot/side)
+> accept a tile whose page collision tag is `$14` `pipe-mouth` AND whose
+> per-tile `DATA_0AEBBC` byte carries the pressed direction's entry bit;
+> `CODE_0BDC20` then writes PipeTransitionType (`$0106`) + PlayerState `$06`
+> directly from the GSU (`SMS` -- invisible to 65816 grep). That's how the
+> "Enterable" pipe objects (`$3C`/`$A5`/`$A6`, sewage entrances ext
+> `$6D-$70`, keyed `$E0`) warp with no sprite. The SPRITE road below exists
+> for everything else -- the un-enterable `$79`-family pipes (`$F4` ...) and
+> bare walls. The same `$14` tag independently feeds the enemy-generator
+> gate (Shy Guy & co. spawned on it emit enemies out of the pipe,
+> `docs/family-shyguys.md` §2.4). Canonical editor-side reference:
+> `src/renderer/src/data/exit-triggers.ts`; full tag note:
+> `docs/mchip.md` §3.3.2.
 
 All four pipe variants ($042, $0D0, $0D1, $147) plus the invisible
 Teleport ($084) trigger the same engine-side handoff: from "sprite

@@ -37,7 +37,7 @@
 
 import { snesToPC, type SymbolMap } from './symbol-map.ts';
 import type { GfxFileEntry, GfxHeader } from './load-graphics.ts';
-import { decodeCelFormatB, applyCelFlip, type SpriteCel, type DynamicBody } from './sprite-cel.ts';
+import { decodeCelFormatB, applyCelFlip, CEL_FORMAT_B_RECORD_BYTES, type SpriteCel, type DynamicBody } from './sprite-cel.ts';
 import { DYNAMIC_BODY_SOURCES, decodeDynamicBody } from './sprite-dynamic-gfx.ts';
 import { u16le } from './rom-read.ts';
 
@@ -257,6 +257,33 @@ const FORMAT_A_CEL_SIZE: Record<number, 8 | 16> = {
   0x183: 8
 };
 
+/**
+ * Placement-parity cel variants — sprites whose Init picks the ANIMATION FRAME +
+ * a whole-sprite OAM flip from the spawn cell's X/Y parity (position pixel bit 4),
+ * so a static frame-0 render draws every instance in one orientation. Indexed by
+ * `2*(yCell&1) + (xCell&1)`; `flips` XOR onto the `$7042` seed flip bits (both
+ * signs' seed is $0006 — palette only, so the XOR is absolute here). Frame N's
+ * cel records sit at `celPC + N*count*5` — the GSU draw walker (`CODE_098B85`)
+ * multiplies the per-sprite record count by the slot's anim frame.
+ *  - 0x197 Arrow Sign (`init_arrow_sign`, Bank0F.asm:1336): frames `DATA_0F8962`
+ *    {0,1,1,0} + EOR flips `DATA_0F896E` {$00,$40,$80,$C0} → up/right/left/down.
+ *  - 0x198 Diagonal Arrow Sign (`init_diagonal_arrow_sign`, Bank0F.asm:1306):
+ *    fixed frame 2 + ORA of the same flip table → NW/NE/SW/SE.
+ * (Both inits then snap the position to the 32px-block centre +8 — a runtime
+ * anchor shift the editor does NOT mirror; we draw at the placed cell.)
+ */
+const PARITY_CEL_VARIANTS: Record<number, { frames: readonly number[]; flips: readonly number[] }> = {
+  0x197: { frames: [0, 1, 1, 0], flips: [0x00, 0x40, 0x80, 0xc0] },
+  0x198: { frames: [2, 2, 2, 2], flips: [0x00, 0x40, 0x80, 0xc0] }
+};
+
+/** Parity-cel variant index (0..3) for a placement, or `null` when `spriteId`
+ *  has no placement-parity cel. The sprite layer keys its per-num cel cache by
+ *  this (the cel bitmap is a function of (num, index), not num alone). */
+export function parityCelVariantIndex(spriteId: number, xCell: number, yCell: number): number | null {
+  return spriteId in PARITY_CEL_VARIANTS ? 2 * (yCell & 1) + (xCell & 1) : null;
+}
+
 export function resolveSpriteCel(
   rom: Uint8Array,
   symbols: SymbolMap,
@@ -270,7 +297,11 @@ export function resolveSpriteCel(
   /** The level's sprite-palette id (`LevelHeaderSpritePaletteLo`, header field 8).
    *  Only consulted by `spriteRuntimePaletteOverride` (the Red Coin's level-state-
    *  dependent recolour). Omit for the static seed palette. */
-  levelSpritePaletteId?: number
+  levelSpritePaletteId?: number,
+  /** Spawn CELL coordinates — only consulted for `PARITY_CEL_VARIANTS` sprites
+   *  (the arrow signs), whose frame + flip depend on cell parity. Omit to render
+   *  the parity-0 variant (e.g. pickers/galleries with no placement). */
+  placement?: { x: number; y: number }
 ): ResolvedSpriteCel | null {
   // Ambient sprites (triggers / generators / VFX) are not level visuals.
   if (spriteId >= AMBIENT_SPRITE_ID_BASE) return null;
@@ -308,7 +339,17 @@ export function resolveSpriteCel(
     if (pc >= 0 && pc < rom.length) {
       celPC = pc;
       count = spriteFrame0RecordCount(rom, symbols, spriteId);
-      cel = applyCelFlip(decodeCelFormatB(rom, celPC, count), hflip, vflip);
+      // Placement-parity variant (arrow signs): step to the parity-selected
+      // frame's records and fold its flip bits into the whole-sprite flip.
+      let h = hflip, v = vflip;
+      const parity = PARITY_CEL_VARIANTS[spriteId];
+      if (parity && placement) {
+        const idx = 2 * (placement.y & 1) + (placement.x & 1);
+        celPC += parity.frames[idx]! * count * CEL_FORMAT_B_RECORD_BYTES;
+        h = h !== ((parity.flips[idx]! & 0x40) !== 0);
+        v = v !== ((parity.flips[idx]! & 0x80) !== 0);
+      }
+      cel = applyCelFlip(decodeCelFormatB(rom, celPC, count), h, v);
       if (spritePal !== 0) cel = cel.map((t) => ({ ...t, paletteRow: (t.paletteRow | spritePal) & 0x07 }));
     }
   }

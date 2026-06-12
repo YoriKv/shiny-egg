@@ -14,7 +14,17 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x02": {
       "name": "Left edge of ledge",
@@ -30,7 +40,17 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x03": {
       "name": "Right edge of ledge",
@@ -46,7 +66,17 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x04": {
       "name": "Gradual downwards slope, right",
@@ -62,7 +92,17 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x05": {
       "name": "Gradual downwards slope, left",
@@ -78,7 +118,16 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xF"
+      ]
     },
     "0x06": {
       "name": "Downwards slope, right",
@@ -94,7 +143,17 @@
         "grass2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x07": {
       "name": "Downwards slope, left",
@@ -110,7 +169,16 @@
         "grass2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xF"
+      ]
     },
     "0x08": {
       "name": "Steep downwards slope, right",
@@ -121,7 +189,11 @@
         "cave2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 6
+      "defaultHeight": 6,
+      "bg1Tilesets": [
+        "0x4",
+        "0x8"
+      ]
     },
     "0x09": {
       "name": "Steep downwards slope, left",
@@ -132,7 +204,11 @@
         "cave2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x4",
+        "0x8"
+      ]
     },
     "0x0A": {
       "name": "Left edge of ledge, without protrusion",
@@ -148,7 +224,16 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x0B": {
       "name": "Right edge of ledge, without protrusion",
@@ -164,7 +249,17 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x0C": {
       "name": "Poundable stake",
@@ -181,7 +276,19 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x5",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xC",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x0D": {
       "name": "Skinny horizontal platform",
@@ -198,7 +305,17 @@
         "grass2"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xC",
+        "0xF"
+      ]
     },
     "0x0E": {
       "name": "Pole of ski lift wire, left",
@@ -208,7 +325,10 @@
         "snow"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0x0F": {
       "name": "Pole of ski lift wire, right",
@@ -218,7 +338,10 @@
         "snow"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0x10": {
       "name": "Diagonal ski lift wire, gradual",
@@ -228,7 +351,10 @@
         "snow"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0x11": {
       "name": "Diagonal ski lift wire",
@@ -238,7 +364,10 @@
         "snow"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0x12": {
       "name": "Diagonal ski lift wire, steep",
@@ -248,7 +377,10 @@
         "snow"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0x13": {
       "name": "Horizontal ski lift wire",
@@ -258,7 +390,10 @@
         "snow"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0x14": {
       "name": "Cross section",
@@ -270,7 +405,12 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x15": {
       "name": "Cloud",
@@ -315,7 +455,10 @@
         "pond"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x2"
+      ]
     },
     "0x18": {
       "name": "Stone",
@@ -325,7 +468,10 @@
         "pond"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x2"
+      ]
     },
     "0x19": {
       "name": "Stone and gravel in water",
@@ -335,7 +481,11 @@
         "pond"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x2",
+        "0xE"
+      ]
     },
     "0x1A": {
       "name": "Wooden platform",
@@ -345,7 +495,10 @@
         "pond"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x2"
+      ]
     },
     "0x1B": {
       "name": "Vertical log",
@@ -355,7 +508,10 @@
         "pond"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x2"
+      ]
     },
     "0x1C": {
       "name": "Tied log",
@@ -365,7 +521,10 @@
         "pond"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x2"
+      ]
     },
     "0x1D": {
       "name": "Red mushroom",
@@ -375,7 +534,10 @@
         "pond"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x2"
+      ]
     },
     "0x1E": {
       "name": "White flower",
@@ -385,7 +547,10 @@
         "pond"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x2"
+      ]
     },
     "0x1F": {
       "name": "Wavy lava",
@@ -395,7 +560,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0x20": {
       "name": "3D Stone",
@@ -405,7 +573,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0x21": {
       "name": "Muddy ledge  with grass",
@@ -415,7 +586,10 @@
         "jungle"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x22": {
       "name": "Left edge of muddy ledge with grass",
@@ -425,7 +599,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x23": {
       "name": "Right edge of muddy ledge with grass",
@@ -435,7 +612,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x24": {
       "name": "Muddy ledge",
@@ -445,7 +625,10 @@
         "jungle"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x25": {
       "name": "Left edge of muddy ledge",
@@ -455,7 +638,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x26": {
       "name": "Right edge of muddy ledge",
@@ -465,7 +651,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x27": {
       "name": "Downwards muddy slope, left",
@@ -475,7 +664,10 @@
         "jungle"
       ],
       "defaultWidth": 13,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x28": {
       "name": "Downwards muddy slope, right",
@@ -485,7 +677,10 @@
         "jungle"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x29": {
       "name": "Treetop canopy, left half",
@@ -495,7 +690,10 @@
         "jungle"
       ],
       "defaultWidth": 12,
-      "defaultHeight": 12
+      "defaultHeight": 12,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x2A": {
       "name": "Treetop canopy, right half",
@@ -505,7 +703,10 @@
         "jungle"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 12
+      "defaultHeight": 12,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x2B": {
       "name": "Poundable stake",
@@ -515,7 +716,11 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x5",
+        "0xE"
+      ]
     },
     "0x2C": {
       "name": "Stone",
@@ -525,7 +730,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x2D": {
       "name": "Hanging vine on mud",
@@ -535,7 +743,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 6
+      "defaultHeight": 6,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x2E": {
       "name": "Hanging vine on mud with leaves",
@@ -545,7 +756,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 6
+      "defaultHeight": 6,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x2F": {
       "name": "Tree",
@@ -555,7 +769,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x30": {
       "name": "Vine",
@@ -565,7 +782,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x31": {
       "name": "Vine with leaves",
@@ -575,7 +795,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x32": {
       "name": "Stone with pattern on the top",
@@ -585,7 +808,11 @@
         "jungle"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x5",
+        "0x9"
+      ]
     },
     "0x33": {
       "name": "Stone",
@@ -595,7 +822,13 @@
         "jungle"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5",
+        "0x8",
+        "0x9",
+        "0xE"
+      ]
     },
     "0x34": {
       "name": "Cattail",
@@ -605,7 +838,10 @@
         "jungle"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x35": {
       "name": "Animated water",
@@ -615,7 +851,23 @@
         "animated"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x3",
+        "0x4",
+        "0x5",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0x36": {
       "name": "Vine with leaves",
@@ -625,7 +877,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x37": {
       "name": "Horizontal red platform",
@@ -661,7 +916,11 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x3",
+        "0xB"
+      ]
     },
     "0x39": {
       "name": "Red stone",
@@ -671,7 +930,11 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x3",
+        "0xB"
+      ]
     },
     "0x3A": {
       "name": "Steep upwards slope, right",
@@ -681,7 +944,11 @@
         "cave2"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x0",
+        "0x8"
+      ]
     },
     "0x3B": {
       "name": "Steep upwards slope, left",
@@ -691,7 +958,11 @@
         "cave2"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x8"
+      ]
     },
     "0x3C": {
       "name": "Enterable vertical pipe",
@@ -716,7 +987,8 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "exitTrigger": true
     },
     "0x3D": {
       "name": "Unknown object",
@@ -726,7 +998,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x3E": {
       "name": "2 poles of ski lift wire",
@@ -736,7 +1011,10 @@
         "snow"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0x3F": {
       "name": "Left facing spike",
@@ -746,7 +1024,10 @@
         "3d"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0x40": {
       "name": "Right facing spike",
@@ -756,7 +1037,10 @@
         "3d"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0x41": {
       "name": "Horizontal platform in castle",
@@ -768,7 +1052,12 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x42": {
       "name": "Castle pillar",
@@ -778,7 +1067,10 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x43": {
       "name": "Castle pillar",
@@ -790,7 +1082,12 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x44": {
       "name": "Castle wall",
@@ -802,7 +1099,12 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x45": {
       "name": "Downwards diagonal castle wall, right",
@@ -814,7 +1116,12 @@
         "castle3"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x46": {
       "name": "Downwards diagonal castle wall, left",
@@ -826,7 +1133,12 @@
         "castle3"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x47": {
       "name": "Lava in castle",
@@ -839,7 +1151,23 @@
         "animated"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x3",
+        "0x4",
+        "0x5",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0x48": {
       "name": "Brick",
@@ -851,7 +1179,12 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x49": {
       "name": "Window in castle wall",
@@ -863,7 +1196,12 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x4A": {
       "name": "Castle pillar",
@@ -874,7 +1212,11 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0xE"
+      ]
     },
     "0x4B": {
       "name": "Checkered block, 4",
@@ -885,7 +1227,10 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0xE"
+      ]
     },
     "0x4C": {
       "name": "Checkered block, 6",
@@ -896,7 +1241,11 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0xE"
+      ]
     },
     "0x4D": {
       "name": "Checkered block, 8",
@@ -907,7 +1256,10 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0xE"
+      ]
     },
     "0x4E": {
       "name": "Sand block",
@@ -928,7 +1280,21 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0x4F": {
       "name": "Sand block remover",
@@ -949,7 +1315,22 @@
         "grass2"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x5",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0x50": {
       "name": "Vertical rail",
@@ -960,7 +1341,11 @@
         "grass1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x51": {
       "name": "Horizontal rail",
@@ -971,7 +1356,11 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x52": {
       "name": "Diagonal rail",
@@ -982,7 +1371,11 @@
         "grass1"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x53": {
       "name": "Horizontal platform on castle wall",
@@ -994,7 +1387,15 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1",
+        "0x5",
+        "0x6",
+        "0xA",
+        "0xD",
+        "0xE"
+      ]
     },
     "0x54": {
       "name": "Gradually slanted platform on castle wall",
@@ -1006,7 +1407,11 @@
         "castle3"
       ],
       "defaultWidth": 6,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA"
+      ]
     },
     "0x55": {
       "name": "Slanted platform on castle wall",
@@ -1018,7 +1423,12 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x56": {
       "name": "Steeply slanted platform on castle wall",
@@ -1030,7 +1440,10 @@
         "castle3"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x57": {
       "name": "Platform in cross section",
@@ -1042,7 +1455,12 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x58": {
       "name": "Ceiling of ledge",
@@ -1056,7 +1474,14 @@
         "cave2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8"
+      ]
     },
     "0x59": {
       "name": "Gradual downwards slope in cross section, right",
@@ -1068,7 +1493,14 @@
         "grass1"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x5A": {
       "name": "Downwards slope in cross section, right",
@@ -1080,7 +1512,12 @@
         "grass1"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x5B": {
       "name": "Steep downwards steep slope in passage, right",
@@ -1092,7 +1529,12 @@
         "grass1"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x5C": {
       "name": "Gradual downwards slope in passage, left",
@@ -1104,7 +1546,12 @@
         "grass1"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x5D": {
       "name": "Downwards slope in passage, left",
@@ -1116,7 +1563,12 @@
         "grass1"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x5E": {
       "name": "Steep downwards slope in passage, left",
@@ -1128,7 +1580,12 @@
         "grass1"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x5F": {
       "name": "Upward gradual slope, right",
@@ -1141,7 +1598,13 @@
         "cave2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7",
+        "0x8"
+      ]
     },
     "0x60": {
       "name": "Upwards slope, right",
@@ -1154,7 +1617,14 @@
         "cave2"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7",
+        "0x8",
+        "0xF"
+      ]
     },
     "0x61": {
       "name": "Gradual upwards slope, left",
@@ -1167,7 +1637,14 @@
         "cave2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7",
+        "0x8",
+        "0xF"
+      ]
     },
     "0x62": {
       "name": "Upwards slope, left",
@@ -1180,7 +1657,15 @@
         "cave2"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7",
+        "0x8",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x63": {
       "name": "Horizontal brown platform",
@@ -1297,7 +1782,17 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xC",
+        "0xF"
+      ]
     },
     "0x68": {
       "name": "Coin",
@@ -1318,7 +1813,11 @@
         "castle2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA"
+      ]
     },
     "0x6A": {
       "name": "Unknown object",
@@ -1328,7 +1827,10 @@
         "misc"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x6B": {
       "name": "Goal platform",
@@ -1396,7 +1898,15 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x1",
+        "0x5",
+        "0x7",
+        "0x9",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x6E": {
       "name": "Colorful cement block",
@@ -1431,7 +1941,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x70": {
       "name": "Plants",
@@ -1441,7 +1954,10 @@
         "forest2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x71": {
       "name": "Flower on ground",
@@ -1451,7 +1967,10 @@
         "forest2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x72": {
       "name": "Flower on ground",
@@ -1461,7 +1980,10 @@
         "forest2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x73": {
       "name": "Leaves of twisted tree",
@@ -1471,7 +1993,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x74": {
       "name": "Leaves of twisted tree",
@@ -1481,7 +2006,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x75": {
       "name": "Left facing leaf of twisted tree",
@@ -1491,7 +2019,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x76": {
       "name": "Right facing leaf of twisted tree",
@@ -1501,7 +2032,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x77": {
       "name": "Centrally facing leaf of twisted tree",
@@ -1511,7 +2045,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x78": {
       "name": "Slanted twisted tree",
@@ -1521,7 +2058,10 @@
         "forest2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x79": {
       "name": "Red stairs",
@@ -1555,7 +2095,12 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x7B": {
       "name": "Diagonal wall",
@@ -1567,7 +2112,12 @@
         "grass1"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7"
+      ]
     },
     "0x7C": {
       "name": "Upside-down diagonal wall",
@@ -1579,7 +2129,11 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1",
+        "0x7"
+      ]
     },
     "0x7D": {
       "name": "Ledge on wall",
@@ -1591,7 +2145,10 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x7E": {
       "name": "Platform on wall",
@@ -1603,7 +2160,10 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x7F": {
       "name": "Wall hole",
@@ -1615,7 +2175,15 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x5",
+        "0x7",
+        "0x8",
+        "0xF"
+      ]
     },
     "0x80": {
       "name": "Upside-down diagonal wall",
@@ -1627,7 +2195,17 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x5",
+        "0x7",
+        "0x8",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x81": {
       "name": "Diagonal wall",
@@ -1639,7 +2217,17 @@
         "grass1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x5",
+        "0x7",
+        "0x8",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x82": {
       "name": "Green coin",
@@ -1649,7 +2237,23 @@
         "animated"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x3",
+        "0x4",
+        "0x5",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0x83": {
       "name": "Green coin, placed every 2 blocks",
@@ -1659,7 +2263,23 @@
         "animated"
       ],
       "defaultWidth": 5,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x3",
+        "0x4",
+        "0x5",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0x84": {
       "name": "Diagonal green coin, placed every 2 blocks",
@@ -1669,7 +2289,23 @@
         "animated"
       ],
       "defaultWidth": 5,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x3",
+        "0x4",
+        "0x5",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0x85": {
       "name": "Upwards steep slope, right",
@@ -1679,7 +2315,10 @@
         "forest1"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x86": {
       "name": "Upwards steep slope, left",
@@ -1689,7 +2328,10 @@
         "forest1"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x87": {
       "name": "Ledge without grass",
@@ -1699,7 +2341,11 @@
         "forest1"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x1",
+        "0x9"
+      ]
     },
     "0x88": {
       "name": "Ledge without grass",
@@ -1710,7 +2356,11 @@
         "forest2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x1",
+        "0x9"
+      ]
     },
     "0x89": {
       "name": "Falling rock",
@@ -1720,7 +2370,10 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x8A": {
       "name": "!-switch coin",
@@ -1752,7 +2405,11 @@
         "castle3"
       ],
       "defaultWidth": 5,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0xE"
+      ]
     },
     "0x8D": {
       "name": "Tree",
@@ -1762,7 +2419,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x8E": {
       "name": "Giant donut lift",
@@ -1772,7 +2432,10 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x8F": {
       "name": "Slanted log stuck in ground, gradual",
@@ -1782,7 +2445,10 @@
         "forest2"
       ],
       "defaultWidth": 5,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x90": {
       "name": "Slanted log stuck in ground",
@@ -1792,7 +2458,10 @@
         "forest2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x91": {
       "name": "Tree with spore",
@@ -1802,7 +2471,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x92": {
       "name": "Tree with spore, mirrored",
@@ -1812,7 +2484,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x93": {
       "name": "Palm tree",
@@ -1822,7 +2497,10 @@
         "forest1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x94": {
       "name": "Number platform 1",
@@ -1832,7 +2510,10 @@
         "forest2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x95": {
       "name": "Number platform 2",
@@ -1842,7 +2523,10 @@
         "forest2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x96": {
       "name": "Number platform 3",
@@ -1852,7 +2536,10 @@
         "forest2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x97": {
       "name": "Number platform 4",
@@ -1862,7 +2549,10 @@
         "forest2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x98": {
       "name": "Waterfall",
@@ -1872,7 +2562,10 @@
         "cave1"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0"
+      ]
     },
     "0x99": {
       "name": "Rock on waterfall",
@@ -1882,7 +2575,10 @@
         "cave1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0"
+      ]
     },
     "0x9A": {
       "name": "Plant in cave, large",
@@ -1892,7 +2588,10 @@
         "cave1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x0"
+      ]
     },
     "0x9B": {
       "name": "Plant in cave",
@@ -1902,7 +2601,10 @@
         "cave1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x0"
+      ]
     },
     "0x9C": {
       "name": "Plant in cave",
@@ -1912,7 +2614,10 @@
         "cave1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0x0"
+      ]
     },
     "0x9D": {
       "name": "Stationary rock",
@@ -1922,7 +2627,10 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x9E": {
       "name": "Donut lift",
@@ -1954,7 +2662,10 @@
         "grass2"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0xA0": {
       "name": "Red block",
@@ -1966,7 +2677,12 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xA1": {
       "name": "Yellow block",
@@ -1978,7 +2694,12 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xA2": {
       "name": "Green block",
@@ -1990,7 +2711,12 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xA3": {
       "name": "Breakable block",
@@ -2002,7 +2728,12 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xA4": {
       "name": "Fragile breakable block",
@@ -2014,7 +2745,12 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xA5": {
       "name": "Double-ended vertical pipe",
@@ -2027,7 +2763,13 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "exitTrigger": true,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xA6": {
       "name": "Double-ended horizontal pipe",
@@ -2040,7 +2782,14 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "exitTrigger": true,
+      "bg1Tilesets": [
+        "0x3",
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xA7": {
       "name": "Blue spike ball",
@@ -2054,7 +2803,14 @@
         "castle3"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 2
+      "defaultHeight": 2,
+      "bg1Tilesets": [
+        "0x3",
+        "0x6",
+        "0xA",
+        "0xB",
+        "0xE"
+      ]
     },
     "0xA8": {
       "name": "Blank tile",
@@ -2091,7 +2847,11 @@
         "castle2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x1",
+        "0x3"
+      ]
     },
     "0xAA": {
       "name": "Vertical sewage pipe, left",
@@ -2101,7 +2861,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xAB": {
       "name": "Vertical sewage pipe, right",
@@ -2111,7 +2874,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xAC": {
       "name": "Horizontal sewage pipe, top / Randomly coloured egg block",
@@ -2121,7 +2887,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xAD": {
       "name": "Horizontal sewage pipe, bottom",
@@ -2131,7 +2900,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xAE": {
       "name": "Sewage pipe wall",
@@ -2141,7 +2913,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xAF": {
       "name": "Sewage pipe wall",
@@ -2151,7 +2926,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB0": {
       "name": "Sewage pipe wall",
@@ -2161,7 +2939,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB1": {
       "name": "Platform on sewage pipe wall",
@@ -2171,7 +2952,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB2": {
       "name": "Diagonal sewage pipe ceiling, left",
@@ -2181,7 +2965,10 @@
         "sewer"
       ],
       "defaultWidth": 12,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB3": {
       "name": "Diagonal sewage pipe floor, left",
@@ -2191,7 +2978,10 @@
         "sewer"
       ],
       "defaultWidth": 12,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB4": {
       "name": "Large diagonal sewage pipe ceiling, left",
@@ -2201,7 +2991,10 @@
         "sewer"
       ],
       "defaultWidth": 12,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB5": {
       "name": "Large diagonal sewage pipe floor, left",
@@ -2211,7 +3004,10 @@
         "sewer"
       ],
       "defaultWidth": 12,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB6": {
       "name": "Diagonal sewage pipe ceiling, right",
@@ -2221,7 +3017,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB7": {
       "name": "Diagonal sewage pipe floor, right",
@@ -2231,7 +3030,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB8": {
       "name": "Large diagonal sewage pipe ceiling, right",
@@ -2241,7 +3043,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xB9": {
       "name": "Large diagonal sewage pipe floor, right",
@@ -2251,7 +3056,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xBA": {
       "name": "Sewage pipe dead end, top",
@@ -2261,7 +3069,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xBB": {
       "name": "Sewage pipe dead end, bottom",
@@ -2271,7 +3082,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xBC": {
       "name": "Sewage pipe dead end, right",
@@ -2281,7 +3095,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xBD": {
       "name": "Sewage pipe dead end, left",
@@ -2291,7 +3108,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xBE": {
       "name": "Sewage from sewage pipe",
@@ -2301,7 +3121,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xBF": {
       "name": "Sewage",
@@ -2311,7 +3134,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 5
+      "defaultHeight": 5,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xC0": {
       "name": "Sewage flowing left",
@@ -2321,7 +3147,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xC1": {
       "name": "Sewage flowing right",
@@ -2331,7 +3160,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xC2": {
       "name": "Sewage flowing downwards left",
@@ -2341,7 +3173,10 @@
         "sewer"
       ],
       "defaultWidth": 12,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xC3": {
       "name": "Sewage flowing downwards right",
@@ -2351,7 +3186,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xC4": {
       "name": "Horizontal coin, placed every 2 blocks",
@@ -2411,7 +3249,23 @@
         "animated"
       ],
       "defaultWidth": 5,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x3",
+        "0x4",
+        "0x5",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0xCA": {
       "name": "Water in sewer",
@@ -2421,7 +3275,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xCB": {
       "name": "Castle wall with sides edges",
@@ -2433,7 +3290,12 @@
         "castle3"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xCC": {
       "name": "Upwards diagonal castle wall, left",
@@ -2445,7 +3307,12 @@
         "castle3"
       ],
       "defaultWidth": 13,
-      "defaultHeight": 12
+      "defaultHeight": 12,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xCD": {
       "name": "Upwards diagonal castle wall, right",
@@ -2457,7 +3324,12 @@
         "castle3"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 12
+      "defaultHeight": 12,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0xCE": {
       "name": "Diagonal line guide",
@@ -2492,7 +3364,10 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0xD0": {
       "name": "Diagonal line guide, very gradual",
@@ -2502,7 +3377,10 @@
         "grass2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0xD1": {
       "name": "Vertical line guide",
@@ -2562,7 +3440,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xD4": {
       "name": "Rock wall, left side",
@@ -2572,7 +3453,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xD5": {
       "name": "Rock wall, right side",
@@ -2582,7 +3466,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xD6": {
       "name": "Rock ceiling",
@@ -2592,7 +3479,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xD7": {
       "name": "Rock floor",
@@ -2602,7 +3492,10 @@
         "sewer"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xD8": {
       "name": "Giant log bridge",
@@ -2612,7 +3505,10 @@
         "sky"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0xD9": {
       "name": "Log bridge",
@@ -2622,7 +3518,10 @@
         "sky"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0xDA": {
       "name": "Star Mario block",
@@ -2642,7 +3541,10 @@
         "snow"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0xDC": {
       "name": "Icy floor edges, with water between them",
@@ -2653,7 +3555,23 @@
         "animated"
       ],
       "defaultWidth": 5,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x3",
+        "0x4",
+        "0x5",
+        "0x6",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xA",
+        "0xC",
+        "0xD",
+        "0xE",
+        "0xF"
+      ]
     },
     "0xDD": {
       "name": "Icy cave floor",
@@ -2663,7 +3581,10 @@
         "cave2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xDE": {
       "name": "Rock on icy cave floor",
@@ -2673,7 +3594,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xDF": {
       "name": "Lava in cave",
@@ -2683,7 +3607,10 @@
         "cave2"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xE0": {
       "name": "Downwards flowing lava",
@@ -2693,7 +3620,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xE1": {
       "name": "Mushroom",
@@ -2703,7 +3633,10 @@
         "cave2"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xE2": {
       "name": "Snowy platform support",
@@ -2713,7 +3646,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 8
+      "defaultHeight": 8,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0xE3": {
       "name": "Icy floor edges with hole",
@@ -2723,7 +3659,10 @@
         "snow"
       ],
       "defaultWidth": 5,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0xE4": {
       "name": "Flower garden ledge",
@@ -2733,7 +3672,10 @@
         "flower"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xE5": {
       "name": "Flower garden gradual downwards slope, left",
@@ -2743,7 +3685,10 @@
         "flower"
       ],
       "defaultWidth": 12,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xE6": {
       "name": "Flower garden downwards slope, left",
@@ -2753,7 +3698,10 @@
         "flower"
       ],
       "defaultWidth": 12,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xE7": {
       "name": "Flower garden steep downwards slope, left",
@@ -2763,7 +3711,10 @@
         "flower"
       ],
       "defaultWidth": 14,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xE8": {
       "name": "Flower garden gradual downwards slope, right",
@@ -2773,7 +3724,10 @@
         "flower"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xE9": {
       "name": "Flower garden downwards slope, right",
@@ -2783,7 +3737,10 @@
         "flower"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xEA": {
       "name": "Flower garden steep downwards slope, right",
@@ -2793,7 +3750,10 @@
         "flower"
       ],
       "defaultWidth": 2,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xEB": {
       "name": "Flower garden edge, left",
@@ -2803,7 +3763,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xEC": {
       "name": "Flower garden edge, right",
@@ -2813,7 +3776,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xED": {
       "name": "3D stone wall",
@@ -2823,7 +3789,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0xEE": {
       "name": "3D stone",
@@ -2833,7 +3802,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0xEF": {
       "name": "3D stone",
@@ -2843,7 +3815,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0xF0": {
       "name": "Moving 3D stone, slow",
@@ -2853,7 +3828,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0xF1": {
       "name": "Moving 3D stone, quick",
@@ -2863,7 +3841,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0xF2": {
       "name": "Moving 3D stone, slow, in the opposite direction",
@@ -2873,7 +3854,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0xF3": {
       "name": "Moving 3D stone, quick, in the opposite direction",
@@ -2883,7 +3867,10 @@
         "3d"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 4
+      "defaultHeight": 4,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0xF4": {
       "name": "Unenterable vertical pipe",
@@ -2943,7 +3930,8 @@
         "kamek"
       ],
       "defaultWidth": 3,
-      "defaultHeight": 3
+      "defaultHeight": 3,
+      "bg1Tilesets": []
     }
   },
   "extendedObjects": {
@@ -2955,7 +3943,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x01": {
       "name": "Leaf in jungle, facing right",
@@ -2965,7 +3956,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x02": {
       "name": "Leaf with short stem in jungle, facing left",
@@ -2975,7 +3969,13 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5",
+        "0x8",
+        "0x9",
+        "0xE"
+      ]
     },
     "0x03": {
       "name": "Leaf with short stem in jungle, facing right",
@@ -2985,7 +3985,13 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5",
+        "0x8",
+        "0x9",
+        "0xE"
+      ]
     },
     "0x04": {
       "name": "Small leaf in jungle, facing left",
@@ -2995,7 +4001,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x05": {
       "name": "Small leaf in jungle, facing right",
@@ -3005,7 +4014,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x06": {
       "name": "Small leaf with short stem in jungle, facing left",
@@ -3015,7 +4027,13 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5",
+        "0x8",
+        "0x9",
+        "0xE"
+      ]
     },
     "0x07": {
       "name": "Small leaf with short stem in jungle, facing right",
@@ -3025,7 +4043,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x08": {
       "name": "3 leaves in jungle",
@@ -3035,7 +4056,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x09": {
       "name": "2 leaves in jungle",
@@ -3045,7 +4069,13 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5",
+        "0x8",
+        "0x9",
+        "0xE"
+      ]
     },
     "0x0A": {
       "name": "Bush on mud, facing left",
@@ -3055,7 +4085,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x0B": {
       "name": "Bush on mud, facing right",
@@ -3065,7 +4098,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x0C": {
       "name": "Vine on mud",
@@ -3075,7 +4111,10 @@
         "jungle"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x5"
+      ]
     },
     "0x0D": {
       "name": "Floor and ceiling of Kamek's room, type 1",
@@ -3085,7 +4124,8 @@
         "kamek"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": []
     },
     "0x0E": {
       "name": "Floor and ceiling of Kamek's room, type 2",
@@ -3095,7 +4135,8 @@
         "kamek"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": []
     },
     "0x0F": {
       "name": "Lily of the valley",
@@ -3105,7 +4146,11 @@
         "pond"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x2",
+        "0xC"
+      ]
     },
     "0x10": {
       "name": "Prince Froggy's throat",
@@ -3115,7 +4160,11 @@
         "3d"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x3",
+        "0x4"
+      ]
     },
     "0x11": {
       "name": "Seesaw holder",
@@ -3126,7 +4175,11 @@
         "castle2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA"
+      ]
     },
     "0x12": {
       "name": "Red platform guide, right",
@@ -3154,7 +4207,7 @@
       "defaultHeight": 1
     },
     "0x13": {
-      "name": "Red paltform guide, left",
+      "name": "Red platform guide, left",
       "desc": "A red platform guide for a Winged Cloud creates ones towards left.",
       "category": "platform",
       "tilesets": [
@@ -3244,7 +4297,19 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x5",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xC",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x17": {
       "name": "Green coin",
@@ -3254,7 +4319,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x18": {
       "name": "Intro scene background",
@@ -3264,7 +4332,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x19": {
       "name": "Destroyed Bowser's room, 1",
@@ -3274,7 +4345,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x1A": {
       "name": "Destroyed Bowser's room, 2",
@@ -3284,7 +4358,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x1B": {
       "name": "Bone and Skeleton",
@@ -3294,7 +4371,10 @@
         "forest1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x1C": {
       "name": "Bone and Skeleton",
@@ -3304,7 +4384,10 @@
         "forest1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x1D": {
       "name": "Bones",
@@ -3314,7 +4397,10 @@
         "forest1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x1E": {
       "name": "Hole of Kamek's room",
@@ -3324,7 +4410,8 @@
         "kamek"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": []
     },
     "0x1F": {
       "name": "Mold of Giant boss door",
@@ -3334,7 +4421,8 @@
         "kamek"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": []
     },
     "0x20": {
       "name": "Null object",
@@ -3344,7 +4432,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x21": {
       "name": "Null object",
@@ -3354,7 +4445,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x22": {
       "name": "Null object",
@@ -3364,7 +4458,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x23": {
       "name": "Null object",
@@ -3374,7 +4471,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x24": {
       "name": "Null object",
@@ -3384,7 +4484,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x25": {
       "name": "Null object",
@@ -3394,7 +4497,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x26": {
       "name": "Null object",
@@ -3404,7 +4510,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x27": {
       "name": "Null object",
@@ -3414,7 +4523,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x28": {
       "name": "Null object",
@@ -3424,7 +4536,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x29": {
       "name": "Null object",
@@ -3434,7 +4549,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x2A": {
       "name": "Null object",
@@ -3444,7 +4562,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x2B": {
       "name": "Null object",
@@ -3454,7 +4575,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x2C": {
       "name": "Null object",
@@ -3464,7 +4588,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x2D": {
       "name": "Null object",
@@ -3474,7 +4601,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x2E": {
       "name": "Null object",
@@ -3484,7 +4614,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x2F": {
       "name": "Null object",
@@ -3494,7 +4627,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x30": {
       "name": "32x32 unused block",
@@ -3506,7 +4642,12 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x31": {
       "name": "Wooden wall",
@@ -3518,7 +4659,10 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xA"
+      ]
     },
     "0x32": {
       "name": "Grafitto, rail with platform",
@@ -3529,7 +4673,10 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x33": {
       "name": "Grafitto, top left corner of rail",
@@ -3540,7 +4687,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x34": {
       "name": "Grafitto, bottom left corner of rail",
@@ -3551,7 +4702,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x35": {
       "name": "Grafitto, bottom right corner of rail",
@@ -3562,7 +4717,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x36": {
       "name": "Grafitto, top right corner of rail",
@@ -3573,7 +4732,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x37": {
       "name": "Grafitto, top joint of horizontal rail",
@@ -3584,7 +4747,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x38": {
       "name": "Grafitto, right joint of vertical rail",
@@ -3595,7 +4762,10 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x7"
+      ]
     },
     "0x39": {
       "name": "Grafitto, left joint of vertical rail",
@@ -3606,7 +4776,10 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x7"
+      ]
     },
     "0x3A": {
       "name": "Grafitto, bottom joint of horizontal rail",
@@ -3617,7 +4790,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x3B": {
       "name": "Grafitto, tulip",
@@ -3628,7 +4805,10 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x7"
+      ]
     },
     "0x3C": {
       "name": "Grafitto, tulip",
@@ -3639,7 +4819,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x3D": {
       "name": "Grafitto, stone",
@@ -3650,7 +4834,13 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x3E": {
       "name": "Grafitto, stone",
@@ -3661,7 +4851,13 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x3F": {
       "name": "Grafitto, sun",
@@ -3672,7 +4868,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x40": {
       "name": "Grafitto, boy",
@@ -3683,7 +4883,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x41": {
       "name": "Grafitto, top left of mountain",
@@ -3694,7 +4898,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x42": {
       "name": "Grafitto, top right of mountain",
@@ -3705,7 +4913,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x43": {
       "name": "Grafitto, bottom left of mountain",
@@ -3716,7 +4928,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x44": {
       "name": "Grafitto, bottom right of mountain",
@@ -3727,7 +4943,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x45": {
       "name": "Grafitto, small mountain",
@@ -3738,7 +4958,11 @@
         "castle1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0x7"
+      ]
     },
     "0x46": {
       "name": "Randomly coloured egg block",
@@ -3748,7 +4972,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x47": {
       "name": "Bandit's house",
@@ -3783,7 +5010,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x49": {
       "name": "Treetop",
@@ -3793,7 +5023,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x4A": {
       "name": "Red leaf, facing right",
@@ -3803,7 +5036,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x4B": {
       "name": "Red leaf, facing left",
@@ -3813,7 +5049,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x4C": {
       "name": "Nest of Little Mouser",
@@ -3825,7 +5064,17 @@
         "grass1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x4",
+        "0x5",
+        "0x7",
+        "0x8",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x4D": {
       "name": "Small bush on ground",
@@ -3835,7 +5084,10 @@
         "forest1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x4E": {
       "name": "Small bush on ground",
@@ -3845,7 +5097,10 @@
         "forest1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x4F": {
       "name": "Small bush on ground",
@@ -3855,7 +5110,10 @@
         "forest1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x1"
+      ]
     },
     "0x50": {
       "name": "Arrow sign, right",
@@ -3887,7 +5145,12 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA",
+        "0xE"
+      ]
     },
     "0x52": {
       "name": "Boo Guys' spike mace room",
@@ -3899,7 +5162,11 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6",
+        "0xA"
+      ]
     },
     "0x53": {
       "name": "Boo Guy's spike ball room",
@@ -3911,7 +5178,10 @@
         "castle3"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0x54": {
       "name": "Treetop 1",
@@ -3921,7 +5191,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x55": {
       "name": "Treetop 2",
@@ -3931,7 +5204,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x56": {
       "name": "Treetop 3",
@@ -3941,7 +5217,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x57": {
       "name": "Treetop 4",
@@ -3951,7 +5230,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x58": {
       "name": "Leaves of tree, left",
@@ -3961,7 +5243,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x59": {
       "name": "Leaves of tree, left",
@@ -3971,7 +5256,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x5A": {
       "name": "Branch and leaves of tree, left",
@@ -3981,7 +5269,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x5B": {
       "name": "Leaves of tree, right",
@@ -3991,7 +5282,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x5C": {
       "name": "Leaves of tree, right",
@@ -4001,7 +5295,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x5D": {
       "name": "Branch and leaves of tree, right",
@@ -4011,7 +5308,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x5E": {
       "name": "Donut lift",
@@ -4047,7 +5347,10 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x60": {
       "name": "Rock 2",
@@ -4058,7 +5361,11 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4",
+        "0xF"
+      ]
     },
     "0x61": {
       "name": "Rock 3",
@@ -4069,7 +5376,11 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4",
+        "0xF"
+      ]
     },
     "0x62": {
       "name": "Rock 4",
@@ -4080,7 +5391,11 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4",
+        "0xF"
+      ]
     },
     "0x63": {
       "name": "Rock 5",
@@ -4091,7 +5406,11 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4",
+        "0xF"
+      ]
     },
     "0x64": {
       "name": "Rock 6",
@@ -4102,7 +5421,11 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4",
+        "0xF"
+      ]
     },
     "0x65": {
       "name": "Rock 7",
@@ -4113,7 +5436,11 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4",
+        "0xF"
+      ]
     },
     "0x66": {
       "name": "Rock 8",
@@ -4124,7 +5451,11 @@
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4",
+        "0xF"
+      ]
     },
     "0x67": {
       "name": "Branch of stuck tree",
@@ -4134,7 +5465,10 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x9"
+      ]
     },
     "0x68": {
       "name": "Stones on waterfall",
@@ -4144,7 +5478,10 @@
         "cave1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0"
+      ]
     },
     "0x69": {
       "name": "Stone on waterfall",
@@ -4154,7 +5491,10 @@
         "cave1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0"
+      ]
     },
     "0x6A": {
       "name": "Small Bushes",
@@ -4164,7 +5504,10 @@
         "grass1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x7"
+      ]
     },
     "0x6B": {
       "name": "Bushes",
@@ -4174,7 +5517,10 @@
         "grass1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x7"
+      ]
     },
     "0x6C": {
       "name": "Large Bushes",
@@ -4184,7 +5530,10 @@
         "grass1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x7"
+      ]
     },
     "0x6D": {
       "name": "Sewage pipe entrance, top",
@@ -4194,7 +5543,11 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "exitTrigger": true,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x6E": {
       "name": "Sewage pipe entrance, bottom",
@@ -4204,7 +5557,11 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "exitTrigger": true,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x6F": {
       "name": "Sewage pipe entrance, left",
@@ -4214,7 +5571,11 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "exitTrigger": true,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x70": {
       "name": "Sewage pipe entrance, right",
@@ -4224,7 +5585,11 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "exitTrigger": true,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x71": {
       "name": "Sewage pipe object 1",
@@ -4234,7 +5599,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x72": {
       "name": "Sewage pipe object 2",
@@ -4244,7 +5612,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x73": {
       "name": "Sewage pipe object 3",
@@ -4254,7 +5625,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x74": {
       "name": "Sewage pipe object 4",
@@ -4264,7 +5638,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x75": {
       "name": "Small horizontal sewage pipe joint 1",
@@ -4274,7 +5651,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x76": {
       "name": "Small horizontal sewage pipe joint 2",
@@ -4284,7 +5664,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x77": {
       "name": "Large horizontal sewage pipe joint 1",
@@ -4294,7 +5677,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x78": {
       "name": "Large horizontal sewage pipe joint 2",
@@ -4304,7 +5690,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x79": {
       "name": "Small vertical sewage pipe joint 1",
@@ -4314,7 +5703,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x7A": {
       "name": "Small vertical sewage pipe joint 2",
@@ -4324,7 +5716,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x7B": {
       "name": "Large vertical sewage pipe joint 1",
@@ -4334,7 +5729,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x7C": {
       "name": "Large vertical sewage pipe joint 2",
@@ -4344,7 +5742,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x7D": {
       "name": "Grate",
@@ -4354,7 +5755,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x7E": {
       "name": "Sewage pipe's wall shadow",
@@ -4364,7 +5768,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x7F": {
       "name": "Sewage pipe's wall shadow",
@@ -4374,7 +5781,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x80": {
       "name": "Transparent tile",
@@ -4446,7 +5856,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0x84": {
       "name": "Large cloud.",
@@ -4456,7 +5869,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0x85": {
       "name": "Small cloud 1",
@@ -4466,7 +5882,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0x86": {
       "name": "Small cloud 2",
@@ -4476,7 +5895,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0x87": {
       "name": "Middle-sized cloud.",
@@ -4486,7 +5908,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0x88": {
       "name": "Sewage pipe hole",
@@ -4497,7 +5922,10 @@
       ],
       "defaultWidth": 1,
       "defaultHeight": 1,
-      "exitTrigger": true
+      "exitTrigger": true,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x89": {
       "name": "Sewage pipe arrow sign, left",
@@ -4507,7 +5935,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x8A": {
       "name": "Sewage pipe arrow sign, right",
@@ -4517,7 +5948,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x8B": {
       "name": "Sewage pipe arrow sign, up",
@@ -4527,7 +5961,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x8C": {
       "name": "Sewage pipe arrow sign, down",
@@ -4537,7 +5974,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x8D": {
       "name": "Ground edge planer",
@@ -4552,12 +5992,21 @@
         "forest2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x0",
+        "0x1",
+        "0x7",
+        "0x8",
+        "0x9",
+        "0xD",
+        "0xF"
+      ]
     },
     "0x8E": {
-      "name": "Small line guide cornder, top left",
+      "name": "Small line guide corner, top left",
       "desc": "A small top left corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "cave1",
         "forest1",
@@ -4580,9 +6029,9 @@
       "defaultHeight": 1
     },
     "0x8F": {
-      "name": "Small line guide cornder, top right",
+      "name": "Small line guide corner, top right",
       "desc": "A small top right corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "cave1",
         "forest1",
@@ -4605,9 +6054,9 @@
       "defaultHeight": 1
     },
     "0x90": {
-      "name": "Small line guide cornder, bottom left",
+      "name": "Small line guide corner, bottom left",
       "desc": "A small bottom left corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "cave1",
         "forest1",
@@ -4630,9 +6079,9 @@
       "defaultHeight": 1
     },
     "0x91": {
-      "name": "Small line guide cornder, bottom right",
+      "name": "Small line guide corner, bottom right",
       "desc": "A small bottom right corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "cave1",
         "forest1",
@@ -4655,89 +6104,113 @@
       "defaultHeight": 1
     },
     "0x92": {
-      "name": "Line guide cornder, top left",
+      "name": "Line guide corner, top left",
       "desc": "A top left corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x93": {
-      "name": "Line guide cornder, top right",
+      "name": "Line guide corner, top right",
       "desc": "A top right corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x94": {
-      "name": "Line guide cornder, bottom left",
+      "name": "Line guide corner, bottom left",
       "desc": "A bottom left corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x95": {
-      "name": "Line guide cornder, bottom right",
+      "name": "Line guide corner, bottom right",
       "desc": "A bottom right corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x96": {
       "name": "Large line guide corner, top left",
       "desc": "A large top left corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x97": {
       "name": "Large line guide corner, top right",
       "desc": "A large top right corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x98": {
       "name": "Large line guide corner, bottom left",
       "desc": "A large bottom left corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x99": {
       "name": "Large line guide corner, bottom right",
       "desc": "A large bottom right corner of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "grass2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xF"
+      ]
     },
     "0x9A": {
       "name": "Left line guide stopper",
       "desc": "A left stopper of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "cave1",
         "forest1",
@@ -4762,7 +6235,7 @@
     "0x9B": {
       "name": "Right line guide stopper",
       "desc": "A right stopper of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "cave1",
         "forest1",
@@ -4787,7 +6260,7 @@
     "0x9C": {
       "name": "Top line guide stopper",
       "desc": "A top stopper of line guide.",
-      "category": "decoration",
+      "category": "interactive",
       "tilesets": [
         "cave1",
         "forest1",
@@ -4842,7 +6315,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0x9F": {
       "name": "Sewage waterfall, right",
@@ -4852,7 +6328,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xA0": {
       "name": "Sewage rock corner, bottom right",
@@ -4862,7 +6341,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xA1": {
       "name": "Sewage rock corner, bottom left",
@@ -4872,7 +6354,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xA2": {
       "name": "Sewage rock corner, top right",
@@ -4882,7 +6367,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xA3": {
       "name": "Sewage rock corner, top left",
@@ -4892,7 +6380,10 @@
         "sewer"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xB"
+      ]
     },
     "0xA4": {
       "name": "Yellow flowers",
@@ -4902,7 +6393,10 @@
         "grass1"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x7"
+      ]
     },
     "0xA5": {
       "name": "Tall snowy tree",
@@ -4912,7 +6406,10 @@
         "snow"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0xA6": {
       "name": "Snowy tree",
@@ -4922,7 +6419,10 @@
         "snow"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x4"
+      ]
     },
     "0xA7": {
       "name": "Frozen Shy Guy in ice",
@@ -4932,7 +6432,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xA8": {
       "name": "Arrow sign, left",
@@ -4967,7 +6470,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xAA": {
       "name": "Icicle",
@@ -4977,7 +6483,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xAB": {
       "name": "Short icicle",
@@ -4987,7 +6496,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xAC": {
       "name": "Broken icicle",
@@ -4997,7 +6509,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xAD": {
       "name": "Crystal 1",
@@ -5007,7 +6522,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xAE": {
       "name": "Crystal 2",
@@ -5017,7 +6535,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xAF": {
       "name": "Crystal 3",
@@ -5027,7 +6548,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB0": {
       "name": "Crystal 4",
@@ -5037,7 +6561,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB1": {
       "name": "Crystal 5",
@@ -5047,7 +6574,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB2": {
       "name": "Crystal 6",
@@ -5057,7 +6587,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB3": {
       "name": "Rocks on lava",
@@ -5067,7 +6600,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB4": {
       "name": "Small mushroom, left",
@@ -5077,7 +6613,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB5": {
       "name": "Small mushroom, right",
@@ -5087,7 +6626,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB6": {
       "name": "Large mushroom, left",
@@ -5097,7 +6639,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB7": {
       "name": "Large mushroom, right",
@@ -5107,7 +6652,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB8": {
       "name": "3 mushrooms",
@@ -5117,7 +6665,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xB9": {
       "name": "4 mushrooms",
@@ -5127,7 +6678,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xBA": {
       "name": "Short fluffed dandelion, left",
@@ -5137,7 +6691,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xBB": {
       "name": "Middle fluffed dandelion, left",
@@ -5147,7 +6704,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xBC": {
       "name": "Tall fluffed dandelion, left",
@@ -5157,7 +6717,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xBD": {
       "name": "Short fluffed dandelion, right",
@@ -5167,7 +6730,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xBE": {
       "name": "Middle fluffed dandelion, right",
@@ -5177,7 +6743,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xBF": {
       "name": "Tall fluffed dandelion, right",
@@ -5187,7 +6756,10 @@
         "cave2"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x8"
+      ]
     },
     "0xC0": {
       "name": "Small snowy platform",
@@ -5197,7 +6769,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0xC1": {
       "name": "Tip of snowy platform",
@@ -5207,7 +6782,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0xC2": {
       "name": "Snowy platform",
@@ -5217,7 +6795,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0xC3": {
       "name": "Unbalanced snowy platform",
@@ -5227,7 +6808,10 @@
         "sky"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xD"
+      ]
     },
     "0xC4": {
       "name": "Egg block",
@@ -5262,7 +6846,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xC6": {
       "name": "Flower garden pattern 2",
@@ -5272,7 +6859,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xC7": {
       "name": "Flower garden pattern 3",
@@ -5282,7 +6872,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xC8": {
       "name": "Flower garden pattern, with tulip, left",
@@ -5292,7 +6885,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xC9": {
       "name": "Flower garden pattern, with tulip, right",
@@ -5302,7 +6898,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xCA": {
       "name": "White flower 1",
@@ -5312,7 +6911,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xCB": {
       "name": "White flower 2",
@@ -5322,7 +6924,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xCC": {
       "name": "White flower 3",
@@ -5332,7 +6937,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xCD": {
       "name": "White flower 4",
@@ -5342,7 +6950,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xCE": {
       "name": "Flower 1",
@@ -5352,7 +6963,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xCF": {
       "name": "Flower 2",
@@ -5362,7 +6976,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD0": {
       "name": "Flower 3",
@@ -5372,7 +6989,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD1": {
       "name": "Flower 4",
@@ -5382,7 +7002,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD2": {
       "name": "Flower 5",
@@ -5392,7 +7015,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD3": {
       "name": "Flower 6",
@@ -5402,7 +7028,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD4": {
       "name": "Large rock, right 1",
@@ -5412,7 +7041,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD5": {
       "name": "Large rock, right 2",
@@ -5422,7 +7054,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD6": {
       "name": "Large rock, right 3",
@@ -5432,7 +7067,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD7": {
       "name": "Small rock, right 1",
@@ -5442,7 +7080,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD8": {
       "name": "Small rock, right 2",
@@ -5452,7 +7093,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xD9": {
       "name": "Large rock, left 1",
@@ -5462,7 +7106,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xDA": {
       "name": "Large rock, left 2",
@@ -5472,7 +7119,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xDB": {
       "name": "Large rock, left 3",
@@ -5482,7 +7132,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xDC": {
       "name": "Small rock, left 1",
@@ -5492,7 +7145,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xDD": {
       "name": "Small rock, left 2",
@@ -5502,7 +7158,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xDE": {
       "name": "Grounded rock 1",
@@ -5512,7 +7171,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xDF": {
       "name": "Grounded rock 2",
@@ -5522,7 +7184,10 @@
         "flower"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0xC"
+      ]
     },
     "0xE0": {
       "name": "3D pipe with key paint",
@@ -5532,7 +7197,11 @@
         "3d"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "exitTrigger": true,
+      "bg1Tilesets": [
+        "0x3"
+      ]
     },
     "0xE1": {
       "name": "Undefined object",
@@ -5542,7 +7211,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xE2": {
       "name": "Undefined object",
@@ -5552,7 +7224,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xE3": {
       "name": "Undefined object",
@@ -5562,7 +7237,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xE4": {
       "name": "Undefined object",
@@ -5572,7 +7250,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xE5": {
       "name": "Undefined object",
@@ -5582,7 +7263,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xE6": {
       "name": "Undefined object",
@@ -5592,7 +7276,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xE7": {
       "name": "Undefined object",
@@ -5602,7 +7289,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xE8": {
       "name": "Undefined object",
@@ -5612,7 +7302,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xE9": {
       "name": "Undefined object",
@@ -5622,7 +7315,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xEA": {
       "name": "Undefined object",
@@ -5632,7 +7328,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xEB": {
       "name": "Undefined object",
@@ -5642,7 +7341,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xEC": {
       "name": "Undefined object",
@@ -5652,7 +7354,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xED": {
       "name": "Undefined object",
@@ -5662,7 +7367,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xEE": {
       "name": "Undefined object",
@@ -5672,7 +7380,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xEF": {
       "name": "Undefined object",
@@ -5682,7 +7393,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF0": {
       "name": "Undefined object",
@@ -5692,7 +7406,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF1": {
       "name": "Undefined object",
@@ -5702,7 +7419,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF2": {
       "name": "Undefined object",
@@ -5712,7 +7432,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF3": {
       "name": "Undefined object",
@@ -5722,7 +7445,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF4": {
       "name": "Undefined object",
@@ -5732,7 +7458,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF5": {
       "name": "Undefined object",
@@ -5742,7 +7471,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF6": {
       "name": "Undefined object",
@@ -5752,7 +7484,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF7": {
       "name": "Undefined object",
@@ -5762,7 +7497,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF8": {
       "name": "Undefined object",
@@ -5772,7 +7510,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xF9": {
       "name": "Undefined object",
@@ -5782,7 +7523,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xFA": {
       "name": "Undefined object",
@@ -5792,12 +7536,15 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xFB": {
       "name": "Screen index copier",
       "desc": "Copys the screen index where this object is placed in to the screen index where is the same as the lower coordinates.",
-      "category": "decoration",
+      "category": "command",
       "tilesets": [
         "cave1",
         "forest1",
@@ -5829,7 +7576,10 @@
         "misc"
       ],
       "defaultWidth": 1,
-      "defaultHeight": 1
+      "defaultHeight": 1,
+      "bg1Tilesets": [
+        "0x6"
+      ]
     },
     "0xFD": {
       "name": "Transparent tile",
@@ -5928,19 +7678,16 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped/centred into the cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         }
       ]
     },
@@ -5968,7 +7715,21 @@
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": [],
-      "cel": "A"
+      "cel": "A",
+      "neighborDeps": [
+        {
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        }
+      ]
     },
     "0x006": {
       "name": "Chill",
@@ -5981,7 +7742,21 @@
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": [],
-      "cel": "A"
+      "cel": "A",
+      "neighborDeps": [
+        {
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        }
+      ]
     },
     "0x008": {
       "name": "Rubble",
@@ -5994,7 +7769,21 @@
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": [],
-      "cel": "A"
+      "cel": "A",
+      "neighborDeps": [
+        {
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        }
+      ]
     },
     "0x00A": {
       "name": "Kaboomba",
@@ -6009,7 +7798,19 @@
       "name": "Cannonball of Kaboomba",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "neighborDeps": [
+        {
+          "cls": "tile-behavior",
+          "targetKind": "map16-tile",
+          "spatial": "note",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "breakable soft-dirt tiles (collision tag $08)",
+          "failureMode": "explosion is cosmetic only",
+          "designerRule": "explosions excavate tag-$08 dirt"
+        }
+      ]
     },
     "0x00C": {
       "name": "Raphael the Raven",
@@ -6059,19 +7860,16 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped/centred into the cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         }
       ]
     },
@@ -6107,6 +7905,18 @@
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x68"
+      ],
+      "neighborDeps": [
+        {
+          "cls": "screen-exit",
+          "targetKind": "screen-metadata",
+          "spatial": "note",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "Screen-Exit Table row ($7F:7E00)",
+          "failureMode": "swallow warps to garbage",
+          "designerRule": "the swallow needs an exit row; spatial rule UNRESOLVED (not the sprite's own/adjacent screen — likely the player's screen at swallow)"
+        }
       ]
     },
     "0x018": {
@@ -6167,7 +7977,19 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "F",
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap; normal walker — not an error",
+          "designerRule": "place ON an ice-block tile -> shy guy encased in the ice cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        },
+        {
+          "cls": "tile-behavior",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
@@ -6250,19 +8072,16 @@
       "cel": "A",
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos; caches resolved cell as door item-memory addr",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap; spawns free-standing — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped/centred into the cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         }
       ]
     },
@@ -6356,7 +8175,22 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "sprite-pair",
+          "targetKind": "sprite",
+          "spatial": "proximity",
+          "targetIds": [
+            "0x02F"
+          ],
+          "enforce": true,
+          "targetName": "$02F LittleMouserHole",
+          "failureMode": "no nest under it; pop-out visual breaks, homing degrades",
+          "designerRule": "place the mouser directly ON its Mouser Hole (same cell — it pops out of the hole)",
+          "radiusCells": 0
+        }
+      ]
     },
     "0x034": {
       "name": "Pot for Rogger the Potted Ghost",
@@ -6384,7 +8218,9 @@
       "name": "Grim Leecher",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x46"
+      ],
       "cel": "A"
     },
     "0x038": {
@@ -6453,23 +8289,23 @@
       ],
       "neighborDeps": [
         {
-          "cls": "C",
+          "cls": "tile-read",
           "targetKind": "map16-tile",
           "spatial": "offset-cell",
           "targetIds": [],
+          "enforce": true,
+          "targetName": "$0174 (slime-floor tile)",
+          "failureMode": "fails to lock; boss-floor breaks",
+          "designerRule": "stamp tile $0174 under it (Salvo arena)",
           "tileMatch": {
             "mask": "0xFFFF",
             "value": "0x0174",
-            "note": "exact Map16 tile 0x0174 — slime-floor tile"
+            "note": "exact Map16 tile 0x0174 — slime-floor tile (Salvo arena)"
           },
           "offsetPx": {
             "dx": -24,
             "dy": -56
-          },
-          "enforce": true,
-          "targetName": "$0174 (slime-floor tile)",
-          "failureMode": "fails to lock; boss-floor breaks",
-          "designerRule": "stamp tile $0174 under it (Salvo arena)"
+          }
         }
       ]
     },
@@ -6494,7 +8330,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "E",
+          "cls": "screen-exit",
           "targetKind": "screen-metadata",
           "spatial": "screen",
           "targetIds": [],
@@ -6586,22 +8422,19 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos; also requires a Key (class D)",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped/centred into the cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         },
         {
-          "cls": "D",
+          "cls": "sprite-pair",
           "targetKind": "sprite",
           "spatial": "carried",
           "targetIds": [
@@ -6610,7 +8443,7 @@
           "enforce": false,
           "targetName": "$027 Key",
           "failureMode": "door unopenable",
-          "designerRule": "co-place a Key (player carries it over)"
+          "designerRule": "co-place a Key (player carries it over; usually from a connected sub-room)"
         }
       ]
     },
@@ -6651,6 +8484,28 @@
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x29"
+      ],
+      "neighborDeps": [
+        {
+          "cls": "tile-behavior",
+          "targetKind": "map16-tile",
+          "spatial": "offset-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "pipe mouth (gate CODE_0EB8AE via entry CODE_0EB8B7, probed one cell below)",
+          "failureMode": "none (behaviour identical off-pipe)",
+          "designerRule": "on a pipe mouth the piranha is auto-centred (+8px X nudge) — cosmetic only",
+          "collisionTag": "0x14",
+          "tileLiterals": [
+            "0x79F1",
+            "0x79F2"
+          ],
+          "collisionNote": "pipe mouth — page collision tag $14 (pipe, e.g. page $7D) OR the literal mouth tiles $79F1/$79F2 (page $79); stamped by vertical pipes $3C/$F4 (+ the double-ended/sewage pipe family)",
+          "offsetPx": {
+            "dx": 0,
+            "dy": 16
+          }
+        }
       ]
     },
     "0x055": {
@@ -6658,14 +8513,60 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "rail-follower",
+          "targetKind": "std-object",
+          "spatial": "path",
+          "targetIds": [
+            "0xCE",
+            "0xCF",
+            "0xD0",
+            "0xD1",
+            "0xD2"
+          ],
+          "enforce": false,
+          "targetName": "$CE-$D2 (line guides)",
+          "failureMode": "no rail → free-rolls horizontally when spun, coasts to a stop when idle — not an error",
+          "designerRule": "optional: on a $87xx line-guide tile at its spawn cell the wheel travels the guide as Yoshi spins it; off-rail spinning FREE-ROLLS the wheel horizontally instead (rotation converts to X-speed, CODE_04C7F4)",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
+        }
+      ]
     },
     "0x056": {
       "name": "Pink Pinwheel",
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "rail-follower",
+          "targetKind": "std-object",
+          "spatial": "path",
+          "targetIds": [
+            "0xCE",
+            "0xCF",
+            "0xD0",
+            "0xD1",
+            "0xD2"
+          ],
+          "enforce": false,
+          "targetName": "$CE-$D2 (line guides)",
+          "failureMode": "no rail → free-rolls horizontally when spun, coasts to a stop when idle — not an error",
+          "designerRule": "optional: on a $87xx line-guide tile at its spawn cell the wheel travels the guide as Yoshi spins it; off-rail spinning FREE-ROLLS the wheel horizontally instead (rotation converts to X-speed, CODE_04C7F4)",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
+        }
+      ]
     },
     "0x057": {
       "name": "(BG3) Sewer ghost with Flatbed Ferry on its head",
@@ -6732,7 +8633,19 @@
       "name": "Bomb",
       "category": "hazard",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "neighborDeps": [
+        {
+          "cls": "tile-behavior",
+          "targetKind": "map16-tile",
+          "spatial": "note",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "breakable soft-dirt tiles (collision tag $08)",
+          "failureMode": "explosion is cosmetic only",
+          "designerRule": "explosions excavate tag-$08 dirt"
+        }
+      ]
     },
     "0x061": {
       "name": "Baby Mario",
@@ -6776,6 +8689,28 @@
       "dynamicGfx": true,
       "spritesetFiles": [
         "0x29"
+      ],
+      "neighborDeps": [
+        {
+          "cls": "tile-behavior",
+          "targetKind": "map16-tile",
+          "spatial": "offset-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "pipe mouth (gate via CODE_0EB8B7, probed one cell below)",
+          "failureMode": "none",
+          "designerRule": "auto-centred on pipe — cosmetic only",
+          "collisionTag": "0x14",
+          "tileLiterals": [
+            "0x79F1",
+            "0x79F2"
+          ],
+          "collisionNote": "pipe mouth — page collision tag $14 (pipe, e.g. page $7D) OR the literal mouth tiles $79F1/$79F2 (page $79); stamped by vertical pipes $3C/$F4 (+ the double-ended/sewage pipe family)",
+          "offsetPx": {
+            "dx": 0,
+            "dy": 16
+          }
+        }
       ]
     },
     "0x067": {
@@ -6785,7 +8720,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "D",
+          "cls": "sprite-pair",
           "targetKind": "sprite",
           "spatial": "proximity",
           "targetIds": [
@@ -6803,7 +8738,7 @@
       "name": "Flashing Egg Block",
       "category": "item",
       "dynamicGfx": false,
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "cel": "B"
     },
     "0x069": {
@@ -6830,7 +8765,21 @@
       "name": "Large Spring Ball",
       "category": "enemy",
       "dynamicGfx": true,
-      "spritesetFiles": []
+      "spritesetFiles": [],
+      "neighborDeps": [
+        {
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        }
+      ]
     },
     "0x06D": {
       "name": "Hootie the Blue Fish, clockwise",
@@ -6849,7 +8798,21 @@
       "category": "enemy",
       "dynamicGfx": true,
       "spritesetFiles": [],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        }
+      ]
     },
     "0x070": {
       "name": "Clawdaddy",
@@ -7004,7 +8967,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "E",
+          "cls": "screen-exit",
           "targetKind": "screen-metadata",
           "spatial": "screen",
           "targetIds": [],
@@ -7122,19 +9085,16 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped/centred into the cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         }
       ]
     },
@@ -7166,9 +9126,7 @@
       "name": "Yoshi Block",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": [
-        "0x55"
-      ]
+      "spritesetFiles": []
     },
     "0x099": {
       "name": "Spiny Egg",
@@ -7272,7 +9230,19 @@
       "spritesetFiles": [
         "0x1B"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "note",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "$2A00/$2A01/$2A2D/$2A2E + per-tileset slot [$1C22] (bitable floor)",
+          "failureMode": "floor never crumbles (chomp still chases)",
+          "designerRule": "route the chomp over bitable bridge/floor tiles for the bite set-piece"
+        }
+      ]
     },
     "0x0A7": {
       "name": "Flcok of Incoming Chomps",
@@ -7287,7 +9257,19 @@
       "name": "Falling Incoming Chomp",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "note",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "$2A00/$2A01/$2A2D/$2A2E + [$1C22]",
+          "failureMode": "floor never crumbles",
+          "designerRule": "route over bitable tiles"
+        }
+      ]
     },
     "0x0A9": {
       "name": "Shadow of falling Incoming Chomp",
@@ -7518,22 +9500,19 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos; also requires a Key (class D)",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped/centred into the cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         },
         {
-          "cls": "D",
+          "cls": "sprite-pair",
           "targetKind": "sprite",
           "spatial": "carried",
           "targetIds": [
@@ -7586,7 +9565,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "E",
+          "cls": "screen-exit",
           "targetKind": "screen-metadata",
           "spatial": "screen",
           "targetIds": [],
@@ -7605,7 +9584,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "E",
+          "cls": "screen-exit",
           "targetKind": "screen-metadata",
           "spatial": "screen",
           "targetIds": [],
@@ -7711,7 +9690,21 @@
       "name": "Falling Rock",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": true,
+          "targetName": "falling-floor tiles (collision tag $0E; shape via DATA_0ACD0A low-byte $00-$13)",
+          "failureMode": "init despawns the sprite (no platform at all)",
+          "designerRule": "place ON a falling-floor (tag $0E) tile run",
+          "collisionTag": "0x0E",
+          "collisionNote": "falling-floor tiles (page collision tag $0E); FXCODE_0ACD1E sizes/orients the platform from the run and despawns without one"
+        }
+      ]
     },
     "0x0DF": {
       "name": "Piscatory Pete, Blue / Gold",
@@ -7882,7 +9875,21 @@
       "spritesetFiles": [
         "0x1F"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        }
+      ]
     },
     "0x0F5": {
       "name": "Slugger",
@@ -7891,7 +9898,21 @@
       "spritesetFiles": [
         "0x38"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "sprite-pair",
+          "targetKind": "sprite",
+          "spatial": "global",
+          "targetIds": [
+            "0x09E"
+          ],
+          "enforce": false,
+          "targetName": "$09E ChompRock",
+          "failureMode": "no duel (Slugger still swings at Yoshi/eggs)",
+          "designerRule": "co-place a Chomp Rock for the bat-it-back duel"
+        }
+      ]
     },
     "0x0F6": {
       "name": "Parent and children of Huffin' Puffins",
@@ -7930,19 +9951,16 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap; free-standing flower — not an error",
+          "designerRule": "place ON an ice-block tile -> flower encased in the ice cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         }
       ]
     },
@@ -7971,7 +9989,19 @@
       "spritesetFiles": [
         "0x1D"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "tile-behavior",
+          "targetKind": "map16-tile",
+          "spatial": "note",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "breakable soft-dirt tiles (collision tag $08)",
+          "failureMode": "none (fights normally without dirt)",
+          "designerRule": "dirt walls near the Zeus Guy get punched through"
+        }
+      ]
     },
     "0x0FE": {
       "name": "Energy of Zeus Guy",
@@ -8030,6 +10060,27 @@
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x3D"
+      ],
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "row",
+          "targetIds": [],
+          "enforce": true,
+          "targetName": "$00B6-$00BA (carry-path marker tiles)",
+          "failureMode": "no marker -> degenerate patrol (chain length/bounds wrong)",
+          "designerRule": "place on/beside a row of $00B6-$00BA marker tiles (the carry path)",
+          "tileLiterals": [
+            "0x00B6",
+            "0x00B7",
+            "0x00B8",
+            "0x00B9",
+            "0x00BA"
+          ],
+          "collisionNote": "bomb carry-path marker tiles; the init scans the row — run length sets chain count + patrol bounds",
+          "rowSpan": 4
+        }
       ]
     },
     "0x106": {
@@ -8038,6 +10089,27 @@
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x3D"
+      ],
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "row",
+          "targetIds": [],
+          "enforce": true,
+          "targetName": "$00B6-$00BA (carry-path marker tiles)",
+          "failureMode": "no marker -> degenerate patrol",
+          "designerRule": "place on/beside a row of $00B6-$00BA marker tiles",
+          "tileLiterals": [
+            "0x00B6",
+            "0x00B7",
+            "0x00B8",
+            "0x00B9",
+            "0x00BA"
+          ],
+          "collisionNote": "bomb carry-path marker tiles; the init scans the row — run length sets chain count + patrol bounds",
+          "rowSpan": 4
+        }
       ]
     },
     "0x107": {
@@ -8122,19 +10194,16 @@
       ],
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> flower encased in the ice cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         }
       ]
     },
@@ -8158,9 +10227,7 @@
       "name": "Snifit",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": [
-        "0x40"
-      ],
+      "spritesetFiles": [],
       "cel": "B"
     },
     "0x114": {
@@ -8209,7 +10276,9 @@
       "name": "Spooky",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": [
+        "0x46"
+      ]
     },
     "0x11A": {
       "name": "Green Glove",
@@ -8384,22 +10453,19 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "B1",
+          "cls": "ice-snap",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
-          "tileMatch": {
-            "mask": "0xF800",
-            "value": "0xB800",
-            "note": "$B8xx — keyhole / door Map16 page (designer-painted BG art); produced by no object stamper, so absent from shipped data"
-          },
           "enforce": false,
-          "targetName": "$B8xx keyhole tile (painted)",
-          "failureMode": "no snap; stays at placed pos; also requires a Key (class D)",
-          "designerRule": "place sprite ON a keyhole tile (same cell)"
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped/centred into the cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
         },
         {
-          "cls": "D",
+          "cls": "sprite-pair",
           "targetKind": "sprite",
           "spatial": "carried",
           "targetIds": [
@@ -8431,7 +10497,19 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "F",
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        },
+        {
+          "cls": "tile-behavior",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
@@ -8458,7 +10536,7 @@
       "name": "Raven, always circling, anticlockwise / clockwise",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": []
     },
     "0x136": {
       "name": "Raven, anticlockwise / clockwise initially",
@@ -8484,12 +10562,8 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [
-        "0x1C",
         "0x20",
-        "0x21",
-        "0x2F",
-        "0x47",
-        "0x5D"
+        "0x21"
       ]
     },
     "0x139": {
@@ -8510,12 +10584,8 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [
-        "0x1C",
         "0x20",
-        "0x21",
-        "0x2F",
-        "0x47",
-        "0x5D"
+        "0x21"
       ]
     },
     "0x13B": {
@@ -8620,7 +10690,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "E",
+          "cls": "screen-exit",
           "targetKind": "screen-metadata",
           "spatial": "screen",
           "targetIds": [],
@@ -8635,7 +10705,21 @@
       "name": "Large Spring Ball",
       "category": "enemy",
       "dynamicGfx": true,
-      "spritesetFiles": []
+      "spritesetFiles": [],
+      "neighborDeps": [
+        {
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap — not an error",
+          "designerRule": "place ON an ice-block tile -> snapped",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        }
+      ]
     },
     "0x149": {
       "name": "Arrow cloud, up",
@@ -8738,6 +10822,18 @@
       "dynamicGfx": false,
       "spritesetFiles": [
         "0x53"
+      ],
+      "neighborDeps": [
+        {
+          "cls": "tile-behavior",
+          "targetKind": "map16-tile",
+          "spatial": "note",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "breakable soft-dirt tiles (collision tag $08)",
+          "failureMode": "chase blocked by terrain instead",
+          "designerRule": "the chase carves through tag-$08 dirt"
+        }
       ]
     },
     "0x155": {
@@ -8807,7 +10903,7 @@
       "cel": "A",
       "neighborDeps": [
         {
-          "cls": "D",
+          "cls": "sprite-pair",
           "targetKind": "sprite",
           "spatial": "global",
           "targetIds": [
@@ -8830,7 +10926,7 @@
       "cel": "A",
       "neighborDeps": [
         {
-          "cls": "D",
+          "cls": "sprite-pair",
           "targetKind": "sprite",
           "spatial": "global",
           "targetIds": [
@@ -8857,7 +10953,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "D",
+          "cls": "sprite-pair",
           "targetKind": "sprite",
           "spatial": "global",
           "targetIds": [
@@ -8877,7 +10973,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "D",
+          "cls": "sprite-pair",
           "targetKind": "sprite",
           "spatial": "global",
           "targetIds": [
@@ -9173,7 +11269,21 @@
       "spritesetFiles": [
         "0x5E"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "ice-snap",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "ice-block tile (collision tag $17; pages $89/$8C)",
+          "failureMode": "no snap; normal bumpty — not an error",
+          "designerRule": "place ON an ice-block tile -> bumpty encased in the ice cube",
+          "collisionTag": "0x17",
+          "collisionNote": "ice-block — page collision secondary-tag $17 (pages $89/$8C, e.g. tile $8900 in 5-3); the encased-in-ice snap CODE_02A007 (R7 & $F800 == $B800)"
+        }
+      ]
     },
     "0x185": {
       "name": "Active line guided green Flatbed Ferry, left",
@@ -9183,7 +11293,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9193,15 +11303,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9213,7 +11323,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9223,15 +11333,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9243,7 +11353,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9253,15 +11363,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9273,7 +11383,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9283,15 +11393,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9303,7 +11413,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9313,15 +11423,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9333,7 +11443,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9343,15 +11453,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9363,7 +11473,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9373,15 +11483,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9393,7 +11503,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9403,15 +11513,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9423,7 +11533,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9433,15 +11543,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9453,7 +11563,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9463,15 +11573,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
-          "designerRule": "spawn on a contiguous line-guide path"
+          "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          }
         }
       ]
     },
@@ -9482,7 +11592,7 @@
       "spritesetFiles": [],
       "neighborDeps": [
         {
-          "cls": "A",
+          "cls": "rail-follower",
           "targetKind": "std-object",
           "spatial": "path",
           "targetIds": [
@@ -9492,15 +11602,15 @@
             "0xD1",
             "0xD2"
           ],
-          "tileMatch": {
-            "mask": "0xFF00",
-            "value": "0x8700",
-            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker"
-          },
           "enforce": true,
           "targetName": "$CE-$D2 (line guides)",
           "failureMode": "no path; drifts/stalls",
           "designerRule": "spawn on a contiguous line-guide path",
+          "tileMatch": {
+            "mask": "0xFF00",
+            "value": "0x8700",
+            "note": "$87xx — line-guide rail tile page; stamped by line-guide std-objects $CE–$D2, read by the GSU rail-walker CODE_0B89E9"
+          },
           "pathDown": 2
         }
       ]
@@ -9512,6 +11622,24 @@
       "spritesetFiles": [
         "0x1A",
         "0x5F"
+      ],
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": true,
+          "targetName": "$8E00-$8E02 (icicle ceiling-anchor tiles; $799D stem tiles above set length)",
+          "failureMode": "init DESPAWNS the sprite (no icicle at all)",
+          "designerRule": "place ON an icicle-anchor tile ($8E00-$8E02); stack $799D stems above for longer icicles",
+          "tileLiterals": [
+            "0x8E00",
+            "0x8E01",
+            "0x8E02"
+          ],
+          "collisionNote": "icicle ceiling-anchor tiles; $799D stem tiles stacked above set the icicle length"
+        }
       ]
     },
     "0x191": {
@@ -9595,7 +11723,7 @@
       "cel": "B",
       "neighborDeps": [
         {
-          "cls": "F",
+          "cls": "tile-behavior",
           "targetKind": "map16-tile",
           "spatial": "same-cell",
           "targetIds": [],
@@ -9696,7 +11824,35 @@
       "spritesetFiles": [
         "0x48"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "same-cell",
+          "targetIds": [],
+          "enforce": true,
+          "targetName": "$7D24 (locked-keyhole tile; rewritten to $7D22 on unlock)",
+          "failureMode": "cork never unlocks (probe never matches)",
+          "designerRule": "place the cork ON the $7D24 keyhole tile (stamped by ext-obj $E0)",
+          "tileLiterals": [
+            "0x7D24"
+          ],
+          "collisionNote": "locked-keyhole tile (stamped by ext-object $E0); rewritten to $7D22 when unlocked with the carried Key"
+        },
+        {
+          "cls": "sprite-pair",
+          "targetKind": "sprite",
+          "spatial": "carried",
+          "targetIds": [
+            "0x027"
+          ],
+          "enforce": false,
+          "targetName": "$027 Key",
+          "failureMode": "cork never unlocks",
+          "designerRule": "co-place a Key (player carries it over; cross-record in shipped data)"
+        }
+      ]
     },
     "0x1A5": {
       "name": "Grinder, runs away",
@@ -9705,7 +11861,25 @@
       "spritesetFiles": [
         "0x64"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "row",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "tree trunks (Map16 pages $99/$9A)",
+          "failureMode": "no trees -> ground walker only (climbing never engages)",
+          "designerRule": "trees (pages $99/$9A) near the monkey give it climb targets",
+          "pageLiterals": [
+            "0x99",
+            "0x9A"
+          ],
+          "collisionNote": "tree-trunk Map16 pages $99/$9A — the monkey side-snaps to and climbs trunks beside it (CODE_02ADC4 init snap, CODE_02B3E8 climb/jump)",
+          "rowSpan": 1
+        }
+      ]
     },
     "0x1A6": {
       "name": "Grinder, spits seeds of watermelon",
@@ -9714,7 +11888,25 @@
       "spritesetFiles": [
         "0x64"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "row",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "tree trunks (Map16 pages $99/$9A)",
+          "failureMode": "no trees -> ground walker only",
+          "designerRule": "trees near the monkey give it climb targets",
+          "pageLiterals": [
+            "0x99",
+            "0x9A"
+          ],
+          "collisionNote": "tree-trunk Map16 pages $99/$9A — the monkey side-snaps to and climbs trunks beside it (CODE_02ADC4 init snap, CODE_02B3E8 climb/jump)",
+          "rowSpan": 1
+        }
+      ]
     },
     "0x1A7": {
       "name": "Short Fuse / Seedy Sally, right / left",
@@ -9723,7 +11915,25 @@
       "spritesetFiles": [
         "0x64"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "row",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "tree trunks (Map16 pages $99/$9A)",
+          "failureMode": "no trees -> ground walker only",
+          "designerRule": "trees near the monkey give it climb targets",
+          "pageLiterals": [
+            "0x99",
+            "0x9A"
+          ],
+          "collisionNote": "tree-trunk Map16 pages $99/$9A — the monkey side-snaps to and climbs trunks beside it (CODE_02ADC4 init snap, CODE_02B3E8 climb/jump)",
+          "rowSpan": 1
+        }
+      ]
     },
     "0x1A8": {
       "name": "Grinder, grasps Baby Mario",
@@ -9732,7 +11942,25 @@
       "spritesetFiles": [
         "0x64"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "row",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "tree trunks (Map16 pages $99/$9A)",
+          "failureMode": "no trees -> ground walker only",
+          "designerRule": "trees near the monkey give it climb targets",
+          "pageLiterals": [
+            "0x99",
+            "0x9A"
+          ],
+          "collisionNote": "tree-trunk Map16 pages $99/$9A — the monkey side-snaps to and climbs trunks beside it (CODE_02ADC4 init snap, CODE_02B3E8 climb/jump)",
+          "rowSpan": 1
+        }
+      ]
     },
     "0x1A9": {
       "name": "Grinder, climbing, spits seeds of watermelon",
@@ -9741,7 +11969,25 @@
       "spritesetFiles": [
         "0x64"
       ],
-      "cel": "B"
+      "cel": "B",
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "row",
+          "targetIds": [],
+          "enforce": false,
+          "targetName": "tree trunks (Map16 pages $99/$9A)",
+          "failureMode": "no trees -> ground walker only",
+          "designerRule": "trees near the monkey give it climb targets",
+          "pageLiterals": [
+            "0x99",
+            "0x9A"
+          ],
+          "collisionNote": "tree-trunk Map16 pages $99/$9A — the monkey side-snaps to and climbs trunks beside it (CODE_02ADC4 init snap, CODE_02B3E8 climb/jump)",
+          "rowSpan": 1
+        }
+      ]
     },
     "0x1AA": {
       "name": "Hot Lips",
@@ -10003,7 +12249,23 @@
     },
     "0x1E0": {
       "name": "Wall Lakitu generator?",
-      "category": "generator"
+      "category": "generator",
+      "neighborDeps": [
+        {
+          "cls": "tile-read",
+          "targetKind": "map16-tile",
+          "spatial": "level",
+          "targetIds": [],
+          "enforce": true,
+          "targetName": "$0010 (lakitu wall-hole tile)",
+          "failureMode": "never spawns a Wall Lakitu (dead generator)",
+          "designerRule": "the generator's screens must contain $0010 wall-hole tiles",
+          "tileLiterals": [
+            "0x0010"
+          ],
+          "collisionNote": "lakitu wall-hole tile — the generator spawns Wall Lakitus ($157) only at cells whose tile is $0010"
+        }
+      ]
     },
     "0x1E1": {
       "name": "unknown",

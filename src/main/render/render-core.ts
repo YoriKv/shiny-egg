@@ -16,7 +16,12 @@ import { hex } from 'snes-framework/hex'
 import type { RenderHeader } from 'snes-framework/render-gallery'
 import { renderBg1 } from 'snes-framework/render-bg1'
 import { buildBg1Bands } from 'snes-framework/bg1-band-gfx'
-import { loadCollisionTable, loadSlopePanels, type CollisionEntry } from 'snes-framework/collision'
+import {
+  loadCollisionTable,
+  loadPipeEntryBits,
+  loadSlopePanels,
+  type CollisionEntry
+} from 'snes-framework/collision'
 import { loadMap16Tables, decodeMap16, type Map16Tables, type Map16SubTile } from 'snes-framework/map16'
 import { loadSceneRegs } from 'snes-framework/scene-regs'
 import { loadLevelGfx, type GfxFileEntry, type GfxHeader } from 'snes-framework/load-graphics'
@@ -24,7 +29,18 @@ import { loadLevelPalettes, type PaletteHeader } from 'snes-framework/load-palet
 import { loadTileAnimation } from 'snes-framework/load-tile-animation'
 import { loadLevel, isWorld6RecordDeep } from 'snes-framework/level'
 import { type SymbolMap } from 'snes-framework/symbol-map'
-import type { InfluenceClass, LevelRenderRequest } from '../../shared/ipc-types'
+import { createValidityProbe } from 'snes-framework/entity-render-validity'
+import { createEntityThumbnailer } from 'snes-framework/entity-thumbnails'
+import { hex0x } from 'snes-framework/hex'
+import type { ObjectRenderVerdict } from 'snes-framework/types'
+import type {
+  EntityValidityCandidate,
+  InfluenceClass,
+  LevelRenderRequest,
+  PickerThumbnails,
+  PickerThumbnailsRequest,
+  RenderImage
+} from '../../shared/ipc-types'
 
 // ── Palette-colour live preview (§B10) ───────────────────────────────────────
 // The render path reads BASE CGRAM from the built ROM; the editor's UNSAVED
@@ -176,18 +192,12 @@ export function getBg1Context(
   if (bg1ContextCache && bg1ContextCache.symbols === symbols && bg1ContextCache.key === key) {
     return bg1ContextCache.ctx
   }
-  const gfxHeader = gfxHeaderFromLevel(h, levelRecordId, workRoot)
-  const palHeader = paletteHeaderFromLevel(h, levelRecordId, workRoot)
-  const vram = new Uint8Array(0x10000)
-  const cgram = new Uint8Array(512)
-  const palProvenance = new Int32Array(256)
-  const manifest: GfxFileEntry[] = []
-  loadLevelGfx(rom, symbols, gfxHeader, vram, manifest)
-  loadTileAnimation(rom, symbols, {
-    animationTileset: h[10] ?? 0, bg1Tileset: gfxHeader.bg1Tileset, levelMode: h[9] ?? 0
-  }, vram)
-  loadLevelPalettes(rom, symbols, palHeader, cgram, palProvenance)
-  applyPaletteEdits(cgram, palProvenance, paletteEdits)
+  // VRAM/CGRAM/manifest come from the shared (cached) build — the same entry
+  // the bgLayers handler consumes, so a fresh level load decompresses once,
+  // not once per layer. Read-only by contract (see LevelVramCgram).
+  const { vram, cgram, manifest, gfxHeader, palHeader } = buildLevelVramCgram(
+    rom, symbols, level, levelRecordId, workRoot, { animate: true, paletteEdits }
+  )
   const regs = loadSceneRegs(rom, symbols, h[9] ?? 0)
   const map16Tables = loadMap16Tables(rom, symbols)
   // Per-region BG1 (Graphic/Palette Changer sprites $1BA-$1C9): some levels swap
@@ -206,19 +216,25 @@ export function getBg1Context(
   return ctx
 }
 
-/** Cart-global collision data (table + slope panels) — rom-only, so keyed on the
- *  symbols reference. */
+/** Cart-global collision data (table + slope panels + per-tile pipe-entry
+ *  bits) — rom-only, so keyed on the symbols reference. */
 let collisionDataCache:
-  | { symbols: SymbolMap; table: CollisionEntry[]; panels: ReturnType<typeof loadSlopePanels> }
+  | {
+      symbols: SymbolMap
+      table: CollisionEntry[]
+      panels: ReturnType<typeof loadSlopePanels>
+      pipeEntryBits: Uint8Array
+    }
   | null = null
 export function getCollisionData(
   rom: Uint8Array,
   symbols: SymbolMap
-): { table: CollisionEntry[]; panels: ReturnType<typeof loadSlopePanels> } {
+): { table: CollisionEntry[]; panels: ReturnType<typeof loadSlopePanels>; pipeEntryBits: Uint8Array } {
   if (collisionDataCache && collisionDataCache.symbols === symbols) return collisionDataCache
   const table = loadCollisionTable(rom, symbols)
   const panels = loadSlopePanels(rom, symbols)
-  collisionDataCache = { symbols, table, panels }
+  const pipeEntryBits = loadPipeEntryBits(rom, symbols)
+  collisionDataCache = { symbols, table, panels, pipeEntryBits }
   return collisionDataCache
 }
 
@@ -312,6 +328,137 @@ export function spriteGridCachePut(token: string, entry: SpriteGridCacheEntry): 
     if (oldest === undefined) break
     spriteGridCache.delete(oldest)
   }
+}
+
+// ── Entity render-validity (picker filter) ───────────────────────────────────
+// ~500 single-object probe decodes per call, so cached on the gfx-relevant
+// header subset (bg1/bg2/bg3/spriteset/levelMode/animTileset/isWorld6) + the
+// candidate set — ~16 distinct header keys ever occur, so after first touch
+// per tileset the picker's refetches are dictionary lookups. Symbols-ref keyed
+// like the other caches (a rebuild invalidates everything).
+
+export interface EntityValidityVerdicts {
+  objects: Record<string, ObjectRenderVerdict>
+  extended: Record<string, ObjectRenderVerdict>
+  mode7: boolean
+}
+
+const ENTITY_VALIDITY_CACHE_MAX = 32
+const entityValidityCache = new Map<string, { symbols: SymbolMap; result: EntityValidityVerdicts }>()
+
+/** FNV signature over the candidate list — static in practice (the picker
+ *  catalog), but keyed so a metadata change can't serve stale verdicts. */
+function candidatesSig(candidates: EntityValidityCandidate[]): string {
+  let a = 0x811c9dc5
+  for (const c of candidates) {
+    a = Math.imul(a ^ (c.kind === 'std' ? 1 : 2), 0x01000193) >>> 0
+    a = Math.imul(a ^ c.id, 0x01000193) >>> 0
+    a = Math.imul(a ^ (c.w & 0xff), 0x01000193) >>> 0
+    a = Math.imul(a ^ (c.h & 0xff), 0x01000193) >>> 0
+  }
+  return `${candidates.length}:${a.toString(16)}`
+}
+
+export function getEntityValidity(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  level: LevelData,
+  levelRecordId: number,
+  workRoot: string,
+  candidates: EntityValidityCandidate[]
+): EntityValidityVerdicts {
+  const h = level.header
+  const w6 = isWorld6(levelRecordId, workRoot)
+  const key =
+    `${[h[1], h[3], h[5], h[7], h[9], h[10], w6 ? 1 : 0].join(',')}` +
+    `:${candidatesSig(candidates)}`
+  const hit = entityValidityCache.get(key)
+  if (hit && hit.symbols === symbols) {
+    entityValidityCache.delete(key)
+    entityValidityCache.set(key, hit) // bump to MRU
+    return hit.result
+  }
+
+  const probe = createValidityProbe({ rom, symbols, workRoot, donor: level, isWorld6: w6 })
+  const objects: Record<string, ObjectRenderVerdict> = {}
+  const extended: Record<string, ObjectRenderVerdict> = {}
+  if (!probe.mode7) {
+    for (const c of candidates) {
+      const verdict = probe.probe(c.kind, c.id, c.w, c.h)
+      ;(c.kind === 'std' ? objects : extended)[hex0x(c.id, 2)] = verdict
+    }
+  }
+  const result: EntityValidityVerdicts = { objects, extended, mode7: probe.mode7 }
+  entityValidityCache.set(key, { symbols, result })
+  while (entityValidityCache.size > ENTITY_VALIDITY_CACHE_MAX) {
+    const oldest = entityValidityCache.keys().next().value
+    if (oldest === undefined) break
+    entityValidityCache.delete(oldest)
+  }
+  return result
+}
+
+// ── Picker thumbnails (§B5) ──────────────────────────────────────────────────
+// Same caching discipline as the validity verdicts: keyed on the gfx-relevant
+// header subset + the request's id sets. The payload is bitmaps (MBs, not
+// bytes), so the LRU is small — a tab refetch within the same header tuple is
+// a cache hit, a tileset change re-renders.
+
+const THUMBNAIL_CACHE_MAX = 6
+const thumbnailCache = new Map<string, { symbols: SymbolMap; result: PickerThumbnails }>()
+
+export function getPickerThumbnails(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  level: LevelData,
+  levelRecordId: number,
+  workRoot: string,
+  req: PickerThumbnailsRequest
+): PickerThumbnails {
+  const h = level.header
+  const w6 = isWorld6(levelRecordId, workRoot)
+  let sig = 0x811c9dc5
+  const mix = (n: number): void => {
+    sig = Math.imul(sig ^ n, 0x01000193) >>> 0
+  }
+  for (const c of req.candidates ?? []) {
+    mix(c.kind === 'std' ? 1 : 2); mix(c.id); mix(c.w); mix(c.h)
+  }
+  for (const n of req.spriteNums ?? []) mix(n)
+  for (const n of req.celRenderableNums ?? []) mix(0x10000 + n)
+  for (const n of req.formatANums ?? []) mix(0x20000 + n)
+  const key = `${[h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8], h[9], h[10], w6 ? 1 : 0].join(',')}:${sig.toString(16)}`
+  const hit = thumbnailCache.get(key)
+  if (hit && hit.symbols === symbols) {
+    thumbnailCache.delete(key)
+    thumbnailCache.set(key, hit) // bump to MRU
+    return hit.result
+  }
+
+  const thumbnailer = createEntityThumbnailer({
+    rom, symbols, workRoot, donor: level, isWorld6: w6,
+    celRenderableNums: new Set(req.celRenderableNums ?? []),
+    formatANums: new Set(req.formatANums ?? [])
+  })
+  const objects: Record<string, RenderImage> = {}
+  const extended: Record<string, RenderImage> = {}
+  const sprites: Record<string, RenderImage> = {}
+  for (const c of req.candidates ?? []) {
+    const img = thumbnailer.objectThumb(c.kind, c.id, c.w, c.h)
+    if (img) (c.kind === 'std' ? objects : extended)[hex0x(c.id, 2)] = img
+  }
+  for (const num of req.spriteNums ?? []) {
+    const img = thumbnailer.spriteThumb(num)
+    if (img) sprites[hex0x(num, 3)] = img
+  }
+  const result: PickerThumbnails = { objects, extended, sprites }
+  thumbnailCache.set(key, { symbols, result })
+  while (thumbnailCache.size > THUMBNAIL_CACHE_MAX) {
+    const oldest = thumbnailCache.keys().next().value
+    if (oldest === undefined) break
+    thumbnailCache.delete(oldest)
+  }
+  return result
 }
 
 /**
@@ -488,11 +635,36 @@ export function buildLevelCgram(
   return { cgram, provenance }
 }
 
+/** `buildLevelVramCgram`'s (cached, shared) result. READ-ONLY by contract: the
+ *  buffers are handed to every consumer with the same key, so writing into
+ *  `vram`/`cgram` would corrupt later renders. All current consumers
+ *  (composeBgLayers / buildSpriteRenderModel / renderBg1) only read. */
+export interface LevelVramCgram {
+  vram: Uint8Array
+  cgram: Uint8Array
+  provenance: Int32Array
+  manifest: GfxFileEntry[]
+  gfxHeader: GfxHeader
+  palHeader: PaletteHeader
+}
+
+/** Small LRU over `buildLevelVramCgram`. The build only reads the header (the
+ *  gfx/palette headers derive from it) + the palette-edit draft, so the key is
+ *  just those + the animate flag — sprite/object edits hit the cache, which is
+ *  the point: without it every sprite-edit commit re-ran the full LZ2/LZ16
+ *  decompress. 4 entries covers a level's animate:true (bgLayers/bg1) +
+ *  animate:false (spriteLayer) pair with headroom for a level switch. A rebuild
+ *  re-parses the .sym → new `symbols` ref → flush (same convention as every
+ *  other cache in this file). */
+let vramCgramCache: { symbols: SymbolMap; entries: Map<string, LevelVramCgram> } | null = null
+const VRAM_CGRAM_CACHE_MAX = 4
+
 /** A level's VRAM (gfx-loaded, optionally tile-animated) + CGRAM (+ palette-edit
  *  draft) + the gfx manifest + the resolved gfx/palette headers — the inputs the
  *  bgLayers/spriteLayer renderers share. `animate` overlays the tile-animation
  *  VRAM slots (BG layers need it; the sprite layer does not). The manifest +
- *  headers are always built; consumers ignore what they don't use. */
+ *  headers are always built; consumers ignore what they don't use. Cached —
+ *  treat the result as read-only (see LevelVramCgram). */
 export function buildLevelVramCgram(
   rom: Uint8Array,
   symbols: SymbolMap,
@@ -500,15 +672,20 @@ export function buildLevelVramCgram(
   levelRecordId: number,
   workRoot: string,
   opts: { animate: boolean; paletteEdits?: PaletteEdit[] }
-): {
-  vram: Uint8Array
-  cgram: Uint8Array
-  provenance: Int32Array
-  manifest: GfxFileEntry[]
-  gfxHeader: GfxHeader
-  palHeader: PaletteHeader
-} {
+): LevelVramCgram {
   const h = level.header
+  const key = `${levelRecordId}:${h.join(',')}:${opts.animate ? 'a' : ''}:${paletteEditsSig(opts.paletteEdits)}`
+  if (vramCgramCache && vramCgramCache.symbols === symbols) {
+    const hit = vramCgramCache.entries.get(key)
+    if (hit) {
+      // Re-insert to refresh LRU recency (Map preserves insertion order).
+      vramCgramCache.entries.delete(key)
+      vramCgramCache.entries.set(key, hit)
+      return hit
+    }
+  } else {
+    vramCgramCache = { symbols, entries: new Map() }
+  }
   const gfxHeader = gfxHeaderFromLevel(h, levelRecordId, workRoot)
   const palHeader = paletteHeaderFromLevel(h, levelRecordId, workRoot)
   const vram = new Uint8Array(0x10000)
@@ -526,6 +703,11 @@ export function buildLevelVramCgram(
   }
   loadLevelPalettes(rom, symbols, palHeader, cgram, provenance)
   applyPaletteEdits(cgram, provenance, opts.paletteEdits)
-  return { vram, cgram, provenance, manifest, gfxHeader, palHeader }
+  const result: LevelVramCgram = { vram, cgram, provenance, manifest, gfxHeader, palHeader }
+  vramCgramCache.entries.set(key, result)
+  if (vramCgramCache.entries.size > VRAM_CGRAM_CACHE_MAX) {
+    vramCgramCache.entries.delete(vramCgramCache.entries.keys().next().value!)
+  }
+  return result
 }
 

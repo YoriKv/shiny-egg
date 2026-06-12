@@ -16,6 +16,7 @@ import { spawnSync } from 'node:child_process';
 import { lz2 } from './lz2.ts';
 import { lz16 } from './lz16.ts';
 import { snesToPC } from '../symbol-map.ts';
+import { u24le } from '../rom-read.ts';
 
 // These match load-graphics.ts's decimal constants — re-deriving asm-first is
 // Phase 2 work. PC offsets into the LoROM cart, 24-bit (3-byte) SNES pointer
@@ -24,10 +25,6 @@ const COMPRESSED_TABLE_LZ2 = 227678; // 0x3795E — DATA_lz2_compressed_gfx_ptrs
 const COMPRESSED_TABLE_LZ16 = 228473; // 0x37C79 — DATA_lz16_compressed_gfx_ptrs
 const DECOMP_EXE = '/mnt/d/Dev/SNES/lc200/decomp.exe';
 const DECOMP_DIR = '/mnt/d/Dev/SNES/lc200';
-
-function readU24LE(buf: Uint8Array, pc: number): number {
-  return buf[pc] | (buf[pc + 1] << 8) | (buf[pc + 2] << 16);
-}
 
 function wslToWin(p: string): string {
   if (p.startsWith('/mnt/')) {
@@ -90,7 +87,7 @@ function verifyOne(
   format2: number
 ): CaseResult | null {
   const ptrAddr = table + id * 3;
-  const srcSnes = readU24LE(rom, ptrAddr);
+  const srcSnes = u24le(rom, ptrAddr);
   const srcPC = snesToPC(srcSnes);
   if (srcSnes === 0 || srcPC <= 0 || srcPC >= rom.length) return null;
 

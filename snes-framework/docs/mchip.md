@@ -365,22 +365,36 @@ Byte 2 -- slope sub-index (only when SK bit set in byte 0)
   $80..$81  → "RAM-supplied" runtime slope (for moving / boss slopes)
 ```
 
-**Note on tag `$14` (DK "pipe") -- it is NOT a player-warp / "enterable
-pipe" marker.** Only one Map16 page carries this tag: page `$7D` (all tiles
-`$7D00-$7DFF`, also flagged `AL` solid). It is stamped purely as terrain by
-the pipe *objects* -- `$3C`/`$F4` single vertical pipe, `$A5`/`$A6`
-double-ended pipe, `$BA-$BD` sewage dead-ends (Bank12/13 stampers) -- and
-**identically on the enterable and un-enterable variants** (`$3C`
-PipeVerticalEnterable and `$F4` PipeVerticalNotEnterable share
-`CODE_pipe_vertical_dispatch`), so the tag is *orthogonal to enterability*.
-Its only consumer is the enemy-generator probe `CODE_0EB8AE` (`$0E:B8AE`):
-Shy Guy (`$1E`), Lantern Ghost (`$133`), Cactus Jack (`$156`) and Boo Guy
-(`$19A`) call it at Init and, if standing on a DK tile (or the hardcoded
-pipe-mouth tiles `$79F1`/`$79F2`), switch themselves into proximity-triggered
-generators that emit enemies *out* of the pipe. Player pipe-*entry* is a
-separate, sprite-driven mechanic (entrance sprites + the screen-exit list;
-see `docs/family-pipes-signs.md`) that never reads this tag. See
-`docs/family-shyguys.md` §2 for the generator state machine.
+**Note on tag `$14` (DK "pipe") -- the pipe-mouth marker, with TWO
+consumers.** Only one Map16 page carries this tag: page `$7D` (also flagged
+`AL` solid). An earlier revision of this note claimed the tag "is NOT a
+player-warp marker" and that enterable/un-enterable pipes stamp it
+identically -- **both claims were wrong** (counterexample: level `$3B`
+obj[279], an Enterable vertical pipe that warps with no sprite on its
+screen). The verified model:
+
+1. **Player pipe entry (tile-driven).** The GSU player collision probes
+   (Bank0B: head probe near `CODE_0BA3CE`, foot probe near `CODE_0BD032`,
+   third site near `$0B:DC0D`) accept a tile when its collision word passes
+   `R7 & $F800 == $A000` (= tag `$14`) AND the per-tile byte
+   `DATA_0AEBBC[tile & $FF]` carries the pressed direction's entry bit
+   (low nibble: `$01`/`$02` horizontal, `$04` down, `$08` up). On accept,
+   `CODE_0BDC20` derives the transition orientation from the tile id
+   (>= `$7D0B` = horizontal family), writes PipeTransitionType (`$0106`)
+   and sets PlayerState `$06` via GSU `SMS` -- invisible to 65816-side
+   greps. So enterability is per-TILE: `$3C` Enterable vertical pipe stamps
+   mouth `$7D08`/`$7D09` (entry bytes `$04`/`$84`) while `$F4` Un-enterable
+   stamps the *untagged* page-`$79` family -- those pipes warp only via a
+   co-located entrance sprite (`docs/family-pipes-signs.md`).
+2. **Enemy-generator gate.** `CODE_0EB8AE` (`$0E:B8AE`): Shy Guy (`$1E`),
+   Lantern Ghost (`$133`), Cactus Jack (`$156`) and Boo Guy (`$19A`) call it
+   at Init and, if standing on a DK tile (or the hardcoded `$79`-family
+   mouth tiles `$79F1`/`$79F2`), switch themselves into proximity-triggered
+   generators that emit enemies *out* of the pipe. See
+   `docs/family-shyguys.md` §2.
+
+The editor's canonical exit-mechanism reference is
+`src/renderer/src/data/exit-triggers.ts`.
 
 The `BG_HDFTCK` head/foot consumer tests `MD+SK` ($05) for head probes
 and `SK` ($04) for foot probes. On an SK hit, it indexes

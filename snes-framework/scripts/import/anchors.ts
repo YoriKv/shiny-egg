@@ -18,7 +18,7 @@
 // escape hatch (a user-supplied address) if that ever shows up.
 
 import { snesToPC, vendoredV10SymbolMap } from '../engine/symbol-map.ts';
-import { readU24LE } from '../extract.ts';
+import { u24le } from '../engine/rom-read.ts';
 import type { AnchorResolution } from '../types.ts';
 
 /** Number of level-data pointer-table entries (data-record indices). */
@@ -202,9 +202,9 @@ function scoreLevelPtrs(cart: Buffer, pc: number, baseCart: Buffer, basePc: numb
     const bOff = basePc + i * 6;
     const fOff = pc + i * 6;
     if (bOff + 3 > baseCart.length || fOff + 3 > cart.length) break;
-    if (!pointsAtValidObjStream(baseCart, readU24LE(baseCart, bOff), baseInfo)) continue;
+    if (!pointsAtValidObjStream(baseCart, u24le(baseCart, bOff), baseInfo)) continue;
     known++;
-    if (pointsAtValidObjStream(cart, readU24LE(cart, fOff), foreignInfo)) valid++;
+    if (pointsAtValidObjStream(cart, u24le(cart, fOff), foreignInfo)) valid++;
   }
   return { known, valid, score: known > 0 ? valid / known : 0 };
 }

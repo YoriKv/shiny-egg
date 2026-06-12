@@ -40,7 +40,9 @@
 // Output is a 1×2048 RGBA bitmap (consumer tiles horizontally).
 
 import type { SymbolMap } from './symbol-map.ts';
+import { snesToPC } from './symbol-map.ts';
 import { bgr15ToRgb } from './color.ts';
+import { u16le } from './rom-read.ts';
 
 export const LEVEL_HEIGHT_PX = 2048;
 const GRADIENT_THRESHOLD = 0x10;
@@ -74,7 +76,7 @@ export function buildBackdrop(
   if (backgroundColor < GRADIENT_THRESHOLD) {
     return {
       kind: 'solid',
-      color15: (cgram[0] | (cgram[1] << 8)) & 0xffff
+      color15: u16le(cgram, 0)
     };
   }
 
@@ -100,9 +102,9 @@ function readGradientColors(
   //   bytes 0-1 = bank word (high byte 0; low byte is the SNES bank)
   //   bytes 2-3 = offset word LE
   const bank = rom[entryOff];
-  const offset = rom[entryOff + 2] | (rom[entryOff + 3] << 8);
-  // Targets live in SuperFX HiROM bank $5F → PC = ((bank - $40) << 16) | offset
-  const srcPC = (((bank - 0x40) & 0x1f) << 16) | offset;
+  const offset = u16le(rom, entryOff + 2);
+  // Targets live in SuperFX HiROM bank $5F — snesToPC handles that mapping.
+  const srcPC = snesToPC((bank << 16) | offset);
   if (srcPC < 0 || srcPC + GRADIENT_BYTES > rom.length) {
     throw new RangeError(
       `buildBackdrop: gradient src PC $${srcPC.toString(16)} out of ROM`
@@ -110,7 +112,7 @@ function readGradientColors(
   }
   const colors = new Uint16Array(GRADIENT_COLOR_COUNT);
   for (let i = 0; i < GRADIENT_COLOR_COUNT; i++) {
-    colors[i] = rom[srcPC + i * 2] | (rom[srcPC + i * 2 + 1] << 8);
+    colors[i] = u16le(rom, srcPC + i * 2);
   }
   return colors;
 }

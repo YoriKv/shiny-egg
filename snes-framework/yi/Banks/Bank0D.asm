@@ -3085,7 +3085,7 @@ CODE_0D9787:
 	LDA.w $7D38,y
 	BEQ.b CODE_0D97C3
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDY.b $18,x
 	LDA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,y
 	BMI.b CODE_0D97C3
@@ -3686,7 +3686,7 @@ CODE_0D9C48:
 	BEQ.b CODE_0D9C7B
 	TYX
 	PHY
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	PLY
 	LDA.w #$0000
 	STA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,y
@@ -4177,7 +4177,7 @@ CODE_0DA012:
 	CMP.w #$6000
 	BEQ.b CODE_0DA08D
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_0DA028:
 	BRA.b CODE_0DA08D
 
@@ -5495,7 +5495,7 @@ CODE_0DAA96:
 	LDA.w $7D38,y
 	BEQ.b CODE_0DAAF4
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_0DAAAE:
 	LDA.w #!Define_YI_SoundID32_HitMessageBox
 	JSL.l CODE_push_sound_queue
@@ -6621,7 +6621,7 @@ CODE_0DB35D:
 	LDA.w $7D38,y
 	BEQ.b CODE_0DB3B8
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDY.b $76,x
 	CPY.b #$06
 	BEQ.b CODE_0DB3B8
@@ -7695,7 +7695,7 @@ CODE_0DBBD1:
 	SEC
 	SBC.w $7CD6,x
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDA.w #$FD00
 	STA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,x
 	LDY.b #$00
@@ -8354,10 +8354,10 @@ CODE_0DC12A:
 	CMP.w #$0040
 	BCC.b CODE_0DC136
 CODE_0DC132:
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 CODE_0DC136:
 	LDX.b $12
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	SEC
 	RTL
 
@@ -8382,7 +8382,7 @@ CODE_0DC14C:
 	LDA.w $7D38,y
 	BEQ.b CODE_0DC14A
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	BCC.b CODE_0DC136
 	LDA.w $6FA0,x
 	ORA.w #$0200
@@ -8559,7 +8559,7 @@ CODE_0DC2AC:
 	LDA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,y
 	PHP
 	TYX
-	JSL.l CODE_03B25B
+	JSL.l CODE_kill_sprite_by_hit_special_cases
 	LDY.b #$00
 	PLP
 	BMI.b CODE_0DC2BC
@@ -9209,7 +9209,7 @@ CODE_0DC77A:
 	LDA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,y
 	STA.b $00
 	TYX
-	JSL.l CODE_03B24B
+	JSL.l CODE_kill_sprite_by_hit_checked
 	LDY.b $76,x
 	CPY.b #$07
 	BPL.b CODE_0DC779

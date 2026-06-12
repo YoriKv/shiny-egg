@@ -1,7 +1,10 @@
 // Typed accessor over obj-metadata.json — the catalog of object/sprite names,
 // categories, descriptions, default sizes, and the `exitTrigger` flag. All of it
 // is pre-baked and shipped (eventually tool-generated), not computed at editor
-// load/extract time. The `exitTrigger` flag (which entities trigger a screen
+// load/extract time. STORAGE RULE: this JSON holds bulk, TOOL-GENERATED
+// per-entity facts; small HAND-AUTHORED behaviour tables live in typed data
+// modules instead (e.g. data/sprite-parity-variants.ts), and pure presentation
+// stays in canvas/draw. The `exitTrigger` flag (which entities trigger a screen
 // exit) is asm-derived — see data/exit-triggers.ts for how it's derived.
 
 import raw from './obj-metadata.json'
@@ -31,6 +34,30 @@ interface StoredObjectInfo {
   desc: string
   category: ObjectCategory
   tilesets: string[]
+  /**
+   * BG1 tileset indices (hex strings, `"0x4"`) under which this object's art
+   * family is present — the wrong-theme gate the X-placeholder probe can't
+   * provide (a foreign sheet's slots can hold another family's REAL art).
+   * Derived evidence-first (tmp/audit-art-identity.ts --write, 2026-06-11):
+   *   shipped objects: allowed(ts) := own-shipped(ts — BAND-resolved through
+   *       Graphic-Changer sprites: a placement inside a changer band proves
+   *       the band's tileset, not the header's; level 0x58's rail corners
+   *       prove ts15) ∨ art byte-identical / ≤¼ different vs a shipped
+   *       reference tileset (4bpp VRAM bytes + flips — palette-independent,
+   *       so recolours pass);
+   *   never-shipped: the GoldenEgg `tilesets` labels greedily mapped onto
+   *       tileset indices from band-resolved shipped placements;
+   *   plus the reviewed-override lists in the generator (NEVER_ALLOWED — the
+   *       Baby-Bowser-room runtime-streamed scenery, baked `[]`; ADD_PAIRS —
+   *       thumbnail-reviewed reskin pairings the evidence can't derive, e.g.
+   *       the ts12 stake/lily). A retarget-landing inference was tried and
+   *       removed (unsound both ways — see the generator header).
+   * Value semantics (mirrors `spritesetFiles`): ABSENT ⇒ not theme-gated
+   * (universal); NULL ⇒ never shipped + nothing derivable ⇒ theme-unknown
+   * (amber badge, never hidden, never asserted ok); `[]` ⇒ locked everywhere.
+   * Checked by `lib/theme-validity.ts` (hook + validity-report gate).
+   */
+  bg1Tilesets?: string[] | null
   defaultWidth: number
   defaultHeight: number
   exitTrigger?: boolean
@@ -56,27 +83,36 @@ interface StoredObjectInfo {
 // errors against shipped levels.
 
 /** Spatial nature of a dependency — drives the check and the visual.
- *  `same-cell` / `offset-cell` / `path` resolve to a target CELL (drawable as
- *  an expected-location marker); `proximity` / `global` / `carried` resolve to
- *  another placed SPRITE (no fixed cell); `screen` reads the screen-exit table
- *  for the sprite's own screen. */
+ *  `same-cell` / `offset-cell` / `path` / `row` resolve to a target CELL
+ *  (drawable as an expected-location marker); `level` scans the whole level
+ *  for a matching tile (marker = the nearest match); `proximity` / `global` /
+ *  `carried` resolve to another placed SPRITE (no fixed cell); `screen` reads
+ *  the screen-exit table for the sprite's own screen; `note` is a pure
+ *  annotation — no geometric check, always resolves `met` (panel text only). */
 export type NeighborSpatial =
-  | 'same-cell' | 'offset-cell' | 'path' | 'proximity' | 'global' | 'carried' | 'screen'
+  | 'same-cell' | 'offset-cell' | 'path' | 'row' | 'level'
+  | 'proximity' | 'global' | 'carried' | 'screen' | 'note'
 
 export type NeighborTargetKind = 'std-object' | 'map16-tile' | 'sprite' | 'screen-metadata'
 
-/** Relationship class from the reference doc: A rail-follower, B1 keyhole-snap,
- *  C direct-tile-scan, D sprite-pair, E screen-metadata, F pipe-spawner
- *  (tile-conditional behaviour). The doc's *incidental* tiers (class B2
- *  anchor-prologue, the borderline MessageBox) fire a mechanism but are never a
- *  designed relationship — excluded from the editor metadata entirely (kept only
- *  in the yi-shiny reference doc). Every dep here IS a real designer
- *  relationship, but not all are auto-verifiable — see `enforce`. Class F is
- *  *behaviour-enabling* (placing the sprite on a pipe-mouth tile turns it into a
- *  continuous self-spawning generator), so it is never an error — always
- *  `enforce:false`, surfaced as an info annotation. See Part 3 of
- *  research/notes-sprite-neighbor-dependencies.md. */
-export type NeighborClass = 'A' | 'B1' | 'C' | 'D' | 'E' | 'F'
+/** Relationship class (research/notes-sprite-neighbor-dependencies.md, Part 4 =
+ *  the corrected model). The TSV / asm docs use the letter shorthands; the
+ *  metadata carries the developer-friendly names:
+ *    A `rail-follower`  — follows the $87xx line-guide rail
+ *    B `ice-snap`       — the shared Init prologue CODE_02A007 (collision-tag
+ *                         $17 match; replaces the old, WRONG "keyhole snap")
+ *    C `tile-read`      — Init/Main reads specific Map16 tiles/tags (slime
+ *                         floor, icicle anchor, bomb path, keyhole cork…)
+ *    D `sprite-pair`    — needs/uses another placed sprite
+ *    E `screen-exit`    — reads the per-screen exit metadata
+ *    F `tile-behavior`  — tile-conditional behaviour (pipe spawners, dirt
+ *                         diggers, pipe centring)
+ *  Not every dep is auto-verifiable or required — see `enforce`:
+ *  behaviour-ENABLING relationships (all of `ice-snap` and `tile-behavior`,
+ *  the rail-optional rotating platforms, the tree-climbing monkeys…) are
+ *  never an error — always `enforce:false`, surfaced as info annotations. */
+export type NeighborClass =
+  | 'rail-follower' | 'ice-snap' | 'tile-read' | 'sprite-pair' | 'screen-exit' | 'tile-behavior'
 
 /** One neighbour-dependency: a piece of surrounding level data the sprite needs
  *  the designer to position. Matching rules used by the resolver:
@@ -101,15 +137,22 @@ export interface SpriteNeighborDep {
    *  is a human-readable gloss of what the masked tile family is (ignored at
    *  runtime; surfaced for documentation — see the JSON). */
   tileMatch?: { mask: string; value: string; note?: string }
-  /** Class-F pipe-spawner matcher — the cell's Map16 **page collision
-   *  secondary-tag** (hex, e.g. `"0x14"` = pipe / DK enterable-pipe-mouth). The
-   *  cell matches if its page carries this tag. Mirrors the asm gate
-   *  `CODE_0EB8AE`'s `R7 & 0xF800 == 0xA000` page-attribute test. */
+  /** Collision-tag matcher — the cell's Map16 **page collision secondary-tag**
+   *  (hex). The cell matches if its page carries this tag. Used by class F
+   *  pipe spawners (`"0x14"` — mirrors the asm gate `CODE_0EB8AE`'s
+   *  `R7 & 0xF800 == 0xA000` test), class B ice-block snap (`"0x17"` —
+   *  `CODE_02A007`'s `== 0xB800` test), and the falling-rock platform
+   *  (`"0x0E"`). OR'd with `tileMatch` / `tileLiterals`. */
   collisionTag?: string
-  /** Class-F pipe-spawner matcher — explicit Map16 tile-id literals (hex) OR'd
-   *  with `collisionTag`. Covers the two pipe-mouth tiles (`0x79F1`/`0x79F2`)
-   *  the asm special-cases by value because their page isn't tagged pipe. */
+  /** Explicit Map16 tile-id literals (hex) OR'd with `tileMatch` /
+   *  `collisionTag` — e.g. the two pipe-mouth tiles (`0x79F1`/`0x79F2`) the asm
+   *  special-cases by value because their page isn't tagged pipe, the icicle
+   *  anchors `0x8E00-0x8E02`, or the keyhole tile `0x7D24`. */
   tileLiterals?: string[]
+  /** Map16 PAGE literals (hex high byte) OR'd with the other matchers — for
+   *  asm page-family tests that two ids can't mask-express, e.g. the grinder
+   *  monkeys' tree-trunk pages `0x99`/`0x9A` (`SBC #$0099 / LSR / BEQ`). */
+  pageLiterals?: string[]
   /** Human-readable gloss of the `collisionTag` / `tileLiterals` matcher
    *  (sibling `note`, ignored at runtime). */
   collisionNote?: string
@@ -121,16 +164,35 @@ export interface SpriteNeighborDep {
    *  platforms); 2 for the spiral lift (`$18F`), whose pivot sits a cell lower.
    *  See `PATH_DOWN` + the resolver's `path` case. */
   pathDown?: number
-  /** Can the editor RELIABLY verify this against a single loaded level record?
-   *  `true` ⇒ a missing target is a real error → drives the always-on error
-   *  indicator. `false` ⇒ shown as an un-enforced relationship only (panel
-   *  note, no error marker): the target isn't visible to a per-record static
-   *  check — class B1 keyhole `$B8xx` tiles are produced by no object (absent
-   *  from the decoder's Map16 buffer entirely), and the locked-door Key
-   *  (spatial `carried`) lives in a connected sub-room, i.e. a different record.
-   *  Derived in the generator and pinned by the validation harness, which
-   *  asserts zero false `missing` among `enforce:true` deps over every shipped
-   *  level. */
+  /** Spatial `row` only: how many cells LEFT/RIGHT of the own cell (same row)
+   *  the scan covers. The boo-guys-carrying-bomb path-marker scan: the asm
+   *  walks the whole row, but every shipped placement matches within ±2; ±4
+   *  gives margin without crossing into unrelated marker runs. */
+  rowSpan?: number
+  /** Sprite-target deps only: a partner counts only within this Chebyshev
+   *  cell radius of the sprite. Models the runtime reality that by-ID homing
+   *  probes (`FXCODE_098EBF`) see only ACTIVE sprites, and sprites activate
+   *  via a CAMERA-relative pixel rectangle (`CODE_check_newspr_screen` →
+   *  `FXCODE_098000`: viewport + ~2-3 cells margin, ~21×19 cells, sliding
+   *  with the camera) — NOT the level's static 16×16-cell screen grid (that
+   *  grid serves exits / page allocation only). Partners farther apart than
+   *  the window are never co-active, so the probe never finds them in-game.
+   *  Absent ⇒ anywhere in the record (switch pair-state is global; the winged
+   *  cloud's rock is transported by the player). `0` = same cell: the
+   *  mouser→nest pair uses 0 — the mouser pops out of its hole, so it sits
+   *  directly ON it (confirmed in-game; all 22 shipped placements are at
+   *  distance 0). */
+  radiusCells?: number
+  /** Is a missing target a REAL error the editor can verify against a single
+   *  loaded level record? `true` ⇒ drives the always-on error indicator.
+   *  `false` ⇒ shown as an un-enforced relationship only (panel note, no error
+   *  marker), for two reasons: behaviour-ENABLING relationships (all of class
+   *  B and F, rail-optional rotating platforms, …) where absence is a valid
+   *  placement, and cross-record targets (spatial `carried` — the Key lives in
+   *  a connected sub-room, a different record). Derived in the generator
+   *  (grade `required` + per-record-checkable) and pinned by the validation
+   *  harness, which asserts zero false `missing` among `enforce:true` deps
+   *  over every shipped level. */
   enforce: boolean
   /** Friendly target description for labels/panel (verbatim `target_ids`). */
   targetName: string
@@ -155,7 +217,13 @@ interface StoredSpriteInfo {
   //      wherever the trace conclusively captured the sprite (≥1 OAM entry).
   //    • FALLBACK — static derivation (tmp/classify-sprites.ts) for sprites the
   //      trace couldn't spawn or that rendered nothing in the captured frame.
-  //    Overlay step: tmp/merge-trace-files.ts. ──
+  //    Overlay step: tmp/merge-trace-files.ts.
+  //    • GATE-DRIVEN REPAIRS (tmp/refine-spriteset-files.ts, 2026-06-11, pinned
+  //      by engine/validity-report.ts): file ids absent from a reachable
+  //      shipped host's spriteset dropped (a correct shipped placement can't
+  //      lack a hard requirement — the art is global or duplicated across
+  //      files), and null-but-placed sprites filled from the cart's static
+  //      tile-base table `DATA_sprite_gfx_file_table` (host-confirmed). ──
   /**
    * Does the sprite supply graphics outside its level's variable spriteset
    * (so `spritesetFiles` may understate what it needs)? True if EITHER the
@@ -207,8 +275,11 @@ interface StoredSpriteInfo {
 // What the accessors return: stored fields with `exitTrigger` normalised to a
 // definite boolean.
 export interface ObjectInfo extends StoredObjectInfo {
-  /** Stamps a screen-exit collision tile — a pipe mouth (`pipe` tag) or door
-   *  (DR/BD bit). Set for std/ext pipe & door objects. See data/exit-triggers.ts. */
+  /** Stamps a screen-exit tile: a DR/BD door tile (page $18) OR a
+   *  player-enterable pipe-mouth tile (tag $14 + DATA_0AEBBC entry bits —
+   *  tile-driven pipe entry, no sprite needed). The un-enterable pipe family
+   *  ($F4 …) is NOT flagged — those warp via a co-located entrance sprite.
+   *  Full three-mechanism model: data/exit-triggers.ts. */
   exitTrigger: boolean
 }
 
@@ -235,27 +306,45 @@ const UNKNOWN_OBJECT: StoredObjectInfo = {
 }
 const UNKNOWN_SPRITE: StoredSpriteInfo = { name: '', category: 'unknown' }
 
+/** Hex-string metadata keys — obj-metadata.json's on-disc convention
+ *  (`"0x4A"` for 8-bit object ids, `"0x0CA"` for 9-bit sprite ids). */
+const objectKey = (id: number): string => `0x${hex(id, 2)}`
+const spriteKey = (num: number): string => `0x${hex(num, 3)}`
+
+/** Display-name fallbacks for entities with no (or an empty) metadata name —
+ *  the single source for the "Object 4A" / "ExObject 12" / "Sprite 0CA" forms,
+ *  shared by the unknown-entity stubs below and the picker's row labels. */
+export function fallbackObjectName(id: number): string {
+  return `Object ${hex(id, 2)}`
+}
+export function fallbackExtendedObjectName(exnum: number): string {
+  return `ExObject ${hex(exnum, 2)}`
+}
+export function fallbackSpriteName(num: number): string {
+  return `Sprite ${hex(num, 3)}`
+}
+
 /** Look up a standard object by ID (1..0xF6). Returns a stable unknown stub if missing. */
 export function getStandardObject(id: number): ObjectInfo {
-  const stored = data.standardObjects[`0x${hex(id, 2)}`] ?? { ...UNKNOWN_OBJECT, name: `Object ${hex(id, 2)}` }
+  const stored = data.standardObjects[objectKey(id)] ?? { ...UNKNOWN_OBJECT, name: fallbackObjectName(id) }
   return { ...stored, exitTrigger: stored.exitTrigger ?? false }
 }
 
 /** Look up an extended object by exnum (0..0xFF). */
 export function getExtendedObject(exnum: number): ObjectInfo {
-  const stored = data.extendedObjects[`0x${hex(exnum, 2)}`] ?? { ...UNKNOWN_OBJECT, name: `ExObject ${hex(exnum, 2)}` }
+  const stored = data.extendedObjects[objectKey(exnum)] ?? { ...UNKNOWN_OBJECT, name: fallbackExtendedObjectName(exnum) }
   return { ...stored, exitTrigger: stored.exitTrigger ?? false }
 }
 
 /** Look up a sprite by num (9-bit, 0..0x1FF). */
 export function getSprite(num: number): SpriteInfo {
-  const stored = data.sprites[`0x${hex(num, 3)}`] ?? { ...UNKNOWN_SPRITE, name: `Sprite ${hex(num, 3)}` }
+  const stored = data.sprites[spriteKey(num)] ?? { ...UNKNOWN_SPRITE, name: fallbackSpriteName(num) }
   return { ...stored, exitTrigger: stored.exitTrigger ?? false }
 }
 
 /** Neighbour-dependencies for a sprite (empty array if none). */
 export function getSpriteNeighborDeps(num: number): SpriteNeighborDep[] {
-  return data.sprites[`0x${hex(num, 3)}`]?.neighborDeps ?? []
+  return data.sprites[spriteKey(num)]?.neighborDeps ?? []
 }
 
 /**
@@ -273,25 +362,41 @@ export interface CatalogEntry<I> {
   info: I
 }
 
+// The metadata is static, so each catalog is built (entries + map + sort over
+// ~1000 ids) once and the same array returned thereafter — the picker + the
+// validity/thumbnail hooks all call these per interaction. Treat as read-only.
+let standardObjectsCache: CatalogEntry<ObjectInfo>[] | null = null
+let extendedObjectsCache: CatalogEntry<ObjectInfo>[] | null = null
+let spritesCache: CatalogEntry<SpriteInfo>[] | null = null
+
 /** All standard objects defined in the metadata, sorted by id — for the picker. */
 export function listStandardObjects(): CatalogEntry<ObjectInfo>[] {
-  return Object.entries(data.standardObjects)
-    .map(([k, info]) => ({ id: Number(k), info: { ...info, exitTrigger: info.exitTrigger ?? false } }))
-    .sort((a, b) => a.id - b.id)
+  if (!standardObjectsCache) {
+    standardObjectsCache = Object.entries(data.standardObjects)
+      .map(([k, info]) => ({ id: Number(k), info: { ...info, exitTrigger: info.exitTrigger ?? false } }))
+      .sort((a, b) => a.id - b.id)
+  }
+  return standardObjectsCache
 }
 
 /** All extended objects (placed with `num=0`, `exnum=id`), sorted by id. */
 export function listExtendedObjects(): CatalogEntry<ObjectInfo>[] {
-  return Object.entries(data.extendedObjects)
-    .map(([k, info]) => ({ id: Number(k), info: { ...info, exitTrigger: info.exitTrigger ?? false } }))
-    .sort((a, b) => a.id - b.id)
+  if (!extendedObjectsCache) {
+    extendedObjectsCache = Object.entries(data.extendedObjects)
+      .map(([k, info]) => ({ id: Number(k), info: { ...info, exitTrigger: info.exitTrigger ?? false } }))
+      .sort((a, b) => a.id - b.id)
+  }
+  return extendedObjectsCache
 }
 
 /** All sprites defined in the metadata, sorted by 9-bit id. */
 export function listSprites(): CatalogEntry<SpriteInfo>[] {
-  return Object.entries(data.sprites)
-    .map(([k, info]) => ({ id: Number(k), info: { ...info, exitTrigger: info.exitTrigger ?? false } }))
-    .sort((a, b) => a.id - b.id)
+  if (!spritesCache) {
+    spritesCache = Object.entries(data.sprites)
+      .map(([k, info]) => ({ id: Number(k), info: { ...info, exitTrigger: info.exitTrigger ?? false } }))
+      .sort((a, b) => a.id - b.id)
+  }
+  return spritesCache
 }
 
 let celRenderableNumsCache: number[] | null = null

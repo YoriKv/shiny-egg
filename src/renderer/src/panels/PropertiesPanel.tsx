@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useState, type Dispatch, type JSX } from 'react'
+import { Fragment, useEffect, useMemo, useState, type Dispatch, type JSX } from 'react'
 import type {
-  CollisionEntry,
-  DecodedLevelLayout,
+  CollisionTableResult,
+  DecodedObjectInfluence,
   LevelData,
   LevelObject,
   LevelSprite,
@@ -11,7 +11,14 @@ import type {
 import { getLevel } from '../data/levels'
 import { getObjectInfo, getSprite, getSpriteNeighborDeps } from '../data/obj-metadata'
 import { neighborSummary } from '../data/sprite-neighbor-text'
-import { summarizeObjectCollision } from '../data/collision-info'
+import { parityVariantRows } from '../data/sprite-parity-variants'
+import { behaviorRows } from '../data/sprite-behavior-extents'
+import { capStatus } from '../data/sprite-level-caps'
+import {
+  getCollisionTableData,
+  summarizeObjectCollision,
+  type CollisionChip
+} from '../data/collision-info'
 import {
   encodeObjectRecord,
   objectSizeMode
@@ -30,18 +37,11 @@ import type { IncomingExit, Selection } from '../types'
 import { hex } from '../lib/hex'
 
 
-// Module-level cache for the cart's collision table — it doesn't change
-// across levels (it's per-cart) and is only ~5 KB, so fetching once on
-// first selection and reusing forever is the right tradeoff vs touching
-// the IPC on every Properties render.
-let collisionTableCache: CollisionEntry[] | null = null
-let collisionTableFetching: Promise<CollisionEntry[]> | null = null
-function getCollisionTable(): Promise<CollisionEntry[]> {
-  if (collisionTableCache) return Promise.resolve(collisionTableCache)
-  if (collisionTableFetching) return collisionTableFetching
-  collisionTableFetching = window.shinyEgg.render.collisionTable()
-    .then((t) => { collisionTableCache = t; return t })
-  return collisionTableFetching
+/** Chip CSS classes: the fill class picks the overlay-matching color family;
+ *  a behavioural outline group adds the dashed border in its overlay color. */
+function chipClassName(chip: CollisionChip): string {
+  const cls = `se-props__chip se-props__chip--${chip.fill}`
+  return chip.outline ? `${cls} se-props__chip--o-${chip.outline}` : cls
 }
 
 export interface PropertiesBodyProps {
@@ -51,9 +51,12 @@ export interface PropertiesBodyProps {
   /** Current level — resolves uid-based object/sprite/exit selections to the
    *  live entity, so a moved/edited entity shows its current values. */
   level: LevelData | null
-  /** Level the canvas is currently showing. Used to fetch the decoded
-   *  layout so per-object collision lookups can read actual cell IDs. */
+  /** Level the canvas is currently showing — context for sprite providers. */
   currentLevelRecordId: number | null
+  /** Provenance decode for the selected object (one shared fetch, owned by
+   *  App — also drives the Tiles "Used" view) — the object's exact stamped
+   *  cells. Feeds the Collision block. Null while loading / not an object. */
+  selectedObjectInfluence: DecodedObjectInfluence | null
   /** The user's world-map level pick (anchors sub-level discovery). Its translevel
    *  is the play context's `CurrentLevelFromMap` — needed by sprite providers like
    *  the message box, whose behaviour keys off the translevel, not the sub-room. */
@@ -73,6 +76,7 @@ export function PropertiesBody({
   level,
   currentLevelRecordId,
   rootLevelRecordId,
+  selectedObjectInfluence,
   dispatchLevel,
   worldMapSpawn,
   onSpawnCommit
@@ -94,7 +98,7 @@ export function PropertiesBody({
         <ObjectProps
           obj={obj}
           count={level?.objects.length ?? 1}
-          currentLevelRecordId={currentLevelRecordId}
+          influence={selectedObjectInfluence}
           dispatchLevel={dispatchLevel}
         />
       ) : (
@@ -112,6 +116,7 @@ export function PropertiesBody({
         <SpriteProps
           spr={spr}
           count={level?.sprites.length ?? 1}
+          allSprites={level?.sprites ?? []}
           dispatchLevel={dispatchLevel}
           levelRecordId={currentLevelRecordId}
           translevelId={translevelId}
@@ -248,13 +253,14 @@ function PropertyFields<E>({
 function ObjectProps({
   obj,
   count,
-  currentLevelRecordId,
+  influence,
   dispatchLevel
 }: {
   obj: LevelObject
   /** Total objects in the level — the stream-index upper bound. */
   count: number
-  currentLevelRecordId: number | null
+  /** Provenance decode for this object (shared fetch, owned by App). */
+  influence: DecodedObjectInfluence | null
   dispatchLevel: Dispatch<LevelAction>
 }): JSX.Element {
   const isExtended = obj.num === 0 && obj.exnum !== undefined
@@ -266,25 +272,21 @@ function ObjectProps({
   const sizeMode = objectSizeMode(obj.num, obj.exnum, propTable)
   const rawBytes = encodeObjectRecord(obj, sizeMode)
 
-  // Fetch + summarise the object's collision footprint (cart per-page table +
-  // this level's on-disk decoded Map16 buffer). Reads the on-disk decode, so it
-  // lags a live geometry edit until reselect — acceptable for a debug readout.
-  const [collisionDisplay, setCollisionDisplay] = useState<string | null>(null)
+  // Collision block: join the object's provenance cells (exact stamps, live —
+  // the influence decode runs with `override: level`) against the cart's
+  // collision table + pipe-entry bits (static, shared cached fetch).
+  const [collisionData, setCollisionData] = useState<CollisionTableResult | null>(null)
   useEffect(() => {
-    if (currentLevelRecordId === null) { setCollisionDisplay(null); return }
     let cancelled = false
-    void Promise.all([
-      getCollisionTable(),
-      window.shinyEgg.render.decodeLevelLayout({ levelRecordId: currentLevelRecordId }) as Promise<DecodedLevelLayout | null>
-    ]).then(([table, layout]) => {
-      if (cancelled) return
-      const summary = summarizeObjectCollision(obj, layout, table)
-      setCollisionDisplay(summary ? summary.display : null)
-    }).catch(() => {
-      if (!cancelled) setCollisionDisplay(null)
-    })
+    void getCollisionTableData()
+      .then((d) => { if (!cancelled) setCollisionData(d) })
+      .catch(() => { if (!cancelled) setCollisionData(null) })
     return () => { cancelled = true }
-  }, [obj.index, currentLevelRecordId])
+  }, [])
+  const collision = useMemo(
+    () => summarizeObjectCollision(influence, collisionData),
+    [influence, collisionData]
+  )
 
   return (
     <dl className="se-props__list">
@@ -314,7 +316,44 @@ function ObjectProps({
         onPatch={(p) => dispatchLevel({ type: 'setObjectFields', uid: obj.uid!, patch: p })}
       />
       <dt>Collision</dt>
-      <dd className="se-props__desc">{collisionDisplay ?? '…'}</dd>
+      <dd className="se-props__collision">
+        {collision === null ? (
+          '…'
+        ) : collision.cellsStamped === 0 && collision.cellsBuried === 0 ? (
+          <span className="se-props__collision-none">
+            Stamps no tiles — command / marker object.
+          </span>
+        ) : (
+          <>
+            <div className="se-props__collision-chips">
+              {collision.chips.map((chip) => (
+                <span key={chip.key} className={chipClassName(chip)} title={chip.tooltip}>
+                  {chip.label} <span className="se-props__chip-count">×{chip.count}</span>
+                </span>
+              ))}
+            </div>
+            {collision.cellsBuried > 0 && (
+              <div className="se-props__collision-note">
+                {collision.cellsBuried} {collision.cellsBuried === 1 ? 'cell' : 'cells'} overdrawn
+                by later objects
+              </div>
+            )}
+            <details className="se-props__collision-detail">
+              <summary>
+                {collision.perPage.length} {collision.perPage.length === 1 ? 'page' : 'pages'} ·{' '}
+                {collision.cellsStamped} {collision.cellsStamped === 1 ? 'cell' : 'cells'}
+              </summary>
+              <ul>
+                {collision.perPage.map((p) => (
+                  <li key={p.key} title={p.tooltip}>
+                    <code>0x{hex(p.page)}</code> ×{p.count} — {p.description}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </>
+        )}
+      </dd>
       <dt>Index</dt>
       <dd>
         {/* Editing the index moves the object to that absolute stream position
@@ -418,6 +457,7 @@ function SpawnProps({
 function SpriteProps({
   spr,
   count,
+  allSprites,
   dispatchLevel,
   levelRecordId,
   translevelId
@@ -425,6 +465,8 @@ function SpriteProps({
   spr: LevelSprite
   /** Total sprites in the level — the stream-index upper bound. */
   count: number
+  /** The level's full sprite list — feeds the engine instance-cap counter. */
+  allSprites: LevelSprite[]
   dispatchLevel: Dispatch<LevelAction>
   /** Loaded level + play-context translevel — fed to per-sprite-type providers. */
   levelRecordId: number | null
@@ -478,7 +520,7 @@ function SpriteProps({
               <div
                 key={i}
                 className="se-props__count-row"
-                title={d.cls === 'F' ? `${d.designerRule} — ${d.failureMode}` : `${d.designerRule} — if absent: ${d.failureMode}`}
+                title={d.cls === 'tile-behavior' ? `${d.designerRule} — ${d.failureMode}` : `${d.designerRule} — if absent: ${d.failureMode}`}
               >
                 <span className="se-props__count-label">{neighborSummary(d)}</span>
                 <span className="se-props__count">{d.enforce ? 'required' : 'info'}</span>
@@ -496,6 +538,7 @@ function SpriteProps({
         num={spr.num}
         x={spr.x}
         y={spr.y}
+        allSprites={allSprites}
         levelRecordId={levelRecordId}
         translevelId={translevelId}
       />
@@ -515,6 +558,7 @@ function SpriteSpecificProps({
   num,
   x,
   y,
+  allSprites,
   levelRecordId,
   translevelId
 }: {
@@ -523,9 +567,14 @@ function SpriteSpecificProps({
   num: number
   x: number
   y: number
+  /** Full sprite list — the instance-cap counter's denominator. */
+  allSprites: LevelSprite[]
   levelRecordId: number | null
   translevelId: number | null
 }): JSX.Element | null {
+  const variantRows = parityVariantRows(num, x, y)
+  const extentRows = behaviorRows(num, x, y)
+  const cap = capStatus(num, allSprites)
   const [props, setProps] = useState<SpriteProperty[]>([])
   useEffect(() => {
     let cancelled = false
@@ -543,7 +592,7 @@ function SpriteSpecificProps({
     }
   }, [num, x, y, levelRecordId, translevelId])
 
-  if (!spin && props.length === 0) return null
+  if (!spin && variantRows.length === 0 && extentRows.length === 0 && !cap && props.length === 0) return null
   return (
     <>
       <dt className="se-props__section">Sprite-specific</dt>
@@ -554,6 +603,48 @@ function SpriteSpecificProps({
               on-outline badge. To flip it, nudge the sprite one column. */}
           <dt title="Auto-rotation direction, derived from the sprite's X-cell parity — nudge it one column to flip. Visual CW/CCW is a best-effort guess.">Spin</dt>
           <dd>{spin === 'cw' ? 'Clockwise' : 'Counterclockwise'}</dd>
+        </>
+      )}
+      {/* Read-only placement-parity variants (data/sprite-parity-variants.ts):
+          behaviour picked by the spawn cell's X/Y parity — direction phases,
+          spawn payloads, generator modes… Tracks the X/Y fields above. */}
+      {variantRows.map((r, i) => (
+        <Fragment key={`pv${i}`}>
+          <dt title={r.hint}>{r.label}</dt>
+          <dd title={r.hint}>{r.value}</dd>
+        </Fragment>
+      ))}
+      {/* Read-only behavior geometry (data/sprite-behavior-extents.ts): trigger
+          zones, patrol extents, orbits, runtime-snap anchors — the textual twin
+          of the canvas's selection overlay. */}
+      {extentRows.map((r, i) => (
+        <Fragment key={`bx${i}`}>
+          <dt title={r.hint}>{r.label}</dt>
+          <dd title={r.hint}>{r.value}</dd>
+        </Fragment>
+      ))}
+      {/* Engine instance limit (data/sprite-level-caps.ts). 'placement' caps
+          (non-resetting counters) are warning-grade when exceeded; 'alive'
+          guards (cleared on despawn) are info-only — extra placements are a
+          normal pattern (left/right spawn-point pairs, sequential machines). */}
+      {cap && cap.cap.kind === 'placement' && (
+        <>
+          <dt title={cap.cap.cite}>Instance cap</dt>
+          <dd
+            className={cap.exceeded ? 'se-props__cap--exceeded' : undefined}
+            title={cap.cap.cite}
+          >
+            {cap.count}/{cap.cap.max} placed{cap.exceeded ? ' — extras may not spawn' : ''}
+          </dd>
+        </>
+      )}
+      {cap && cap.cap.kind === 'alive' && (
+        <>
+          <dt title={[cap.cap.note, cap.cap.cite].filter(Boolean).join('\n\n')}>Active limit</dt>
+          <dd title={[cap.cap.note, cap.cap.cite].filter(Boolean).join('\n\n')}>
+            {cap.cap.max === 1 ? '1 at a time' : `${cap.cap.max} at a time`} · {cap.count} placed
+            {cap.count > cap.cap.max ? ' — extras take turns spawning' : ''}
+          </dd>
         </>
       )}
       {props.map((p, i) => (

@@ -20,7 +20,7 @@
 ;# with the 24 regular-sprite slots at $70:0F00.. Each slot is 4 bytes per field; the ID stored
 ;# in $70:1320..135F is the value defined here.
 ;#
-;# Functional groupings within the ambient range (corrected from runtime
+;# Functional groupings within the ambient range (corrected 2026-05-26 from runtime
 ;# spawn-site tracing -- earlier positional-inference labels conflated adjacent IDs into
 ;# fictitious "generator start/end" pairs; in reality most of the $1E0..$22E range is
 ;# made up of shared particle/VFX slots that many unrelated sprite families spawn through
