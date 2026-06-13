@@ -27,7 +27,9 @@ import {
   levelHex,
   newSlotRows,
   patchPoolGeometry,
+  ptrRowExpr,
   repointMigrations,
+  sentinelRowExpr,
   PATCH_POOL_REGION_ID,
 } from './pool-map.ts';
 import { rewriteFreeBytesText, snes6, type BoundaryMove } from './boundary-move.ts';
@@ -65,6 +67,18 @@ export function deleteIncbin(text: string, label: string): string {
     throw new Error(`relocate: incbin block for ${label} not found.`);
   }
   return text.replace(re, '');
+}
+
+/** `deleteIncbin`, but a no-op when the block is absent. Used by removal
+ *  deletions only: a stale `.sym` can track a blob the clean source never
+ *  carried (e.g. a previously de-coupled level's materialised spr), and a
+ *  removal must tolerate that — the next build's `.sym` self-corrects. */
+export function deleteIncbinIfPresent(text: string, label: string): string {
+  try {
+    return deleteIncbin(text, label);
+  } catch {
+    return text;
+  }
 }
 
 /**
@@ -245,6 +259,19 @@ export interface DecouplePlacement {
   placedIn: string;
 }
 
+/** One blob a REMOVED level frees: its incbin is deleted from its (reclaimable)
+ *  home pool and the boundary reclaim hands the bytes back. */
+export interface RemovedBlob {
+  level: number;
+  kind: 'obj' | 'spr';
+  file: string;
+  label: string;
+  /** Current size (the bytes the pool reclaims). */
+  bytes: number;
+  bankFile: string;
+  poolId: string;
+}
+
 export interface LayoutViolation {
   kind: 'region-full' | 'pool-over';
   /** Region/pool id, or blob label for a region-full. */
@@ -270,14 +297,23 @@ export interface LayoutPlan {
   relocations: PlacedRelocation[];
   decouples: DecouplePlacement[];
   moves: BoundaryMove[];
-  /** Per-bank, per-region edit instructions the apply pass replays. */
-  deletions: { bankFile: string; label: string }[];
+  /** Per-bank, per-region edit instructions the apply pass replays. `optional`
+   *  deletions (removal-originated) tolerate an absent block — see
+   *  `deleteIncbinIfPresent`. */
+  deletions: { bankFile: string; label: string; optional?: boolean }[];
   homeInserts: HomeInsert[];
   regionAppends: RegionAppend[];
   repoints: { oldExpr: string; newLabel: string }[];
   /** Occurrence-targeted `Ptrs:` row repoints (the new-slot sentinel rows —
    *  their text is identical across rows, so `repoints` can't address them). */
   rowRepoints: { rowExpr: string; occurrence: number; replacement: string }[];
+  /** Removed levels' blob frees (incbin deletions in reclaimable pools). */
+  removals: RemovedBlob[];
+  /** Removed levels' whole-row `Ptrs:` repoints onto the sentinel pair. Applied
+   *  AFTER `rowRepoints` — each removal INTRODUCES a new occurrence of the
+   *  sentinel row text, so it must not run before the occurrence-counted
+   *  new-slot repoints. */
+  removalRepoints: { oldExpr: string; replacement: string }[];
   violations: LayoutViolation[];
 }
 
@@ -290,6 +326,11 @@ export interface LayoutOptions {
    *  placed in free regions and their sentinel `Ptrs:` row is repointed. A slot
    *  whose obj blob has no bytes on disk is skipped (nothing to boot). */
   newSlots?: ReadonlySet<number>;
+  /** Level record ids REMOVED from the game: each row is repointed at the
+   *  1-byte sentinels (the `$DA`/`$DB` pattern) and its exclusively-owned blobs
+   *  are deleted from reclaimable pools (boundary reclaim frees the bytes).
+   *  Removed ids win over `migrated`/`decoupled`/`newSlots` membership. */
+  removed?: ReadonlySet<number>;
   /** Current size of a blob `.bin` (overlay-if-saved, base otherwise). */
   sizeOf: (file: string) => number;
   /** Bytes to reserve at FreeRegion51's tail for the asm-patch pool (0 = none).
@@ -309,7 +350,19 @@ function pushTo<K, V>(m: Map<K, V[]>, k: K, v: V): void {
  * region order) so the same input always yields the same plan → no build churn.
  */
 export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
-  const migratedHex = new Set([...opts.migrated].map(levelHex));
+  // Removal wins over the other per-level states: a removed level is neither
+  // migrated nor de-coupled nor a live new slot (the app layer clears those
+  // flags on removal; this filter keeps the plan correct if state drifts).
+  // New-slot rows ($DA/$DB) get no removal WORK of their own — they already ARE
+  // the sentinels — but a removed slot id still suppresses its placement.
+  const slotRecordIds = new Set(newSlotRows(map.romVersion).map((r) => r.recordId));
+  const removedReq = new Set(opts.removed ?? []);
+  const removedIds = new Set([...removedReq].filter((id) => !slotRecordIds.has(id)));
+  const migrated = new Set([...opts.migrated].filter((id) => !removedReq.has(id)));
+  const decoupled = new Set([...opts.decoupled].filter((id) => !removedReq.has(id)));
+  const newSlotsSet = new Set([...(opts.newSlots ?? [])].filter((id) => !removedReq.has(id)));
+
+  const migratedHex = new Set([...migrated].map(levelHex));
   const regions = map.freeRegions;
   const regionFree = new Map(regions.map((r) => [r.id, r.capacityBytes]));
   const regionInserts = new Map<string, BlobInsert[]>();
@@ -317,7 +370,7 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
 
   const relocations: PlacedRelocation[] = [];
   const decouples: DecouplePlacement[] = [];
-  const deletions: { bankFile: string; label: string }[] = [];
+  const deletions: { bankFile: string; label: string; optional?: boolean }[] = [];
   const repoints: { oldExpr: string; newLabel: string }[] = [];
   const rowRepoints: { rowExpr: string; occurrence: number; replacement: string }[] = [];
   const violations: LayoutViolation[] = [];
@@ -341,7 +394,7 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
   //    materialise a self-contained copy in a region + repoint the row, leaving
   //    the (possibly shared) original bytes in place.
   const repointTable = repointMigrations(map.romVersion);
-  for (const level of [...opts.migrated].sort((a, b) => a - b)) {
+  for (const level of [...migrated].sort((a, b) => a - b)) {
     const hex = levelHex(level);
     for (const kind of ['obj', 'spr'] as const) {
       const file = `DATA_level_${hex}_${kind}.bin`;
@@ -376,7 +429,7 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
   //      1-byte sentinels stay (other rows/engine paths still reference them).
   //      Skipped when the obj blob has no bytes on disk (nothing imported yet).
   const slotRows = newSlotRows(map.romVersion);
-  for (const recordId of [...(opts.newSlots ?? [])].sort((a, b) => a - b)) {
+  for (const recordId of [...newSlotsSet].sort((a, b) => a - b)) {
     const row = slotRows.find((r) => r.recordId === recordId);
     if (!row) continue; // not a known sentinel slot → ignore (defensive)
     const objBlob: BlobInsert = {
@@ -414,20 +467,73 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
     });
   }
 
-  // 2. Per movable/reclaimable pool, the signed growth over POST-migration
-  //    membership (negative = a reclaim from a migrated-out blob).
+  // 1.75. Removal: a removed level's `Ptrs:` row is repointed at the 1-byte
+  //       sentinels (the `$DA`/`$DB` pattern) and its exclusively-owned blobs
+  //       are deleted from reclaimable pools — the boundary reclaim in step 2/4
+  //       hands the bytes back to the pool. Bytes that deliberately SURVIVE a
+  //       removal (the row repoint alone already takes the level out of play):
+  //         • blobs in a non-reclaimable pool (the Bank51 home pool);
+  //         • raw/shared pointer slices with no tracked blob (0x7D's truncated
+  //           DATA_169D23, 0xBF/0xD0's shared DATA_11DC0F);
+  //         • a partner's spr blob whose tail terminator a KEPT biased level
+  //           still borrows ($51/$C4 while $19/$CB is neither removed nor
+  //           de-coupled);
+  //         • blobs a kept raw-slice stream spills into (0x7D's true stream
+  //           reads through DATA_level_A5_obj + DATA_level_17_spr).
+  const removals: RemovedBlob[] = [];
+  const removalRepoints: { oldExpr: string; replacement: string }[] = [];
+  const freedFiles = new Set<string>();
+  const sentinel = sentinelRowExpr(map.romVersion);
+  const biasedRows = biasedPointers(map.romVersion);
+  for (const level of [...removedIds].sort((a, b) => a - b)) {
+    if (!sentinel) break; // no sentinel rows on this version → removal unsupported
+    const hex = levelHex(level);
+    for (const kind of ['obj', 'spr'] as const) {
+      const file = `DATA_level_${hex}_${kind}.bin`;
+      const pool = map.poolByFile.get(file);
+      if (!pool || !pool.tail.reclaimable) continue;
+      if (kind === 'spr') {
+        const borrower = biasedRows.find((b) => b.partner === hex);
+        if (borrower) {
+          const borrowerId = parseInt(borrower.level, 16);
+          if (!removedIds.has(borrowerId) && !decoupled.has(borrowerId)) continue;
+        }
+      }
+      const absorbedBy = repointTable.find((r) => r.overlapFiles.includes(file));
+      if (absorbedBy) {
+        const depId = parseInt(absorbedBy.level, 16);
+        if (!removedIds.has(depId) && !migrated.has(depId)) continue;
+      }
+      const label = `DATA_level_${hex}_${kind}`;
+      deletions.push({ bankFile: pool.tail.bankFile, label, optional: true });
+      freedFiles.add(file);
+      removals.push({
+        level,
+        kind,
+        file,
+        label,
+        bytes: opts.sizeOf(file),
+        bankFile: pool.tail.bankFile,
+        poolId: pool.id,
+      });
+    }
+    removalRepoints.push({ oldExpr: ptrRowExpr(map.romVersion, hex), replacement: sentinel });
+  }
+
+  // 2. Per movable/reclaimable pool, the signed growth over POST-migration,
+  //    POST-removal membership (negative = a reclaim from a deleted blob).
   const poolGrowth = new Map<string, number>();
   for (const pool of map.pools) {
     if (!pool.tail.movable && !pool.tail.reclaimable) continue;
     const used = pool.blobs
-      .filter((b) => !migratedHex.has(b.level))
+      .filter((b) => !migratedHex.has(b.level) && !freedFiles.has(b.file))
       .reduce((n, b) => n + opts.sizeOf(b.file), 0);
     poolGrowth.set(pool.id, used - pool.capacityBytes);
   }
 
   // 3. De-couple: materialise each biased level's own spr blob, home-first.
   const biased = biasedPointers(map.romVersion);
-  for (const level of [...opts.decoupled].sort((a, b) => a - b)) {
+  for (const level of [...decoupled].sort((a, b) => a - b)) {
     const hex = levelHex(level);
     const b = biased.find((x) => x.level === hex);
     if (!b) continue; // not a known biased level → ignore (defensive)
@@ -486,7 +592,7 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
     if (blobs?.length) regionAppends.push({ region, blobs });
   }
 
-  return { relocations, decouples, moves, deletions, homeInserts, regionAppends, repoints, rowRepoints, violations };
+  return { relocations, decouples, moves, deletions, homeInserts, regionAppends, repoints, rowRepoints, removals, removalRepoints, violations };
 }
 
 // ── apply ─────────────────────────────────────────────────────────────────--
@@ -538,7 +644,8 @@ export function applyLevelDataLayout(
       text = reservePatchPool(text, hostRegion, poolBytes);
     }
     for (const d of plan.deletions) {
-      if (d.bankFile === bankFile) text = deleteIncbin(text, d.label);
+      if (d.bankFile !== bankFile) continue;
+      text = d.optional ? deleteIncbinIfPresent(text, d.label) : deleteIncbin(text, d.label);
     }
     for (const hi of plan.homeInserts) {
       if (hi.bankFile === bankFile) text = insertBeforeFreeBytes(text, hi.boundary, hi.fillSize, hi.blobs);
@@ -556,6 +663,12 @@ export function applyLevelDataLayout(
       // against the ORIGINAL text, so apply descending to keep indices stable).
       for (const rr of [...plan.rowRepoints].sort((a, b) => b.occurrence - a.occurrence)) {
         text = repointPtrRowOccurrence(text, rr.rowExpr, rr.occurrence, rr.replacement);
+      }
+      // Removal row repoints LAST: each one writes a NEW occurrence of the
+      // sentinel row text, which would corrupt the occurrence counting above
+      // if it ran earlier. The removed rows' own expressions are unique.
+      for (const rp of plan.removalRepoints) {
+        text = repointPtr(text, rp.oldExpr, rp.replacement);
       }
     }
 

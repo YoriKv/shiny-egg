@@ -109,6 +109,12 @@ export interface ProjectSummary {
    *  given real data by a ROM import: their overlay blobs place into free
    *  regions and their `Ptrs:` row repoints at build. Empty/absent = none. */
   newSlots?: string[]
+  /** Hex record ids of vanilla levels REMOVED from the game: at build their
+   *  `Ptrs:` row repoints at the 1-byte sentinels and their owned blobs are
+   *  deleted (pool boundary reclaim frees the bytes); their world-map slots
+   *  were taken off the entrance tables when the removal was made.
+   *  Empty/absent = none. */
+  removedLevels?: string[]
 }
 
 /** The active project's free-space migration + de-couple state (both lists, so
@@ -537,6 +543,75 @@ export type ResetLevelResult =
  *  rewritten (auto-saved) → the built ROM is stale and needs a rebuild. */
 export type SetExitDestResult = { ok: true } | { ok: false; error: string }
 
+// ── Vanilla-level removal (src/main/level-removal.ts) ───────────────────────
+
+/** A requested record a removal refused, with the human-readable why. */
+export interface RemovalBlocked {
+  recordId: number
+  reason: string
+}
+
+/** Dry-run impact of removing a set of records — drives the confirm dialog. */
+export interface RemovalPreview {
+  ok: true
+  /** Records that will actually be removed (validated subset of the request). */
+  recordIds: number[]
+  blocked: RemovalBlocked[]
+  /** World-map slots that will be marked unused (main + midway index words). */
+  translevels: number[]
+  /** Kept entrance records whose unlock will be redirected at their own slot. */
+  unlockRewires: number
+  /** Bytes the build's pool reclaim frees (0 when no pool map yet). */
+  freedBytes: number
+  /** Owned bytes that stay resident (shared slices / non-reclaimable pools). */
+  residualBytes: number
+  /** Warp/minibattle exits in KEPT levels pointing into a removed record —
+   *  they'd land on the empty sentinel, so the dialog warns about them. */
+  incomingWarps: { sourceRecordId: number; destRecordId: number; screenIndex: number }[]
+}
+export type RemovalPreviewResult = RemovalPreview | { ok: false; error: string }
+
+export type RemoveLevelsResult =
+  | { ok: true; removed: number[]; blocked: RemovalBlocked[]; worldMapChanged: boolean }
+  | { ok: false; error: string }
+
+/** The "remove all vanilla" candidate set + why the rest are kept. */
+export interface RemovableVanillaLevels {
+  recordIds: number[]
+  /** Kept: have overlay changes (edited / imported), incl. new-slot rooms. */
+  keptEdited: number[]
+  /** Kept: engine-referenced outside the map/warp flow. */
+  keptProtected: number[]
+  /** Kept: warp-reachable from an edited or protected level. */
+  keptWarpReachable: number[]
+}
+
+/** One removed level, for the "Restore levels" modal list. */
+export interface RemovedLevelEntry {
+  recordId: number
+  /** Friendly name (best-effort, from the baked catalog; absent for sub-rooms). */
+  name?: string
+}
+
+export type RestoreLevelsResult =
+  | { ok: true; restored: number[]; worldMapChanged: boolean }
+  | { ok: false; error: string }
+
+/** A pointer slot that can host a freshly created level: a REMOVED vanilla
+ *  record (its row + base map wiring come back around the new data). The free
+ *  sentinel rows (`0xDA`/`0xDB`) are deliberately NOT offered — only existing
+ *  level slots are creatable, keeping the slot list to rooms the game already
+ *  shipped (the sentinel machinery itself stays: ROM import uses it). */
+export interface CreatableSlot {
+  recordId: number
+  /** The slot's former level name (best-effort; absent for sub-rooms). */
+  name?: string
+}
+
+export type CreateLevelResult =
+  | { ok: true; recordId: number; worldMapChanged: boolean }
+  | { ok: false; error: string }
+
 // ── Per-sprite-type computed properties ──────────────────────────────────────
 // Read-only, explanatory fields shown in the Properties panel for sprites with
 // special behaviour — derived from the sprite + level context, not stored. A
@@ -682,6 +757,13 @@ export interface RomImportLevel extends ForeignLevelDiff {
   /** True when the active project ALREADY has an overlay for this level —
    *  importing overwrites the user's edits (the "warnings" the UI surfaces). */
   hasOverlayConflict: boolean
+  /** Set when this level's block is RESOLVABLE by a layout toggle: `migrate`
+   *  (0x7D — free-space migration gives it a self-contained obj copy) or
+   *  `decouple` (0x19/0xCB — materialise their own sprite blob). The dialog's
+   *  "unblock imports" option makes such levels selectable and the apply pass
+   *  flips the toggle before writing. Absent for genuinely-blocked records
+   *  (0x38, 0xBF/0xD0, clobbered slots). */
+  unblockAction?: 'migrate' | 'decouple'
   /** A brand-NEW level: this record has no base level data (a sentinel `Ptrs:`
    *  row — `0xDA`/`0xDB`) and the hack put a real level there. Importing writes
    *  the overlay blobs and the build places them in free space + repoints the
@@ -780,6 +862,10 @@ export interface RomImportSelection {
   messages: boolean
   /** Import the world-map entrance + midway record changes. */
   worldMap: boolean
+  /** Pre-emptively resolve resolvable import blocks for the selected records
+   *  (set 0x7D's free-space migration / de-couple 0x19/0xCB) before writing,
+   *  so their levels import instead of failing the save gate. */
+  unblock?: boolean
 }
 
 /** Result of applying a ROM import to the active project's overlay. */
@@ -797,6 +883,9 @@ export type RomImportApplyResult =
        *  build's layout pass will place them in the free regions). `warning` is
        *  set when pools still don't fit (no eligible candidate / regions full). */
       migration: { applied: number; recordIds: number[]; warning?: string }
+      /** Pre-emptive unblock outcome (when `unblock` was selected): the records
+       *  whose layout toggles were flipped so their import could proceed. */
+      unblocked: { migrated: number[]; decoupled: number[] }
       /** Brand-new levels imported into sentinel slots (`0xDA`/`0xDB`). */
       newSlots: number[]
       /** Palette apply outcome (when selected). */

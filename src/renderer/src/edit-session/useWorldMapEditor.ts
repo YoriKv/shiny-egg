@@ -10,6 +10,7 @@
 import { useCallback } from 'react'
 import type { WorldMapEntrance, WorldMapMidwayEntrance, WorldMapModel } from '../../../preload/api'
 import { useOverlayDocument, type DocHistory } from './useOverlayDocument'
+import { hex0x } from '../lib/hex'
 
 /** Last (highest-index) entrance record whose level-data id matches — mirrors the
  *  extract-time "last write wins" that produced `LevelData.spawn`, so the marker
@@ -39,7 +40,29 @@ function withMidway(
 
 const eq = (a: WorldMapModel, b: WorldMapModel): boolean =>
   JSON.stringify(a.entrances) === JSON.stringify(b.entrances) &&
-  JSON.stringify(a.midway) === JSON.stringify(b.midway)
+  JSON.stringify(a.midway) === JSON.stringify(b.midway) &&
+  JSON.stringify(a.entranceIndexWords) === JSON.stringify(b.entranceIndexWords) &&
+  JSON.stringify(a.midwayIndexWords) === JSON.stringify(b.midwayIndexWords)
+
+/** Re-wire (or unwire) a translevel slot in the index tables, keeping the
+ *  derived translevel→record maps in sync so the panel resolves the slot
+ *  without a reload. Wiring restores the slot's BASE words (the records still
+ *  exist in the fixed tables; only the index words were zeroed). */
+function withSlotWired(m: WorldMapModel, translevelId: number, wired: boolean): WorldMapModel {
+  if (!m.entranceIndexWords || !m.midwayIndexWords) return m
+  const word = wired ? (m.baseEntranceIndexWords?.[translevelId] ?? 0) : 0
+  const midWord = wired ? (m.baseMidwayIndexWords?.[translevelId] ?? 0) : 0
+  const key = hex0x(translevelId, 2)
+  const entranceIndexWords = m.entranceIndexWords.map((w, i) => (i === translevelId ? word : w))
+  const midwayIndexWords = m.midwayIndexWords.map((w, i) => (i === translevelId ? midWord : w))
+  const translevelToRecordIndex = { ...m.translevelToRecordIndex }
+  const midwayIndex = { ...m.midwayIndex }
+  if (word > 0 || translevelId === 0) translevelToRecordIndex[key] = Math.floor(word / 4)
+  else delete translevelToRecordIndex[key]
+  if (midWord > 0 || translevelId === 0) midwayIndex[key] = Math.floor(midWord / 4)
+  else delete midwayIndex[key]
+  return { ...m, entranceIndexWords, midwayIndexWords, translevelToRecordIndex, midwayIndex }
+}
 
 export interface WorldMapEditorApi {
   /** The draft model (null until loaded). The panel + canvas marker read this. */
@@ -69,6 +92,10 @@ export interface WorldMapEditorApi {
   setEntranceField: (index: number, patch: Partial<Omit<WorldMapEntrance, 'index'>>) => void
   /** Commit one discrete field edit on a midway/checkpoint record by index. */
   setMidwayField: (index: number, patch: Partial<Omit<WorldMapMidwayEntrance, 'index'>>) => void
+  /** Re-wire an unwired world-map slot to its BASE entrance/midway records
+   *  (`wired: true`), or mark it unused (`wired: false` zeroes its index
+   *  words). No-op when the model predates the editable index tables. */
+  setSlotWired: (translevelId: number, wired: boolean) => void
 }
 
 /**
@@ -156,6 +183,15 @@ export function useWorldMapEditor(
     [doc]
   )
 
+  const setSlotWired = useCallback(
+    (translevelId: number, wired: boolean) => {
+      const cur = doc.read()
+      if (!cur) return
+      doc.commit(withSlotWired(cur, translevelId, wired))
+    },
+    [doc]
+  )
+
   return {
     model: doc.draft,
     dirty: doc.dirty,
@@ -171,6 +207,7 @@ export function useWorldMapEditor(
     commitSpawnFrom,
     commitSpawn,
     setEntranceField,
-    setMidwayField
+    setMidwayField,
+    setSlotWired
   }
 }

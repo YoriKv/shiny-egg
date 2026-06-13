@@ -157,12 +157,14 @@ DATA_level_A7_obj:
 
 DATA_level_51_spr:
 	incbin "LevelData/DATA_level_51_spr.bin"
-DATA_14C6C6:							; zero-size alias; Ptrs[$19 JungleRhythm] references DATA_14C6C6-$02
-								; (so the actual sprite-stream address is $14C6C4, inside the
-								; preceding incbin -- DATA_level_51_spr.bin -- at offset $EB).
-								; Editor sees DATA_level_19_spr.bin (2 bytes = $FFFF terminator,
-								; meaning the cart's $19 has 0 sprites). Same vestigial-header
-								; pattern as Bank16's DATA_16F097.
+DATA_14C6C6:							; zero-size alias; Ptrs[$19] references DATA_14C6C6-$02. Record
+								; $19 is 3-8 "Naval Piranha's Castle" -- NOT map slot $19
+								; JungleRhythm (slot $19 plays record $13; see LevelIDs.asm
+								; ID-SPACE WARNING). The actual sprite-stream address is $14C6C4,
+								; inside the preceding incbin -- DATA_level_51_spr.bin -- at
+								; offset $EB. Editor sees DATA_level_19_spr.bin (2 bytes = $FFFF
+								; terminator, meaning the cart's record $19 has 0 sprites). Same
+								; vestigial-header pattern as Bank16's DATA_16F097.
 	;dw $FFFF
 
 DATA_level_7F_spr:

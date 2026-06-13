@@ -1760,7 +1760,9 @@ h3 { margin: 0; }
 
 .se-worldmap__slot {
   flex: 0 0 auto;
-  width: 44px;
+  /* Wide enough for the longest slot labels ("1-Extra" / "1-Bonus") on one line. */
+  width: 56px;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-2);
@@ -3489,10 +3491,13 @@ h3 { margin: 0; }
 .se-linkbtn:hover {
   color: var(--accent);
 }
-/* Exit warp↔minibattle kind toggle, inline after the kind chip. */
+/* Exit warp↔minibattle kind toggle — its own full-width row below Kind. */
+.se-props__variant-row {
+  grid-column: 1 / -1;
+}
 .se-props__variant-toggle {
-  margin-left: 8px;
-  padding: 2px 8px;
+  width: 100%;
+  padding: 3px 8px;
   border: 1px solid var(--line-strong);
   background: var(--bg-elevated);
   border-radius: 3px;
@@ -3683,6 +3688,13 @@ h3 { margin: 0; }
 .se-import__cat.is-blocked {
   opacity: 0.55;
   cursor: default;
+}
+.se-import__cat--danger {
+  margin-top: 8px;
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+.se-import__cat--danger .se-import__catname {
+  color: var(--danger);
 }
 .se-import__catname {
   color: var(--ink);
@@ -3928,7 +3940,48 @@ h3 { margin: 0; }
 .se-banks__act:hover:not(:disabled) { border-color: var(--line-strong); color: var(--ink); }
 .se-banks__act:disabled { opacity: 0.4; cursor: default; }
 .se-banks__act.is-on { color: var(--accent); border-color: var(--accent); }
+.se-banks__act--danger { color: var(--danger); }
+.se-banks__act--danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.se-banks__bulk { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.se-banks__show-removed {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: auto;
+  font-size: 10px;
+  color: var(--ink-3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.se-banks__restore-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--ink);
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+.se-banks__restore-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 6px 0 10px;
+}
+.se-banks__restore-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+  cursor: pointer;
+}
+.se-banks__restore-row .se-banks__level-name { color: var(--ink-3); }
 .se-banks__level.is-migrated > .se-banks__jump { opacity: 0.55; }
+.se-banks__level.is-removed > .se-banks__jump { opacity: 0.4; text-decoration: line-through; }
 .se-banks__region {
   display: flex;
   flex-direction: column;

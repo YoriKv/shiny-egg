@@ -518,16 +518,20 @@ read `!RAM_YI_Level_LevelHeaderLevelModeLo` ($7E:0146).
 
 ## 7. Known glitches and special-case levels
 
-- **Level `$38 KameksRevenge`** is engine-hardcoded -- its `Ptrs:` entry
-  points at `DATA_168000,DATA_16855E` but engine code paths override the
-  object stream entirely. Editor tooling should treat this slot as
-  having no decodeable object/sprite stream.
-- **95 of 222 Ptrs: entries reference empty `.bin` files** -- vestigial
-  pointer-table slots from Yoshifanatic's extractor not reaching certain
-  cart addresses. Editors enumerating the table must filter by `.bin`
-  non-empty OR by `!Define_YI_LevelID_*` symbol-set membership.
-- **`JungleRhythm` ($19) and one $CB-range sub-room** have their
-  sprite-data pointers biased by `-2` (`dl DATA_*,DATA_*-$02`). This is a
+- **Record `$38` is the gm38 intro-cutscene level** (played by world-map
+  slot `$0A`). It was long misglossed "KameksRevenge" -- that name is the
+  map-slot (translevel) `$38` = 5-Extra, whose record is `$2C`; the
+  `!Define_YI_LevelID_*` values are map slots, not records. Record `$38`'s
+  streams are real but minimal (66-byte backdrop + empty sprites; the
+  cutscene engine drives the actors); editor tooling skip-parses it
+  (`SPECIAL_LEVELS` in scripts/level.ts).
+- **220 of 222 `Ptrs:` entries are backed by per-level `.bin`s** in the
+  current extract; only the `$DA`/`$DB` sentinel rows are not. (An older
+  note here claimed 95 empty `.bin`s -- that predates the current extract
+  and is obsolete.) Enumerate levels via the level map (`levelMapEntry`),
+  not by walking the pointer table or the `!Define_YI_LevelID_*` set.
+- **Records $19 (3-8 "Naval Piranha's Castle") and $CB (a sub-room)** have
+  their sprite-data pointers biased by `-2` (`dl DATA_*,DATA_*-$02`). This is a
   vestigial header-layout anomaly preserved from the original cart and
   documented in DATATABLE_YI_LevelDataPtrsAndEntranceData.asm. The bare
   anchor labels (`DATA_14C6C6:` in Bank14, `DATA_16F097:` in Bank16) are
@@ -536,7 +540,12 @@ read `!RAM_YI_Level_LevelHeaderLevelModeLo` ($7E:0146).
   (`DATA_14C5D9.bin` at offset $EB for $19; `DATA_16F091.bin` at offset $04
   for $CB). Downstream extractors that look up a `.bin` by name must
   resolve `LABEL-$N` to a cart address and locate the encompassing slice.
-- **Per-line comments in DATATABLE_YI_LevelDataPtrsAndEntranceData.asm:222+
-  are off-by-one relative to `LevelIDs.asm`**. The DATA_* pointer addresses
-  on those lines are still positionally correct; trust LevelIDs.asm for the
-  name<->ID mapping. See LevelIDs.asm header comment.
+- **Two id spaces, historically conflated in this tree's comments.**
+  `!Define_YI_LevelID_*` values are world-map SLOTS (translevels,
+  `CurrentLevelFromMap`); `Ptrs:` rows are level-data RECORDS. They agree
+  numerically only for 1-1..1-7 and diverge from slot $07 on (1-8's tile
+  plays record $9B). The per-row glosses in the DATATABLE Ptrs block and
+  the per-define glosses in LevelIDs.asm are now derived from the cart
+  entrance tables (editor-data/yi/level-map.json) and state both ids
+  explicitly; older revisions glossed records with slot names. See the
+  LevelIDs.asm header ID-SPACE WARNING ("two ID spaces — never conflate").

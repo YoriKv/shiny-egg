@@ -1174,9 +1174,12 @@ PPU write happens in every NMI handler that includes the line:
 - **The 16-bit RNG can be observed from any bank.** `random_number_gen`
   is JSL-able and accumulates entropy from the H-counter; the output at
   `!EXRAM_YI_Global_RNGOutputLo` is the 16-bit "low" word.
-- **The 95 empty `LevelData/DATA_*.bin` files are by-design** -- they were
-  marked unextractable in the asset extractor's source-range table
-  (`AsarScripts/AssetPointersAndFiles.asm` zeros their source ranges).
-  The bytes those addresses contain in the reference cart decode as 65816
-  code, not level data; no normal gameplay path navigates to them. Don't
-  try to "fix" them by re-running extraction.
+- **220 of the 222 `LevelData/DATA_level_*_obj.bin`/`_spr.bin` records are
+  backed by `.bin`s in the current extract** -- only the `$DA`/`$DB` sentinel
+  rows are not (their pointers sit at 1-byte garbage sentinels, not a real
+  level). An older note here claimed 95 empty by-design files -- that
+  described the original address-range extractor
+  (`AsarScripts/AssetPointersAndFiles.asm` zeroed those source ranges) and is
+  obsolete; the per-level extractor (`scripts/extract.ts`'s pointer-table
+  walker) reaches every real `Ptrs:` row directly. Enumerate levels via the
+  level map (`levelMapEntry`), not by walking the pointer table.

@@ -81,6 +81,7 @@ import {
   getProjectDecoupled,
   getProjectNewSlots,
   getProjectRelocations,
+  getProjectRemovedLevels,
   setLevelNewSlot,
   setLevelRelocation
 } from './projects'
@@ -537,13 +538,20 @@ export function activeBoundaryMoves(): BoundaryMove[] {
   return computeBoundaryMoves(pm.map, diskSizeOf(getCurrentProjectId()))
 }
 
-/** The active project's free-space migration + de-couple + new-slot context. */
-function activeLayoutCtx(): { migrated: Set<number>; decoupled: Set<number>; newSlots: Set<number> } {
+/** The active project's free-space migration + de-couple + new-slot + removal
+ *  context. */
+function activeLayoutCtx(): {
+  migrated: Set<number>
+  decoupled: Set<number>
+  newSlots: Set<number>
+  removed: Set<number>
+} {
   const id = getCurrentProjectId()
   return {
     migrated: new Set(getProjectRelocations(id)),
     decoupled: new Set(getProjectDecoupled(id)),
-    newSlots: new Set(getProjectNewSlots(id))
+    newSlots: new Set(getProjectNewSlots(id)),
+    removed: new Set(getProjectRemovedLevels(id))
   }
 }
 
@@ -560,6 +568,29 @@ export function activeDecoupled(): number[] {
 /** Active new-slot levels (record ids) — for the buildProject trigger. */
 export function activeNewSlots(): number[] {
   return getProjectNewSlots(getCurrentProjectId())
+}
+
+/** Active REMOVED levels (record ids) — for the buildProject trigger. */
+export function activeRemovedLevels(): number[] {
+  return getProjectRemovedLevels(getCurrentProjectId())
+}
+
+/** The carved pool map + disk-size lens + layout context the removal module's
+ *  impact preview plans with — the SAME inputs every budget view and the build
+ *  layout pass use, so the preview's freed-byte figures match the build. Null
+ *  when there's no pool map yet (unbuilt cart). */
+export function activeLayoutPlanInputs(): {
+  map: NonNullable<ReturnType<typeof poolMapFor>>
+  sizeOf: (file: string) => number
+  ctx: ReturnType<typeof activeLayoutCtx>
+} | null {
+  const pm = activePoolMap()
+  if (!pm) return null
+  return {
+    map: carvePatchPool(pm.map, activePatchPoolBytes()),
+    sizeOf: diskSizeOf(getCurrentProjectId()),
+    ctx: activeLayoutCtx()
+  }
 }
 
 /** Flag an imported NEW-SLOT level (`0xDA`/`0xDB`) on the active project so the
@@ -632,10 +663,27 @@ export async function loadResource(resource: EditableResource): Promise<unknown>
 
 const WORLD_MAP_FILE = path.join('yi', 'Routines', 'DATATABLE_YI_LevelDataPtrsAndEntranceData.asm')
 
-/** Load the world-map entrance table (overlay-first) into its structured model. */
+/** Load the world-map entrance table (overlay-first) into its structured model.
+ *  The pristine BASE index words ride along (`baseEntranceIndexWords` /
+ *  `baseMidwayIndexWords`) so the world-map editor can re-wire an unwired slot
+ *  (e.g. after a level removal zeroed it) back to its base records. */
 export function loadWorldMapResource(): WorldMapModel {
-  const { contentText } = readOverlayFirst(WORLD_MAP_FILE)
-  return parseEntranceTable(contentText, loadLevelIdSymbols(frameworkWorkRoot()))
+  const { contentText, baseText } = readOverlayFirst(WORLD_MAP_FILE)
+  const symbols = loadLevelIdSymbols(frameworkWorkRoot())
+  const model = parseEntranceTable(contentText, symbols)
+  const base = contentText === baseText ? model : parseEntranceTable(baseText, symbols)
+  return {
+    ...model,
+    ...(base.entranceIndexWords ? { baseEntranceIndexWords: [...base.entranceIndexWords] } : {}),
+    ...(base.midwayIndexWords ? { baseMidwayIndexWords: [...base.midwayIndexWords] } : {})
+  }
+}
+
+/** Load the PRISTINE BASE world-map model (ignoring any project overlay) — the
+ *  reference the level-restore path re-wires slots back to. */
+export function loadWorldMapBaseResource(): WorldMapModel {
+  const { baseText } = readOverlayFirst(WORLD_MAP_FILE)
+  return parseEntranceTable(baseText, loadLevelIdSymbols(frameworkWorkRoot()))
 }
 
 /** Splice the edited entrance model into the active project's overlay copy of the

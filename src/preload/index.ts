@@ -41,7 +41,14 @@ import type {
   ProjectSummary,
   RenameProjectArgs,
   RenderGfxFilesArgs,
+  CreatableSlot,
+  CreateLevelResult,
   RelocationState,
+  RemovableVanillaLevels,
+  RemovalPreviewResult,
+  RemovedLevelEntry,
+  RemoveLevelsResult,
+  RestoreLevelsResult,
   RenderImage,
   RenderMap16Args,
   RenderVramArgs,
@@ -59,7 +66,7 @@ import type { GfxFilesResult } from 'snes-framework/render-gfx-files'
 
 import type { BuildResult } from 'snes-framework/build'
 import type { ExtractResult } from 'snes-framework/extract'
-import type { ExtractionState } from 'snes-framework/state'
+import type { ExtractFreshness, ExtractionState } from 'snes-framework/state'
 import type {
   EditableResource,
   GfxFileEntry,
@@ -83,6 +90,11 @@ const api = {
 
   getExtractionState: (): Promise<ExtractionState | null> =>
     ipcRenderer.invoke('framework:state'),
+
+  /** Out-of-date-extract check (stale levels.json etc.) — see
+   *  snes-framework/state checkExtractFreshness. */
+  getExtractFreshness: (): Promise<ExtractFreshness> =>
+    ipcRenderer.invoke('framework:extractFreshness'),
 
   extract: (args: FrameworkExtractArgs): Promise<ExtractResult> =>
     ipcRenderer.invoke('framework:extract', args),
@@ -148,8 +160,9 @@ const api = {
       ipcRenderer.invoke('render:paletteBuildStale', draft),
     /** Run the object decoder on a level and return the stamped Map16
      *  buffer plus per-screen page mapping. Null for empty / special-case
-     *  level slots (e.g. Kamek's Revenge). Pass `override` to decode an
-     *  edited `LevelData` instead of the on-disk `.bin`. */
+     *  records (e.g. 0x38, the engine-driven intro-cutscene level). Pass
+     *  `override` to decode an edited `LevelData` instead of the on-disk
+     *  `.bin`. */
     decodeLevelLayout: (
       req: LevelRenderRequest
     ): Promise<DecodedLevelLayout | null> =>
@@ -311,6 +324,18 @@ const api = {
       ipcRenderer.invoke('editor:setLevelDecoupled', levelRecordId, decoupled),
     resetLevel: (levelRecordId: number): Promise<ResetLevelResult> =>
       ipcRenderer.invoke('editor:resetLevel', levelRecordId),
+    removeLevelsPreview: (recordIds: number[]): Promise<RemovalPreviewResult> =>
+      ipcRenderer.invoke('editor:removeLevelsPreview', recordIds),
+    removeLevels: (recordIds: number[]): Promise<RemoveLevelsResult> =>
+      ipcRenderer.invoke('editor:removeLevels', recordIds),
+    removableVanillaLevels: (): Promise<RemovableVanillaLevels | { error: string }> =>
+      ipcRenderer.invoke('editor:removableVanillaLevels'),
+    removedLevels: (): Promise<RemovedLevelEntry[]> => ipcRenderer.invoke('editor:removedLevels'),
+    restoreLevels: (recordIds: number[]): Promise<RestoreLevelsResult> =>
+      ipcRenderer.invoke('editor:restoreLevels', recordIds),
+    creatableSlots: (): Promise<CreatableSlot[]> => ipcRenderer.invoke('editor:creatableSlots'),
+    createLevel: (recordId: number): Promise<CreateLevelResult> =>
+      ipcRenderer.invoke('editor:createLevel', recordId),
     setExitDest: (
       sourceLevelRecordId: number,
       screenIndex: number,

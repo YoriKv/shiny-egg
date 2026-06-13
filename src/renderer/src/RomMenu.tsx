@@ -11,6 +11,7 @@ import {
 import { useDropdown } from './hooks/useDropdown'
 import type {
   CartIdentification,
+  ExtractFreshness,
   ExtractionState,
   RomVersion
 } from '../../preload/api'
@@ -46,6 +47,9 @@ function formatTimestamp(iso: string): string {
 export interface RomMenuProps {
   state: ExtractionState | null
   setState: (s: ExtractionState | null) => void
+  /** Out-of-date-extract verdict (App refreshes it with `state`). When stale,
+   *  the Status section prompts a re-extract. */
+  freshness: ExtractFreshness | null
   refreshState: () => Promise<void>
   log: string[]
   setLog: Dispatch<SetStateAction<string[]>>
@@ -64,6 +68,7 @@ export interface RomMenuProps {
 
 export function RomMenu({
   state,
+  freshness,
   refreshState,
   log,
   setLog,
@@ -229,6 +234,11 @@ export function RomMenu({
             ) : (
               <p className="se-pop__empty">
                 No reference cart has been extracted yet.
+              </p>
+            )}
+            {state && freshness?.status === 'stale' && (
+              <p className="se-detect is-bad" title={freshness.reasons.join('\n')}>
+                Extracted data is out of date — re-extract the reference cart.
               </p>
             )}
           </section>

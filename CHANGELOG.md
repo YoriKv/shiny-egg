@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.7 - 2026-06-12
+
+- Vanilla levels can now be removed from the game with a preview of the impact before confirming (freed space, world-map slots, warps that would be stranded). Removed levels can be restored later, and new blank levels can be created in freed or unused slots.
+- ROM import can optionally remove all remaining vanilla levels after the import, for hacks that fully replace the original game.
+- Minibattle exits offer a named list of minigame variants instead of a raw value.
+- The editor now detects when previously extracted data is out of date after an update and prompts a re-extract.
+- Fix: Fixed some world map and level id mapping issues.
+
 ## v0.3.6 - 2026-06-12
 
 - ROM import upgrades: hacks that add brand-new levels now import into unused slots, relocated levels that no longer fit their original banks are migrated to free space automatically, world-map slot remaps carry over, and the report includes a full inventory of everything the hack changed.

@@ -5787,7 +5787,7 @@ CODE_01AE71:
 
 ;-------------------------------------------------------------------------
 ; Boo Guy on Pulley Init.
-; Sets $7400 (facing) from bit 4 of X ($70E2 & $0010 — the X-cell parity;
+; Sets $7400 (facing) from bit 4 of X ($70E2 & $0010 -- the X-cell parity;
 ; no position snap happens here, despite the parity read), OAM $7040 =
 ; $1885 (pulley sprite palette/tile).
 ; INPUTS:   X = slot; $70E2,x = X-position.

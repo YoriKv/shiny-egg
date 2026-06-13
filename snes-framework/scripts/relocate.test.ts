@@ -159,10 +159,10 @@ const check = (cond: boolean, msg: string): void => {
 }
 
 {
-  const dt = '\tdl DATA_level_19_obj,DATA_14C6C6-$02    ; $19 JungleRhythm\n';
+  const dt = '\tdl DATA_level_19_obj,DATA_14C6C6-$02    ; $19 3-8 Naval Piranha\'s Castle\n';
   const out = repointPtr(dt, 'DATA_14C6C6-$02', 'DATA_level_19_spr');
   check(out.includes('dl DATA_level_19_obj,DATA_level_19_spr'), `repointPtr should swap the biased expr, got: ${out.trim()}`);
-  check(out.includes('; $19 JungleRhythm'), 'repointPtr should preserve the comment');
+  check(out.includes('; $19 3-8 Naval Piranha\'s Castle'), 'repointPtr should preserve the comment');
 }
 
 {
@@ -334,12 +334,120 @@ check(!usedMig.otherLevels.includes('0x01'), 'migrated 0x01 should leave the rep
   check(planZ.relocations.length === 0 && planZ.rowRepoints.length === 0, 'a new slot with no overlay bytes is skipped');
 }
 
+// ── vanilla-level removal planning ───────────────────────────────────────────
+const SENTINEL = 'DATA_15FCEA,DATA_15FFD5';
+{
+  // Clean Bank4C level: both blobs delete (optional), the pool reclaims, the
+  // row repoints to the sentinels, and nothing relocates.
+  const plan = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0x01]), sizeOf: baseSizeOf });
+  check(plan.removals.length === 2 && plan.removals.every((r) => r.poolId === 'Bank4C'), `remove 0x01 frees both Bank4C blobs, got ${JSON.stringify(plan.removals)}`);
+  check(plan.deletions.length === 2 && plan.deletions.every((d) => d.optional === true && d.bankFile === 'Banks/Bank4C.asm'), 'removal deletions are optional + in Bank4C');
+  check(plan.relocations.length === 0 && plan.regionAppends.length === 0, 'removal places nothing in free regions');
+  check(
+    plan.removalRepoints.length === 1 &&
+      plan.removalRepoints[0].oldExpr === 'DATA_level_01_obj,DATA_level_01_spr' &&
+      plan.removalRepoints[0].replacement === SENTINEL,
+    `remove 0x01 repoints its row at the sentinels, got ${JSON.stringify(plan.removalRepoints)}`
+  );
+  const mv = plan.moves.find((m) => m.poolId === 'Bank4C');
+  check(!!mv && mv.growth === -(obj01 + spr01), `remove 0x01 reclaims ${obj01 + spr01} B from Bank4C (got ${mv?.growth})`);
+  check(plan.violations.length === 0, 'removal alone can never violate a budget');
+}
+
+{
+  // Borrowed-terminator guard: removing 0x51 while 0x19 is kept+coupled must
+  // keep 0x51's spr blob (0x19's biased pointer reads its tail terminator).
+  const spr51 = baseSizeOf('DATA_level_51_spr.bin');
+  const planKept = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0x51]), sizeOf: baseSizeOf });
+  check(!planKept.deletions.some((d) => d.label === 'DATA_level_51_spr'), 'remove 0x51 (0x19 coupled) must keep DATA_level_51_spr');
+  check(planKept.deletions.some((d) => d.label === 'DATA_level_51_obj'), 'remove 0x51 still frees its obj blob');
+  // …but once 0x19 is removed too (or de-coupled), the spr blob frees as well.
+  const planBoth = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0x19, 0x51]), sizeOf: baseSizeOf });
+  check(planBoth.deletions.some((d) => d.label === 'DATA_level_51_spr'), 'remove 0x19+0x51 frees the spr blob too');
+  check(
+    planBoth.removalRepoints.some((r) => r.oldExpr === 'DATA_level_19_obj,DATA_14C6C6-$02' && r.replacement === SENTINEL),
+    '0x19 removal repoints its BIASED row expression'
+  );
+  const planDec = planLayout(map, { migrated: new Set(), decoupled: new Set([0x19]), removed: new Set([0x51]), sizeOf: baseSizeOf });
+  check(planDec.deletions.some((d) => d.label === 'DATA_level_51_spr'), 'remove 0x51 with 0x19 de-coupled frees the spr blob');
+  check(spr51 > 0, 'sanity: 0x51 spr blob exists');
+}
+
+{
+  // Absorbed-overlap guard: 0x7D's true obj stream spills into DATA_level_A5_obj
+  // + DATA_level_17_spr, so removing 0xA5 (or 0x17) while 0x7D is kept must keep
+  // those bytes in place.
+  const planA5 = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0xa5]), sizeOf: baseSizeOf });
+  check(!planA5.deletions.some((d) => d.label === 'DATA_level_A5_obj'), 'remove 0xA5 (0x7D kept) must keep DATA_level_A5_obj');
+  check(planA5.deletions.some((d) => d.label === 'DATA_level_A5_spr'), 'remove 0xA5 still frees its spr blob');
+  const planBoth = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0x7d, 0xa5]), sizeOf: baseSizeOf });
+  check(planBoth.deletions.some((d) => d.label === 'DATA_level_A5_obj'), 'remove 0x7D+0xA5 frees the absorbed obj blob');
+  check(
+    planBoth.removalRepoints.some((r) => r.oldExpr === 'DATA_169D23,DATA_level_7D_spr' && r.replacement === SENTINEL),
+    '0x7D removal repoints its RAW-label row expression'
+  );
+  check(!planBoth.deletions.some((d) => d.label === 'DATA_169D23'), '0x7D removal never deletes the shared raw slice');
+  const planMig = planLayout(map, { migrated: new Set([0x7d]), decoupled: new Set(), removed: new Set([0xa5]), sizeOf: baseSizeOf });
+  check(planMig.deletions.some((d) => d.label === 'DATA_level_A5_obj'), 'remove 0xA5 with 0x7D migrated frees the absorbed obj blob');
+
+  // The same dependency now gates MIGRATION too (regression: migrating 0xA5/0x17
+  // under a kept 0x7D would corrupt its runtime stream).
+  check(!migratable(map, 0xa5, none), '0xA5 must NOT be migratable while 0x7D points at its raw slice');
+  check(!migratable(map, 0x17, none), '0x17 must NOT be migratable while 0x7D points at its raw slice');
+  check(migratable(map, 0xa5, none, new Set([0x7d])), '0xA5 becomes migratable once 0x7D is migrated/removed');
+}
+
+{
+  // Shared-obj rows (0xBF/0xD0, both at DATA_11DC0F): only the spr blob frees;
+  // a Bank51-pool level (non-reclaimable home) frees nothing but still repoints.
+  const planBF = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0xbf]), sizeOf: baseSizeOf });
+  check(planBF.deletions.length === 1 && planBF.deletions[0].label === 'DATA_level_BF_spr', `remove 0xBF frees only its spr blob, got ${JSON.stringify(planBF.deletions)}`);
+  check(planBF.removalRepoints[0]?.oldExpr === 'DATA_11DC0F,DATA_level_BF_spr', '0xBF removal targets its shared-obj row expression');
+  const plan51 = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0x32]), sizeOf: baseSizeOf });
+  check(plan51.deletions.length === 0 && plan51.removals.length === 0, 'a Bank51-pool level frees nothing (non-reclaimable home)');
+  check(plan51.removalRepoints.length === 1 && plan51.removalRepoints[0].oldExpr === 'DATA_level_32_obj,DATA_level_32_spr', 'its row still repoints');
+}
+
+{
+  // Removal wins over the other per-level states, and sentinel slots are ignored.
+  const plan = planLayout(map, {
+    migrated: new Set([0x01]), decoupled: new Set([0x19]),
+    newSlots: new Set([0xda]), removed: new Set([0x01, 0x19, 0xda]),
+    sizeOf: (f: string): number => (f.startsWith('DATA_level_DA_') ? 100 : baseSizeOf(f))
+  });
+  check(plan.relocations.length === 0, 'a removed level is not also migrated/placed');
+  check(plan.decouples.length === 0 && plan.repoints.length === 0, 'a removed level is not also de-coupled');
+  check(plan.rowRepoints.length === 0, 'a removed sentinel slot id is ignored (no new-slot placement)');
+  check(plan.removalRepoints.length === 2, 'only the two real levels are removed');
+}
+
+{
+  // Budget views under removal: 0x01 leaves the Bank4C list, its bytes free up,
+  // and the removedOut entry reports them; a partner-protected removal (0x51,
+  // 0x19 coupled) leaves a `removed: true` residual row with the kept spr bytes.
+  const ov = computePoolOverview(map, baseSizeOf, { removed: new Set([0x01]) });
+  const p4c = ov.find((p) => p.poolId === 'Bank4C')!;
+  check(!p4c.levels.some((l) => l.levelRecordId === '0x01'), 'removed 0x01 leaves the Bank4C level list');
+  check(p4c.freeBytes === 329 + obj01 + spr01, `Bank4C free rises by the removed bytes (got ${p4c.freeBytes})`);
+  check(
+    p4c.removedOut?.some((r) => r.levelRecordId === '0x01' && r.bytes === obj01 + spr01) ?? false,
+    `Bank4C removedOut should report 0x01's ${obj01 + spr01} freed bytes`
+  );
+  const spr51 = baseSizeOf('DATA_level_51_spr.bin');
+  const ov51 = computePoolOverview(map, baseSizeOf, { removed: new Set([0x51]) });
+  const p14 = ov51.find((p) => p.poolId === 'Bank14')!;
+  const row51 = p14.levels.find((l) => l.levelRecordId === '0x51');
+  check(!!row51 && row51.removed === true && row51.bytes === spr51, `removed 0x51 keeps a residual row with its kept spr bytes (got ${JSON.stringify(row51)})`);
+  check(checkAllPools(map, baseSizeOf, { removed: new Set([0x01, 0x51]) }).length === 0, 'removal context never violates the gate');
+}
+
 // Empty sets ⇒ no edits at all (byte-identity invariant).
 const planE = planLayout(map, { migrated: new Set(), decoupled: new Set(), sizeOf: baseSizeOf });
 check(
   planE.moves.length === 0 && planE.deletions.length === 0 && planE.regionAppends.length === 0 &&
-    planE.homeInserts.length === 0 && planE.repoints.length === 0 && planE.violations.length === 0,
-  'empty migration+decouple ⇒ zero edits'
+    planE.homeInserts.length === 0 && planE.repoints.length === 0 && planE.violations.length === 0 &&
+    planE.removals.length === 0 && planE.removalRepoints.length === 0,
+  'empty migration+decouple+removal ⇒ zero edits'
 );
 
 // applyLevelDataLayout integration — write a temp tree and check the real banks.
@@ -411,6 +519,37 @@ try {
     fs.readFileSync(path.join(tmp, 'Routines/DATATABLE_YI_LevelDataPtrsAndEntranceData.asm'), 'utf8') ===
       fs.readFileSync(path.join(yiRoot, 'Routines/DATATABLE_YI_LevelDataPtrsAndEntranceData.asm'), 'utf8'),
     'empty re-apply should restore the DATATABLE to base'
+  );
+
+  // (g) removal apply: remove 0x01 WHILE importing new-slot 0xDA — the $01 row
+  //     goes sentinel, the bank drops its incbins + reclaims, and the new-slot
+  //     occurrence targeting is unaffected by the freshly-added sentinel text
+  //     (removal repoints run last).
+  const newSizeOf2 = (f: string): number =>
+    f === 'DATA_level_DA_obj.bin' ? 500 : f === 'DATA_level_DA_spr.bin' ? 80 : baseSizeOf(f);
+  applyLevelDataLayout(yiRoot, null, tmp, map, {
+    migrated: new Set(), decoupled: new Set(), newSlots: new Set([0xda]), removed: new Set([0x01]), sizeOf: newSizeOf2
+  });
+  const dtR = fs.readFileSync(path.join(tmp, 'Routines/DATATABLE_YI_LevelDataPtrsAndEntranceData.asm'), 'utf8');
+  const row01 = dtR.split('\n').find((l) => l.includes('; $01 '));
+  const rowDA = dtR.split('\n').find((l) => l.includes('; $DA'));
+  const rowDB = dtR.split('\n').find((l) => l.includes('; $DB'));
+  check(!!row01 && row01.includes('dl DATA_15FCEA,DATA_15FFD5') && row01.includes('Watch Out Below'), `removed $01 row should point at the sentinels with its comment intact (got: ${row01})`);
+  check(!!rowDA && rowDA.includes('DATA_level_DA_obj,DATA_level_DA_spr'), `the $DA new-slot row still repoints correctly (got: ${rowDA})`);
+  check(!!rowDB && rowDB.includes('DATA_15FCEA,DATA_15FFD5'), `the $DB row keeps its sentinel (got: ${rowDB})`);
+  const b4cR = fs.readFileSync(path.join(tmp, 'Banks/Bank4C.asm'), 'utf8');
+  check(!b4cR.includes('DATA_level_01_obj:') && !b4cR.includes('DATA_level_01_spr:'), 'removed Bank4C should drop both 0x01 incbins');
+  const remB = (0x4cfeb7 - (obj01 + spr01)).toString(16).toUpperCase().padStart(6, '0');
+  check(b4cR.includes(`%FREE_BYTES($${remB}, ${329 + obj01 + spr01}, $FF)`), 'removed Bank4C boundary should pull back by the freed bytes');
+
+  // (h) empty re-apply clears the removal (idempotent reconcile-from-base).
+  applyLevelDataLayout(yiRoot, null, tmp, map, { migrated: new Set(), decoupled: new Set(), sizeOf: baseSizeOf });
+  check(
+    fs.readFileSync(path.join(tmp, 'Routines/DATATABLE_YI_LevelDataPtrsAndEntranceData.asm'), 'utf8') ===
+      fs.readFileSync(path.join(yiRoot, 'Routines/DATATABLE_YI_LevelDataPtrsAndEntranceData.asm'), 'utf8') &&
+      fs.readFileSync(path.join(tmp, 'Banks/Bank4C.asm'), 'utf8') ===
+        fs.readFileSync(path.join(yiRoot, 'Banks/Bank4C.asm'), 'utf8'),
+    'empty re-apply should clear the removal from the DATATABLE + Bank4C'
   );
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

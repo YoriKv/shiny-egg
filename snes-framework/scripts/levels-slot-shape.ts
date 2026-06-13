@@ -17,8 +17,9 @@ export interface SlotShape {
 }
 
 export const SLOT_SHAPE: Record<number, SlotShape> = {
-  // Special
-  128: { world: 'Special', slot: 'Intro', nameOverride: 'Prologue' },
+  // (No "Special / Prologue" entry: the storybook prologue is a pure GFX/code
+  // scene (gm05/07) with no level record OR translevel — the old `128` row
+  // here was lore.)
 
   // World 1
   0x00: { world: 'World 1', slot: '1-1' },
@@ -31,9 +32,19 @@ export const SLOT_SHAPE: Record<number, SlotShape> = {
   0x07: { world: 'World 1', slot: '1-8' },
   0x08: { world: 'World 1', slot: 'Extra' },
   0x09: { world: 'World 1', slot: 'Bonus', nameOverride: 'Flip Cards' },
+  // Intro — the two engine-booted slots, grouped at the top of the dropdown.
+  // Both sit numerically in World 1's 12-slot block (positions 10/11):
+  //   $0A — the gm38 intro-cutscene slot; its record ($38, a 13-object
+  //         backdrop the cutscene actors play over) decodes + edits like any
+  //         level (one engine-unread header padding bit normalizes on save).
+  //         No cart name string — override.
+  //   $0B — plays record $39, Welcome To Yoshi's Island: the PRE-1-1 intro,
+  //         the engine's hardcoded boot slot (Bank04). Historically grouped
+  //         under World 2 (LevelIDs.asm define-block lore).
+  0x0a: { world: 'Intro', slot: 'Cutscene', nameOverride: 'Intro Cutscene' },
+  0x0B: { world: 'Intro', slot: 'Welcome' },
 
   // World 2
-  0x0B: { world: 'World 2', slot: 'Intro' },
   0x0C: { world: 'World 2', slot: '2-1' },
   0x0D: { world: 'World 2', slot: '2-2' },
   0x0E: { world: 'World 2', slot: '2-3' },
@@ -96,7 +107,7 @@ export const SLOT_SHAPE: Record<number, SlotShape> = {
 
 /** Ordered list of group labels in the order the dropdown displays them. */
 export const WORLD_ORDER: readonly string[] = [
-  'Special',
+  'Intro',
   'World 1',
   'World 2',
   'World 3',

@@ -275,6 +275,145 @@ function spliceMidway(
   return { ok: true, text: spliceRegion(fileText, WORLD_MAP_MIDWAY_ENTRANCES_ID, applyEdits(region.inner, edits)) }
 }
 
+/** What `removeTranslevelsFromWorldMap` changed (for logging / the confirm UI). */
+export interface WorldMapRemoval {
+  /** Translevels whose main+midway index words were zeroed (slot now unused). */
+  clearedTranslevels: number[]
+  /** Unlock rewires: entrance records whose progression target pointed at a
+   *  removed translevel, redirected back at the completing level's own slot. */
+  rewires: { recordIndex: number; from: number; to: number }[]
+}
+
+/**
+ * Take a set of translevels off the world map, in place on `model`:
+ *
+ *   • zero their words in BOTH index tables (`$0000` = the documented
+ *     "unused tile" marker; the midway table's `$0000` = "no midway");
+ *   • rewire unlocks: every entrance record (of a KEPT translevel) whose
+ *     progression target (+3, the tile-slot the Yoshi token advances to after
+ *     a clear) names a removed translevel is redirected at the completing
+ *     level's OWN translevel — a self-unlock no-op, per the deliberate
+ *     "ignore the unlock chain" removal policy. The removed slots' own records
+ *     keep their bytes (they're unreferenced once the index words are zero).
+ *
+ * Caveat: translevel 0's index word is legitimately `$0000` (offset 0), so for
+ * it the marker is indistinguishable from "first record" — removing 1-1 leaves
+ * the engine reading record 0 if its tile is somehow entered.
+ *
+ * Throws when the model carries no raw index words (an overlay predating the
+ * editable index-table markers — upgrade the overlay first).
+ */
+export function removeTranslevelsFromWorldMap(
+  model: WorldMapModel,
+  removedTranslevels: ReadonlySet<number>
+): WorldMapRemoval {
+  if (!model.entranceIndexWords || !model.midwayIndexWords) {
+    throw new Error(
+      'World-map overlay predates the editable index tables — upgrade the overlay (Project menu) and retry.'
+    )
+  }
+  const cleared: number[] = []
+  for (const t of [...removedTranslevels].sort((a, b) => a - b)) {
+    let touched = false
+    if (t >= 0 && t < model.entranceIndexWords.length && model.entranceIndexWords[t] !== 0) {
+      model.entranceIndexWords[t] = 0
+      touched = true
+    }
+    if (t >= 0 && t < model.midwayIndexWords.length && model.midwayIndexWords[t] !== 0) {
+      model.midwayIndexWords[t] = 0
+      touched = true
+    }
+    if (touched) cleared.push(t)
+  }
+  const rewires: { recordIndex: number; from: number; to: number }[] = []
+  for (const [hexKey, recordIndex] of Object.entries(model.translevelToRecordIndex)) {
+    const translevel = parseInt(hexKey, 16)
+    if (removedTranslevels.has(translevel)) continue
+    const e = model.entrances[recordIndex]
+    if (!e || !removedTranslevels.has(e.progTarget)) continue
+    rewires.push({ recordIndex: e.index, from: e.progTarget, to: translevel })
+    e.progTarget = translevel
+  }
+  return { clearedTranslevels: cleared, rewires }
+}
+
+/** What `restoreTranslevelsToWorldMap` changed (mirror of WorldMapRemoval). */
+export interface WorldMapRestore {
+  /** Translevels whose index words were restored to their base values. */
+  restoredTranslevels: number[]
+  /** Unlock un-rewires: entrance records whose progression target was put back
+   *  at its base value (a restored translevel). */
+  rewires: { recordIndex: number; from: number; to: number }[]
+}
+
+/**
+ * Put removed translevels back on the world map — the inverse of
+ * `removeTranslevelsFromWorldMap`, in place on `model`:
+ *
+ *   • restore their words in BOTH index tables to `baseModel`'s values;
+ *   • un-rewire unlocks: a kept entrance record whose progression target reads
+ *     the SELF-REDIRECT a removal wrote (its own translevel) and whose BASE
+ *     target is one of the restored translevels goes back to that base target.
+ *     The narrow condition is deliberate — an unlock the user re-pointed
+ *     somewhere else was never touched by the removal, so the restore must not
+ *     stomp it either.
+ *
+ * Restores BASE wiring: a slot remap made before the removal is not recovered
+ * (the removal zeroed it, and zero carries no memory of what it pointed at).
+ *
+ * Throws when either model carries no raw index words (an overlay predating
+ * the editable index-table markers — upgrade the overlay first).
+ */
+export function restoreTranslevelsToWorldMap(
+  model: WorldMapModel,
+  baseModel: WorldMapModel,
+  restoredTranslevels: ReadonlySet<number>
+): WorldMapRestore {
+  if (
+    !model.entranceIndexWords ||
+    !model.midwayIndexWords ||
+    !baseModel.entranceIndexWords ||
+    !baseModel.midwayIndexWords
+  ) {
+    throw new Error(
+      'World-map overlay predates the editable index tables — upgrade the overlay (Project menu) and retry.'
+    )
+  }
+  const restored: number[] = []
+  for (const t of [...restoredTranslevels].sort((a, b) => a - b)) {
+    let touched = false
+    if (t >= 0 && t < model.entranceIndexWords.length && t < baseModel.entranceIndexWords.length) {
+      if (model.entranceIndexWords[t] !== baseModel.entranceIndexWords[t]) {
+        model.entranceIndexWords[t] = baseModel.entranceIndexWords[t]
+        touched = true
+      }
+    }
+    if (t >= 0 && t < model.midwayIndexWords.length && t < baseModel.midwayIndexWords.length) {
+      if (model.midwayIndexWords[t] !== baseModel.midwayIndexWords[t]) {
+        model.midwayIndexWords[t] = baseModel.midwayIndexWords[t]
+        touched = true
+      }
+    }
+    if (touched) restored.push(t)
+  }
+  const rewires: { recordIndex: number; from: number; to: number }[] = []
+  for (const [hexKey, recordIndex] of Object.entries(model.translevelToRecordIndex)) {
+    const own = parseInt(hexKey, 16)
+    const e = model.entrances[recordIndex]
+    const baseE = baseModel.entrances[recordIndex]
+    if (!e || !baseE) continue
+    if (
+      restoredTranslevels.has(baseE.progTarget) &&
+      e.progTarget === own &&
+      e.progTarget !== baseE.progTarget
+    ) {
+      rewires.push({ recordIndex: e.index, from: e.progTarget, to: baseE.progTarget })
+      e.progTarget = baseE.progTarget
+    }
+  }
+  return { restoredTranslevels: restored, rewires }
+}
+
 /**
  * Splice the model's edited records (main + midway) back onto `fileText`
  * (overlay-first, so a sibling region's edits in the same file survive). Only

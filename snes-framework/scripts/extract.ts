@@ -18,7 +18,7 @@ import { findOrphanRecords, invalidateLevelMapCache } from './level.ts';
 import { writeInstanceIndex } from './instance-index.ts';
 import { ROM_VERSIONS, type RomVersion } from './rom-versions.ts';
 import { stripCopierHeader } from './rom-header.ts';
-import { clearExtractionState, writeExtractionState } from './state.ts';
+import { clearExtractionState, EXTRACT_PIPELINE_VERSION, writeExtractionState } from './state.ts';
 import { hex, hex0x, hexDollar } from './hex.ts';
 import { u24le } from './engine/rom-read.ts';
 import type { ExtractResult } from './types.ts';
@@ -312,10 +312,10 @@ function buildLevelMap(
 
   // Per-level bin extraction. For each of the 222 pointer-table entries, read
   // the resolved SNES address from the cart, walk the stream to find its byte
-  // extent, and emit a self-contained `DATA_level_NN_obj/spr.bin`. The JungleRhythm
-  // ($19) and $CB-range sprite-pointer-biased-by-2 cases need no special
-  // handling — the cart's pointer-table bytes already encode the bias, so we
-  // just read those bytes and start the stream walk there.
+  // extent, and emit a self-contained `DATA_level_NN_obj/spr.bin`. The
+  // sprite-pointer-biased-by-2 records ($19 — 3-8's castle — and $CB) need no
+  // special handling — the cart's pointer-table bytes already encode the bias,
+  // so we just read those bytes and start the stream walk there.
   const levelDataDir = path.join(opts.workRoot, 'assets', 'yi', 'LevelData');
   const POINTER_COUNT = ROM_TABLES.levelCount;
   const levels: Record<string, LevelMapEntry> = {};
@@ -597,6 +597,7 @@ export function extractAssets(opts: ExtractOptions): ExtractResult {
     sourceCartMd5: cartMd5,
     extractedFiles: extracted,
     emptyFiles: empty,
+    pipelineVersion: EXTRACT_PIPELINE_VERSION,
   });
   onProgress?.(
     `Extracted ${extracted} files (${empty} deliberately empty); ` +

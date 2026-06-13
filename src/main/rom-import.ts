@@ -45,7 +45,7 @@ import type {
 } from '../shared/ipc-types'
 import { frameworkWorkRoot, overlayRoot, referenceCartPath } from './framework-paths'
 import { stripCopierHeader } from 'snes-framework/rom-header'
-import { getCurrentProjectId } from './projects'
+import { getCurrentProjectId, setLevelDecoupled, setLevelRelocation } from './projects'
 import { loadBaseSym } from './patches'
 import {
   autoMigrateImportedLevels,
@@ -572,13 +572,21 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     // The 5 aliased/oversized records can't be written per-level (the build still
     // reads a shared/old label file). The framework analyzer can't know that, so
     // override to blocked here — otherwise the user could select one and have it
-    // fail at apply with no warning.
+    // fail at apply with no warning. Three of them are RESOLVABLE by a layout
+    // toggle (`unblockAction`): the dialog's "unblock imports" option makes them
+    // selectable and applyRomImport flips the toggle before writing.
     const exceptional = exceptionalSaveBlockReason(l.recordId)
-    const classified: RomImportLevel =
-      exceptional && l.importability !== 'blocked'
-        ? { ...l, importability: 'blocked', blockedReason: exceptional, hasOverlayConflict }
-        : { ...l, hasOverlayConflict }
-    return classified
+    if (exceptional && l.importability !== 'blocked') {
+      const unblockAction = UNBLOCK_ACTIONS.get(l.recordId)
+      return {
+        ...l,
+        importability: 'blocked',
+        blockedReason: exceptional,
+        hasOverlayConflict,
+        ...(unblockAction ? { unblockAction } : {})
+      }
+    }
+    return { ...l, hasOverlayConflict }
   })
 
   const counts = {
@@ -606,6 +614,16 @@ export function analyzeRom(foreignPath: string): RomImportReport {
   }
 }
 
+/** The resolvable exceptional-block records and the layout toggle that lifts
+ *  each block (see resources.ts `exceptionalSaveBlockReason`): 0x7D needs a
+ *  free-space migration (self-contained obj copy), 0x19/0xCB need a de-couple
+ *  (own sprite blob). 0xBF/0xD0 have no resolution (shared obj data). */
+const UNBLOCK_ACTIONS = new Map<number, 'migrate' | 'decouple'>([
+  [0x7d, 'migrate'],
+  [0x19, 'decouple'],
+  [0xcb, 'decouple']
+])
+
 /** Merge imported palette edits over the project's existing edits (imported wins
  *  per colour offset) — savePaletteEdits rewrites the FULL set from base. */
 function mergePaletteEdits(existing: PaletteEdit[], imported: PaletteEdit[]): PaletteEdit[] {
@@ -628,6 +646,33 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
   const failed: Array<{ recordId: number; error: string }> = []
   const applied: number[] = []
   const { relocatedIds, newSlotIds } = cached
+
+  // Pre-emptive unblock (when selected): flip the layout toggles that lift the
+  // resolvable save blocks BEFORE the per-level writes — saveLevelResource's
+  // gate checks the LIVE migrate/de-couple state, so this is what lets 0x7D /
+  // 0x19 / 0xCB import. A record whose block is already resolved is skipped.
+  const unblocked = { migrated: [] as number[], decoupled: [] as number[] }
+  if (sel.unblock) {
+    const projectId = getCurrentProjectId()!
+    for (const recordId of sel.recordIds) {
+      const action = UNBLOCK_ACTIONS.get(recordId)
+      if (!action || exceptionalSaveBlockReason(recordId) === null) continue
+      try {
+        if (action === 'migrate') {
+          setLevelRelocation(projectId, recordId, true)
+          unblocked.migrated.push(recordId)
+        } else {
+          setLevelDecoupled(projectId, recordId, true)
+          unblocked.decoupled.push(recordId)
+        }
+      } catch (err) {
+        failed.push({
+          recordId,
+          error: `Couldn't unblock (${action}): ${(err as Error).message}`
+        })
+      }
+    }
+  }
 
   for (const recordId of sel.recordIds) {
     const item = cached.items.get(recordId)
@@ -746,6 +791,7 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
     rawOnly,
     failed,
     migration,
+    unblocked,
     newSlots: applied.filter((id) => newSlotIds.has(id)),
     palette,
     names,

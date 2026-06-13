@@ -34,6 +34,7 @@ import {
   activeNewSlots,
   activePatchPoolGeometry,
   activeRelocations,
+  activeRemovedLevels,
   applyActiveLevelDataLayout
 } from './resources'
 import {
@@ -380,7 +381,9 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
   const relocations = activeRelocations()
   const decoupled = activeDecoupled()
   const newSlots = activeNewSlots()
-  const layoutEdits = moves.length + relocations.length + decoupled.length + newSlots.length
+  const removedLevels = activeRemovedLevels()
+  const layoutEdits =
+    moves.length + relocations.length + decoupled.length + newSlots.length + removedLevels.length
   // An enabled patch with an `asm` body must be assembled by asar, which reads
   // asm from cwd — so it forces the build-tree path too.
   const asmPatches = hasEnabledAsmPatches(id)
@@ -391,7 +394,7 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
       layoutEdits > 0
         ? `Materializing build-tree (${moves.length} boundary move(s), ` +
           `${relocations.length} migration(s), ${decoupled.length} de-couple(s), ` +
-          `${newSlots.length} new level(s))…`
+          `${newSlots.length} new level(s), ${removedLevels.length} removed level(s))…`
         : asmPatches && !overlayHasAsm(id)
           ? 'Materializing build-tree (asm patches enabled)…'
           : 'Materializing build-tree (asm overlay present)…'

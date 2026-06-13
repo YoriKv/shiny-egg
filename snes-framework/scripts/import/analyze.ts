@@ -26,8 +26,12 @@ import { readForeignStreams, type ForeignRecordStreams, type ForeignStreams } fr
 import { diffInventory } from './inventory.ts';
 import type { SymbolMap } from '../engine/symbol-map.ts';
 
-/** Record 0x38 ("Kamek's Revenge") is hardcoded in the engine — can't be saved. */
-const SPECIAL_RECORDS = new Set<number>([0x38]);
+/** Engine-driven records pre-blocked from import. EMPTY — record 0x38 (the
+ *  gm38 intro-cutscene level) decodes cleanly and now classifies like any
+ *  other level (its base header carries a garbage PADDING bit the round-trip
+ *  normalizes, so an in-place-edited hack copy may classify raw-only — that's
+ *  the analyzer doing its job, not a block). */
+const SPECIAL_RECORDS = new Set<number>([]);
 
 /** A changed record's decoded foreign level + raw bytes, for the apply step. */
 export interface ForeignImportItem {
@@ -197,7 +201,7 @@ export function analyzeForeignRom(
     let foreignLevel: LevelData | null = null;
     if (SPECIAL_RECORDS.has(recordId)) {
       importability = 'blocked';
-      blockedReason = 'Hardcoded special level (0x38) — cannot be imported.';
+      blockedReason = 'Engine-driven intro-cutscene level (record 0x38) — cannot be imported.';
     } else if (foreignEmpty) {
       importability = 'blocked';
       blockedReason = 'Level emptied/removed in source — not imported.';

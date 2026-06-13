@@ -46,6 +46,9 @@ export interface LayoutContext {
   /** New-slot records (`$DA`/`$DB`) with imported data — their blobs claim
    *  free-region capacity, so every budget view must plan them like the build. */
   newSlots?: ReadonlySet<number>;
+  /** Records REMOVED from the game — their owned blobs leave their pools
+   *  (the boundary reclaim frees the bytes), mirroring the build layout. */
+  removed?: ReadonlySet<number>;
 }
 
 const EMPTY: ReadonlySet<number> = new Set();
@@ -54,12 +57,24 @@ function ctxSets(ctx?: LayoutContext): {
   migrated: ReadonlySet<number>;
   decoupled: ReadonlySet<number>;
   newSlots: ReadonlySet<number>;
+  removed: ReadonlySet<number>;
 } {
   return {
     migrated: ctx?.migrated ?? EMPTY,
     decoupled: ctx?.decoupled ?? EMPTY,
-    newSlots: ctx?.newSlots ?? EMPTY
+    newSlots: ctx?.newSlots ?? EMPTY,
+    removed: ctx?.removed ?? EMPTY
   };
+}
+
+/** Union of the sets whose `Ptrs:` rows no longer reference a raw slice —
+ *  the `freedRawRows` argument `migratable` wants (0x7D migrated or removed
+ *  releases its hold on DATA_level_A5_obj / DATA_level_17_spr). */
+function freedRawRows(
+  migrated: ReadonlySet<number>,
+  removed: ReadonlySet<number>
+): ReadonlySet<number> {
+  return new Set([...migrated, ...removed]);
 }
 
 // ── Pool-map cache ──────────────────────────────────────────────────────────
@@ -112,15 +127,19 @@ function binSize(file: string): number {
 
 // ── Budget computation ──────────────────────────────────────────────────────
 
-/** Pool total, EXCLUDING any level migrated out to a free region (its home slot
- *  is reclaimed, so it no longer counts) — keeps the per-level banner in step with
- *  `computePoolOverview`. */
+/** Pool total, EXCLUDING any level migrated out to a free region and any blob a
+ *  removal freed (its home slot is reclaimed, so it no longer counts) — keeps
+ *  the per-level banner in step with `computePoolOverview`. */
 function usedBytes(
   pool: LevelPool,
   sizeOf: (file: string) => number,
-  migratedHex: ReadonlySet<string>
+  migratedHex: ReadonlySet<string>,
+  freedFiles: ReadonlySet<string>
 ): number {
-  return pool.blobs.reduce((n, b) => (migratedHex.has(b.level) ? n : n + sizeOf(b.file)), 0);
+  return pool.blobs.reduce(
+    (n, b) => (migratedHex.has(b.level) || freedFiles.has(b.file) ? n : n + sizeOf(b.file)),
+    0
+  );
 }
 
 function makeEntry(
@@ -128,13 +147,15 @@ function makeEntry(
   sizeOf: (file: string) => number,
   levelRecordId: number,
   migratedHex: ReadonlySet<string>,
+  removedHex: ReadonlySet<string>,
+  freedFiles: ReadonlySet<string>,
   /** Bytes of any de-coupled spr blob materialised home in this pool. */
   decoupleHomeBytes: number
 ): PoolBudgetEntry {
-  const used = usedBytes(pool, sizeOf, migratedHex) + decoupleHomeBytes;
+  const used = usedBytes(pool, sizeOf, migratedHex, freedFiles) + decoupleHomeBytes;
   const curHex = levelHex(levelRecordId);
   const otherLevels = poolLevels(pool)
-    .filter((l) => l !== curHex && !migratedHex.has(l))
+    .filter((l) => l !== curHex && !migratedHex.has(l) && !removedHex.has(l))
     .map((l) => '0x' + l);
   return {
     poolId: pool.id,
@@ -171,7 +192,7 @@ export function computeLevelBudget(
   diskSizeOf: (file: string) => number,
   ctx?: LayoutContext
 ): PoolBudgetReport {
-  const { migrated, decoupled, newSlots } = ctxSets(ctx);
+  const { migrated, decoupled, newSlots, removed } = ctxSets(ctx);
   const sizeOf = (file: string): number => {
     if (files.objFile && file === files.objFile) return liveSizes.objBytes;
     if (files.spriteFile && file === files.spriteFile) return liveSizes.spriteBytes;
@@ -179,7 +200,7 @@ export function computeLevelBudget(
   };
   const tag = `DATA_level_${levelHex(levelRecordId)}_`;
   const fitsRegion = (extra: ReadonlySet<number>): { regions: string[]; ok: boolean } => {
-    const plan = planLayout(map, { migrated: extra, decoupled, newSlots, sizeOf });
+    const plan = planLayout(map, { migrated: extra, decoupled, newSlots, removed, sizeOf });
     const regions = [...new Set(plan.relocations.filter((r) => r.level === levelRecordId).map((r) => r.regionId))];
     const overflow = plan.violations.some((v) => v.kind === 'region-full' && v.id.startsWith(tag));
     return { regions, ok: !overflow };
@@ -197,11 +218,15 @@ export function computeLevelBudget(
     };
   }
 
-  // Migration/de-couple-aware pool totals (mirror computePoolOverview): exclude
-  // migrated-out bank-mates, add any de-coupled spr blob placed home.
+  // Migration/de-couple/removal-aware pool totals (mirror computePoolOverview):
+  // exclude migrated-out bank-mates + removal-freed blobs, add any de-coupled
+  // spr blob placed home.
   const migratedHex = new Set([...migrated].map(levelHex));
+  const removedHex = new Set([...removed].map(levelHex));
+  const plan = planLayout(map, { migrated, decoupled, newSlots, removed, sizeOf });
+  const freedFiles = new Set(plan.removals.map((r) => r.file));
   const decoupleHome = new Map<string, number>();
-  for (const d of planLayout(map, { migrated, decoupled, newSlots, sizeOf }).decouples) {
+  for (const d of plan.decouples) {
     decoupleHome.set(d.placedIn, (decoupleHome.get(d.placedIn) ?? 0) + d.bytes);
   }
   const touched: LevelPool[] = [];
@@ -211,12 +236,14 @@ export function computeLevelBudget(
     if (pool && !touched.includes(pool)) touched.push(pool);
   }
   const pools = touched.map((p) =>
-    makeEntry(p, sizeOf, levelRecordId, migratedHex, decoupleHome.get(p.id) ?? 0)
+    makeEntry(p, sizeOf, levelRecordId, migratedHex, removedHex, freedFiles, decoupleHome.get(p.id) ?? 0)
   );
   const over = pools.some((e) => e.overBy > 0);
   // Offer migration when over a home pool but the level could relocate cleanly.
   const canRelocate =
-    over && migratable(map, levelRecordId, decoupled) && fitsRegion(new Set([...migrated, levelRecordId])).ok;
+    over &&
+    migratable(map, levelRecordId, decoupled, freedRawRows(migrated, removed)) &&
+    fitsRegion(new Set([...migrated, levelRecordId])).ok;
   return {
     levelRecordId: hex0x(levelRecordId),
     pools,
@@ -239,16 +266,21 @@ export function computePoolOverview(
   sizeOf: (file: string) => number,
   ctx?: LayoutContext
 ): PoolOverviewEntry[] {
-  const { migrated, decoupled } = ctxSets(ctx);
+  const { migrated, decoupled, removed } = ctxSets(ctx);
   const migratedHex = new Set([...migrated].map(levelHex));
   const biasedSet = new Set(biasedPointers(map.romVersion).map((b) => b.level));
-  const plan = planLayout(map, { migrated, decoupled, sizeOf });
+  const plan = planLayout(map, { migrated, decoupled, removed, sizeOf });
+  const freedFiles = new Set(plan.removals.map((r) => r.file));
+  const freed = freedRawRows(migrated, removed);
   return map.pools.map((pool) => {
     // Migrated levels leave the pool (consolidating reclaim hands their room
-    // back); a de-couple placed home adds its materialised spr blob.
+    // back), as do a removed level's freed blobs; a de-couple placed home adds
+    // its materialised spr blob. A removed level with residual bytes (a kept
+    // raw slice / borrowed terminator / non-reclaimable pool) still shows, with
+    // `removed: true` so the panel can label the residue.
     const byLevel = new Map<string, number>();
     for (const b of pool.blobs) {
-      if (migratedHex.has(b.level)) continue;
+      if (migratedHex.has(b.level) || freedFiles.has(b.file)) continue;
       byLevel.set(b.level, (byLevel.get(b.level) ?? 0) + sizeOf(b.file));
     }
     for (const d of plan.decouples) {
@@ -264,15 +296,28 @@ export function computePoolOverview(
         return {
           levelRecordId: '0x' + level,
           bytes,
-          migratable: migratable(map, rid, decoupled),
+          migratable: migratable(map, rid, decoupled, freed),
           decouplable: biasedSet.has(level),
           decoupled: decoupled.has(rid),
           // Only reachable by a level that ALSO appears in `levels` despite being
           // migrated — i.e. the de-coupled-spr-placed-home residual row.
-          ...(migrated.has(rid) ? { migrated: true } : {})
+          ...(migrated.has(rid) ? { migrated: true } : {}),
+          ...(removed.has(rid) ? { removed: true } : {})
         };
       })
       .sort((a, b) => b.bytes - a.bytes);
+    // Removal-freed bytes per level in THIS pool (informational: what the
+    // remove handed back).
+    const removedBytes = new Map<string, number>();
+    for (const r of plan.removals) {
+      if (r.poolId !== pool.id) continue;
+      const lh = levelHex(r.level);
+      removedBytes.set(lh, (removedBytes.get(lh) ?? 0) + r.bytes);
+    }
+    const removedOut = [...removedBytes.entries()].map(([level, bytes]) => ({
+      levelRecordId: '0x' + level,
+      bytes
+    }));
     // Migrated-out levels: keep their byte size visible (the bytes this level's
     // blobs in THIS pool would re-occupy if migrated back) so the user can weigh a
     // move-back against the pool's free space — even though they no longer count
@@ -303,7 +348,8 @@ export function computePoolOverview(
       usedBytes: used,
       freeBytes: limit - used,
       levels,
-      ...(migratedOut.length ? { migratedOut } : {})
+      ...(migratedOut.length ? { migratedOut } : {}),
+      ...(removedOut.length ? { removedOut } : {})
     };
   });
 }
@@ -433,6 +479,7 @@ export function planAutoMigration(
 ): AutoMigrationPlan {
   const decoupled = ctx.decoupled ?? new Set<number>();
   const newSlots = ctx.newSlots ?? new Set<number>();
+  const removed = ctx.removed ?? new Set<number>();
   const migrated = new Set(ctx.migrated ?? []);
   const added: number[] = [];
   const levelBytes = (id: number): number => {
@@ -442,7 +489,7 @@ export function planAutoMigration(
 
   // Bounded by the candidate count: each round migrates ≥1 candidate or stops.
   for (let round = 0; round <= candidates.size; round++) {
-    const over = checkAllPools(map, sizeOf, { migrated, decoupled, newSlots }).filter(
+    const over = checkAllPools(map, sizeOf, { migrated, decoupled, newSlots, removed }).filter(
       (v) => v.poolId !== 'free-space'
     );
     if (over.length === 0) break;
@@ -452,7 +499,12 @@ export function planAutoMigration(
       if (!pool) continue;
       const ids = poolLevels(pool)
         .map((h) => parseInt(h, 16))
-        .filter((id) => candidates.has(id) && !migrated.has(id) && migratable(map, id, decoupled));
+        .filter(
+          (id) =>
+            candidates.has(id) &&
+            !migrated.has(id) &&
+            migratable(map, id, decoupled, freedRawRows(migrated, removed))
+        );
       if (ids.length === 0) continue;
       const sized = ids.map((id) => ({ id, bytes: levelBytes(id) })).sort((a, b) => a.bytes - b.bytes);
       const fitting = sized.filter((s) => s.bytes <= v.overBy);
@@ -466,6 +518,6 @@ export function planAutoMigration(
 
   return {
     added: added.sort((a, b) => a - b),
-    violations: checkAllPools(map, sizeOf, { migrated, decoupled, newSlots })
+    violations: checkAllPools(map, sizeOf, { migrated, decoupled, newSlots, removed })
   };
 }

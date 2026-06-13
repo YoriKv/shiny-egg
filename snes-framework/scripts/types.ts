@@ -43,11 +43,26 @@ export interface ExtractionState {
   extractedFiles: number;
   /** Of those, how many were deliberately-empty placeholders. */
   emptyFiles: number;
+  /** Version of the extraction pipeline that produced this extract
+   *  (state.ts `EXTRACT_PIPELINE_VERSION`). Absent on extracts that predate
+   *  versioning — treated as out of date. */
+  pipelineVersion?: number;
 }
 
 export interface ExtractResult {
   extracted: number;
   empty: number;
+}
+
+/** Verdict of the out-of-date-extract check (state.ts `checkExtractFreshness`):
+ *  is the on-disk extract (assets + editor-data) current with this app's
+ *  extraction pipeline? The extract-side analogue of the outdated-overlay
+ *  checker — catches e.g. a stale levels.json after an app upgrade. */
+export interface ExtractFreshness {
+  /** 'none' = never extracted; 'stale' = re-extract needed; 'fresh' = current. */
+  status: 'none' | 'fresh' | 'stale';
+  /** Human-readable causes when stale (pipeline updated / output missing). */
+  reasons: string[];
 }
 
 // ── Build ─────────────────────────────────────────────────────────────────
@@ -291,6 +306,11 @@ export interface PoolOverviewLevel {
    *  "→ free space" button is moot for such a row — the level is already
    *  migrated — so the panel disables it. */
   migrated?: boolean;
+  /** Set on the residual row of a REMOVED level whose bytes couldn't all be
+   *  freed (a non-reclaimable pool, a shared/raw pointer slice, or a borrowed
+   *  terminator a kept biased level still needs). The level is out of the game
+   *  either way — its `Ptrs:` row points at the sentinels. */
+  removed?: boolean;
 }
 
 export interface PoolOverviewEntry {
@@ -329,6 +349,12 @@ export interface PoolOverviewEntry {
     bytes: number;
     decouplable?: boolean;
     decoupled?: boolean;
+  }[];
+  /** Levels REMOVED from the game whose freed blobs left this pool — `bytes`
+   *  is what the removal handed back here (already excluded from `usedBytes`). */
+  removedOut?: {
+    levelRecordId: string;
+    bytes: number;
   }[];
 }
 
@@ -624,9 +650,10 @@ export interface WorldMapEntrance {
   spawnX: number;
   /** byte +2 — entrance Y in 16-px cells (×16 → Player.Y). */
   spawnY: number;
-  /** byte +3 — world-map progression target: the LevelID (record-id space) the
-   *  Yoshi token advances to after this level is cleared. Named via the catalog
-   *  / LevelIDs symbols in the UI. */
+  /** byte +3 — world-map progression target: the MAP SLOT (translevel space,
+   *  NOT a record id) the Yoshi token advances to after this level is cleared
+   *  — it lands in CurrentLevelFromMap. The `!Define_YI_LevelID_*` symbols the
+   *  serializer writes here are translevels. */
   progTarget: number;
 }
 
@@ -672,6 +699,13 @@ export interface WorldMapModel {
    *  through these. One word per translevel slot (72 incl. trailing padding). */
   entranceIndexWords?: number[];
   midwayIndexWords?: number[];
+  /** The PRISTINE BASE index words (same shape), attached by the app layer
+   *  (resources.ts `loadWorldMapResource`) so the editor can re-wire a slot
+   *  that's been unwired (a removed level zeroes its words) back to its base
+   *  entrance/midway records. Read-only reference data — the serializer never
+   *  writes these. */
+  baseEntranceIndexWords?: number[];
+  baseMidwayIndexWords?: number[];
 }
 
 // ── Per-level Map16 usage (Tiles "Used in this level" view) ─────────────────

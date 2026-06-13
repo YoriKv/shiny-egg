@@ -19,8 +19,8 @@
 // Joined with the static `SLOT_SHAPE` table (world + slot label per ID), this
 // produces the catalog the editor dropdown consumes.
 //
-// The Special-slot entry (translevel 128 / "Prologue") has no cart name
-// string and is supplied via `NAME_OVERRIDES`.
+// Bonus-tile entries have placeholder cart strings, supplied via
+// `SlotShape.nameOverride` instead.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';

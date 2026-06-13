@@ -107,8 +107,11 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
           {catalog.groups.map((group) => (
             <div className="se-levelmenu__group" key={group.label}>
               <div className="se-levelmenu__grouphead">{group.label}</div>
-              {group.levels.map((l) => {
-                // null id = bonus / mini-game / intro: catalogued but not an
+              {/* Bonus slots (the GameMode $2A minigame code scenes) are catalogued
+                  for the World Map panel but have no level data — hide them here
+                  rather than show a permanently disabled row. */}
+              {group.levels.filter((l) => l.slot !== 'Bonus').map((l) => {
+                // null id (e.g. the Prologue intro slot): catalogued but not an
                 // editable level — render disabled, no selectable hex id.
                 const lid = l.recordId
                 const isActive = lid !== null && lid === selectedId
@@ -122,7 +125,7 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
                     }`}
                     disabled={lid === null}
                     title={
-                      lid === null ? 'Bonus / mini-game — not an editable level' : undefined
+                      lid === null ? 'No level data — not an editable level' : undefined
                     }
                     onClick={() => {
                       if (lid === null) return

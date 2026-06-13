@@ -31,9 +31,25 @@ import {
   setExitDestResource
 } from '../resources'
 import { computeSpriteProperties } from '../sprite-properties'
+import {
+  applyLevelRemoval,
+  createLevel,
+  listCreatableSlots,
+  listRemovedLevels,
+  previewLevelRemoval,
+  removableVanillaLevels,
+  restoreLevels
+} from '../level-removal'
 import type {
+  CreatableSlot,
+  CreateLevelResult,
   RelocationState,
+  RemovableVanillaLevels,
+  RemovalPreviewResult,
+  RemovedLevelEntry,
+  RemoveLevelsResult,
   ResetLevelResult,
+  RestoreLevelsResult,
   SetExitDestResult,
   SpriteProperty,
   SpritePropertiesRequest
@@ -123,6 +139,41 @@ export function registerEditorIpc(): void {
     'editor:resetLevel',
     async (_event, levelRecordId: number): Promise<ResetLevelResult> =>
       resetLevelResource(levelRecordId)
+  )
+
+  // Vanilla-level removal (level-removal.ts): dry-run impact for the confirm
+  // dialog, the actual removal (world-map rewire + project flag + overlay
+  // cleanup; the renderer marks the build dirty), and the bulk "remove all
+  // vanilla" candidate-set computation.
+  ipcMain.handle(
+    'editor:removeLevelsPreview',
+    async (_event, recordIds: number[]): Promise<RemovalPreviewResult> =>
+      previewLevelRemoval(recordIds)
+  )
+  ipcMain.handle(
+    'editor:removeLevels',
+    async (_event, recordIds: number[]): Promise<RemoveLevelsResult> =>
+      applyLevelRemoval(recordIds)
+  )
+  ipcMain.handle(
+    'editor:removableVanillaLevels',
+    async (): Promise<RemovableVanillaLevels | { error: string }> => removableVanillaLevels()
+  )
+  ipcMain.handle(
+    'editor:removedLevels',
+    async (): Promise<RemovedLevelEntry[]> => listRemovedLevels()
+  )
+  ipcMain.handle(
+    'editor:restoreLevels',
+    async (_event, recordIds: number[]): Promise<RestoreLevelsResult> => restoreLevels(recordIds)
+  )
+  ipcMain.handle(
+    'editor:creatableSlots',
+    async (): Promise<CreatableSlot[]> => listCreatableSlots()
+  )
+  ipcMain.handle(
+    'editor:createLevel',
+    async (_event, recordId: number): Promise<CreateLevelResult> => createLevel(recordId)
   )
 
   // Cross-level warp-exit destination edit (incoming-marker drag, §A8 #8.5):

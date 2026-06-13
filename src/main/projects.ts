@@ -68,7 +68,8 @@ function readProjectFile(id: string): ProjectSummary | null {
       ...(parsed.cartMd5 ? { cartMd5: parsed.cartMd5 } : {}),
       ...(Array.isArray(parsed.relocations) ? { relocations: parsed.relocations } : {}),
       ...(Array.isArray(parsed.decoupled) ? { decoupled: parsed.decoupled } : {}),
-      ...(Array.isArray(parsed.newSlots) ? { newSlots: parsed.newSlots } : {})
+      ...(Array.isArray(parsed.newSlots) ? { newSlots: parsed.newSlots } : {}),
+      ...(Array.isArray(parsed.removedLevels) ? { removedLevels: parsed.removedLevels } : {})
     }
   } catch {
     return null
@@ -108,6 +109,36 @@ export function setLevelNewSlot(id: string, levelRecordId: number, on: boolean):
   if (!pf) throw new Error(`Project "${id}" not found.`)
   const newSlots = setHexFlag(pf.newSlots, levelRecordId, on)
   writeProjectFile({ ...pf, newSlots, modifiedAt: new Date().toISOString() })
+}
+
+/** The active project's REMOVED vanilla level record ids (numbers). */
+export function getProjectRemovedLevels(id: string | null): number[] {
+  return id ? parseHexIds(readProjectFile(id)?.removedLevels) : []
+}
+
+/** Flag a batch of vanilla levels as removed (one atomic project.json write).
+ *  Removal supersedes the per-level layout toggles, so the same write clears
+ *  the levels' migration + de-couple flags. */
+export function setLevelsRemoved(id: string, levelRecordIds: number[], on: boolean): void {
+  const pf = readProjectFile(id)
+  if (!pf) throw new Error(`Project "${id}" not found.`)
+  let removedLevels = pf.removedLevels
+  let relocations = pf.relocations
+  let decoupled = pf.decoupled
+  for (const rid of levelRecordIds) {
+    removedLevels = setHexFlag(removedLevels, rid, on)
+    if (on) {
+      relocations = setHexFlag(relocations, rid, false)
+      decoupled = setHexFlag(decoupled, rid, false)
+    }
+  }
+  writeProjectFile({
+    ...pf,
+    removedLevels,
+    relocations,
+    decoupled,
+    modifiedAt: new Date().toISOString()
+  })
 }
 
 /** Both lists, for the renderer. */

@@ -132,8 +132,10 @@ function stampTreecap(state: DecodeState, v: TreecapVariant): void {
 
   // CODE_13D61E (variant A) / CODE_13D677 (variant B).
   if (row < 2) {
-    // Top-2-rows table pick. Idx = (col << 1) | (row << 3).
-    const idx = ((col << 1) | (row << 3)) & 0x07; // 7-entry table guard
+    // Top-2-rows table pick. The cart's Y = (col << 1) | (row << 3) is a
+    // BYTE offset into a `dw` table — halve it for the word index:
+    // row 0 → entries 0,1,2; row 1 → entries 4,5,6 (entry 3 is the dead $0000).
+    const idx = col | (row << 2);
     const tile = v.topRowTiles[idx]!;
     stampCell(state, tile);
     return;

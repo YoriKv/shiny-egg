@@ -43,9 +43,10 @@ export interface DecodeLevelByIdResult {
   source: { objectFile: string };
 }
 
-/** The 38 special-case level IDs that the engine hardcodes (e.g. Kamek's
- *  Revenge level 0x38 with no real object stream). Returning null. */
-const SPECIAL_LEVELS = new Set<number>([0x38]);
+/** Engine-driven special records the decoder returns null for. EMPTY — record
+ *  0x38 (the gm38 intro-cutscene level) was verified to decode cleanly; see
+ *  level.ts SPECIAL_LEVELS (kept mirrored). */
+const SPECIAL_LEVELS = new Set<number>([]);
 
 let cachedMap: { workRoot: string; map: LevelMap } | null = null;
 

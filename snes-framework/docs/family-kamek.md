@@ -90,9 +90,9 @@ contexts:
   triggers and by the ending sequence. Same sprite ID, behavior
   picked from a placement-position bit.
 - **$1AD MagicShootingKamek** is the only Kamek that the player
-  fights as an enemy. Appears in "Kamek's Revenge" (the world-5
-  bonus) and the W6 Magic Kamek room. Immortal (head-bop is a bare
-  RTL).
+  fights as an enemy. Appears in "Kamek's Revenge" (5-Extra, map
+  slot $38) and the W6 Magic Kamek room. Immortal (head-bop is a
+  bare RTL).
 
 ---
 

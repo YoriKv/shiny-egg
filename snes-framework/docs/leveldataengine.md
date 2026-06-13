@@ -123,12 +123,15 @@ emits the table at exactly one of those addresses. See `docs/levelloader.md`
 §3 for the full sub-table layout (entrance indexes, entrance data, midway
 indexes, midway entrance data, then `Ptrs:`).
 
-**Special-case levels**: level `$38` (Kamek's Revenge) is engine-hardcoded
-and its pointer-table slot points at no real data. Additionally, 95 of
-the 222 pointer-table entries reference empty `.bin` files (vestigial
-slots from the upstream extractor not reaching certain cart addresses);
-editor tooling enumerating the table must filter by "backing `.bin`
-non-empty" or by the `!Define_YI_LevelID_*` symbol set.
+**Special-case levels**: record `$38` is the gm38 **intro-cutscene level**
+(played by world-map slot `$0A` — NOT Kamek's Revenge, whose record is
+`$2C` via map slot `$38`; the `!Define_YI_LevelID_*` values are map slots,
+a different id space than records). Its data is real but minimal (a 66-byte
+backdrop stream; the cutscene engine drives the actors), and editor tooling
+skip-parses it (`SPECIAL_LEVELS` in scripts/level.ts). 220 of the 222
+pointer-table entries are backed by per-level `.bin`s in the current
+extract — only the `$DA`/`$DB` sentinel rows are not; enumerate levels via
+the level map (`levelMapEntry`), not by walking the pointer table.
 
 The **MAP16 tile system** uses a two-level page + index scheme: each ref
 is `pppppppptttttttt` (high byte = page 0x00-0xA7+, low byte = tile

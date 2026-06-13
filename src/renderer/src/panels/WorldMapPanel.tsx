@@ -19,23 +19,29 @@
 import { useState, type JSX } from 'react'
 import type { WorldMapEditorApi } from '../edit-session/useWorldMapEditor'
 import type {
-  LevelCatalogGroup,
   WorldMapEntrance,
   WorldMapMidwayEntrance,
   WorldMapModel
 } from '../../../preload/api'
-import { useLevelsCatalog } from '../data/levels'
+import { getAllLevels, getLevel, useLevelsCatalog } from '../data/levels'
 import { useSubLevelBFS } from '../hooks/useSubLevelBFS'
 import { ENTRANCE_TYPES } from '../data/property-schema'
 import { EnumField, LevelPicker, LevelRefField, NumberField } from './field-widgets'
 import { hex0x } from '../lib/hex'
 
-/** One world-map slot resolved to its entrance record + checkpoint pages. */
+/** One world-map slot row. The shape is FIXED (6 worlds × 12 translevel slots)
+ *  so worlds stay listed and editable even when every level was removed:
+ *    • `live`    — the slot resolves to an entrance record (editable);
+ *    • `unwired` — its index word is $0000 but the base cart wires it (a
+ *                  removed level / manual unwire) — offers a re-wire action;
+ *    • `bonus`   — the per-world bonus tile (a GameMode $2A code-scene
+ *                  minigame; never has an entrance record). */
 interface SlotRow {
   translevelId: number
   slot: string
   name: string
-  e: WorldMapEntrance
+  kind: 'live' | 'unwired' | 'bonus'
+  e?: WorldMapEntrance
   pages: WorldMapMidwayEntrance[]
 }
 
@@ -78,15 +84,117 @@ function midwayPagesFor(
   return pages
 }
 
-/** The buildable slots of a world group (those with a real main entrance). */
-function buildWorldSlots(model: WorldMapModel, group: LevelCatalogGroup, ctx: SlotCtx): SlotRow[] {
-  return group.levels.flatMap((l) => {
-    if (l.translevelId === undefined) return []
-    const idx = entranceIndexFor(model, l.translevelId)
+/** The fixed world list (the cart's 6 × 12-slot translevel blocks). */
+const WORLD_LABELS = [1, 2, 3, 4, 5, 6].map((w) => `World ${w}`)
+
+/** The slot label for a translevel by its position in the 12-slot block. */
+function slotShapeLabel(world: number, pos: number, translevelId: number): string {
+  if (pos < 8) return `${world}-${pos + 1}`
+  if (pos === 8) return `${world}-Extra`
+  if (pos === 9) return `${world}-Bonus`
+  if (translevelId === 0x0a) return 'Intro'
+  if (translevelId === 0x0b) return 'Welcome'
+  return `pad ${hex0x(translevelId, 2)}`
+}
+
+/** Display name for the record a slot plays (catalog name, else the raw id —
+ *  removed records aren't in the catalog but stay editable here). */
+function recordName(recordId: number): string {
+  return getLevel(recordId)?.name ?? `record ${hex0x(recordId, 2)}`
+}
+
+/** Every slot of one world, from the FIXED shape — independent of the levels
+ *  catalog, so worlds whose levels were all removed still list and edit. Pure
+ *  padding slots (no live wiring, no base wiring, not the bonus tile) are
+ *  omitted; W1's intro-cutscene/Welcome slots ride on their base wiring. */
+function buildWorldSlots(model: WorldMapModel, world: number, ctx: SlotCtx): SlotRow[] {
+  const out: SlotRow[] = []
+  for (let pos = 0; pos < 12; pos++) {
+    const t = (world - 1) * 12 + pos
+    const slot = slotShapeLabel(world, pos, t)
+    const idx = entranceIndexFor(model, t)
     const e = idx === undefined ? undefined : ctx.byIndex.get(idx)
-    if (!e) return []
-    return [{ translevelId: l.translevelId, slot: l.slot, name: l.name, e, pages: midwayPagesFor(model, l.translevelId, ctx) }]
-  })
+    if (e) {
+      out.push({ translevelId: t, slot, kind: 'live', name: recordName(e.levelDataId), e, pages: midwayPagesFor(model, t, ctx) })
+      continue
+    }
+    if (pos === 9) {
+      // The minigame's friendly name (Flip Cards, Roulette, …) rides on the
+      // catalog's null-record Bonus entries (levels-slot-shape nameOverride) —
+      // the Level dropdown hides those rows, so this is where the name shows.
+      const bonus = getAllLevels().find((l) => l.translevelId === t)
+      out.push({
+        translevelId: t,
+        slot,
+        kind: 'bonus',
+        name: bonus ? `${bonus.name} · minigame` : 'minigame code scene',
+        pages: []
+      })
+      continue
+    }
+    const baseWord = model.baseEntranceIndexWords?.[t] ?? 0
+    if (baseWord > 0) {
+      const baseE = ctx.byIndex.get(Math.floor(baseWord / 4))
+      out.push({
+        translevelId: t,
+        slot,
+        kind: 'unwired',
+        name: baseE ? `was ${recordName(baseE.levelDataId)}` : 'unused',
+        pages: []
+      })
+    }
+    // else: pure padding — nothing to show or edit.
+  }
+  return out
+}
+
+/** Slot-space (translevel) picker for the progression target. The unlock value
+ *  is stored into CurrentLevelFromMap, so its id space is MAP SLOTS, not
+ *  level-data records — 1-7's unlock is $07 (the 1-8 TILE), even though that
+ *  tile plays record $9B. (An earlier revision edited this field through the
+ *  record picker — the classic two-id-spaces conflation — which would have
+ *  committed record ids into slot space.) Options are the wired slots, grouped
+ *  by world; an off-list value stays selectable as raw hex. */
+function SlotRefField({
+  model,
+  ctx,
+  value,
+  onCommit
+}: {
+  model: WorldMapModel
+  ctx: SlotCtx
+  value: number
+  onCommit: (v: number) => void
+}): JSX.Element {
+  // Live slots AND bonus tiles: a bonus tile is a legitimate unlock target —
+  // vanilla wires every world's Extra level to unlock its Bonus tile (1-Extra
+  // → slot $09 "Flip Cards"), even though the tile boots a code scene rather
+  // than an entrance record.
+  const groups = WORLD_LABELS.map((label, i) => ({
+    label,
+    slots: buildWorldSlots(model, i + 1, ctx).filter(
+      (s) => s.kind === 'live' || s.kind === 'bonus'
+    )
+  }))
+  const known = groups.some((g) => g.slots.some((s) => s.translevelId === value))
+  return (
+    <select
+      className="se-props__select"
+      value={value}
+      onChange={(e) => onCommit(parseInt(e.target.value, 10))}
+    >
+      {!known && <option value={value}>slot {hex0x(value, 2)}</option>}
+      {groups.map((g) => (
+        <optgroup key={g.label} label={g.label}>
+          {g.slots.map((s) => (
+            <option key={s.translevelId} value={s.translevelId}>
+              {s.slot} — {s.name}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  )
 }
 
 /** A small button that loads a level and focuses the camera at a cell. */
@@ -130,6 +238,12 @@ type WmNav =
   | { view: 'worlds' }
   | { view: 'world'; group: string }
   | { view: 'level'; group: string; translevelId: number }
+
+/** The world (1-6) a label addresses, or undefined. */
+function worldOf(label: string): number | undefined {
+  const i = WORLD_LABELS.indexOf(label)
+  return i >= 0 ? i + 1 : undefined
+}
 
 /** The World Map window body. `editor` is the App-level entrance-table document;
  *  `onJump(recordId, x, y)` loads that level + focuses the cell (the per-line jump
@@ -183,10 +297,15 @@ export function WorldMapBody({
     midwayBases: [...new Set(Object.values(model.midwayIndex))].sort((a, b) => a - b)
   }
 
-  const groups = catalog.groups.filter((g) => buildWorldSlots(model, g, ctx).length > 0)
-  const curGroup = nav.view !== 'worlds' ? groups.find((g) => g.label === nav.group) : undefined
-  const slots = curGroup ? buildWorldSlots(model, curGroup, ctx) : []
-  const curSlot = nav.view === 'level' ? slots.find((s) => s.translevelId === nav.translevelId) : undefined
+  const curGroup =
+    nav.view !== 'worlds' && worldOf(nav.group) !== undefined ? nav.group : undefined
+  const curWorld = curGroup !== undefined ? worldOf(curGroup) : undefined
+  const slots = curWorld !== undefined ? buildWorldSlots(model, curWorld, ctx) : []
+  const found =
+    nav.view === 'level'
+      ? slots.find((s) => s.translevelId === nav.translevelId && s.kind === 'live')
+      : undefined
+  const curSlot = found?.e ? { ...found, e: found.e } : undefined
   const view: WmNav['view'] = nav.view === 'level' && !curSlot ? (curGroup ? 'world' : 'worlds') : nav.view === 'world' && !curGroup ? 'worlds' : nav.view
 
   return (
@@ -206,10 +325,10 @@ export function WorldMapBody({
             <button
               type="button"
               className="se-worldmap__crumb"
-              onClick={() => setNav({ view: 'world', group: curGroup.label })}
+              onClick={() => setNav({ view: 'world', group: curGroup })}
               disabled={view === 'world'}
             >
-              {curGroup.label}
+              {curGroup}
             </button>
           </>
         )}
@@ -223,19 +342,22 @@ export function WorldMapBody({
 
       {view === 'worlds' && (
         <div className="se-worldmap__worlds">
-          {groups.map((g) => (
-            <button
-              key={g.label}
-              type="button"
-              className="se-worldmap__world-btn"
-              onClick={() => setNav({ view: 'world', group: g.label })}
-            >
-              <span className="se-worldmap__world-name">{g.label}</span>
-              <span className="se-worldmap__world-count">
-                {buildWorldSlots(model, g, ctx).length} levels
-              </span>
-            </button>
-          ))}
+          {WORLD_LABELS.map((label, i) => {
+            const live = buildWorldSlots(model, i + 1, ctx).filter((s) => s.kind === 'live').length
+            return (
+              <button
+                key={label}
+                type="button"
+                className="se-worldmap__world-btn"
+                onClick={() => setNav({ view: 'world', group: label })}
+              >
+                <span className="se-worldmap__world-name">{label}</span>
+                <span className="se-worldmap__world-count">
+                  {live === 0 ? 'no wired levels' : `${live} level${live === 1 ? '' : 's'}`}
+                </span>
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -244,43 +366,77 @@ export function WorldMapBody({
           <p className="se-worldmap__note">
             Each level's data mapping (<b>plays</b>) and progression (<b>→</b>) — the
             world's flow. No live preview; Test Level to verify. Click a level to edit
-            its spawn + checkpoints.
+            its spawn + checkpoints. Unwired slots (removed levels) can be re-wired to
+            their base records here.
           </p>
-          {slots.map((s) => (
-            <div className="se-worldmap__row" key={s.translevelId}>
-              <button
-                type="button"
-                className="se-worldmap__slot-link"
-                title="Edit spawn + checkpoints"
-                onClick={() => setNav({ view: 'level', group: curGroup.label, translevelId: s.translevelId })}
-              >
-                <span className="se-worldmap__slot">{s.slot}</span>
-                <span className="se-worldmap__name" title={s.name}>
-                  {s.name}
+          {slots.map((s) => {
+            if (s.kind === 'bonus') {
+              return (
+                <div className="se-worldmap__row se-worldmap__row--empty" key={s.translevelId}>
+                  <span className="se-worldmap__slot">{s.slot}</span>
+                  <span
+                    className="se-worldmap__name se-worldmap__empty-label"
+                    title="The bonus tile boots a GameMode $2A minigame code scene — it has no entrance record or level data to edit."
+                  >
+                    {s.name}
+                  </span>
+                </div>
+              )
+            }
+            if (s.kind === 'unwired' || !s.e) {
+              return (
+                <div className="se-worldmap__row se-worldmap__row--empty" key={s.translevelId}>
+                  <span className="se-worldmap__slot">{s.slot}</span>
+                  <span className="se-worldmap__name se-worldmap__empty-label" title={s.name}>
+                    unwired — {s.name}
+                  </span>
+                  <RowButton
+                    label="+ wire"
+                    title="Re-wire this slot to its base entrance record (the tile plays a level again; pick which one with the plays field)"
+                    onClick={() => editor.setSlotWired(s.translevelId, true)}
+                  />
+                </div>
+              )
+            }
+            const e = s.e
+            return (
+              <div className="se-worldmap__row" key={s.translevelId}>
+                <button
+                  type="button"
+                  className="se-worldmap__slot-link"
+                  title="Edit spawn + checkpoints"
+                  onClick={() => setNav({ view: 'level', group: curGroup, translevelId: s.translevelId })}
+                >
+                  <span className="se-worldmap__slot">{s.slot}</span>
+                  <span className="se-worldmap__name" title={s.name}>
+                    {s.name}
+                  </span>
+                </button>
+                <span
+                  className="se-worldmap__cell se-worldmap__cell--prog"
+                  title="Plays this data record (remap the tile to a different level's data)"
+                >
+                  <span className="se-worldmap__cell-label">plays</span>
+                  <LevelRefField
+                    value={e.levelDataId}
+                    onCommit={(v) => editor.setEntranceField(e.index, { levelDataId: v })}
+                  />
                 </span>
-              </button>
-              <span
-                className="se-worldmap__cell se-worldmap__cell--prog"
-                title="Plays this data record (remap the tile to a different level's data)"
-              >
-                <span className="se-worldmap__cell-label">plays</span>
-                <LevelRefField
-                  value={s.e.levelDataId}
-                  onCommit={(v) => editor.setEntranceField(s.e.index, { levelDataId: v })}
-                />
-              </span>
-              <span
-                className="se-worldmap__cell se-worldmap__cell--prog"
-                title="Progression target — the level the world map advances to after clearing this one"
-              >
-                <span className="se-worldmap__cell-label">→</span>
-                <LevelRefField
-                  value={s.e.progTarget}
-                  onCommit={(v) => editor.setEntranceField(s.e.index, { progTarget: v })}
-                />
-              </span>
-            </div>
-          ))}
+                <span
+                  className="se-worldmap__cell se-worldmap__cell--prog"
+                  title="Progression target — the MAP SLOT the Yoshi token advances to (unlocks) after clearing this one"
+                >
+                  <span className="se-worldmap__cell-label">→</span>
+                  <SlotRefField
+                    model={model}
+                    ctx={ctx}
+                    value={e.progTarget}
+                    onCommit={(v) => editor.setEntranceField(e.index, { progTarget: v })}
+                  />
+                </span>
+              </div>
+            )
+          })}
         </div>
       )}
 

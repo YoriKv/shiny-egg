@@ -148,6 +148,12 @@ let spritePlacements = 0;
 let mode7Levels = 0;
 
 for (const id of ids) {
+  // Record 0x38 — the gm38 intro-cutscene backdrop — isn't a normal playable
+  // level: its objects don't probe valid under gm0C render rules (the cutscene
+  // engine owns the scene in-game), and the shipping cart is like that. Skip
+  // it from the correct-by-construction gate (same spirit as the orphan-info
+  // sprite rule below).
+  if (id === 0x38) continue;
   const level = levels.get(id)!;
   levelsChecked++;
   const isW6 = isWorld6RecordDeep(FRAMEWORK_ROOT, id);

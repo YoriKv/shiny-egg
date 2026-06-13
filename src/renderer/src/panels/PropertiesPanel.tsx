@@ -674,9 +674,11 @@ function ExitProps({
         <span className="se-props__id-kind">
           {exit.variant === 'warp' ? 'Exit · Warp' : 'Exit · Minibattle'}
         </span>
-        {/* Variant toggle (E2): converts the record's payload wholesale (the
-            reducer maps dest ↔ return geometry; serializer encodes by byte1
-            range). */}
+      </dd>
+      {/* Variant toggle (E2): converts the record's payload wholesale (the
+          reducer maps dest ↔ return geometry; serializer encodes by byte1
+          range). */}
+      <dd className="se-props__variant-row">
         <button
           type="button"
           className="se-props__variant-toggle"

@@ -10,7 +10,12 @@ import { extractAssets, type ExtractResult } from 'snes-framework/extract'
 import { invalidateLevelMapCache } from 'snes-framework/level'
 import { identifyByMd5 } from 'snes-framework/rom-versions'
 import { stripCopierHeader } from 'snes-framework/rom-header'
-import { readExtractionState, type ExtractionState } from 'snes-framework/state'
+import {
+  checkExtractFreshness,
+  readExtractionState,
+  type ExtractFreshness,
+  type ExtractionState
+} from 'snes-framework/state'
 import { asarBinPath, devReferenceCartPath, frameworkWorkRoot } from '../framework-paths'
 import { getCurrentProjectId } from '../projects'
 import { buildProject } from '../build-tree'
@@ -35,6 +40,15 @@ export function registerFrameworkIpc(): void {
     'framework:state',
     async (): Promise<ExtractionState | null> =>
       readExtractionState(frameworkWorkRoot())
+  )
+
+  // Out-of-date-extract check — was the on-disk extract produced by an older
+  // pipeline, or is an expected output (e.g. levels.json) missing? The
+  // extract-side analogue of the outdated-overlay checker; the RomMenu shows
+  // a re-extract prompt when stale.
+  ipcMain.handle(
+    'framework:extractFreshness',
+    async (): Promise<ExtractFreshness> => checkExtractFreshness(frameworkWorkRoot())
   )
 
   // Dev-only: the pre-selectable reference cart next to the project root, so the

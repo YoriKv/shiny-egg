@@ -28,8 +28,16 @@ export type {
   ScreenExitWarp
 } from './types.ts';
 
-/** Level 0x38 ("Kamek's Revenge") is hardcoded in the engine — skip parsing. */
-const SPECIAL_LEVELS = new Set<number>([0x38]);
+/** Engine-driven records the editor refuses to parse. EMPTY since record 0x38
+ *  (the gm38 intro-cutscene level, played by map slot 0x0A — historically
+ *  misglossed "Kamek's Revenge", whose actual record is 0x2C via map slot
+ *  0x38) was verified to decode cleanly: 13 backdrop objects, empty sprite
+ *  stream, all 66 bytes consumed. Its only quirk is a garbage bit in the
+ *  header's PADDING (stream bit 75; the 15 fields end at bit 74), which the
+ *  engine never reads — a save normalizes it to 0. The old skip-parse was
+ *  lore, like the rest of the $38 glosses. Kept as a set so a genuinely
+ *  unparseable record can be re-added with one id. */
+const SPECIAL_LEVELS = new Set<number>([]);
 
 /**
  * Derive the cart's `CurrentWorld == World6` flag from a **translevel** ID.

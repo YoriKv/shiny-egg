@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
 import type {
+  ExtractFreshness,
   ExtractionState,
   FindInstanceKind,
   LevelData,
@@ -55,7 +56,7 @@ import { influenceBlockIds, useSelectedObjectInfluence } from './hooks/useSelect
 import { useUnifiedHistory } from './hooks/useUnifiedHistory'
 import { useEmulatorActions } from './hooks/useEmulatorActions'
 import { useLevelNavigation } from './hooks/useLevelNavigation'
-import { refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
+import { getAllLevels, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
 import type { IncomingExit, LayerVisibility, PlacementItem, Selection } from './types'
 
@@ -206,6 +207,9 @@ function selectionForFinderJump(
 
 export default function App(): JSX.Element {
   const [state, setState] = useState<ExtractionState | null>(null)
+  // Out-of-date-extract verdict (stale levels.json etc.) — refreshed with the
+  // extraction state; RomMenu shows a re-extract prompt when stale.
+  const [extractFreshness, setExtractFreshness] = useState<ExtractFreshness | null>(null)
   const [project, setProject] = useState<ProjectSummary | null>(null)
   // Bumped to force every overlay-backed panel to re-read from disk without a
   // project switch — e.g. after a ROM import rewrites the overlay in place.
@@ -660,6 +664,25 @@ export default function App(): JSX.Element {
     setRootLevelRecordId
   })
 
+  // Banks-panel level removal: the build layout + the catalog both changed, and
+  // the open/root level may no longer exist — refresh, then bail to the first
+  // surviving catalog level. The jump routes through the normal nav guard.
+  const onLevelsRemoved = useCallback(
+    (removedIds: number[]) => {
+      onLayoutChange()
+      void refreshLevelsCatalog().then(() => {
+        const gone =
+          (selectedLevelRecordId != null && removedIds.includes(selectedLevelRecordId)) ||
+          (rootLevelRecordId != null && removedIds.includes(rootLevelRecordId))
+        if (!gone) return
+        const fallback = getAllLevels().find((l) => l.recordId != null)?.recordId
+        if (fallback != null) selectRootLevel(fallback)
+        else clearLevelSelection()
+      })
+    },
+    [onLayoutChange, selectedLevelRecordId, rootLevelRecordId, selectRootLevel, clearLevelSelection]
+  )
+
   // Finder jump → select the matched entity once its level is loaded, so the
   // Properties panel shows it. Cross-level jumps wait for the load effect to
   // swap `levelState.level` in (Canvas clears selection on load first, so this
@@ -980,6 +1003,7 @@ export default function App(): JSX.Element {
 
   const refreshState = useCallback(async () => {
     setState(await window.shinyEgg.getExtractionState())
+    setExtractFreshness(await window.shinyEgg.getExtractFreshness())
   }, [])
 
   useEffect(() => {
@@ -995,7 +1019,19 @@ export default function App(): JSX.Element {
     <div className="se">
       <header className="se-toolbar">
         <div className="se-toolbar__row se-toolbar__row--primary">
-        <ProjectMenu current={project} onChange={onProjectChange} onImported={onRomImported} />
+        <ProjectMenu
+          current={project}
+          onChange={onProjectChange}
+          onImported={(removedVanillaIds) => {
+            void onRomImported()
+            // The import's optional "remove all vanilla levels" pass also changed
+            // the catalog/layout — reuse the Banks-panel removal handling (marks
+            // dirty, refreshes, navigates away if the open level was removed).
+            if (removedVanillaIds && removedVanillaIds.length > 0) {
+              onLevelsRemoved(removedVanillaIds)
+            }
+          }}
+        />
 
         <div className="se-toolbar__levels">
           <LevelMenu selectedId={rootLevelRecordId} onSelect={selectRootLevel} />
@@ -1042,6 +1078,7 @@ export default function App(): JSX.Element {
           <RomMenu
             state={state}
             setState={setState}
+            freshness={extractFreshness}
             refreshState={refreshState}
             log={log}
             setLog={setLog}
@@ -1301,6 +1338,7 @@ export default function App(): JSX.Element {
                   currentLevelRecordId={selectedLevelRecordId}
                   onJump={selectRootLevel}
                   onLayoutChange={onLayoutChange}
+                  onLevelsRemoved={onLevelsRemoved}
                 />
               ) : (
                 <PropertiesBody

@@ -12,11 +12,24 @@ export interface ImportRomDialogProps {
   /** Name of the project being imported into (for display + the empty guard). */
   projectName: string | null
   onClose: () => void
-  /** Fired after a successful apply so App marks the build dirty + reloads. */
-  onImported: () => void
+  /** Fired after a successful apply so App marks the build dirty + reloads.
+   *  `removedVanillaIds` carries the records the optional "remove all vanilla
+   *  levels" pass took out (empty/absent when the option was off), so App can
+   *  navigate away if the open level was among them. */
+  onImported: (removedVanillaIds?: number[]) => void
 }
 
 type Phase = 'idle' | 'analyzing' | 'report' | 'applying' | 'done'
+
+/** Outcome of the optional post-import "remove all vanilla levels" pass. */
+interface RemoveVanillaResult {
+  removed: number[]
+  /** Kept-level breakdown for the result text. */
+  keptEdited: number
+  keptProtected: number
+  keptWarpReachable: number
+  error: string | null
+}
 
 function hex(n: number): string {
   return hex0x(n, 2)
@@ -46,7 +59,10 @@ export function ImportRomDialog({
   const [selNames, setSelNames] = useState(false)
   const [selMessages, setSelMessages] = useState(false)
   const [selWorldMap, setSelWorldMap] = useState(false)
+  const [selUnblock, setSelUnblock] = useState(false)
+  const [selRemoveVanilla, setSelRemoveVanilla] = useState(false)
   const [applyResult, setApplyResult] = useState<RomImportApplyResult | null>(null)
+  const [removeVanillaResult, setRemoveVanillaResult] = useState<RemoveVanillaResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [names, setNames] = useState<Record<number, string>>({})
 
@@ -60,7 +76,10 @@ export function ImportRomDialog({
     setSelNames(false)
     setSelMessages(false)
     setSelWorldMap(false)
+    setSelUnblock(false)
+    setSelRemoveVanilla(false)
     setApplyResult(null)
+    setRemoveVanillaResult(null)
     setError(null)
     void window.shinyEgg.getLevelsCatalog().then((cat) => {
       if (!cat) return
@@ -123,6 +142,27 @@ export function ImportRomDialog({
     }
   }
 
+  // The post-import "remove all vanilla levels" pass. Runs AFTER the import on
+  // purpose: the imported overlays mark their records as kept, and the warp
+  // closure walks the IMPORTED exits — so a vanilla sub-room a hack still pipes
+  // into survives. (Removing before the import would delete rooms the import is
+  // about to fill or reference.)
+  async function removeVanilla(): Promise<RemoveVanillaResult> {
+    const all = await window.shinyEgg.editor.removableVanillaLevels()
+    if ('error' in all) {
+      return { removed: [], keptEdited: 0, keptProtected: 0, keptWarpReachable: 0, error: all.error }
+    }
+    const kept = {
+      keptEdited: all.keptEdited.length,
+      keptProtected: all.keptProtected.length,
+      keptWarpReachable: all.keptWarpReachable.length
+    }
+    if (all.recordIds.length === 0) return { removed: [], ...kept, error: null }
+    const r = await window.shinyEgg.editor.removeLevels(all.recordIds)
+    if (!r.ok) return { removed: [], ...kept, error: r.error }
+    return { removed: r.removed, ...kept, error: null }
+  }
+
   async function apply(): Promise<void> {
     if (selected.size === 0 && !selPalette && !selNames && !selMessages && !selWorldMap) return
     setPhase('applying')
@@ -132,10 +172,20 @@ export function ImportRomDialog({
         palette: selPalette,
         names: selNames,
         messages: selMessages,
-        worldMap: selWorldMap
+        worldMap: selWorldMap,
+        unblock: selUnblock
       })
       setApplyResult(res)
-      if (res.ok) onImported()
+      let removal: RemoveVanillaResult | null = null
+      if (res.ok && selRemoveVanilla) {
+        try {
+          removal = await removeVanilla()
+        } catch (err) {
+          removal = { removed: [], keptEdited: 0, keptProtected: 0, keptWarpReachable: 0, error: (err as Error).message }
+        }
+        setRemoveVanillaResult(removal)
+      }
+      if (res.ok) onImported(removal?.removed ?? [])
       setPhase('done')
     } catch (err) {
       setApplyResult({ ok: false, error: (err as Error).message })
@@ -152,10 +202,29 @@ export function ImportRomDialog({
     })
   }
 
-  function selectableIds(): number[] {
+  function selectableIds(unblockOn: boolean = selUnblock): number[] {
     return (report?.ok ? report.levels : [])
-      .filter((l) => l.importability !== 'blocked')
+      .filter((l) => l.importability !== 'blocked' || (unblockOn && l.unblockAction))
       .map((l) => l.recordId)
+  }
+
+  // Toggling "unblock" flips the unblockable levels in/out of the selection:
+  // ON default-selects them (unless they'd overwrite an existing edit), OFF
+  // deselects them (they'd just fail the save gate otherwise).
+  function toggleUnblock(): void {
+    const next = !selUnblock
+    setSelUnblock(next)
+    const unblockables = (report?.ok ? report.levels : []).filter(
+      (l) => l.importability === 'blocked' && l.unblockAction
+    )
+    setSelected((s) => {
+      const out = new Set(s)
+      for (const l of unblockables) {
+        if (next && !l.hasOverlayConflict) out.add(l.recordId)
+        else if (!next) out.delete(l.recordId)
+      }
+      return out
+    })
   }
 
   return (
@@ -211,7 +280,53 @@ export function ImportRomDialog({
               onToggleWorldMap={() => setSelWorldMap((v) => !v)}
               phase={phase}
               applyResult={applyResult}
+              removeVanilla={removeVanillaResult}
+              unblockOn={selUnblock}
             />
+          )}
+
+          {phase === 'report' && report?.ok && report.levels.some((l) => l.unblockAction) && (
+            <label
+              className="se-import__cat"
+              title={
+                'Some changed levels can only import after a one-time layout change: 0x7D needs a free-space ' +
+                'migration (its own self-contained object copy) and 0x19/0xCB need de-coupling (their own ' +
+                'sprite blob). Checking this makes them selectable and flips those toggles automatically ' +
+                'before the import writes. 0xBF/0xD0 stay blocked (shared room data — no resolution).'
+              }
+            >
+              <input type="checkbox" checked={selUnblock} onChange={toggleUnblock} />
+              <span className="se-import__catname">Unblock imports</span>
+              <span className="se-import__catinfo">
+                pre-emptively de-couple / migrate blocked levels (
+                {report.levels
+                  .filter((l) => l.unblockAction)
+                  .map((l) => hex(l.recordId))
+                  .join(', ')}
+                )
+              </span>
+            </label>
+          )}
+
+          {phase === 'report' && report?.ok && (
+            <label
+              className="se-import__cat se-import__cat--danger"
+              title={
+                'After the import applies, remove every remaining unedited vanilla level — their bytes free up ' +
+                'for your levels at the next build. Imported levels, rooms they warp into, and engine-required ' +
+                'rooms (boot/minigame/arena) are kept. World-map slots of removed levels are marked unused.'
+              }
+            >
+              <input
+                type="checkbox"
+                checked={selRemoveVanilla}
+                onChange={() => setSelRemoveVanilla((v) => !v)}
+              />
+              <span className="se-import__catname">Remove all vanilla levels</span>
+              <span className="se-import__catinfo">
+                after import — frees every level the hack didn’t change or reach
+              </span>
+            </label>
           )}
         </div>
 
@@ -257,6 +372,9 @@ interface ReportViewProps {
   onToggleWorldMap: () => void
   phase: Phase
   applyResult: RomImportApplyResult | null
+  removeVanilla: RemoveVanillaResult | null
+  /** The "unblock imports" option — makes resolvable-blocked levels selectable. */
+  unblockOn: boolean
 }
 
 function ReportView({
@@ -275,7 +393,9 @@ function ReportView({
   onToggleMessages,
   onToggleWorldMap,
   phase,
-  applyResult
+  applyResult,
+  removeVanilla,
+  unblockOn
 }: ReportViewProps): JSX.Element {
   return (
     <>
@@ -463,7 +583,11 @@ function ReportView({
                 level={l}
                 name={names[l.recordId]}
                 checked={selected.has(l.recordId)}
-                disabled={l.importability === 'blocked' || phase !== 'report'}
+                disabled={
+                  phase !== 'report' ||
+                  (l.importability === 'blocked' && !(unblockOn && l.unblockAction))
+                }
+                unblockOn={unblockOn}
                 onToggle={() => onToggle(l.recordId)}
               />
             ))}
@@ -506,6 +630,21 @@ function ReportView({
               )}
               {applyResult.migration.warning && (
                 <p className="se-import__warn">⚠ {applyResult.migration.warning}</p>
+              )}
+              {(applyResult.unblocked.migrated.length > 0 ||
+                applyResult.unblocked.decoupled.length > 0) && (
+                <p>
+                  Unblocked{' '}
+                  {[
+                    applyResult.unblocked.migrated.length > 0 &&
+                      `migrated ${applyResult.unblocked.migrated.map((r) => hex(r)).join(', ')} to free space`,
+                    applyResult.unblocked.decoupled.length > 0 &&
+                      `de-coupled ${applyResult.unblocked.decoupled.map((r) => hex(r)).join(', ')}`
+                  ]
+                    .filter(Boolean)
+                    .join('; ')}{' '}
+                  so their imports could apply.
+                </p>
               )}
               {applyResult.palette.applied && (
                 <p>
@@ -553,6 +692,20 @@ function ReportView({
               )}
               {applyResult.worldMap.error && (
                 <p className="se-import__error">World-map import failed: {applyResult.worldMap.error}</p>
+              )}
+              {removeVanilla && removeVanilla.error === null && (
+                <p>
+                  Removed <strong>{removeVanilla.removed.length}</strong> vanilla level
+                  {removeVanilla.removed.length === 1 ? '' : 's'} — kept{' '}
+                  {removeVanilla.keptEdited} imported/edited, {removeVanilla.keptProtected}{' '}
+                  engine-required, {removeVanilla.keptWarpReachable} warp-reachable. Their bytes
+                  free up at the next build.
+                </p>
+              )}
+              {removeVanilla?.error && (
+                <p className="se-import__error">
+                  Vanilla-level removal failed (the import itself succeeded): {removeVanilla.error}
+                </p>
               )}
               {(applyResult.applied > 0 ||
                 applyResult.palette.applied ||
@@ -660,18 +813,21 @@ function LevelRow({
   name,
   checked,
   disabled,
+  unblockOn,
   onToggle
 }: {
   level: RomImportLevel
   name?: string
   checked: boolean
   disabled: boolean
+  unblockOn: boolean
   onToggle: () => void
 }): JSX.Element {
+  const unblocks = level.importability === 'blocked' && !!level.unblockAction && unblockOn
   const f = level.foreign
   const b = level.base
   return (
-    <label className={`se-import__row${level.importability === 'blocked' ? ' is-blocked' : ''}`}>
+    <label className={`se-import__row${level.importability === 'blocked' && !unblocks ? ' is-blocked' : ''}`}>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={onToggle} />
       <span className="se-import__rowid">{hex(level.recordId)}</span>
       <span className="se-import__rowname">{name ?? '—'}</span>
@@ -696,12 +852,24 @@ function LevelRow({
           raw
         </span>
       )}
-      {level.importability === 'blocked' && (
+      {level.importability === 'blocked' && !unblocks && (
         <span className="se-import__tag se-import__tag--blocked" title={level.blockedReason}>
           blocked
         </span>
       )}
-      {level.hasOverlayConflict && level.importability !== 'blocked' && (
+      {unblocks && (
+        <span
+          className="se-import__tag"
+          title={
+            level.unblockAction === 'migrate'
+              ? 'Imports after an automatic free-space migration (its own self-contained data copy).'
+              : 'Imports after an automatic de-couple (its own sprite blob).'
+          }
+        >
+          {level.unblockAction === 'migrate' ? 'will migrate' : 'will de-couple'}
+        </span>
+      )}
+      {level.hasOverlayConflict && (level.importability !== 'blocked' || unblocks) && (
         <span className="se-import__tag se-import__tag--warn" title="You've already edited this level — importing overwrites it.">
           overwrite
         </span>

@@ -13,6 +13,7 @@ import type {
   Bg1RenderResult,
   BuildResult,
   EditableResource,
+  ExtractFreshness,
   ExtractionState,
   ExtractResult,
   GfxFileEntry,
@@ -68,12 +69,19 @@ import type {
   ProjectInfo,
   ProjectRenameResult,
   ProjectSummary,
+  CreatableSlot,
+  CreateLevelResult,
   RelocationState,
+  RemovableVanillaLevels,
+  RemovalPreviewResult,
+  RemovedLevelEntry,
+  RemoveLevelsResult,
   RenderGfxFilesArgs,
   RenderImage,
   RenderMap16Args,
   RenderVramArgs,
   ResetLevelResult,
+  RestoreLevelsResult,
   RomImportApplyResult,
   RomImportReport,
   RomImportSelection,
@@ -93,6 +101,7 @@ export type {
   Bg1RenderResult,
   BuildResult,
   EditableResource,
+  ExtractFreshness,
   ExtractionState,
   ExtractResult,
   ForeignLevelDiff,
@@ -188,7 +197,15 @@ export type {
   ProjectInfo,
   ProjectRenameResult,
   ProjectSummary,
+  CreatableSlot,
+  CreateLevelResult,
   RelocationState,
+  RemovableVanillaLevels,
+  RemovalBlocked,
+  RemovalPreview,
+  RemovalPreviewResult,
+  RemovedLevelEntry,
+  RemoveLevelsResult,
   RenderGfxFilesArgs,
   RenderHeaderRequest,
   RenderImage,
@@ -196,6 +213,7 @@ export type {
   RenderVramArgs,
   RenderVramRegion,
   ResetLevelResult,
+  RestoreLevelsResult,
   RomImportApplyResult,
   RomImportLevel,
   RomImportNames,
@@ -424,6 +442,30 @@ export interface EditorAPI {
   /** Reset a level to base: delete its overlay `.bin`(s). The renderer reloads
    *  the level afterwards (and rebuilds when `removed`). */
   resetLevel: (levelRecordId: number) => Promise<ResetLevelResult>
+  /** Dry-run impact of removing vanilla levels (validated set, world-map
+   *  slots, freed bytes, stranded incoming warps) — drives the confirm dialog. */
+  removeLevelsPreview: (recordIds: number[]) => Promise<RemovalPreviewResult>
+  /** Remove vanilla levels from the game: world-map slots marked unused +
+   *  unlocks self-redirected, project `removedLevels` flagged (build repoints
+   *  the `Ptrs:` rows + frees the pool bytes), overlay `.bin`s cleared. The
+   *  renderer refreshes the catalog/pools and marks the build dirty. */
+  removeLevels: (recordIds: number[]) => Promise<RemoveLevelsResult>
+  /** The "remove all vanilla" candidate set + the kept-level breakdown. */
+  removableVanillaLevels: () => Promise<RemovableVanillaLevels | { error: string }>
+  /** The active project's removed levels (with best-effort names) — feeds the
+   *  Banks panel's "Restore levels" modal. */
+  removedLevels: () => Promise<RemovedLevelEntry[]>
+  /** Restore removed levels: re-wire their base world-map slots and clear the
+   *  `removedLevels` flags (the next build brings the data back from base).
+   *  The renderer refreshes the catalog/pools and marks the build dirty. */
+  restoreLevels: (recordIds: number[]) => Promise<RestoreLevelsResult>
+  /** Pointer slots a new level can be created in (free sentinel rows +
+   *  removed records) — feeds the Banks panel's "Create Level" modal. */
+  creatableSlots: () => Promise<CreatableSlot[]>
+  /** Create a blank level in a free pointer slot and point the slot at it
+   *  (sentinel: new-slot placement; removed: restore around the new data).
+   *  The renderer refreshes the catalog, marks the build dirty, and jumps in. */
+  createLevel: (recordId: number) => Promise<CreateLevelResult>
   /** Cross-level warp-exit destination edit (incoming-marker drag, §A8 #8.5):
    *  set the warp exit on `screenIndex` in `sourceLevelRecordId` to land at
    *  (destX, destY) and write that level's overlay (auto-save). The renderer
@@ -441,6 +483,9 @@ export interface ShinyEggAPI {
   getPathForFile: (file: File) => string
   identifyCart: (cartPath: string) => Promise<CartIdentification>
   getExtractionState: () => Promise<ExtractionState | null>
+  /** Out-of-date-extract check — stale pipeline version or a missing output
+   *  (e.g. levels.json). 'stale' ⇒ the UI should prompt a re-extract. */
+  getExtractFreshness: () => Promise<ExtractFreshness>
   extract: (args: FrameworkExtractArgs) => Promise<ExtractResult>
   /** Dev-only: path of the reference cart next to the project root, or null in
    *  packaged builds / when absent. Lets the extract UI pre-select it. */

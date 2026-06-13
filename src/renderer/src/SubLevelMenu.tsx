@@ -3,12 +3,12 @@ import { formatLevelId, levelLabel } from './data/levels'
 import { useDropdown } from './hooks/useDropdown'
 
 export interface SubLevelMenuProps {
-  /** The root translevel — anchors the BFS. */
+  /** The root level RECORD id (the LevelMenu pick) — anchors the BFS. */
   rootLevelRecordId: number | null
-  /** Currently-viewed level (may be the root or a discovered sub-room). */
+  /** Currently-viewed level record (may be the root or a discovered sub-room). */
   currentLevelRecordId: number | null
-  /** BFS-discovered level IDs reachable from root via warp exits. Root included
-   *  as element 0; populated incrementally as discovery proceeds. */
+  /** BFS-discovered level RECORD ids reachable from root via warp exits. Root
+   *  included as element 0; populated incrementally as discovery proceeds. */
   subLevels: number[]
   /** True while BFS is still in flight. */
   loading: boolean

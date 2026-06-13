@@ -41,7 +41,7 @@
 ;#   $30-$39   World 5 main + Extra + MiniGame                       (gaps at $3A-$3B)
 ;#   $3C-$45   World 6 main + Extra + MiniGame                       (gaps at $46-$47)
 ;#   $48-$7F   Sub-rooms / pipe destinations / midway-entry rooms (no friendly names)
-;#   $80       PrologueIntro (storybook scroll preceding W1-1; reached via gamemode chain)
+;#   $80       a 4-1 dash-chain sub-room (historically misglossed "PrologueIntro" -- no code loads it)
 ;#   $81-$D9   More sub-rooms (no friendly names)
 ;#   $DA-$DD   Seed-spitting contests, final boss arena
 ;# Total = 222 entries. Slots labeled "(unnamed slot; not in LevelIDs.asm)" are reached
@@ -268,246 +268,238 @@ DATA_map_level_midway_entrances:
 Ptrs:
 level_pointer_table:              ; Raidenthequick: level_object_pointers / level_sprite_pointers
 ;$17F7C3
-	; --- World 1: 8 main + Extra + MiniGame (IDs $00-$09), gap at $0A ---
-	dl DATA_level_00_obj,DATA_level_00_spr    ; $00 MakeEggsThrowEggs            -- W1-1 main
-	dl DATA_level_01_obj,DATA_level_01_spr    ; $01 WatchOutBelow                -- W1-2 main (SuperFX bank $4C)
-	dl DATA_level_02_obj,DATA_level_02_spr    ; $02 TheCaveOfChompRock           -- W1-3 main
-	dl DATA_level_03_obj,DATA_level_03_spr    ; $03 BurtTheBashfulsFort          -- W1-4 fort
-	dl DATA_level_04_obj,DATA_level_04_spr    ; $04 HopHopDonutLifts             -- W1-5 main
-	dl DATA_level_05_obj,DATA_level_05_spr    ; $05 ShyGuysOnStilts              -- W1-6 main
-	dl DATA_level_06_obj,DATA_level_06_spr    ; $06 TouchFuzzyGetDizzy           -- W1-7 main
-	dl DATA_level_07_obj,DATA_level_07_spr    ; $07 SalvoTheSlimesCastle         -- W1-8 castle
-	dl DATA_level_08_obj,DATA_level_08_spr    ; $08 PoochyAintStupid             -- W1-Extra (secret)
-	dl DATA_level_09_obj,DATA_level_09_spr    ; $09 FlipCards                    -- W1-MiniGame
-	dl DATA_level_0A_obj,DATA_level_0A_spr    ; $0A (unnamed slot; not in LevelIDs.asm -- sub-room / pipe destination)
-	; --- World 2 intro + 8 main + Extra + MiniGame (IDs $0B-$15), gaps at $16-$17 ---
-	dl DATA_level_0B_obj,DATA_level_0B_spr    ; $0B WelcomeToYoshisIsland        -- pre-W1 intro (NOT W2-1; engine boot-default per Bank04:12362)
-	dl DATA_level_0C_obj,DATA_level_0C_spr    ; $0C VisitKoopaAndParaKoopa       -- W2-1 main
-	dl DATA_level_0D_obj,DATA_level_0D_spr    ; $0D TheBaseballBoys              -- W2-2 main
-	dl DATA_level_0E_obj,DATA_level_0E_spr    ; $0E WhatsGustyTasteLike          -- W2-3 main
-	dl DATA_level_0F_obj,DATA_level_0F_spr    ; $0F BiggerBoosFort               -- W2-4 fort
-	dl DATA_level_10_obj,DATA_level_10_spr    ; $10 WatchOutForLakitu            -- W2-5 main (bank $00 -- early bank)
-	dl DATA_level_11_obj,DATA_level_11_spr    ; $11 TheCaveOfMysteryMaze         -- W2-6 main
-	dl DATA_level_12_obj,DATA_level_12_spr    ; $12 LakitusWall                  -- W2-7 main
-	dl DATA_level_13_obj,DATA_level_13_spr    ; $13 ThePottedGhostsCastle        -- W2-8 castle
-	dl DATA_level_14_obj,DATA_level_14_spr    ; $14 HitThatSwitch                -- W2-Extra (secret)
-	dl DATA_level_15_obj,DATA_level_15_spr    ; $15 ScratchAndMatch              -- W2-MiniGame
-	dl DATA_level_16_obj,DATA_level_16_spr    ; $16 (unnamed slot; not in LevelIDs.asm)
-	dl DATA_level_17_obj,DATA_level_17_spr    ; $17 (unnamed slot; not in LevelIDs.asm)
-	; --- World 3: 8 main + Extra + MiniGame (IDs $18-$21), gaps at $22-$23 ---
-	dl DATA_level_18_obj,DATA_level_18_spr    ; $18 WelcomeToMonkeyWorld         -- W3-1 main
-	dl DATA_level_19_obj,DATA_14C6C6-$02    ; $19 JungleRhythm                 -- W3-2 main (sprite ptr biased -2; vestigial header anomaly)
-	dl DATA_level_1A_obj,DATA_level_1A_spr    ; $1A NepEnutsDomain               -- W3-3 main
-	dl DATA_level_1B_obj,DATA_level_1B_spr    ; $1B PrinceFroggysFort            -- W3-4 fort
-	dl DATA_level_1C_obj,DATA_level_1C_spr    ; $1C JamminThroughTheTrees        -- W3-5 main
-	dl DATA_level_1D_obj,DATA_level_1D_spr    ; $1D TheCaveOfHarryHedgehog       -- W3-6 main
-	dl DATA_level_1E_obj,DATA_level_1E_spr    ; $1E MonkeysFavoriteLake          -- W3-7 main
-	dl DATA_level_1F_obj,DATA_level_1F_spr    ; $1F NavalPiranhasCastle          -- W3-8 castle
-	dl DATA_level_20_obj,DATA_level_20_spr    ; $20 MoreMonkeyMadness            -- W3-Extra (secret)
-	dl DATA_level_21_obj,DATA_level_21_spr    ; $21 DrawingLots                  -- W3-MiniGame
-	dl DATA_level_22_obj,DATA_level_22_spr    ; $22 (unnamed slot; not in LevelIDs.asm)
-	dl DATA_level_23_obj,DATA_level_23_spr    ; $23 (unnamed slot; not in LevelIDs.asm; SuperFX bank $4C)
-	; --- World 4: 8 main + Extra + MiniGame (IDs $24-$2D), gaps at $2E-$2F ---
-	dl DATA_level_24_obj,DATA_level_24_spr    ; $24 GoGoMario                    -- W4-1 main
-	dl DATA_level_25_obj,DATA_level_25_spr    ; $25 TheCaveOfTheLakitus          -- W4-2 main
-	dl DATA_level_26_obj,DATA_level_26_spr    ; $26 DontLookBack                 -- W4-3 main
-	dl DATA_level_27_obj,DATA_level_27_spr    ; $27 MarchingMildesFort           -- W4-4 fort
-	dl DATA_level_28_obj,DATA_level_28_spr    ; $28 ChompRockZone                -- W4-5 main
-	dl DATA_level_29_obj,DATA_level_29_spr    ; $29 LakeShoreParadise            -- W4-6 main
-	dl DATA_level_2A_obj,DATA_level_2A_spr    ; $2A RideLikeTheWind              -- W4-7 main (SuperFX bank $4C)
-	dl DATA_level_2B_obj,DATA_level_2B_spr    ; $2B HookbillTheKoopasCastle      -- W4-8 castle
-	dl DATA_level_2C_obj,DATA_level_2C_spr    ; $2C TheImpossibleMaze            -- W4-Extra (secret)
-	dl DATA_level_2D_obj,DATA_level_2D_spr    ; $2D MatchCards                   -- W4-MiniGame
-	dl DATA_level_2E_obj,DATA_level_2E_spr    ; $2E (unnamed slot; not in LevelIDs.asm)
-	dl DATA_level_2F_obj,DATA_level_2F_spr    ; $2F (unnamed slot; not in LevelIDs.asm)
-	; --- World 5: 8 main + Extra + MiniGame (IDs $30-$39), gaps at $3A-$3B ---
-	dl DATA_level_30_obj,DATA_level_30_spr    ; $30 BLIZZARD                     -- W5-1 main
-	dl DATA_level_31_obj,DATA_level_31_spr    ; $31 RideTheSkiLifts              -- W5-2 main
-	dl DATA_level_32_obj,DATA_level_32_spr    ; $32 DangerIcyConditionsAhead     -- W5-3 main (SuperFX bank $51)
-	dl DATA_level_33_obj,DATA_level_33_spr    ; $33 SluggyTheUnshavensFort       -- W5-4 fort
-	dl DATA_level_34_obj,DATA_level_34_spr    ; $34 GoonieRides                  -- W5-5 main
-	dl DATA_level_35_obj,DATA_level_35_spr    ; $35 WelcomeToCloudWorld          -- W5-6 main
-	dl DATA_level_36_obj,DATA_level_36_spr    ; $36 ShiftingPlatformsAhead       -- W5-7 main
-	dl DATA_level_37_obj,DATA_level_37_spr    ; $37 RaphaelTheRavensCastle       -- W5-8 castle
-	; $38 KameksRevenge (W5-Extra) -- this row is data-shaped but engine code paths
-	; override the lookup at this index (Kamek's Revenge intro is hardcoded).
-	dl DATA_level_38_obj,DATA_level_38_spr    ; $38 KameksRevenge                -- W5-Extra (engine-hardcoded; row is shadowed)
-	dl DATA_level_39_obj,DATA_level_39_spr    ; $39 Roulette                     -- W5-MiniGame
-	dl DATA_level_3A_obj,DATA_level_3A_spr    ; $3A (unnamed slot; not in LevelIDs.asm)
-	dl DATA_level_3B_obj,DATA_level_3B_spr    ; $3B (unnamed slot; not in LevelIDs.asm; SuperFX bank $4C)
-	; --- World 6: 8 main + Extra + MiniGame (IDs $3C-$45), gaps at $46-$47 ---
-	dl DATA_level_3C_obj,DATA_level_3C_spr    ; $3C ScareySkeletonGoonies        -- W6-1 main
-	dl DATA_level_3D_obj,DATA_level_3D_spr    ; $3D TheCaveOfTheBandits          -- W6-2 main
-	dl DATA_level_3E_obj,DATA_level_3E_spr    ; $3E BewareTheSpinningLogs        -- W6-3 main
-	dl DATA_level_3F_obj,DATA_level_3F_spr    ; $3F TapTapTheRedNosesFort        -- W6-4 fort
-	dl DATA_level_40_obj,DATA_level_40_spr    ; $40 TheVeryLoooooongCave         -- W6-5 main
-	dl DATA_level_41_obj,DATA_level_41_spr    ; $41 TheDeepUndergroundMaze       -- W6-6 main
-	dl DATA_level_42_obj,DATA_level_42_spr    ; $42 KEEPMOVING                   -- W6-7 main ("KEEP MOVING!!!!")
-	dl DATA_level_43_obj,DATA_level_43_spr    ; $43 KingBowsersCastle            -- W6-8 castle (final boss)
-	dl DATA_level_44_obj,DATA_level_44_spr    ; $44 CastlesMasterpieceSet        -- W6-Extra (secret)
-	dl DATA_level_45_obj,DATA_level_45_spr    ; $45 SlotMachine                  -- W6-MiniGame
-	dl DATA_level_46_obj,DATA_level_46_spr    ; $46 (unnamed slot; not in LevelIDs.asm)
-	dl DATA_level_47_obj,DATA_level_47_spr    ; $47 (unnamed slot; not in LevelIDs.asm)
-	; --- Sub-rooms / pipe destinations / midway-entry rooms (IDs $48-$7F + $80 PrologueIntro + $81-$D9) ---
-	; These slots are reached via DATA_map_level_midway_entrances and per-level
-	; pipe/door entries, NOT via direct world-map selection. They have no
-	; friendly names in LevelIDs.asm (except $80 PrologueIntro) and are accessed
-	; numerically by the engine.
-	dl DATA_level_48_obj,DATA_level_48_spr    ; $48
-	dl DATA_level_49_obj,DATA_level_49_spr    ; $49
-	dl DATA_level_4A_obj,DATA_level_4A_spr    ; $4A
-	dl DATA_level_4B_obj,DATA_level_4B_spr    ; $4B
-	dl DATA_level_4C_obj,DATA_level_4C_spr    ; $4C
-	dl DATA_level_4D_obj,DATA_level_4D_spr    ; $4D
-	dl DATA_level_4E_obj,DATA_level_4E_spr    ; $4E
-	dl DATA_level_4F_obj,DATA_level_4F_spr    ; $4F
-	dl DATA_level_50_obj,DATA_level_50_spr    ; $50
-	dl DATA_level_51_obj,DATA_level_51_spr    ; $51
-	dl DATA_level_52_obj,DATA_level_52_spr    ; $52
-	dl DATA_level_53_obj,DATA_level_53_spr    ; $53
-	dl DATA_level_54_obj,DATA_level_54_spr    ; $54
-	dl DATA_level_55_obj,DATA_level_55_spr    ; $55
-	dl DATA_level_56_obj,DATA_level_56_spr    ; $56
-	dl DATA_level_57_obj,DATA_level_57_spr    ; $57
-	dl DATA_level_58_obj,DATA_level_58_spr    ; $58
-	dl DATA_level_59_obj,DATA_level_59_spr    ; $59
-	dl DATA_level_5A_obj,DATA_level_5A_spr    ; $5A (SuperFX bank $4C)
-	dl DATA_level_5B_obj,DATA_level_5B_spr    ; $5B
-	dl DATA_level_5C_obj,DATA_level_5C_spr    ; $5C
-	dl DATA_level_5D_obj,DATA_level_5D_spr    ; $5D
-	dl DATA_level_5E_obj,DATA_level_5E_spr    ; $5E
-	dl DATA_level_5F_obj,DATA_level_5F_spr    ; $5F
-	dl DATA_level_60_obj,DATA_level_60_spr    ; $60
-	dl DATA_level_61_obj,DATA_level_61_spr    ; $61 (SuperFX bank $4C)
-	dl DATA_level_62_obj,DATA_level_62_spr    ; $62
-	dl DATA_level_63_obj,DATA_level_63_spr    ; $63
-	dl DATA_level_64_obj,DATA_level_64_spr    ; $64
-	dl DATA_level_65_obj,DATA_level_65_spr    ; $65
-	dl DATA_level_66_obj,DATA_level_66_spr    ; $66
-	dl DATA_level_67_obj,DATA_level_67_spr    ; $67
-	dl DATA_level_68_obj,DATA_level_68_spr    ; $68
-	dl DATA_level_69_obj,DATA_level_69_spr    ; $69 (SuperFX bank $51)
-	dl DATA_level_6A_obj,DATA_level_6A_spr    ; $6A
-	dl DATA_level_6B_obj,DATA_level_6B_spr    ; $6B
-	dl DATA_level_6C_obj,DATA_level_6C_spr    ; $6C
-	dl DATA_level_6D_obj,DATA_level_6D_spr    ; $6D
-	dl DATA_level_6E_obj,DATA_level_6E_spr    ; $6E
-	dl DATA_level_6F_obj,DATA_level_6F_spr    ; $6F
-	dl DATA_level_70_obj,DATA_level_70_spr    ; $70
-	dl DATA_level_71_obj,DATA_level_71_spr    ; $71
-	dl DATA_level_72_obj,DATA_level_72_spr    ; $72
-	dl DATA_level_73_obj,DATA_level_73_spr    ; $73
-	dl DATA_level_74_obj,DATA_level_74_spr    ; $74
-	dl DATA_level_75_obj,DATA_level_75_spr    ; $75
-	dl DATA_level_76_obj,DATA_level_76_spr    ; $76
-	dl DATA_level_77_obj,DATA_level_77_spr    ; $77
-	dl DATA_level_78_obj,DATA_level_78_spr    ; $78
-	dl DATA_level_79_obj,DATA_level_79_spr    ; $79
-	dl DATA_level_7A_obj,DATA_level_7A_spr    ; $7A
-	dl DATA_level_7B_obj,DATA_level_7B_spr    ; $7B
-	dl DATA_level_7C_obj,DATA_level_7C_spr    ; $7C
-	dl DATA_169D23,DATA_level_7D_spr    ; $7D
-	dl DATA_level_7E_obj,DATA_level_7E_spr    ; $7E
-	dl DATA_level_7F_obj,DATA_level_7F_spr    ; $7F
-	dl DATA_level_80_obj,DATA_level_80_spr    ; $80 PrologueIntro                -- storybook scroll preceding World 1-1
-	dl DATA_level_81_obj,DATA_level_81_spr    ; $81
-	dl DATA_level_82_obj,DATA_level_82_spr    ; $82
-	dl DATA_level_83_obj,DATA_level_83_spr    ; $83
-	dl DATA_level_84_obj,DATA_level_84_spr    ; $84
-	dl DATA_level_85_obj,DATA_level_85_spr    ; $85
-	dl DATA_level_86_obj,DATA_level_86_spr    ; $86
-	dl DATA_level_87_obj,DATA_level_87_spr    ; $87
-	dl DATA_level_88_obj,DATA_level_88_spr    ; $88
-	dl DATA_level_89_obj,DATA_level_89_spr    ; $89
-	dl DATA_level_8A_obj,DATA_level_8A_spr    ; $8A
-	dl DATA_level_8B_obj,DATA_level_8B_spr    ; $8B
-	dl DATA_level_8C_obj,DATA_level_8C_spr    ; $8C
-	dl DATA_level_8D_obj,DATA_level_8D_spr    ; $8D (SuperFX bank $4C)
-	dl DATA_level_8E_obj,DATA_level_8E_spr    ; $8E
-	dl DATA_level_8F_obj,DATA_level_8F_spr    ; $8F
-	dl DATA_level_90_obj,DATA_level_90_spr    ; $90
-	dl DATA_level_91_obj,DATA_level_91_spr    ; $91
-	dl DATA_level_92_obj,DATA_level_92_spr    ; $92
-	dl DATA_level_93_obj,DATA_level_93_spr    ; $93
-	dl DATA_level_94_obj,DATA_level_94_spr    ; $94
-	dl DATA_level_95_obj,DATA_level_95_spr    ; $95 (SuperFX bank $51)
-	dl DATA_level_96_obj,DATA_level_96_spr    ; $96
-	dl DATA_level_97_obj,DATA_level_97_spr    ; $97
-	dl DATA_level_98_obj,DATA_level_98_spr    ; $98
-	; (Sub-rooms continued.)
-	dl DATA_level_99_obj,DATA_level_99_spr    ; $99
-	dl DATA_level_9A_obj,DATA_level_9A_spr    ; $9A
-	dl DATA_level_9B_obj,DATA_level_9B_spr    ; $9B
-	dl DATA_level_9C_obj,DATA_level_9C_spr    ; $9C
-	dl DATA_level_9D_obj,DATA_level_9D_spr    ; $9D
-	dl DATA_level_9E_obj,DATA_level_9E_spr    ; $9E
-	dl DATA_level_9F_obj,DATA_level_9F_spr    ; $9F
-	dl DATA_level_A0_obj,DATA_level_A0_spr    ; $A0
-	dl DATA_level_A1_obj,DATA_level_A1_spr    ; $A1
-	dl DATA_level_A2_obj,DATA_level_A2_spr    ; $A2
-	dl DATA_level_A3_obj,DATA_level_A3_spr    ; $A3
-	dl DATA_level_A4_obj,DATA_level_A4_spr    ; $A4
-	dl DATA_level_A5_obj,DATA_level_A5_spr    ; $A5
-	dl DATA_level_A6_obj,DATA_level_A6_spr    ; $A6
-	dl DATA_level_A7_obj,DATA_level_A7_spr    ; $A7
-	dl DATA_level_A8_obj,DATA_level_A8_spr    ; $A8
-	dl DATA_level_A9_obj,DATA_level_A9_spr    ; $A9
-	dl DATA_level_AA_obj,DATA_level_AA_spr    ; $AA
-	dl DATA_level_AB_obj,DATA_level_AB_spr    ; $AB
-	dl DATA_level_AC_obj,DATA_level_AC_spr    ; $AC
-	dl DATA_level_AD_obj,DATA_level_AD_spr    ; $AD
-	dl DATA_level_AE_obj,DATA_level_AE_spr    ; $AE
-	dl DATA_level_AF_obj,DATA_level_AF_spr    ; $AF
-	dl DATA_level_B0_obj,DATA_level_B0_spr    ; $B0
-	dl DATA_level_B1_obj,DATA_level_B1_spr    ; $B1
-	dl DATA_level_B2_obj,DATA_level_B2_spr    ; $B2 (SuperFX bank $4C)
-	dl DATA_level_B3_obj,DATA_level_B3_spr    ; $B3
-	dl DATA_level_B4_obj,DATA_level_B4_spr    ; $B4
-	dl DATA_level_B5_obj,DATA_level_B5_spr    ; $B5
-	dl DATA_level_B6_obj,DATA_level_B6_spr    ; $B6
-	dl DATA_level_B7_obj,DATA_level_B7_spr    ; $B7
-	dl DATA_level_B8_obj,DATA_level_B8_spr    ; $B8
-	dl DATA_level_B9_obj,DATA_level_B9_spr    ; $B9
-	dl DATA_level_BA_obj,DATA_level_BA_spr    ; $BA
-	dl DATA_level_BB_obj,DATA_level_BB_spr    ; $BB
-	dl DATA_level_BC_obj,DATA_level_BC_spr    ; $BC
-	dl DATA_level_BD_obj,DATA_level_BD_spr    ; $BD
-	dl DATA_level_BE_obj,DATA_level_BE_spr    ; $BE
-	dl DATA_11DC0F,DATA_level_BF_spr    ; $BF
-	dl DATA_level_C0_obj,DATA_level_C0_spr    ; $C0
-	dl DATA_level_C1_obj,DATA_level_C1_spr    ; $C1
-	dl DATA_level_C2_obj,DATA_level_C2_spr    ; $C2
-	dl DATA_level_C3_obj,DATA_level_C3_spr    ; $C3
-	dl DATA_level_C4_obj,DATA_level_C4_spr    ; $C4
-	dl DATA_level_C5_obj,DATA_level_C5_spr    ; $C5
-	dl DATA_level_C6_obj,DATA_level_C6_spr    ; $C6
-	dl DATA_level_C7_obj,DATA_level_C7_spr    ; $C7
-	dl DATA_level_C8_obj,DATA_level_C8_spr    ; $C8
-	; (Sub-rooms continued.)
-	dl DATA_level_C9_obj,DATA_level_C9_spr    ; $C9
-	dl DATA_level_CA_obj,DATA_level_CA_spr    ; $CA
-	dl DATA_level_CB_obj,DATA_16F097-$02    ; $CB sprite ptr biased by -2 (header anomaly, same pattern as $19)
-	dl DATA_level_CC_obj,DATA_level_CC_spr    ; $CC
-	dl DATA_level_CD_obj,DATA_level_CD_spr    ; $CD
-	dl DATA_level_CE_obj,DATA_level_CE_spr    ; $CE
-	dl DATA_level_CF_obj,DATA_level_CF_spr    ; $CF
-	dl DATA_11DC0F,DATA_level_D0_spr    ; $D0 (note: object ptr reused from $BF)
-	dl DATA_level_D1_obj,DATA_level_D1_spr    ; $D1
-	dl DATA_level_D2_obj,DATA_level_D2_spr    ; $D2
-	dl DATA_level_D3_obj,DATA_level_D3_spr    ; $D3
-	dl DATA_level_D4_obj,DATA_level_D4_spr    ; $D4
-	dl DATA_level_D5_obj,DATA_level_D5_spr    ; $D5
-	dl DATA_level_D6_obj,DATA_level_D6_spr    ; $D6
-	dl DATA_level_D7_obj,DATA_level_D7_spr    ; $D7
-	dl DATA_level_D8_obj,DATA_level_D8_spr    ; $D8
-	dl DATA_level_D9_obj,DATA_level_D9_spr    ; $D9
-	; --- Seed-spitting contests / final boss arena (IDs $DA-$DD) ---
+	; Per-row identities below are derived from the cart entrance tables
+	; (record = entrance byte +0; editor-data/yi/level-map.json). Records and
+	; world-map slots (LevelIDs.asm translevels) are DIFFERENT id spaces that
+	; collide numerically -- e.g. 1-8’s tile plays record $9B, and record $07
+	; is one of its sub-rooms.
+	dl DATA_level_00_obj,DATA_level_00_spr    ; $00 1-1 "Make Eggs, Throw Eggs" (map slot $00)
+	dl DATA_level_01_obj,DATA_level_01_spr    ; $01 1-2 "Watch Out Below!" (map slot $01)
+	dl DATA_level_02_obj,DATA_level_02_spr    ; $02 1-3 "The Cave Of Chomp Rock" (map slot $02)
+	dl DATA_level_03_obj,DATA_level_03_spr    ; $03 1-4 "Burt The Bashful's Fort" (map slot $03)
+	dl DATA_level_04_obj,DATA_level_04_spr    ; $04 1-5 "Hop! Hop! Donut Lifts" (map slot $04)
+	dl DATA_level_05_obj,DATA_level_05_spr    ; $05 1-6 "Shy-Guys On Stilts" (map slot $05)
+	dl DATA_level_06_obj,DATA_level_06_spr    ; $06 1-7 "Touch Fuzzy Get Dizzy" (map slot $06)
+	dl DATA_level_07_obj,DATA_level_07_spr    ; $07 sub-room of 1-8 "Salvo The Slime's Castle"
+	dl DATA_level_08_obj,DATA_level_08_spr    ; $08 1-Extra "Poochy Ain't Stupid" (map slot $08)
+	dl DATA_level_09_obj,DATA_level_09_spr    ; $09 2-1 "Visit Koopa And Para-Koopa" (map slot $0C)
+	dl DATA_level_0A_obj,DATA_level_0A_spr    ; $0A 2-2 "The Baseball Boys" (map slot $0D)
+	dl DATA_level_0B_obj,DATA_level_0B_spr    ; $0B 2-3 "What's Gusty Taste Like?" (map slot $0E)
+	dl DATA_level_0C_obj,DATA_level_0C_spr    ; $0C 2-4 "Bigger Boo's Fort" (map slot $0F)
+	dl DATA_level_0D_obj,DATA_level_0D_spr    ; $0D 2-5 "Watch Out For Lakitu" (map slot $10)
+	dl DATA_level_0E_obj,DATA_level_0E_spr    ; $0E 2-6 "The Cave Of The Mystery Maze" (map slot $11)
+	dl DATA_level_0F_obj,DATA_level_0F_spr    ; $0F 2-7 "Lakitu's Wall" (map slot $12)
+	dl DATA_level_10_obj,DATA_level_10_spr    ; $10 2-8 "The Potted Ghost's Castle" (map slot $13)
+	dl DATA_level_11_obj,DATA_level_11_spr    ; $11 2-Extra "Hit That Switch!!" (map slot $14)
+	dl DATA_level_12_obj,DATA_level_12_spr    ; $12 3-1 "Welcome To Monkey World!" (map slot $18)
+	dl DATA_level_13_obj,DATA_level_13_spr    ; $13 3-2 "Jungle Rhythm ..." (map slot $19)
+	dl DATA_level_14_obj,DATA_level_14_spr    ; $14 3-3 "Nep-Enuts' Domain" (map slot $1A)
+	dl DATA_level_15_obj,DATA_level_15_spr    ; $15 3-4 "Prince Froggy's Fort" (map slot $1B)
+	dl DATA_level_16_obj,DATA_level_16_spr    ; $16 3-5 "Jammin' Through The Trees" (map slot $1C)
+	dl DATA_level_17_obj,DATA_level_17_spr    ; $17 3-6 "The Cave Of Harry Hedgehog" (map slot $1D)
+	dl DATA_level_18_obj,DATA_level_18_spr    ; $18 3-7 "Monkeys' Favorite Lake" (map slot $1E)
+	dl DATA_level_19_obj,DATA_14C6C6-$02    ; $19 3-8 "Naval Piranha's Castle" (map slot $1F) -- sprite ptr biased -2 into DATA_level_51_spr’s terminator (de-couple to edit; pool-map.ts)
+	dl DATA_level_1A_obj,DATA_level_1A_spr    ; $1A 3-Extra "More Monkey Madness" (map slot $20)
+	dl DATA_level_1B_obj,DATA_level_1B_spr    ; $1B 4-1 "GO! GO! MARIO!!" (map slot $24)
+	dl DATA_level_1C_obj,DATA_level_1C_spr    ; $1C 4-2 "The Cave Of The Lakitus" (map slot $25)
+	dl DATA_level_1D_obj,DATA_level_1D_spr    ; $1D 4-3 "Don't Look Back!" (map slot $26)
+	dl DATA_level_1E_obj,DATA_level_1E_spr    ; $1E 4-4 "Marching Milde's Fort" (map slot $27)
+	dl DATA_level_1F_obj,DATA_level_1F_spr    ; $1F 4-5 "Chomp Rock Zone" (map slot $28)
+	dl DATA_level_20_obj,DATA_level_20_spr    ; $20 4-6 "Lake Shore Paradise" (map slot $29)
+	dl DATA_level_21_obj,DATA_level_21_spr    ; $21 4-7 "Ride Like The Wind" (map slot $2A)
+	dl DATA_level_22_obj,DATA_level_22_spr    ; $22 4-8 "Hookbill The Koopa's Castle" (map slot $2B)
+	dl DATA_level_23_obj,DATA_level_23_spr    ; $23 sub-room of 4-Extra "The Impossible? Maze"
+	dl DATA_level_24_obj,DATA_level_24_spr    ; $24 5-1 "BLIZZARD!!!" (map slot $30)
+	dl DATA_level_25_obj,DATA_level_25_spr    ; $25 5-2 "Ride The Ski Lifts" (map slot $31)
+	dl DATA_level_26_obj,DATA_level_26_spr    ; $26 5-3 "Danger - Icy Conditions Ahead" (map slot $32)
+	dl DATA_level_27_obj,DATA_level_27_spr    ; $27 5-4 "Sluggy The Unshaven's Fort" (map slot $33)
+	dl DATA_level_28_obj,DATA_level_28_spr    ; $28 5-5 "Goonie Rides!" (map slot $34)
+	dl DATA_level_29_obj,DATA_level_29_spr    ; $29 5-6 "Welcome To Cloud World" (map slot $35)
+	dl DATA_level_2A_obj,DATA_level_2A_spr    ; $2A 5-7 "Shifting Platforms Ahead" (map slot $36)
+	dl DATA_level_2B_obj,DATA_level_2B_spr    ; $2B 5-8 "Raphael The Raven's Castle" (map slot $37)
+	dl DATA_level_2C_obj,DATA_level_2C_spr    ; $2C 5-Extra "Kamek's Revenge" (map slot $38)
+	dl DATA_level_2D_obj,DATA_level_2D_spr    ; $2D 6-1 "Scary Skeleton Goonies!" (map slot $3C)
+	dl DATA_level_2E_obj,DATA_level_2E_spr    ; $2E 6-2 "The Cave Of The Bandits" (map slot $3D)
+	dl DATA_level_2F_obj,DATA_level_2F_spr    ; $2F 6-3 "Beware The Spinning Logs" (map slot $3E)
+	dl DATA_level_30_obj,DATA_level_30_spr    ; $30 6-4 "Tap-Tap The Red Nose's Fort" (map slot $3F)
+	dl DATA_level_31_obj,DATA_level_31_spr    ; $31 6-5 "The Very Loooooong Cave" (map slot $40)
+	dl DATA_level_32_obj,DATA_level_32_spr    ; $32 6-6 "The Deep, Underground Maze" (map slot $41)
+	dl DATA_level_33_obj,DATA_level_33_spr    ; $33 6-7 "KEEP MOVING!!!!" (map slot $42)
+	dl DATA_level_34_obj,DATA_level_34_spr    ; $34 6-8 "King Bowser's Castle" (map slot $43)
+	dl DATA_level_35_obj,DATA_level_35_spr    ; $35 6-Extra "Castles - Masterpiece Set" (map slot $44)
+	dl DATA_level_36_obj,DATA_level_36_spr    ; $36 sub-room of 1-1 "Make Eggs, Throw Eggs"
+	dl DATA_level_37_obj,DATA_level_37_spr    ; $37 sub-room of 1-3 "The Cave Of Chomp Rock"
+	dl DATA_level_38_obj,DATA_level_38_spr    ; $38 intro-cutscene level (played by map slot $0A via gm38; editor skip-parses it)
+	dl DATA_level_39_obj,DATA_level_39_spr    ; $39 Welcome To Yoshi’s Island (played by map slot $0B -- the Bank04 hardcoded boot)
+	dl DATA_level_3A_obj,DATA_level_3A_spr    ; $3A sub-room of 1-1 "Make Eggs, Throw Eggs"
+	dl DATA_level_3B_obj,DATA_level_3B_spr    ; $3B sub-room of 1-2 "Watch Out Below!"
+	dl DATA_level_3C_obj,DATA_level_3C_spr    ; $3C sub-room of 1-3 "The Cave Of Chomp Rock"
+	dl DATA_level_3D_obj,DATA_level_3D_spr    ; $3D sub-room of 1-4 "Burt The Bashful's Fort"
+	dl DATA_level_3E_obj,DATA_level_3E_spr    ; $3E sub-room of 1-6 "Shy-Guys On Stilts"
+	dl DATA_level_3F_obj,DATA_level_3F_spr    ; $3F sub-room of 1-7 "Touch Fuzzy Get Dizzy"
+	dl DATA_level_40_obj,DATA_level_40_spr    ; $40 sub-room of 1-8 "Salvo The Slime's Castle"
+	dl DATA_level_41_obj,DATA_level_41_spr    ; $41 sub-room of 2-1 "Visit Koopa And Para-Koopa"
+	dl DATA_level_42_obj,DATA_level_42_spr    ; $42 sub-room of 2-2 "The Baseball Boys"
+	dl DATA_level_43_obj,DATA_level_43_spr    ; $43 sub-room of 2-3 "What's Gusty Taste Like?"
+	dl DATA_level_44_obj,DATA_level_44_spr    ; $44 sub-room of 2-4 "Bigger Boo's Fort"
+	dl DATA_level_45_obj,DATA_level_45_spr    ; $45 sub-room of 2-5 "Watch Out For Lakitu"
+	dl DATA_level_46_obj,DATA_level_46_spr    ; $46 sub-room of 2-6 "The Cave Of The Mystery Maze"
+	dl DATA_level_47_obj,DATA_level_47_spr    ; $47 sub-room of 2-7 "Lakitu's Wall"
+	; Records below are reached via per-level screen exits (pipes/doors) and
+	; midway entries, NOT via direct world-map selection; the engine accesses
+	; them numerically. Identities per row.
+	dl DATA_level_48_obj,DATA_level_48_spr    ; $48 sub-room of 2-8 "The Potted Ghost's Castle"
+	dl DATA_level_49_obj,DATA_level_49_spr    ; $49 sub-room of 2-Extra "Hit That Switch!!"
+	dl DATA_level_4A_obj,DATA_level_4A_spr    ; $4A sub-room of 3-1 "Welcome To Monkey World!"
+	dl DATA_level_4B_obj,DATA_level_4B_spr    ; $4B sub-room of 3-2 "Jungle Rhythm ..."
+	dl DATA_level_4C_obj,DATA_level_4C_spr    ; $4C sub-room of 3-3 "Nep-Enuts' Domain"
+	dl DATA_level_4D_obj,DATA_level_4D_spr    ; $4D sub-room of 3-4 "Prince Froggy's Fort"
+	dl DATA_level_4E_obj,DATA_level_4E_spr    ; $4E sub-room of 3-5 "Jammin' Through The Trees"
+	dl DATA_level_4F_obj,DATA_level_4F_spr    ; $4F sub-room of 3-6 "The Cave Of Harry Hedgehog"
+	dl DATA_level_50_obj,DATA_level_50_spr    ; $50 sub-room of 3-7 "Monkeys' Favorite Lake"
+	dl DATA_level_51_obj,DATA_level_51_spr    ; $51 sub-room of 3-8 "Naval Piranha's Castle"
+	dl DATA_level_52_obj,DATA_level_52_spr    ; $52 sub-room of 4-1 "GO! GO! MARIO!!"
+	dl DATA_level_53_obj,DATA_level_53_spr    ; $53 sub-room of 4-2 "The Cave Of The Lakitus"
+	dl DATA_level_54_obj,DATA_level_54_spr    ; $54 sub-room of 4-3 "Don't Look Back!"
+	dl DATA_level_55_obj,DATA_level_55_spr    ; $55 sub-room of 4-4 "Marching Milde's Fort"
+	dl DATA_level_56_obj,DATA_level_56_spr    ; $56 sub-room of 4-5 "Chomp Rock Zone"
+	dl DATA_level_57_obj,DATA_level_57_spr    ; $57 sub-room of 4-6 "Lake Shore Paradise"
+	dl DATA_level_58_obj,DATA_level_58_spr    ; $58 sub-room of 4-7 "Ride Like The Wind"
+	dl DATA_level_59_obj,DATA_level_59_spr    ; $59 sub-room of 4-8 "Hookbill The Koopa's Castle"
+	dl DATA_level_5A_obj,DATA_level_5A_spr    ; $5A 4-Extra "The Impossible? Maze" (map slot $2C)
+	dl DATA_level_5B_obj,DATA_level_5B_spr    ; $5B sub-room of 5-1 "BLIZZARD!!!"
+	dl DATA_level_5C_obj,DATA_level_5C_spr    ; $5C sub-room of 5-2 "Ride The Ski Lifts"
+	dl DATA_level_5D_obj,DATA_level_5D_spr    ; $5D sub-room of 5-3 "Danger - Icy Conditions Ahead"
+	dl DATA_level_5E_obj,DATA_level_5E_spr    ; $5E sub-room of 5-4 "Sluggy The Unshaven's Fort"
+	dl DATA_level_5F_obj,DATA_level_5F_spr    ; $5F sub-room of 5-5 "Goonie Rides!"
+	dl DATA_level_60_obj,DATA_level_60_spr    ; $60 sub-room of 5-6 "Welcome To Cloud World"
+	dl DATA_level_61_obj,DATA_level_61_spr    ; $61 sub-room of 5-7 "Shifting Platforms Ahead"
+	dl DATA_level_62_obj,DATA_level_62_spr    ; $62 sub-room of 5-8 "Raphael The Raven's Castle"
+	dl DATA_level_63_obj,DATA_level_63_spr    ; $63 sub-room of 5-Extra "Kamek's Revenge"
+	dl DATA_level_64_obj,DATA_level_64_spr    ; $64 sub-room of 6-1 "Scary Skeleton Goonies!"
+	dl DATA_level_65_obj,DATA_level_65_spr    ; $65 sub-room of 6-2 "The Cave Of The Bandits"
+	dl DATA_level_66_obj,DATA_level_66_spr    ; $66 sub-room of 6-3 "Beware The Spinning Logs"
+	dl DATA_level_67_obj,DATA_level_67_spr    ; $67 sub-room of 6-4 "Tap-Tap The Red Nose's Fort"
+	dl DATA_level_68_obj,DATA_level_68_spr    ; $68 sub-room of 6-5 "The Very Loooooong Cave"
+	dl DATA_level_69_obj,DATA_level_69_spr    ; $69 sub-room of 6-6 "The Deep, Underground Maze"
+	dl DATA_level_6A_obj,DATA_level_6A_spr    ; $6A sub-room of 6-7 "KEEP MOVING!!!!"
+	dl DATA_level_6B_obj,DATA_level_6B_spr    ; $6B sub-room of 3-6 "The Cave Of Harry Hedgehog"
+	dl DATA_level_6C_obj,DATA_level_6C_spr    ; $6C sub-room of 6-Extra "Castles - Masterpiece Set"
+	dl DATA_level_6D_obj,DATA_level_6D_spr    ; $6D sub-room of 1-3 "The Cave Of Chomp Rock"
+	dl DATA_level_6E_obj,DATA_level_6E_spr    ; $6E sub-room of 1-4 "Burt The Bashful's Fort"
+	dl DATA_level_6F_obj,DATA_level_6F_spr    ; $6F sub-room of 1-6 "Shy-Guys On Stilts"
+	dl DATA_level_70_obj,DATA_level_70_spr    ; $70 sub-room of 1-8 "Salvo The Slime's Castle"
+	dl DATA_level_71_obj,DATA_level_71_spr    ; $71 sub-room of 2-1 "Visit Koopa And Para-Koopa"
+	dl DATA_level_72_obj,DATA_level_72_spr    ; $72 sub-room of 2-2 "The Baseball Boys"
+	dl DATA_level_73_obj,DATA_level_73_spr    ; $73 sub-room of 2-3 "What's Gusty Taste Like?"
+	dl DATA_level_74_obj,DATA_level_74_spr    ; $74 sub-room of 2-4 "Bigger Boo's Fort"
+	dl DATA_level_75_obj,DATA_level_75_spr    ; $75 sub-room of 2-5 "Watch Out For Lakitu"
+	dl DATA_level_76_obj,DATA_level_76_spr    ; $76 sub-room of 2-6 "The Cave Of The Mystery Maze"
+	dl DATA_level_77_obj,DATA_level_77_spr    ; $77 sub-room of 2-7 "Lakitu's Wall"
+	dl DATA_level_78_obj,DATA_level_78_spr    ; $78 sub-room of 2-8 "The Potted Ghost's Castle"
+	dl DATA_level_79_obj,DATA_level_79_spr    ; $79 sub-room of 3-1 "Welcome To Monkey World!"
+	dl DATA_level_7A_obj,DATA_level_7A_spr    ; $7A sub-room of 3-3 "Nep-Enuts' Domain"
+	dl DATA_level_7B_obj,DATA_level_7B_spr    ; $7B sub-room of 3-4 "Prince Froggy's Fort"
+	dl DATA_level_7C_obj,DATA_level_7C_spr    ; $7C sub-room of 3-5 "Jammin' Through The Trees"
+	dl DATA_169D23,DATA_level_7D_spr    ; $7D sub-room of 3-6 "The Cave Of Harry Hedgehog" -- obj ptr is the truncated 225-byte DATA_169D23 slice of a 366-byte stream (see Bank16.asm)
+	dl DATA_level_7E_obj,DATA_level_7E_spr    ; $7E sub-room of 3-7 "Monkeys' Favorite Lake"
+	dl DATA_level_7F_obj,DATA_level_7F_spr    ; $7F sub-room of 3-8 "Naval Piranha's Castle"
+	dl DATA_level_80_obj,DATA_level_80_spr    ; $80 sub-room of 4-1 "GO! GO! MARIO!!" (Superstar dash chain via $52; historically misglossed "PrologueIntro" -- no code loads $80)
+	dl DATA_level_81_obj,DATA_level_81_spr    ; $81 sub-room of 4-2 "The Cave Of The Lakitus"
+	dl DATA_level_82_obj,DATA_level_82_spr    ; $82 sub-room of 4-4 "Marching Milde's Fort"
+	dl DATA_level_83_obj,DATA_level_83_spr    ; $83 sub-room of 4-5 "Chomp Rock Zone"
+	dl DATA_level_84_obj,DATA_level_84_spr    ; $84 sub-room of 4-6 "Lake Shore Paradise"
+	dl DATA_level_85_obj,DATA_level_85_spr    ; $85 sub-room of 4-7 "Ride Like The Wind"
+	dl DATA_level_86_obj,DATA_level_86_spr    ; $86 sub-room of 4-8 "Hookbill The Koopa's Castle"
+	dl DATA_level_87_obj,DATA_level_87_spr    ; $87 sub-room of 5-1 "BLIZZARD!!!"
+	dl DATA_level_88_obj,DATA_level_88_spr    ; $88 sub-room of 5-2 "Ride The Ski Lifts"
+	dl DATA_level_89_obj,DATA_level_89_spr    ; $89 sub-room of 5-3 "Danger - Icy Conditions Ahead"
+	dl DATA_level_8A_obj,DATA_level_8A_spr    ; $8A sub-room of 5-4 "Sluggy The Unshaven's Fort"
+	dl DATA_level_8B_obj,DATA_level_8B_spr    ; $8B sub-room of 5-5 "Goonie Rides!"
+	dl DATA_level_8C_obj,DATA_level_8C_spr    ; $8C sub-room of 5-6 "Welcome To Cloud World"
+	dl DATA_level_8D_obj,DATA_level_8D_spr    ; $8D sub-room of 5-7 "Shifting Platforms Ahead"
+	dl DATA_level_8E_obj,DATA_level_8E_spr    ; $8E sub-room of 5-8 "Raphael The Raven's Castle"
+	dl DATA_level_8F_obj,DATA_level_8F_spr    ; $8F sub-room of 5-Extra "Kamek's Revenge"
+	dl DATA_level_90_obj,DATA_level_90_spr    ; $90 sub-room of 6-1 "Scary Skeleton Goonies!"
+	dl DATA_level_91_obj,DATA_level_91_spr    ; $91 sub-room of 6-2 "The Cave Of The Bandits"
+	dl DATA_level_92_obj,DATA_level_92_spr    ; $92 sub-room of 6-3 "Beware The Spinning Logs"
+	dl DATA_level_93_obj,DATA_level_93_spr    ; $93 sub-room of 6-4 "Tap-Tap The Red Nose's Fort"
+	dl DATA_level_94_obj,DATA_level_94_spr    ; $94 sub-room of 6-5 "The Very Loooooong Cave"
+	dl DATA_level_95_obj,DATA_level_95_spr    ; $95 sub-room of 6-6 "The Deep, Underground Maze"
+	dl DATA_level_96_obj,DATA_level_96_spr    ; $96 sub-room of 6-7 "KEEP MOVING!!!!"
+	dl DATA_level_97_obj,DATA_level_97_spr    ; $97 sub-room of 6-8 "King Bowser's Castle"
+	dl DATA_level_98_obj,DATA_level_98_spr    ; $98 sub-room of 6-Extra "Castles - Masterpiece Set"
+	dl DATA_level_99_obj,DATA_level_99_spr    ; $99 sub-room of 1-4 "Burt The Bashful's Fort"
+	dl DATA_level_9A_obj,DATA_level_9A_spr    ; $9A sub-room of 1-6 "Shy-Guys On Stilts"
+	dl DATA_level_9B_obj,DATA_level_9B_spr    ; $9B 1-8 "Salvo The Slime's Castle" (map slot $07)
+	dl DATA_level_9C_obj,DATA_level_9C_spr    ; $9C sub-room of 2-1 "Visit Koopa And Para-Koopa"
+	dl DATA_level_9D_obj,DATA_level_9D_spr    ; $9D sub-room of 2-4 "Bigger Boo's Fort"
+	dl DATA_level_9E_obj,DATA_level_9E_spr    ; $9E sub-room of 2-5 "Watch Out For Lakitu"
+	dl DATA_level_9F_obj,DATA_level_9F_spr    ; $9F sub-room of 2-6 "The Cave Of The Mystery Maze"
+	dl DATA_level_A0_obj,DATA_level_A0_spr    ; $A0 sub-room of 2-7 "Lakitu's Wall"
+	dl DATA_level_A1_obj,DATA_level_A1_spr    ; $A1 sub-room of 2-8 "The Potted Ghost's Castle"
+	dl DATA_level_A2_obj,DATA_level_A2_spr    ; $A2 sub-room of 3-1 "Welcome To Monkey World!"
+	dl DATA_level_A3_obj,DATA_level_A3_spr    ; $A3 sub-room of 3-4 "Prince Froggy's Fort"
+	dl DATA_level_A4_obj,DATA_level_A4_spr    ; $A4 sub-room of 3-5 "Jammin' Through The Trees"
+	dl DATA_level_A5_obj,DATA_level_A5_spr    ; $A5 sub-room of 3-6 "The Cave Of Harry Hedgehog"
+	dl DATA_level_A6_obj,DATA_level_A6_spr    ; $A6 sub-room of 3-7 "Monkeys' Favorite Lake"
+	dl DATA_level_A7_obj,DATA_level_A7_spr    ; $A7 sub-room of 3-8 "Naval Piranha's Castle"
+	dl DATA_level_A8_obj,DATA_level_A8_spr    ; $A8 sub-room of 4-1 "GO! GO! MARIO!!"
+	dl DATA_level_A9_obj,DATA_level_A9_spr    ; $A9 sub-room of 4-2 "The Cave Of The Lakitus"
+	dl DATA_level_AA_obj,DATA_level_AA_spr    ; $AA sub-room of 4-4 "Marching Milde's Fort"
+	dl DATA_level_AB_obj,DATA_level_AB_spr    ; $AB sub-room of 4-6 "Lake Shore Paradise"
+	dl DATA_level_AC_obj,DATA_level_AC_spr    ; $AC sub-room of 4-8 "Hookbill The Koopa's Castle"
+	dl DATA_level_AD_obj,DATA_level_AD_spr    ; $AD sub-room of 5-1 "BLIZZARD!!!"
+	dl DATA_level_AE_obj,DATA_level_AE_spr    ; $AE sub-room of 5-2 "Ride The Ski Lifts"
+	dl DATA_level_AF_obj,DATA_level_AF_spr    ; $AF sub-room of 5-3 "Danger - Icy Conditions Ahead"
+	dl DATA_level_B0_obj,DATA_level_B0_spr    ; $B0 sub-room of 5-4 "Sluggy The Unshaven's Fort"
+	dl DATA_level_B1_obj,DATA_level_B1_spr    ; $B1 sub-room of 5-5 "Goonie Rides!"
+	dl DATA_level_B2_obj,DATA_level_B2_spr    ; $B2 sub-room of 5-7 "Shifting Platforms Ahead"
+	dl DATA_level_B3_obj,DATA_level_B3_spr    ; $B3 sub-room of 5-8 "Raphael The Raven's Castle"
+	dl DATA_level_B4_obj,DATA_level_B4_spr    ; $B4 sub-room of 5-Extra "Kamek's Revenge"
+	dl DATA_level_B5_obj,DATA_level_B5_spr    ; $B5 sub-room of 6-1 "Scary Skeleton Goonies!"
+	dl DATA_level_B6_obj,DATA_level_B6_spr    ; $B6 sub-room of 6-4 "Tap-Tap The Red Nose's Fort"
+	dl DATA_level_B7_obj,DATA_level_B7_spr    ; $B7 sub-room of 6-7 "KEEP MOVING!!!!"
+	dl DATA_level_B8_obj,DATA_level_B8_spr    ; $B8 unused room (not map- or warp-reachable)
+	dl DATA_level_B9_obj,DATA_level_B9_spr    ; $B9 sub-room of 6-Extra "Castles - Masterpiece Set"
+	dl DATA_level_BA_obj,DATA_level_BA_spr    ; $BA sub-room of 2-1 "Visit Koopa And Para-Koopa"
+	dl DATA_level_BB_obj,DATA_level_BB_spr    ; $BB sub-room of 2-4 "Bigger Boo's Fort"
+	dl DATA_level_BC_obj,DATA_level_BC_spr    ; $BC sub-room of 2-5 "Watch Out For Lakitu"
+	dl DATA_level_BD_obj,DATA_level_BD_spr    ; $BD sub-room of 2-6 "The Cave Of The Mystery Maze"
+	dl DATA_level_BE_obj,DATA_level_BE_spr    ; $BE sub-room of 2-8 "The Potted Ghost's Castle"
+	dl DATA_11DC0F,DATA_level_BF_spr    ; $BF sub-room of 3-4 "Prince Froggy's Fort" -- obj ptr shared with $D0 (DATA_11DC0F)
+	dl DATA_level_C0_obj,DATA_level_C0_spr    ; $C0 sub-room of 3-7 "Monkeys' Favorite Lake"
+	dl DATA_level_C1_obj,DATA_level_C1_spr    ; $C1 sub-room of 4-4 "Marching Milde's Fort"
+	dl DATA_level_C2_obj,DATA_level_C2_spr    ; $C2 sub-room of 5-1 "BLIZZARD!!!"
+	dl DATA_level_C3_obj,DATA_level_C3_spr    ; $C3 sub-room of 5-3 "Danger - Icy Conditions Ahead"
+	dl DATA_level_C4_obj,DATA_level_C4_spr    ; $C4 sub-room of 5-8 "Raphael The Raven's Castle"
+	dl DATA_level_C5_obj,DATA_level_C5_spr    ; $C5 sub-room of 6-4 "Tap-Tap The Red Nose's Fort"
+	dl DATA_level_C6_obj,DATA_level_C6_spr    ; $C6 unused room (not map- or warp-reachable)
+	dl DATA_level_C7_obj,DATA_level_C7_spr    ; $C7 sub-room of 2-4 "Bigger Boo's Fort"
+	dl DATA_level_C8_obj,DATA_level_C8_spr    ; $C8 sub-room of 2-8 "The Potted Ghost's Castle"
+	dl DATA_level_C9_obj,DATA_level_C9_spr    ; $C9 sub-room of 3-4 "Prince Froggy's Fort"
+	dl DATA_level_CA_obj,DATA_level_CA_spr    ; $CA sub-room of 5-3 "Danger - Icy Conditions Ahead"
+	dl DATA_level_CB_obj,DATA_16F097-$02    ; $CB sub-room of 5-8 "Raphael The Raven's Castle" -- sprite ptr biased -2 into DATA_level_C4_spr’s terminator (de-couple to edit; pool-map.ts)
+	dl DATA_level_CC_obj,DATA_level_CC_spr    ; $CC sub-room of 6-4 "Tap-Tap The Red Nose's Fort"
+	dl DATA_level_CD_obj,DATA_level_CD_spr    ; $CD sub-room of 3-6 "The Cave Of Harry Hedgehog"
+	dl DATA_level_CE_obj,DATA_level_CE_spr    ; $CE sub-room of 2-4 "Bigger Boo's Fort"
+	dl DATA_level_CF_obj,DATA_level_CF_spr    ; $CF sub-room of 2-8 "The Potted Ghost's Castle"
+	dl DATA_11DC0F,DATA_level_D0_spr    ; $D0 sub-room of 3-4 "Prince Froggy's Fort" -- obj ptr shared with $BF (DATA_11DC0F)
+	dl DATA_level_D1_obj,DATA_level_D1_spr    ; $D1 sub-room of 5-3 "Danger - Icy Conditions Ahead"
+	dl DATA_level_D2_obj,DATA_level_D2_spr    ; $D2 sub-room of 5-8 "Raphael The Raven's Castle"
+	dl DATA_level_D3_obj,DATA_level_D3_spr    ; $D3 unused room (not map- or warp-reachable)
+	dl DATA_level_D4_obj,DATA_level_D4_spr    ; $D4 sub-room of 2-8 "The Potted Ghost's Castle"
+	dl DATA_level_D5_obj,DATA_level_D5_spr    ; $D5 sub-room of 3-4 "Prince Froggy's Fort"
+	dl DATA_level_D6_obj,DATA_level_D6_spr    ; $D6 sub-room of 3-6 "The Cave Of Harry Hedgehog"
+	dl DATA_level_D7_obj,DATA_level_D7_spr    ; $D7 sub-room of 3-4 "Prince Froggy's Fort"
+	dl DATA_level_D8_obj,DATA_level_D8_spr    ; $D8 unused room (not map- or warp-reachable)
+	dl DATA_level_D9_obj,DATA_level_D9_spr    ; $D9 unused room (not map- or warp-reachable)
 	; The last four slots correspond to the seed-contest mini-game rooms
 	; and the final Bowser boss arena. See docs/levelloader.md S3 groupings.
 	dl DATA_15FCEA,DATA_15FFD5    ; $DA seed contest A
 	dl DATA_15FCEA,DATA_15FFD5    ; $DB seed contest B (duplicate -- shared room data)
-	dl DATA_level_DC_obj,DATA_level_DC_spr    ; $DC unused / placeholder
-	dl DATA_level_DD_obj,DATA_level_DD_spr    ; $DD final-boss arena
+	dl DATA_level_DC_obj,DATA_level_DC_spr    ; $DC unused / placeholder (engine-reserved arena block $DA-$DD)
+	dl DATA_level_DD_obj,DATA_level_DD_spr    ; $DD final-boss arena (engine-reserved arena block $DA-$DD)
 
 namespace off
 endmacro

@@ -243,9 +243,12 @@ The Stork is **placed by the level designer** in a per-level sprite
 list, not spawned procedurally. Two specific levels host one:
 
 1. **The intro storybook cutscene** (`gm38_load_intro_cutscene` at
-   Bank10:10619). The Stork's level is loaded via the standard
-   `YI_LevelDataPtrsAndEntranceData_Ptrs` table at level-data slot
-   `$0A`. It carries Mario in his beak; Mario's level-mode-9 path
+   Bank10:10619). The Stork's level is loaded through world-map slot
+   `$0A` (gm38 writes `#$000A` as the translevel), whose entrance
+   record resolves to `Ptrs:` row (record) `$38` in
+   `YI_LevelDataPtrsAndEntranceData_Ptrs` -- slot and record are
+   different id spaces (LevelIDs.asm ID-SPACE WARNING). It carries
+   Mario in his beak; Mario's level-mode-9 path
    (§2.2) controls the dangling animation.
 2. **The post-Bowser ending storkflight.** Sub-section reached via
    gamemode $26 ending -- after Bowser is defeated the engine

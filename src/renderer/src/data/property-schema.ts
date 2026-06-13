@@ -69,6 +69,32 @@ export const ENTRANCE_TYPES: { value: number; label: string }[] = [
   { value: 0x0a, label: 'Flung to the moon' }
 ]
 
+/** The 12 hardcoded bandit-minigame variants a minibattle exit can enter
+ *  (exit byte1 $DE..$E9 → gm$2E sub-mode `(id − $DE) × 2`). Names verified
+ *  against the cart, not glosses: the per-variant init/main pointer tables
+ *  (`DATA_bandit_minigame_init_ptrs` / `DATA_mini_battle_main_ptrs`,
+ *  Bank11.asm) line up 1:1 with the message-box strings the dispatcher shows
+ *  per sub-mode (`DATA_msg_minigame_*` slots in Bank51's
+ *  `DATA_message_box_text_ptrs`). 0xDE-0xE0 share one init that seeds the
+ *  prize/difficulty tier (`$1170` = 3/4/5) with the 2-player flag clear;
+ *  0xE9 is the same game with the 2-player flag set. 0xE1/0xE5/0xE6 point at
+ *  bare-RTS init AND main stubs — entering one boots an empty broken scene,
+ *  hence "unused". Cart levels use only 0xDE-0xE0, 0xE2-0xE4, 0xE7. */
+export const MINIBATTLES: { value: number; label: string }[] = [
+  { value: 0xde, label: 'Throwing Balloons (1P · tier 1)' },
+  { value: 0xdf, label: 'Throwing Balloons (1P · tier 2)' },
+  { value: 0xe0, label: 'Throwing Balloons (1P · tier 3)' },
+  { value: 0xe1, label: 'Unused (empty stub)' },
+  { value: 0xe2, label: 'Gather Coins' },
+  { value: 0xe3, label: 'Popping Balloons (left)' },
+  { value: 0xe4, label: 'Popping Balloons (right)' },
+  { value: 0xe5, label: 'Unused (empty stub)' },
+  { value: 0xe6, label: 'Unused (empty stub)' },
+  { value: 0xe7, label: 'Watermelon Seed Contest (1P)' },
+  { value: 0xe8, label: 'Watermelon Seed Contest (2P)' },
+  { value: 0xe9, label: 'Throwing Balloons (2P)' }
+]
+
 export interface PropertyField<E> {
   /** Stable key (React key + debug). */
   key: string
@@ -259,11 +285,11 @@ export function exitFields(_e: ScreenExit): PropertyField<ScreenExit>[] {
     {
       key: 'minibattleId',
       label: 'Minibattle',
-      field: { kind: 'num', min: 0xde, max: 0xe9, hex: true },
+      field: { kind: 'enum', options: MINIBATTLES },
       get: (e) => mini(e).minibattleId,
       patch: (v) => ({ minibattleId: v }) as Partial<ScreenExit>,
       showIf: isMini,
-      hint: 'Minibattle id (0xDE-0xE9).'
+      hint: 'Which hardcoded bandit minigame this exit enters (id 0xDE-0xE9).'
     },
     {
       key: 'returnX',

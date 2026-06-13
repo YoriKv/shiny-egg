@@ -14,8 +14,10 @@ interface ProjectMenuProps {
    *  level selection to reload — and false for an in-place rename. */
   onChange: (p: ProjectSummary, switched: boolean) => void
   /** Fired after a successful ROM import so App marks the build dirty + reloads
-   *  the current level (its overlay may have just been overwritten). */
-  onImported: () => void
+   *  the current level (its overlay may have just been overwritten).
+   *  `removedVanillaIds` = records the optional post-import "remove all vanilla
+   *  levels" pass took out (empty/absent when the option was off). */
+  onImported: (removedVanillaIds?: number[]) => void
 }
 
 // Mirror of the main-side name rule (src/main/projects.ts isValidProjectName):

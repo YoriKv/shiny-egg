@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { editorDataRoot, overlayRoot } from '../framework-paths'
 import { levelNameOverrides, levelRecordOverrides } from '../resources'
-import { getCurrentProjectId, getProjectNewSlots } from '../projects'
+import { getCurrentProjectId, getProjectNewSlots, getProjectRemovedLevels } from '../projects'
 import type { LevelsCatalog } from 'snes-framework/types'
 
 export function registerLevelsIpc(): void {
@@ -52,6 +52,21 @@ export function registerLevelsIpc(): void {
       // a world group via the record overlay above). Gated on the overlay obj
       // .bin actually existing, mirroring loadLevel's synthetic-entry marker.
       const projectId = getCurrentProjectId()
+      // Drop REMOVED records from every group (after the record overlay above,
+      // so a remapped tile that now plays a kept record stays listed). Their
+      // map slots are off the entrance tables and their data is deleted at
+      // build — the picker must not offer them.
+      if (projectId) {
+        const removedSet = new Set(getProjectRemovedLevels(projectId))
+        if (removedSet.size > 0) {
+          for (const g of cat.groups) {
+            g.levels = g.levels.filter(
+              (l) => l.recordId === null || !removedSet.has(l.recordId as number)
+            )
+          }
+          cat.groups = cat.groups.filter((g) => g.levels.length > 0)
+        }
+      }
       if (projectId) {
         const claimed = new Set<number>()
         for (const g of cat.groups)
