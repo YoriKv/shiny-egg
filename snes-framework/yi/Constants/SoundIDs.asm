@@ -38,7 +38,7 @@
 !Define_YI_SoundID21_Fuzzy = $0021
 !Define_YI_SoundID22_EndFuzzyDistortedMusic = $0022
 !Define_YI_SoundID23_GroundPound = $0023
-!Define_YI_SoundID24 = $0024
+!Define_YI_SoundID24_StarTimerLowWarning = $0024
 !Define_YI_SoundID25_DyingPiranha = $0025
 !Define_YI_SoundID26_WalkingTapTap = $0026
 !Define_YI_SoundID27_CollectSuperStar = $0027
@@ -68,7 +68,7 @@
 !Define_YI_SoundID3F_HitUvula = $003F
 !Define_YI_SoundID40_OpenDoor = $0040
 !Define_YI_SoundID41_CloseDoor = $0041
-!Define_YI_SoundID42 = $0042
+!Define_YI_SoundID42_DeniedAction = $0042
 !Define_YI_SoundID43_MountYoshi = $0043
 !Define_YI_SoundID44_MarioCrying = $0044
 !Define_YI_SoundID45_SpitSeed = $0045
@@ -113,7 +113,7 @@
 !Define_YI_SoundID6C_ManuallyRotatePlatform3 = $006C
 !Define_YI_SoundID6D_FallingChomp = $006D
 !Define_YI_SoundID6E_FlyGuyGettingAway = $006E
-!Define_YI_SoundID6F = $006F
+!Define_YI_SoundID6F_UnusedSound = $006F
 !Define_YI_SoundID70_Transforming = $0070
 !Define_YI_SoundID71_TransformingCh1 = $0071
 !Define_YI_SoundID72_TransformingCh2 = $0072
@@ -131,7 +131,7 @@
 !Define_YI_SoundID7E_SwitchTicking = $007E
 !Define_YI_SoundID7F_SwitchTimerEnding = $007F
 !Define_YI_SoundID80_BossDefeated = $0080
-!Define_YI_SoundID81_Unknown = $0081
+!Define_YI_SoundID81_BigBooPop = $0081
 !Define_YI_SoundID82_BossFalling = $0082
 !Define_YI_SoundID83_LungeFish = $0083
 !Define_YI_SoundID84_TapTapTheRedNoseWalk = $0084

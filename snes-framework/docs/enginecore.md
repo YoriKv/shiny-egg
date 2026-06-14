@@ -169,9 +169,13 @@ this produces a constant byte stream the same value as A_low.
 
 ### 2.3 Phase 3 -- SPC engine upload (JSL CODE_008543 with X=$10)
 
-`set_level_music` with X=$10 selects spc_block_set_indexes[$10] = `$2C`,
-which from `spc_data_blocks` points at the row `$25, $19, $1F, $FF`
-(block-set "title screen + engine"). The new blocks are diffed against
+`set_level_music` stores X into the music-setting byte, then re-reads it and
+`INX`es before indexing -- so X=$10 selects spc_block_set_indexes[$11] = `$00`,
+which from `spc_data_blocks` points at row 0 = `$2B, $FF, $FF, $FF`: a single
+block `$2B`, resolved by `SPC_ptr[14]` to `YI_SPCEngine` (block-set "engine
+only" -- the SPC driver program with no song/sample data, exactly what a reset
+wants). (Block-set `$25,$19,$1F` quoted in older notes is for music-settings
+$07-$09, not reset.) The new blocks are diffed against
 the currently-resident blocks at $0207..$020A; the resulting source
 pointers (3-byte each, looked up via SPC_ptr) get stuffed into DP $00..$0B
 and SEI-bracketed `SPC700Upload` runs the IPL-style handshake.
@@ -184,6 +188,40 @@ and SEI-bracketed `SPC700Upload` runs the IPL-style handshake.
 4. Each block ends with a zero-size word that tells SPC to "start
    executing" -- the SPC engine then runs forever, polling APU port 0
    for music IDs and APU port 3 for sound-FX IDs.
+
+**Block-set residency is path-dependent -- the resident mirror is NOT a
+snapshot of ARAM.** `$0207..$020A` track only the *last* upload's block IDs, but
+each block uploads to a fixed, non-overlapping ARAM region and an `$FF` slot
+means "keep whatever's already there" -- so physical ARAM is the *accumulation*
+of every block set loaded along the player's route, not just the current set. A
+block loaded once persists into later levels whose own sets don't reuse its
+slot. The consequence bit real code: the bonus/defeat theme (music `$07`) -- and
+the goal-ring fanfare -- live in block `$1C` (`SPC_ptr[9]` = `DATA_4F4122`; PC
+`$0F4122` = LoROM `$1E:C122`), which is uploaded by **exactly one** block set:
+row 2 `$25,$22,$1C`, reached **only** by music-setting `$12` (the overworld). So
+it is resident in every level reached *from the map* -- but reaching a level
+WITHOUT the overworld (a cold warp or level-jump that re-inits the SPC and skips
+the map) leaves block `$1C` absent, and requesting song `$07` then **hangs the
+SPC driver** (no voice ever keys on; the prior song's buffer just repeats). A
+"warm" in-session warp is unaffected -- the block is still resident from the
+earlier map visit. Diagnosed via runtime SPC700 tracing; full write-up in
+`trace-harness/scenarios/spike-audio/PLAN.md`. (The cbrgray YI practice hack hit
+the same hole when warping in before the map loads, and confirms only block `$1C`
+is needed: it pre-uploads that one block on first level entry as its fix.)
+
+The missing-block hang is one instance of a general weakness: **the SPC driver
+has no defense against missing or zero-initialized state.** Two further
+driver-wedge modes are *reported by the cbrgray practice hack* and noted here as
+leads -- they have **not** been independently re-verified against our ROM
+(neither touchpoint shows up under static analysis, so confirming them needs an
+SPC700 trace): (1) a music change issued while the WRAM-stored song tempo
+($03CF) is still zero -- e.g. if music is suppressed from boot so the tempo
+field is never primed -- is said to upload a zero tempo and spin the driver in a
+loop; the hack works around it by sending one APU-port-0 write on boot to prime
+the tempo. (2) loading state or unpausing without re-poking the APU (port-2
+mirror $0053) is said to leave the driver hung; the hack writes an "unpause"
+value to re-enable. Both are consistent with the fragility above, but treat the
+specific addresses as unconfirmed until traced.
 
 ### 2.4 Phase 4 -- interrupt trampoline DMA
 
@@ -1174,12 +1212,9 @@ PPU write happens in every NMI handler that includes the line:
 - **The 16-bit RNG can be observed from any bank.** `random_number_gen`
   is JSL-able and accumulates entropy from the H-counter; the output at
   `!EXRAM_YI_Global_RNGOutputLo` is the 16-bit "low" word.
-- **220 of the 222 `LevelData/DATA_level_*_obj.bin`/`_spr.bin` records are
-  backed by `.bin`s in the current extract** -- only the `$DA`/`$DB` sentinel
-  rows are not (their pointers sit at 1-byte garbage sentinels, not a real
-  level). An older note here claimed 95 empty by-design files -- that
-  described the original address-range extractor
-  (`AsarScripts/AssetPointersAndFiles.asm` zeroed those source ranges) and is
-  obsolete; the per-level extractor (`scripts/extract.ts`'s pointer-table
-  walker) reaches every real `Ptrs:` row directly. Enumerate levels via the
-  level map (`levelMapEntry`), not by walking the pointer table.
+- **Two of the 222 `Ptrs:` level-data record slots are sentinels, not levels.**
+  Rows `$DA`/`$DB` ("seed contest A/B") hold `dl DATA_15FCEA,DATA_15FFD5`, whose
+  pointers target 1-byte garbage sentinels rather than real level data; the
+  other 220 rows index genuine per-level object/sprite records. Resolve a level
+  through the `Ptrs:` pointer table (`$17:F7C3`), not by assuming every slot in
+  the index is a populated level.

@@ -20,6 +20,8 @@ export interface LevelKeyboardShortcutsParams {
   primarySelection: Selection | null
   setSelection: (sel: Selection[]) => void
   setPlacement: Dispatch<SetStateAction<PlacementItem | null>>
+  /** Drop out of the Place tool back to Select (so the toolbar de-highlights). */
+  cancelPlacement: () => void
   globalUndo: () => void
   globalRedo: () => void
   propTable: Uint8Array | null
@@ -28,7 +30,7 @@ export interface LevelKeyboardShortcutsParams {
 
 export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void {
   const {
-    levelState, dispatchLevel, selection, primarySelection, setSelection, setPlacement, globalUndo, globalRedo, propTable, clipboardRef
+    levelState, dispatchLevel, selection, primarySelection, setSelection, setPlacement, cancelPlacement, globalUndo, globalRedo, propTable, clipboardRef
   } = p
   // Read the current level WITHOUT re-binding the listener on every edit
   // (levelState changes each commit). Handlers read levelStateRef.current; the
@@ -109,6 +111,7 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
       if (e.key === 'Escape') {
         setSelection([])
         setPlacement(null)
+        cancelPlacement()
         return
       }
 

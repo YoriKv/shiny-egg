@@ -1049,30 +1049,35 @@ CODE_008497:
 ;-------------------------------------------------------------------------
 ; DATA_SPC_ptr -- 20-entry pointer table: SPC data block sources.
 ; Raidenthequick: DATA_SPC_ptr.
-; Indexed by entries in DATA_spc_data_blocks; one pointer per data block.
+; Indexed by entries in DATA_spc_data_blocks; one pointer per data block. The
+; block id named in DATA_spc_data_blocks indexes this table as a RAW BYTE offset
+; (id = entry*3+1, since each row is a 3-byte `dl`), so the valid block ids are
+; $01,$04,$07,...,$3A -- the `; $XX` tags below are those ids. Content roles for
+; $1C/$22/$25/$2B are confirmed (block-set table + ROM-offset cross-check, see
+; docs/enginecore.md 2.3); the rest are listed by id only.
 ;-------------------------------------------------------------------------
 DATA_0084AC:
 DATA_SPC_ptr:                                      ; Raidenthequick: DATA_SPC_ptr
-	dl DATA_4E0000
-	dl DATA_4E169C
-	dl DATA_4E23BF
-	dl DATA_4E2C39
-	dl DATA_4E38D2
-	dl DATA_4ED0FE
-	dl DATA_4ED5D0
-	dl DATA_4EE279
-	dl DATA_4EEC85
-	dl DATA_4F4122
-	dl DATA_4F5C48
-	dl DATA_4F6E5A
-	dl DATA_4F82E6
-	dl DATA_4FFCB2
-	dl YI_SPCEngine
-	dl DATA_4F33F0
-	dl DATA_4EFEC1
-	dl DATA_4F205D
-	dl DATA_4E3E90
-	dl DATA_4EBBEC
+	dl DATA_4E0000                            ; $01
+	dl DATA_4E169C                            ; $04
+	dl DATA_4E23BF                            ; $07
+	dl DATA_4E2C39                            ; $0A
+	dl DATA_4E38D2                            ; $0D
+	dl DATA_4ED0FE                            ; $10
+	dl DATA_4ED5D0                            ; $13
+	dl DATA_4EE279                            ; $16
+	dl DATA_4EEC85                            ; $19
+	dl DATA_4F4122                            ; $1C overworld music + song $07 (bonus/defeat) + goal-ring fanfare; OVERWORLD-EXCLUSIVE (only block set row 2, music-setting $12 uploads it)
+	dl DATA_4F5C48                            ; $1F
+	dl DATA_4F6E5A                            ; $22 shared sample block for the map/overworld + intro/castle music sets (settings $02/$11/$12)
+	dl DATA_4F82E6                            ; $25 base/"default" music block -- present in nearly every level music set (block-set rows 1-10)
+	dl DATA_4FFCB2                            ; $28
+	dl YI_SPCEngine                           ; $2B the SPC700 driver program itself -- block-set row 0 = "engine only", uploaded by a reset (X=$10) and settings $0E/$0F
+	dl DATA_4F33F0                            ; $2E
+	dl DATA_4EFEC1                            ; $31
+	dl DATA_4F205D                            ; $34
+	dl DATA_4E3E90                            ; $37
+	dl DATA_4EBBEC                            ; $3A
 
 ;-------------------------------------------------------------------------
 ; DATA_spc_data_blocks -- 4-byte rows; each row = a "block set" (3 block indexes
@@ -1126,6 +1131,14 @@ DATA_spc_block_set_indexes:                        ; Raidenthequick: DATA_spc_bl
 ;           NMI doesn't preempt the handshake.
 ; CALLERS:  CODE_yi_reset (X=$10 = SPC-engine-only); per-level music-change
 ;           routines in Bank10 (UnpackLevelHeader chain).
+; NOTE:     The diff means $0207..$020A (and $0203) track only the LAST upload's
+;           block IDs -- NOT a snapshot of ARAM. Each block lands in a fixed,
+;           non-overlapping ARAM region and an $FF slot = "keep what's there", so
+;           ARAM accumulates every block set loaded along the player's route. A
+;           block the overworld uploads persists into later levels. Real fallout:
+;           music $07 (bonus/defeat theme) lives in an overworld-only block, so
+;           dying after a cold warp/level-jump that skips the map hangs the SPC
+;           driver. See docs/enginecore.md 2.3 + trace-harness spike-audio/PLAN.
 ;-------------------------------------------------------------------------
 CODE_008543:
 CODE_set_level_music:                              ; Raidenthequick: CODE_set_level_music
@@ -10444,7 +10457,7 @@ CODE_00E2F5:
 	AND.w #$00FF
 	BNE.b CODE_00E32C
 	INC.w !RAM_YI_Level_StarTimerBelow10Flag
-	LDA.w #!Define_YI_SoundID24
+	LDA.w #!Define_YI_SoundID24_StarTimerLowWarning
 	JSR.w CODE_push_sound_queue_pres_x
 CODE_00E32C:
 	LDX.w #$0000

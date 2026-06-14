@@ -4804,7 +4804,7 @@ CODE_17A780:
 	JSL.l CODE_set_level_music
 	LDA.w $0205
 	BNE.b CODE_17A810
-	LDA.b #$08
+	LDA.b #!Define_YI_MusicID08_CutsceneAndBossTheme
 	CLC
 	ADC.w $1146
 	STA.b !RAM_YI_Global_PlayMusicLo
@@ -11202,7 +11202,7 @@ CODE_17E13B:
 	LDA.b $38
 	AND.b #$0C
 	STA.w $111B
-	LDA.b #!Define_YI_SoundID42
+	LDA.b #!Define_YI_SoundID42_DeniedAction
 	JSL.l CODE_push_sound_queue
 	BRA.b CODE_17E17F
 
@@ -11654,7 +11654,7 @@ CODE_17E495:
 	BRA.b CODE_17E4A0
 
 CODE_17E49E:
-	LDA.b #!Define_YI_SoundID42
+	LDA.b #!Define_YI_SoundID42_DeniedAction
 CODE_17E4A0:
 	JSL.l CODE_push_sound_queue
 	BRA.b CODE_17E4FA

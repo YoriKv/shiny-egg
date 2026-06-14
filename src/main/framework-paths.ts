@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { cp, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { asarBinName } from 'snes-framework/asar'
 
 // Read-only template baked into the installer via electron-builder extraResources.
 export function frameworkSourceRoot(): string {
@@ -18,8 +19,18 @@ export function frameworkWorkRoot(): string {
     : frameworkSourceRoot()
 }
 
+// Platform-correct asar binary in the work root (asar.exe on Windows, asar on
+// Linux/macOS). Only the matching binary is shipped per platform (see
+// electron-builder.yml's per-platform extraResources).
 export function asarBinPath(): string {
-  return join(frameworkWorkRoot(), 'asar.exe')
+  return join(frameworkWorkRoot(), asarBinName())
+}
+
+// Platform name of the BizHawk launcher: EmuHawk.exe on Windows, EmuHawk.sh on
+// Linux/macOS (BizHawk ships a shell launcher that bootstraps the .NET runtime).
+// Used by the locate dialog + dev fallback. BizHawk itself is not bundled.
+export function bizhawkExeName(): string {
+  return process.platform === 'win32' ? 'EmuHawk.exe' : 'EmuHawk.sh'
 }
 
 // Dev-only convenience: the reference cart sitting next to the project root
@@ -35,13 +46,13 @@ export function devReferenceCartPath(): string | null {
 }
 
 // Dev-only convenience: BizHawk sitting as a sibling of the project root
-// (`<projectRoot>/../bizhawk/EmuHawk.exe`, per CLAUDE.md). Lets dev builds run
-// Launch / Test Level without locating EmuHawk first — the mirror of
-// devReferenceCartPath for the emulator. Returns null in packaged builds, or
-// when the file isn't there.
+// (`<projectRoot>/../bizhawk/EmuHawk.exe`, or `EmuHawk.sh` on Linux/macOS, per
+// CLAUDE.md). Lets dev builds run Launch / Test Level without locating EmuHawk
+// first — the mirror of devReferenceCartPath for the emulator. Returns null in
+// packaged builds, or when the file isn't there.
 export function devBizhawkPath(): string | null {
   if (app.isPackaged) return null
-  const p = join(frameworkSourceRoot(), '..', '..', 'bizhawk', 'EmuHawk.exe')
+  const p = join(frameworkSourceRoot(), '..', '..', 'bizhawk', bizhawkExeName())
   return existsSync(p) ? p : null
 }
 
@@ -148,7 +159,7 @@ export function editorDataRoot(): string {
 // version was first installed, so a later framework change (e.g. a new
 // `;@editable` region) shipped dead on existing installs — the work root kept
 // serving the stale file and the editor threw "Missing ;@editable:… markers."
-const TEMPLATE_ENTRIES = ['asar.exe', 'global', 'yi'] as const
+const TEMPLATE_ENTRIES = [asarBinName(), 'global', 'yi'] as const
 
 // Records which app version last populated the template subtrees, so we only
 // re-copy on an actual version bump (or when missing — migrates old installs
@@ -168,7 +179,7 @@ export async function ensureFrameworkWorkRoot(): Promise<void> {
   const dst = frameworkWorkRoot()
   await mkdir(dst, { recursive: true })
 
-  const firstRun = !existsSync(join(dst, 'asar.exe'))
+  const firstRun = !existsSync(join(dst, asarBinName()))
   const stamp = templateStampPath()
   const current = app.getVersion()
   const installed = existsSync(stamp) ? readFileSync(stamp, 'utf8').trim() : null

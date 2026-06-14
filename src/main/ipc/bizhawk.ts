@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { mkdir } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { getBizHawk, resolveBizhawkExe } from '../bizhawk'
-import { screenshotPath } from '../framework-paths'
+import { bizhawkExeName, screenshotPath } from '../framework-paths'
 import { updateSettings } from '../settings'
 import type { BizhawkWarp, CaptureAtResult, LocateBizhawkResult } from '../../shared/ipc-types'
 
@@ -68,22 +68,25 @@ export function registerBizHawkIpc(): void {
   // non-null, "Locate BizHawk" otherwise.
   ipcMain.handle('bizhawk:getExe', async (): Promise<string | null> => resolveBizhawkExe())
 
-  // "Locate BizHawk": pick EmuHawk.exe and persist it to settings. Validates the
-  // filename so a stray .exe doesn't get saved as the emulator.
+  // "Locate BizHawk": pick the BizHawk launcher (EmuHawk.exe on Windows,
+  // EmuHawk.sh on Linux/macOS) and persist it to settings. Validates the
+  // filename so a stray file doesn't get saved as the emulator.
   ipcMain.handle('bizhawk:locate', async (): Promise<LocateBizhawkResult> => {
     const win = BrowserWindow.getFocusedWindow()
+    const exeName = bizhawkExeName()
+    const ext = exeName.slice(exeName.lastIndexOf('.') + 1)
     const opts: Electron.OpenDialogOptions = {
-      title: 'Locate BizHawk (EmuHawk.exe)',
+      title: `Locate BizHawk (${exeName})`,
       properties: ['openFile'],
-      filters: [{ name: 'EmuHawk', extensions: ['exe'] }]
+      filters: [{ name: 'EmuHawk', extensions: [ext] }]
     }
     const picked = win
       ? await dialog.showOpenDialog(win, opts)
       : await dialog.showOpenDialog(opts)
     if (picked.canceled || picked.filePaths.length === 0) return { ok: false }
     const p = picked.filePaths[0]!
-    if (basename(p).toLowerCase() !== 'emuhawk.exe') {
-      return { ok: false, error: `Select EmuHawk.exe (got ${basename(p)}).` }
+    if (basename(p).toLowerCase() !== exeName.toLowerCase()) {
+      return { ok: false, error: `Select ${exeName} (got ${basename(p)}).` }
     }
     updateSettings({ bizhawkPath: p })
     return { ok: true, path: p }

@@ -21,9 +21,18 @@ export interface ObjectFinderBodyProps {
   onJump: (inst: ObjectInstance, select: { kind: FindInstanceKind; id: number }) => void
   /** Currently-loaded level — used to mark the active instance "· here". */
   currentLevelRecordId: number | null
+  /** Active-project reload key (`${projectId}#${projectRev}`). Changes on a
+   *  project switch AND on a ROM import — the finder re-queries so it never
+   *  shows the previous project's overlay results (the splice is main-side and
+   *  project-scoped). Null when no project is active. */
+  projectScope: string | null
 }
 
-export function ObjectFinderBody({ onJump, currentLevelRecordId }: ObjectFinderBodyProps): JSX.Element {
+export function ObjectFinderBody({
+  onJump,
+  currentLevelRecordId,
+  projectScope
+}: ObjectFinderBodyProps): JSX.Element {
   const [kindIdx, setKindIdx] = useState(0)
   const [idText, setIdText] = useState('')
   const [instances, setInstances] = useState<ObjectInstance[]>([])
@@ -35,7 +44,10 @@ export function ObjectFinderBody({ onJump, currentLevelRecordId }: ObjectFinderB
   const idRef = useRef<HTMLInputElement>(null)
   useEffect(() => idRef.current?.focus(), [])
 
-  // Fetch matches on (kind, id) change, debounced. Reset the cursor each time.
+  // Fetch matches on (kind, id, project) change, debounced. Reset the cursor
+  // each time. projectScope is in the deps so switching projects (or a ROM
+  // import) re-queries — the overlay splice is project-scoped main-side, so
+  // stale results from the previous project would otherwise linger.
   useEffect(() => {
     const s = idText.trim().replace(/^0x/i, '')
     if (s === '' || !/^[0-9a-f]+$/i.test(s)) {
@@ -64,7 +76,7 @@ export function ObjectFinderBody({ onJump, currentLevelRecordId }: ObjectFinderB
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [kind.key, idText])
+  }, [kind.key, idText, projectScope])
 
   const n = instances.length
   const has = n > 0

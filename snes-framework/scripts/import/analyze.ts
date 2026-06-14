@@ -17,6 +17,7 @@ import type {
   RomAnalysis
 } from '../types.ts';
 import {
+  implausibleLevelHeader,
   pointsAtValidObjStream,
   pointsAtValidSprStream,
   resolveAnchors,
@@ -26,12 +27,16 @@ import { readForeignStreams, type ForeignRecordStreams, type ForeignStreams } fr
 import { diffInventory } from './inventory.ts';
 import type { SymbolMap } from '../engine/symbol-map.ts';
 
-/** Engine-driven records pre-blocked from import. EMPTY — record 0x38 (the
- *  gm38 intro-cutscene level) decodes cleanly and now classifies like any
- *  other level (its base header carries a garbage PADDING bit the round-trip
- *  normalizes, so an in-place-edited hack copy may classify raw-only — that's
- *  the analyzer doing its job, not a block). */
-const SPECIAL_RECORDS = new Set<number>([]);
+/** Engine-driven records pre-blocked from import — their `Ptrs:` row does not
+ *  hold a standard level stream, so decoding it as one yields garbage.
+ *
+ *  0x38 — the gm38 intro-cutscene level (level mode 0x0E). Its "object stream"
+ *  is cutscene data, not Map16 objects: it walks to terminators and even
+ *  round-trips (so the well-formedness + plausibility gates pass), yet decodes
+ *  to out-of-bounds garbage that renders nothing — exactly the false-positive
+ *  the gates can't catch, hence the explicit block. Matches level.ts
+ *  SPECIAL_LEVELS + sweep-levels KNOWN_PARTIAL + validity-report's skip. */
+const SPECIAL_RECORDS = new Set<number>([0x38]);
 
 /** A changed record's decoded foreign level + raw bytes, for the apply step. */
 export interface ForeignImportItem {
@@ -212,7 +217,27 @@ export function analyzeForeignRom(
         'record slot and reused its space; not a real level to import.';
     } else {
       foreignLevel = decodeSide(recordId, f, foreign);
-      importability = foreignLevel && roundTrips(foreignLevel, f, foreign) ? 'full' : 'raw-only';
+      // The stream gates above only prove the bytes walk to clean terminators; a
+      // clobbered region can do that yet decode to an impossible header / absurd
+      // counts. Re-check the DECODED level against the vanilla plausibility
+      // envelope so abandoned slots block here instead of importing as a fake
+      // "full" level (the silent-corruption bug this gate exists to stop).
+      const implausible = foreignLevel
+        ? implausibleLevelHeader(
+            foreignLevel.header,
+            foreignLevel.objects.length,
+            foreignLevel.sprites.length
+          )
+        : 'object stream did not decode';
+      if (!foreignLevel || implausible) {
+        importability = 'blocked';
+        blockedReason =
+          `Source level data is clobbered or out of range (${implausible}) — the hack ` +
+          'abandoned this record slot and reused its space; not a real level to import.';
+        foreignLevel = null; // garbage — keep it out of the apply payload
+      } else {
+        importability = roundTrips(foreignLevel, f, foreign) ? 'full' : 'raw-only';
+      }
     }
     const foreignCounts = foreignLevel ? countsFor(foreignLevel, f) : null;
 

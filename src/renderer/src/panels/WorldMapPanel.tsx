@@ -49,7 +49,9 @@ interface SlotRow {
 interface SlotCtx {
   byIndex: Map<number, WorldMapEntrance>
   midwayByIndex: Map<number, WorldMapMidwayEntrance>
-  midwayBases: number[]
+  /** Sorted distinct midway record bases from the PRISTINE BASE allocation
+   *  (not the live index) — see midwayPagesFor for why removal forces this. */
+  midwayBoundaries: number[]
 }
 
 /** Resolve a translevel slot to its main entrance record index. */
@@ -66,7 +68,18 @@ function entranceIndexFor(model: WorldMapModel, translevelId: number): number | 
  *  rows ARE these `(translevel, page)` records — per-room restart points, NOT
  *  several checkpoints in one room. The 122-record midway total is a fixed cart
  *  constraint: growing it is STRUCTURAL (reindex every downstream base + free-space),
- *  not a value edit. */
+ *  not a value edit.
+ *
+ *  The span END comes from the PRISTINE BASE allocation (`ctx.midwayBoundaries`),
+ *  NOT the live index. Removing a level zeroes its live midway index word, which
+ *  would otherwise drop that level's base from the boundary set and make the
+ *  PRECEDING level's span run straight through the removed level's still-allocated
+ *  records — phantom rows past the 4-page max, plus edit/jump buttons that would
+ *  mutate the removed level. The slot's own `base` still comes from the live index,
+ *  so a removed slot (absent there) correctly shows no checkpoints and a repointed
+ *  slot resolves to its new base. Clamped to 4 as belt-and-braces against the
+ *  2-bit page bound (engine: Bank10 CODE_unpack_level_header copies the 2-bit
+ *  header ItemMemorySetting into CheckpointReentryPage). */
 function midwayPagesFor(
   model: WorldMapModel,
   translevelId: number,
@@ -74,10 +87,10 @@ function midwayPagesFor(
 ): WorldMapMidwayEntrance[] {
   const base = model.midwayIndex[hex0x(translevelId, 2)]
   if (base === undefined) return []
-  const i = ctx.midwayBases.indexOf(base)
-  const next = i >= 0 && i + 1 < ctx.midwayBases.length ? ctx.midwayBases[i + 1] : model.midway.length
+  const next = ctx.midwayBoundaries.find((b) => b > base) ?? model.midway.length
+  const end = Math.min(next, base + 4)
   const pages: WorldMapMidwayEntrance[] = []
-  for (let r = base; r < next; r++) {
+  for (let r = base; r < end; r++) {
     const rec = ctx.midwayByIndex.get(r)
     if (rec) pages.push(rec)
   }
@@ -291,10 +304,17 @@ export function WorldMapBody({
     )
   }
 
+  // Span boundaries come from the pristine BASE index words (record offsets ÷4)
+  // so a removed/unwired slot still caps its predecessor's span. baseMidwayIndexWords
+  // may be absent on older overlays that predate the markers — fall back to the
+  // live index (the pre-removal behaviour).
+  const boundarySource = model.baseMidwayIndexWords
+    ? model.baseMidwayIndexWords.map((w) => Math.floor(w / 4))
+    : Object.values(model.midwayIndex)
   const ctx: SlotCtx = {
     byIndex: new Map(model.entrances.map((e) => [e.index, e])),
     midwayByIndex: new Map(model.midway.map((m) => [m.index, m])),
-    midwayBases: [...new Set(Object.values(model.midwayIndex))].sort((a, b) => a - b)
+    midwayBoundaries: [...new Set(boundarySource)].sort((a, b) => a - b)
   }
 
   const curGroup =

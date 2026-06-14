@@ -66,6 +66,9 @@
 ; Regular byte 2: unknown
 ; Regular byte 3: terrain collision flags
 ; Regular byte 4: ???s????  s=inedible / cannot-swallow
+!EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags #= $000FA0|!SRAMBankBaseAddress
+!EXRAM_YI_Level_NorSpr_TerrainCollisionFlags = !EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags+$02
+!EXRAM_YI_Level_NorSpr_InedibleFlag = !EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags+$03
 
 ;-------------------------------------------------------------------------
 ; Page 3 ($1000 / $1040) -- Behavior + OAM flags (regular)
@@ -86,6 +89,8 @@
 ; Regular byte 2: X subpixel
 ; Regular byte 3: X pixel
 ; Regular byte 4: X screen
+!EXRAM_YI_Level_NorSpr_PriorityOverride #= $0010E0|!SRAMBankBaseAddress
+!EXRAM_YI_Level_NorSpr_XSubpixel = !EXRAM_YI_Level_NorSpr_PriorityOverride+$01
 !EXRAM_YI_Level_NorSpr_XPosLo #= $0010E2|!SRAMBankBaseAddress
 !EXRAM_YI_Level_NorSpr_XPosHi = !EXRAM_YI_Level_NorSpr_XPosLo+$01
 
@@ -96,6 +101,8 @@
 ; Regular byte 2: Y subpixel
 ; Regular byte 3: Y pixel
 ; Regular byte 4: Y screen
+!EXRAM_YI_Level_NorSpr_OBJTileIndexOverride #= $001180|!SRAMBankBaseAddress
+!EXRAM_YI_Level_NorSpr_YSubpixel = !EXRAM_YI_Level_NorSpr_OBJTileIndexOverride+$01
 !EXRAM_YI_Level_NorSpr_YPosLo #= $001182|!SRAMBankBaseAddress
 !EXRAM_YI_Level_NorSpr_YPosHi = !EXRAM_YI_Level_NorSpr_YPosLo+$01
 

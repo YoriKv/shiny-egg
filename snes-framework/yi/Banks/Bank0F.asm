@@ -7279,7 +7279,7 @@ CODE_raphael_state_main_done_wait_for_exit:          ; state $14 -- done with fi
 	LDA.w $7A96,x
 	BNE.b CODE_0FB8EF
 	REP.b #$20
-	LDA.w #$0005
+	LDA.w #!Define_YI_MusicID05_BonusAndVictoryTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 	JSL.l CODE_02E191
 	SEP.b #$20
@@ -7878,7 +7878,7 @@ CODE_gm05_load_cutscene:                             ; Raiden alias
 	STA.w !REGISTER_BG4AddressAndSize
 	LDA.w $012B
 	BNE.b CODE_0FBDFE
-	LDA.b #$02
+	LDA.b #!Define_YI_MusicID02_StoryAndLevelTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 CODE_0FBDFE:
 	LDX.b #$04
@@ -8256,7 +8256,7 @@ CODE_0FC094:
 	BEQ.b CODE_0FC0FE
 	LDA.w $7A96,x
 	BNE.b CODE_0FC0C5
-	LDA.w #$0008
+	LDA.w #!Define_YI_MusicID08_CutsceneAndBossTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 	INC.b $76,x
 	LDA.b $76,x

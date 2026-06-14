@@ -21,6 +21,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { asarBinName } from './asar.ts';
 import { buildRom } from './build.ts';
 import { outputSfcName } from './rom-versions.ts';
 import { readExtractionState } from './state.ts';
@@ -28,7 +29,7 @@ import { runLevelLookupCli } from './level-id.ts';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const workRoot = path.resolve(SCRIPT_DIR, '..'); // snes-framework/
-const asarBin = path.join(workRoot, 'asar.exe');
+const asarBin = path.join(workRoot, asarBinName());
 
 const cmd = process.argv[2];
 
@@ -60,7 +61,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd !== 'xref' && cmd !== 'closure') usage();
-  if (!fs.existsSync(asarBin)) fail(`asar.exe not found at ${asarBin}`);
+  if (!fs.existsSync(asarBin)) fail(`asar not found at ${asarBin}`);
 
   const state = readExtractionState(workRoot);
   if (!state) fail('no .extraction-state.json — run the editor extract step first');

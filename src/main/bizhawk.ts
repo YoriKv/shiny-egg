@@ -21,7 +21,7 @@ import { existsSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { outputSfcName } from 'snes-framework/rom-versions'
 import { readExtractionState } from 'snes-framework/state'
-import { builtArtifactDir, devBizhawkPath, frameworkWorkRoot } from './framework-paths'
+import { bizhawkExeName, builtArtifactDir, devBizhawkPath, frameworkWorkRoot } from './framework-paths'
 import { getCurrentProjectId } from './projects'
 import { getSettings } from './settings'
 import type { BizhawkWarp } from '../shared/ipc-types'
@@ -103,7 +103,7 @@ class BizHawkSupervisor {
     const cart = join(builtArtifactDir(getCurrentProjectId(), sfcName), sfcName)
 
     if (!exe) {
-      throw new Error('BizHawk not located — click "Locate BizHawk" and select EmuHawk.exe.')
+      throw new Error(`BizHawk not located — click "Locate BizHawk" and select ${bizhawkExeName()}.`)
     }
     if (!existsSync(exe)) throw new Error(`BizHawk not found at ${exe}`)
     if (!existsSync(lua)) throw new Error(`Harness Lua not found at ${lua}`)
@@ -132,6 +132,11 @@ class BizHawkSupervisor {
       `--lua=${lua}`,
       cart
     ]
+    // On Linux/macOS `exe` is BizHawk's EmuHawk.sh launcher (shebang script that
+    // bootstraps the .NET runtime); direct spawn works as long as it's
+    // executable, and the --socket_ip/--socket_port/--lua/<cart> args are
+    // identical across platforms. Untested on this machine (no Linux BizHawk
+    // install) — verify on a Linux box.
     const child = spawn(exe, args, {
       cwd: join(exe, '..'),
       stdio: 'ignore',

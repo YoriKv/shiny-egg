@@ -378,7 +378,7 @@ CODE_06823D:
 	LDA.b #$2E
 	STA.w $7042,y
 	REP.b #$20
-	LDA.w #$0009
+	LDA.w #!Define_YI_MusicID09_BossBattle
 	STA.w !RAM_YI_Global_PlayMusicLo
 	LDX.b #$20
 CODE_06827E:

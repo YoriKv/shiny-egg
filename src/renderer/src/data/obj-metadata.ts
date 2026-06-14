@@ -270,6 +270,18 @@ interface StoredSpriteInfo {
    * SpriteNeighborDep.
    */
   neighborDeps?: SpriteNeighborDep[]
+  /**
+   * The game only ever brings this sprite into existence by another sprite
+   * spawning it at runtime (projectiles, thrown children, boss sub-parts,
+   * cutscene/event actors) — it never appears in a placed sprite-stream record.
+   * Such sprites can't be hand-placed sensibly (their parent pre-populates the
+   * per-slot fields the Init assumes), so the picker marks them with a
+   * "spawn-only" badge (informational — they stay listed). Absent ⇒ false.
+   * Tool-generated from `engine/spawned-only.ts` (spawned-via-CODE_spawn_sprite*
+   * ∩ zero base-cart placements); regenerate with tmp/gen-spawned-only.ts after
+   * sprite-spawn asm changes (pinned by engine/spawned-only.test.ts).
+   */
+  spawnedOnly?: boolean
 }
 
 // What the accessors return: stored fields with `exitTrigger` normalised to a

@@ -3409,7 +3409,7 @@ CODE_109BC5:
 	SEP.b #$30
 	LDX.b #$06
 	JSL.l CODE_set_level_music
-	LDA.b #$01
+	LDA.b #!Define_YI_MusicID01_MapAndLevelTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	STZ.w $0121
 	LDA.b #$02
@@ -3947,19 +3947,27 @@ CODE_10A13B:
 
 ;-------------------------------------------------------------------------
 ; DATA_bonus_game_tick_ptrs -- Bonus-game per-variant tick pointer table (6 entries).
-; Indexed by !RAM_YI_Level_CurrentBonusGame in CODE_gm2c_bonus_game. Each
-; entry is the per-frame handler for one of the six post-level games:
-; Flip Cards, Scratch & Match, Drawing Lots, Slot Machine, Match Cards,
-; Roulette Lots (exact mapping depends on the game's bonus-game ID order).
+; Indexed by !RAM_YI_Level_CurrentBonusGame in CODE_gm2c_bonus_game.
+; CurrentBonusGame is already the x2 word index -- it IS the
+; !Define_YI_BonusID_* value, set in Bank17 from the matched world-order
+; index in DATA_17B4BD (map_bonus_icons). Entries therefore follow
+; BonusIDs.asm order; per-handler identities verified by in-handler
+; evidence (noted per row):
+;   $00 CODE_10A26F  Flip Cards         (region self-checks BonusID_FlipCards)
+;   $02 CODE_10B5CE  Scratch And Match
+;   $04 CODE_10CD4F  Drawing Lots
+;   $06 CODE_10D181  Match Cards        (Correct/Incorrect pair-judgment SFX)
+;   $08 CODE_10C497  Roulette           (BonusID-gated life debit in the gm2A intro path, CODE_109D74)
+;   $0A CODE_10BD5D  Slot Machine       (plays SoundID06_SlotMachineSpin)
 ;-------------------------------------------------------------------------
 DATA_bonus_game_tick_ptrs:
 DATA_10A169:
-	dw CODE_10A26F
-	dw CODE_10B5CE
-	dw CODE_10CD4F
-	dw CODE_10D181
-	dw CODE_10C497
-	dw CODE_10BD5D
+	dw CODE_10A26F					; $00 Flip Cards
+	dw CODE_10B5CE					; $02 Scratch And Match
+	dw CODE_10CD4F					; $04 Drawing Lots
+	dw CODE_10D181					; $06 Match Cards
+	dw CODE_10C497					; $08 Roulette
+	dw CODE_10BD5D					; $0A Slot Machine
 
 CODE_10A175:
 	LDY.w $6092
@@ -4443,7 +4451,7 @@ CODE_10A5EF:
 
 CODE_10A5F9:
 	REP.b #$30
-	LDA.w #$0005
+	LDA.w #!Define_YI_MusicID05_BonusAndVictoryTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	LDA.w #$0090
 	STA.w $10E0
@@ -5561,7 +5569,7 @@ CODE_10B00E:
 	DEC.w $10E0
 	BPL.b CODE_10B045
 	SEP.b #$30
-	LDA.b #$06
+	LDA.b #!Define_YI_MusicID06_BonusAndBossTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	LDX.b #$00
 CODE_10B01B:
@@ -7172,7 +7180,7 @@ CODE_10BDE8:
 	BEQ.b CODE_10BE11
 	LDA.w #$0090
 	STA.w $118A
-	LDA.w #$0005
+	LDA.w #!Define_YI_MusicID05_BonusAndVictoryTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	BRA.b CODE_10BE28
 
@@ -8117,7 +8125,7 @@ CODE_10C5AF:
 	CMP.w $117C
 	BCS.b CODE_10C5F6
 CODE_10C5EA:
-	LDA.b #$05
+	LDA.b #!Define_YI_MusicID05_BonusAndVictoryTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	BRA.b CODE_10C5F6
 
@@ -9444,7 +9452,7 @@ CODE_10D076:
 	TAY
 	LDA.w DATA_10CEF8,y
 	JSR.w CODE_109C80
-	LDA.w #$0005
+	LDA.w #!Define_YI_MusicID05_BonusAndVictoryTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 	LDY.w #$0004
 	BRA.b CODE_10D0A9
@@ -9713,7 +9721,7 @@ CODE_10D2B9:
 	BNE.b CODE_10D2D8
 	LDA.b #$0A
 	STA.w $114E
-	LDA.b #$05
+	LDA.b #!Define_YI_MusicID05_BonusAndVictoryTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	LDA.b #$90
 	STA.w $10E0
@@ -10822,7 +10830,7 @@ CODE_10DC37:
 	LDA.w #$01F0
 	STA.w $7E1A
 	SEP.b #$20
-	LDA.b #$01
+	LDA.b #!Define_YI_MusicID01_MapAndLevelTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	STZ.w $0121
 	LDA.b #$02
@@ -11177,7 +11185,7 @@ CODE_10DF20:
 	STA.w !REGISTER_VCountTimerLo
 	LDA.b #$B1
 	STA.w !REGISTER_IRQNMIAndJoypadEnableFlags
-	LDA.b #$04
+	LDA.b #!Define_YI_MusicID04_GameOver
 	STA.w !RAM_YI_Global_PlayMusicLo
 	INC.w !RAM_YI_Global_CurrentGameMode
 	BRA.b CODE_10DF5C
@@ -11674,7 +11682,7 @@ CODE_10E27B:
 	SEP.b #$20
 	LDX.b #$13
 	JSL.l CODE_set_level_music
-	LDA.b #$01
+	LDA.b #!Define_YI_MusicID01_MapAndLevelTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	LDA.b #$50
 	STA.w !REGISTER_HCountTimerLo
@@ -12169,7 +12177,7 @@ CODE_10E6FE:
 	LDA.w #$0012
 	STA.b $80
 	STZ.b $75
-	LDA.w #$0002
+	LDA.w #!Define_YI_MusicID02_StoryAndLevelTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	RTS
 

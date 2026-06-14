@@ -398,7 +398,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_77_obj,DATA_level_77_spr    ; $77 sub-room of 2-7 "Lakitu's Wall"
 	dl DATA_level_78_obj,DATA_level_78_spr    ; $78 sub-room of 2-8 "The Potted Ghost's Castle"
 	dl DATA_level_79_obj,DATA_level_79_spr    ; $79 sub-room of 3-1 "Welcome To Monkey World!"
-	dl DATA_level_7A_obj,DATA_level_7A_spr    ; $7A sub-room of 3-3 "Nep-Enuts' Domain"
+	dl DATA_level_7A_obj,DATA_level_7A_spr    ; $7A sub-room of 3-3 "Nep-Enuts' Domain" -- underwater room: drives a BG3 vertical-offset HDMA for the water line
 	dl DATA_level_7B_obj,DATA_level_7B_spr    ; $7B sub-room of 3-4 "Prince Froggy's Fort"
 	dl DATA_level_7C_obj,DATA_level_7C_spr    ; $7C sub-room of 3-5 "Jammin' Through The Trees"
 	dl DATA_169D23,DATA_level_7D_spr    ; $7D sub-room of 3-6 "The Cave Of Harry Hedgehog" -- obj ptr is the truncated 225-byte DATA_169D23 slice of a 366-byte stream (see Bank16.asm)
@@ -455,7 +455,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_B0_obj,DATA_level_B0_spr    ; $B0 sub-room of 5-4 "Sluggy The Unshaven's Fort"
 	dl DATA_level_B1_obj,DATA_level_B1_spr    ; $B1 sub-room of 5-5 "Goonie Rides!"
 	dl DATA_level_B2_obj,DATA_level_B2_spr    ; $B2 sub-room of 5-7 "Shifting Platforms Ahead"
-	dl DATA_level_B3_obj,DATA_level_B3_spr    ; $B3 sub-room of 5-8 "Raphael The Raven's Castle"
+	dl DATA_level_B3_obj,DATA_level_B3_spr    ; $B3 sub-room of 5-8 "Raphael The Raven's Castle" -- Mode7 "rotating platforms" room: drives BG3-offset HDMA (occupies HDMA ch 1-4/6)
 	dl DATA_level_B4_obj,DATA_level_B4_spr    ; $B4 sub-room of 5-Extra "Kamek's Revenge"
 	dl DATA_level_B5_obj,DATA_level_B5_spr    ; $B5 sub-room of 6-1 "Scary Skeleton Goonies!"
 	dl DATA_level_B6_obj,DATA_level_B6_spr    ; $B6 sub-room of 6-4 "Tap-Tap The Red Nose's Fort"
@@ -464,11 +464,11 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_B9_obj,DATA_level_B9_spr    ; $B9 sub-room of 6-Extra "Castles - Masterpiece Set"
 	dl DATA_level_BA_obj,DATA_level_BA_spr    ; $BA sub-room of 2-1 "Visit Koopa And Para-Koopa"
 	dl DATA_level_BB_obj,DATA_level_BB_spr    ; $BB sub-room of 2-4 "Bigger Boo's Fort"
-	dl DATA_level_BC_obj,DATA_level_BC_spr    ; $BC sub-room of 2-5 "Watch Out For Lakitu"
+	dl DATA_level_BC_obj,DATA_level_BC_spr    ; $BC sub-room of 2-5 "Watch Out For Lakitu" -- Mode7 "rotating platforms" room: drives BG3-offset HDMA (occupies HDMA ch 1-4/6)
 	dl DATA_level_BD_obj,DATA_level_BD_spr    ; $BD sub-room of 2-6 "The Cave Of The Mystery Maze"
 	dl DATA_level_BE_obj,DATA_level_BE_spr    ; $BE sub-room of 2-8 "The Potted Ghost's Castle"
 	dl DATA_11DC0F,DATA_level_BF_spr    ; $BF sub-room of 3-4 "Prince Froggy's Fort" -- obj ptr shared with $D0 (DATA_11DC0F)
-	dl DATA_level_C0_obj,DATA_level_C0_spr    ; $C0 sub-room of 3-7 "Monkeys' Favorite Lake"
+	dl DATA_level_C0_obj,DATA_level_C0_spr    ; $C0 sub-room of 3-7 "Monkeys' Favorite Lake" -- underwater room: drives a BG3 vertical-offset HDMA for the water line
 	dl DATA_level_C1_obj,DATA_level_C1_spr    ; $C1 sub-room of 4-4 "Marching Milde's Fort"
 	dl DATA_level_C2_obj,DATA_level_C2_spr    ; $C2 sub-room of 5-1 "BLIZZARD!!!"
 	dl DATA_level_C3_obj,DATA_level_C3_spr    ; $C3 sub-room of 5-3 "Danger - Icy Conditions Ahead"
@@ -482,7 +482,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_CB_obj,DATA_16F097-$02    ; $CB sub-room of 5-8 "Raphael The Raven's Castle" -- sprite ptr biased -2 into DATA_level_C4_spr’s terminator (de-couple to edit; pool-map.ts)
 	dl DATA_level_CC_obj,DATA_level_CC_spr    ; $CC sub-room of 6-4 "Tap-Tap The Red Nose's Fort"
 	dl DATA_level_CD_obj,DATA_level_CD_spr    ; $CD sub-room of 3-6 "The Cave Of Harry Hedgehog"
-	dl DATA_level_CE_obj,DATA_level_CE_spr    ; $CE sub-room of 2-4 "Bigger Boo's Fort"
+	dl DATA_level_CE_obj,DATA_level_CE_spr    ; $CE sub-room of 2-4 "Bigger Boo's Fort" -- Mode7 "rotating platforms" room: drives BG3-offset HDMA (occupies HDMA ch 1-4/6)
 	dl DATA_level_CF_obj,DATA_level_CF_spr    ; $CF sub-room of 2-8 "The Potted Ghost's Castle"
 	dl DATA_11DC0F,DATA_level_D0_spr    ; $D0 sub-room of 3-4 "Prince Froggy's Fort" -- obj ptr shared with $BF (DATA_11DC0F)
 	dl DATA_level_D1_obj,DATA_level_D1_spr    ; $D1 sub-room of 5-3 "Danger - Icy Conditions Ahead"
@@ -491,7 +491,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_D4_obj,DATA_level_D4_spr    ; $D4 sub-room of 2-8 "The Potted Ghost's Castle"
 	dl DATA_level_D5_obj,DATA_level_D5_spr    ; $D5 sub-room of 3-4 "Prince Froggy's Fort"
 	dl DATA_level_D6_obj,DATA_level_D6_spr    ; $D6 sub-room of 3-6 "The Cave Of Harry Hedgehog"
-	dl DATA_level_D7_obj,DATA_level_D7_spr    ; $D7 sub-room of 3-4 "Prince Froggy's Fort"
+	dl DATA_level_D7_obj,DATA_level_D7_spr    ; $D7 sub-room of 3-4 "Prince Froggy's Fort" -- underwater room: drives a BG3 vertical-offset HDMA for the water line
 	dl DATA_level_D8_obj,DATA_level_D8_spr    ; $D8 unused room (not map- or warp-reachable)
 	dl DATA_level_D9_obj,DATA_level_D9_spr    ; $D9 unused room (not map- or warp-reachable)
 	; The last four slots correspond to the seed-contest mini-game rooms

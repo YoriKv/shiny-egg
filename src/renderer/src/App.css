@@ -2282,15 +2282,6 @@ h3 { margin: 0; }
   align-items: center;
   gap: 4px 6px;
 }
-.se-picker__filter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--ink-2);
-  cursor: pointer;
-  user-select: none;
-}
 .se-picker__filter-count {
   font-size: 10px;
   color: var(--ink-3);
@@ -2324,6 +2315,18 @@ h3 { margin: 0; }
   padding: 1px 2px;
   max-width: 110px;
 }
+/* Active facet (a category other than "all categories") — match the chips' highlight. */
+.se-picker__category.is-active {
+  color: var(--bg-base);
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+}
+/* Keep the highlight on the closed box only — the open option popup inherits the
+ * select's background in Chromium, so reset the options back to normal. */
+.se-picker__category.is-active option {
+  color: var(--ink-2);
+  background: var(--bg-base);
+}
 .se-picker__badge {
   display: inline-block;
   margin-left: 6px;
@@ -2344,6 +2347,10 @@ h3 { margin: 0; }
 .se-picker__badge--setup {
   color: var(--ink-3);
   border: 1px solid var(--line-strong);
+}
+.se-picker__badge--spawn {
+  color: #7aa2cf;
+  border: 1px solid rgba(122, 162, 207, 0.45);
 }
 .se-picker__row.is-armed .se-picker__badge {
   color: var(--bg-base);

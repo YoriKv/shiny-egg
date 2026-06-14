@@ -515,7 +515,7 @@ CODE_hookbill_init_boss:
 	STZ.w $60A0
 	LDA.w #$0015
 	STA.w !RAM_YI_Global_MainScreenLayers
-	LDA.w #$0009
+	LDA.w #!Define_YI_MusicID09_BossBattle
 	STA.w !RAM_YI_Global_PlayMusicLo
 	LDY.b #$2B
 	STY.b $76,x
@@ -6294,7 +6294,7 @@ CODE_01B149:
 	LDA.w #$0120
 	STA.w $0B4C
 	JSL.l CODE_108F49
-	LDA.b #$03
+	LDA.b #!Define_YI_MusicID03_CastleAndIntroTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	LDA.b #$02
 	STA.w $0125

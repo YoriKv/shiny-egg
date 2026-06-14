@@ -809,7 +809,7 @@ comparison across every entry in `DATA_06FC79`.
 
 | Pair                                 | Match  |
 |---|---|
-| `lc200/decomp.exe FORMAT=15` ↔ TS port (shiny-egg-derived) | 187 / 187 ✓ |
+| `lc200/decomp.exe FORMAT=15` ↔ TS port (`scripts/engine/decompress/lz16.ts`) | 187 / 187 ✓ |
 | `lc200/decomp.exe FORMAT=15` ↔ Mesen GSU trace of `$0A:8000` | 187 / 187 ✓ |
 | TS port ↔ Mesen GSU trace                                    | 187 / 187 ✓ |
 
@@ -832,7 +832,7 @@ Three generator scripts and one comparator:
 | Script | What it produces | How |
 |---|---|---|
 | `scripts/generate-lz16-testdata.ts` | `test-data/lz16/decomp/entry_NNN.bin` | Invokes `lc200/decomp.exe` per entry; probes `format2` from 4 down to 1 until decomp succeeds (most entries can't fill 4 strips); writes `manifest.json` with the per-entry `format2` everyone else uses. |
-| `scripts/generate-lz16-port.ts`     | `test-data/lz16/port/entry_NNN.bin`   | Imports `scripts/lz16-decoder.ts` (verbatim copy of shiny-egg's `lz16.ts`) and runs it per manifest entry. |
+| `scripts/generate-lz16-port.ts`     | `test-data/lz16/port/entry_NNN.bin`   | Imports `scripts/lz16-decoder.ts` (verbatim copy of the LZ16 decoder `scripts/engine/decompress/lz16.ts`) and runs it per manifest entry. |
 | `scripts/generate-lz16-mesen.ts`    | `test-data/lz16/mesen/entry_NNN.bin`  | Drives Mesen 187× through the `lz16-extract` trace-harness scenario. ROM is built ONCE; per-entry params (`gfxIndex`, `rowCount`) come from WRAM, written by Lua at the `$00:8150` hijack hit. Lua snapshots `$70:0000-007F` (128-byte row buffer) at each `$0A:80EC` PLOT-row entry and dumps rows as `LZ16ROW NNNN <hex>` lines. The runner parses those, transposes to SNES 4bpp tile bytes (same algorithm as the TS port), and writes the .bin. |
 | `scripts/compare-lz16.ts`           | exit code + per-entry diff | Pairwise byte-compares any two source dirs (`decomp` / `port` / `mesen`) against the shared `manifest.json`. |
 
@@ -855,24 +855,24 @@ node scripts/compare-lz16.ts port mesen
 
 The frames differ but describe the same algorithm:
 
-| shiny-egg mode (per `lz16.ts`) | This document's token | Notes |
+| TS-port mode (per `lz16.ts`) | This document's token | Notes |
 |---|---|---|
 | 0 — Skip-runs (walk cursor left past N equal-pixel runs, no writes) | LZ-back (§4.4) | Both "advance cursor past N run-boundaries without emitting." |
 | 1 — Predictor (3-bit index `pred[0..7]`; index 7 reads 4 fresh bits) | TABLE-REF + RAW-NIB (§4.1, §4.2) | 7 cached nibbles in `pred[0..6]` ≡ R6/R7/R8 hi/lo + R9 lo; index 7 = our 111 dispatch = RAW. |
 | 2 — Bridge (find boundary, fill backward with ref, restore boundary pixel) | LZ-prev LDB (§4.4) | R12 copies of R5 + 1 of R0 at boundary. |
 | 3 — Jump-fwd (find boundary, jump cursor right, write boundary pixel) | LZ-prev LDW (§4.4) | 1 byte at `scan_end + R12`. |
-| `rowMode` bit per pixel row | R9-sign accumulator (§4.4) | shiny-egg reads 1 explicit bit per row; this document derives the same bit from R4 bit-0 at the row-flush epilogue. These are the same bit observed from two angles. |
-| `rowCount` parameter (= tile-strip count, each 8 pixel-rows) | R3 (= pixel-row count, 1:1 with PLOT-row events) | Scale differs by 8× (shiny-egg's 1 strip = our R3 of 8). |
+| `rowMode` bit per pixel row | R9-sign accumulator (§4.4) | the TS port reads 1 explicit bit per row; this document derives the same bit from R4 bit-0 at the row-flush epilogue. These are the same bit observed from two angles. |
+| `rowCount` parameter (= tile-strip count, each 8 pixel-rows) | R3 (= pixel-row count, 1:1 with PLOT-row events) | Scale differs by 8× (the port's 1 strip = our R3 of 8). |
 
-Token kinds not directly mapped by shiny-egg (because they're
+Token kinds not directly mapped by the TS port (because they're
 GSU-execution variants rather than format-level concepts):
 
 - **LZ-127** (§4.4): a GSU-side path that falls through to regular
-  TABLE-REF dispatch after the back-ref gate fires. shiny-egg's mode
+  TABLE-REF dispatch after the back-ref gate fires. The TS port's mode
   1 covers this naturally.
 - The "asar mnemonic vs runtime" subtleties (e.g., the
   STW-with-runtime-ALT1 trick at `$0A:8092`): GSU-implementation
-  detail, not format-level. shiny-egg correctly abstracts past it.
+  detail, not format-level. The TS port correctly abstracts past it.
 
 ### 8.3 Re-running the validation
 
@@ -897,9 +897,9 @@ For a subset, pass `--ids=0,1,5,10` or `--limit=N` to any of the
 generators or the comparator. Comparator's `--verbose` shows
 first-diff offsets + bytes when a mismatch is found.
 
-Independent sibling: `shiny-egg`'s
-`snes-framework/scripts/engine/decompress/verify.ts` also runs the
-same TS port side-by-side with `decomp.exe` (we vendored its
+Independent sibling: the framework's own
+`scripts/engine/decompress/verify.ts` also runs the
+same TS port side-by-side with `decomp.exe` (the trace-harness vendored its
 `lz16.ts` into `scripts/lz16-decoder.ts`). Both produce equivalent
 validation results.
 
@@ -1075,7 +1075,7 @@ is easier to maintain but loses GSU-fidelity for edge cases.
 9. **Ground-truth validation against `lc200/decomp.exe FORMAT=15`** —
    **RESOLVED 2026-05-26**. All 187 entries match byte-for-byte
    across three independent decoders: `decomp.exe`, the TS port at
-   `scripts/lz16-decoder.ts` (vendored from shiny-egg), and Mesen
+   `scripts/lz16-decoder.ts` (vendored from `scripts/engine/decompress/lz16.ts`), and Mesen
    running the cart's own `lz16_decompress` at `$0A:8000`. See **§8**
    for results, scripts, and re-run instructions.
 
@@ -1093,7 +1093,7 @@ is easier to maintain but loses GSU-fidelity for edge cases.
 - **`lc200/decomp.exe`** — ground-truth byte-level decoder for
   validation. FORMAT=15 is LZ16. See §8 for the validation result.
 - **`scripts/lz16-decoder.ts`** — TS port of LZ16 (vendored from
-  shiny-egg's `snes-framework/scripts/engine/decompress/lz16.ts`,
+  the framework decoder `scripts/engine/decompress/lz16.ts`,
   itself derived from decompiled `lc200/decomp.exe`). One of the
   three legs of the §8 validation matrix.
 - **`scripts/generate-lz16-testdata.ts`** /

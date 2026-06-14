@@ -8,6 +8,7 @@ import * as path from 'node:path'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import {
+  decodeLevelStreams,
   loadLevel,
   loadLevelMapPublic,
   levelMapEntry,
@@ -158,6 +159,55 @@ export function loadLevelResource(levelRecordId: number): LevelData {
   })
 }
 
+/**
+ * Defense-in-depth save guard: re-decode the bytes we're about to write and
+ * confirm they reproduce the level we serialized (header field-for-field + the
+ * object/sprite/exit counts). serializeLevel ↔ decodeLevelStreams round-trip by
+ * design (pinned by serialize-level.test.ts), so a CLEAN level always passes —
+ * this only fires on a serializer bug or corrupt in-memory LevelData, turning a
+ * silent malformed-`.bin` write into a clean rejection. This is the single
+ * chokepoint every editor save funnels through; the ROM-import path missed
+ * exactly this class of corruption (see import/anchors.ts). Returns an error
+ * string when the round-trip diverges, or null when the write is safe.
+ */
+function verifyLevelRoundTrip(
+  level: LevelData,
+  objectBytes: Buffer,
+  spriteBytes: Buffer,
+  headerBitWidths: number[],
+  standardObjectInfo: number[]
+): string | null {
+  let decoded: LevelData
+  try {
+    decoded = decodeLevelStreams({
+      recordId: level.recordId,
+      romVersion: level.romVersion,
+      headerBitWidths,
+      standardObjectInfo,
+      objectBytes,
+      spriteBytes
+    })
+  } catch (e) {
+    return `re-decode threw (${(e as Error).message})`
+  }
+  if (
+    decoded.header.length !== level.header.length ||
+    decoded.header.some((v, i) => v !== level.header[i])
+  ) {
+    return `header round-trip mismatch (wrote [${decoded.header}], expected [${level.header}])`
+  }
+  if (decoded.objects.length !== level.objects.length) {
+    return `object count round-trip mismatch (${decoded.objects.length} vs ${level.objects.length})`
+  }
+  if (decoded.sprites.length !== level.sprites.length) {
+    return `sprite count round-trip mismatch (${decoded.sprites.length} vs ${level.sprites.length})`
+  }
+  if (decoded.exits.length !== level.exits.length) {
+    return `exit count round-trip mismatch (${decoded.exits.length} vs ${level.exits.length})`
+  }
+  return null
+}
+
 /** Serialize an edited level into the active project's overlay `.bin`(s). */
 export async function saveLevelResource(
   levelRecordId: number,
@@ -187,6 +237,20 @@ export async function saveLevelResource(
     headerBitWidths: map.headerBitWidths,
     standardObjectInfo: map.standardObjectInfo
   })
+
+  // Never persist a level that doesn't survive a serialize→decode round-trip —
+  // a corrupt write here would surface as a phantom object/sprite in the editor
+  // (and the finder) and ship into the build. See verifyLevelRoundTrip.
+  const roundTripError = verifyLevelRoundTrip(
+    level,
+    serialized.objectBytes,
+    serialized.spriteBytes,
+    map.headerBitWidths,
+    map.standardObjectInfo
+  )
+  if (roundTripError) {
+    return { ok: false, error: `Refusing to save corrupt level data: ${roundTripError}` }
+  }
 
   // Per-level .bin files are self-contained; write the whole file into the
   // current project's overlay, leaving the pristine base untouched. A grow past

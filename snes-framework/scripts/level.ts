@@ -28,16 +28,21 @@ export type {
   ScreenExitWarp
 } from './types.ts';
 
-/** Engine-driven records the editor refuses to parse. EMPTY since record 0x38
- *  (the gm38 intro-cutscene level, played by map slot 0x0A — historically
- *  misglossed "Kamek's Revenge", whose actual record is 0x2C via map slot
- *  0x38) was verified to decode cleanly: 13 backdrop objects, empty sprite
- *  stream, all 66 bytes consumed. Its only quirk is a garbage bit in the
- *  header's PADDING (stream bit 75; the 15 fields end at bit 74), which the
- *  engine never reads — a save normalizes it to 0. The old skip-parse was
- *  lore, like the rest of the $38 glosses. Kept as a set so a genuinely
- *  unparseable record can be re-added with one id. */
-const SPECIAL_LEVELS = new Set<number>([]);
+/** Engine-driven records the editor refuses to parse (returned as `special` so
+ *  the canvas shows the "hardcoded level" placeholder, not garbage). They stay
+ *  in the catalog/dropdown for warp + map-panel references.
+ *
+ *  0x38 — the gm38 intro-cutscene level (map slot 0x0A). Its `Ptrs:` record does
+ *  NOT hold a standard object stream: it's cutscene data the gm38 engine drives
+ *  via level mode 0x0E. The lenient structural parser limps to "13 objects / 66
+ *  bytes" (which is why this was once mistakenly de-special-ized as decoding
+ *  "cleanly"), but those objects are garbage — sequential ids 0x72-0x78 stacked
+ *  at (176,240), out of bounds, rendering NOTHING — and the engine-faithful
+ *  render decoder ABORTS at byte 29 (see sweep-levels' KNOWN_PARTIAL +
+ *  validity-report's skip, which always treated it special). Editing it would
+ *  corrupt the cutscene, so the editor refuses; import blocks it too (see
+ *  analyze.ts SPECIAL_RECORDS). */
+const SPECIAL_LEVELS = new Set<number>([0x38]);
 
 /**
  * Derive the cart's `CurrentWorld == World6` flag from a **translevel** ID.

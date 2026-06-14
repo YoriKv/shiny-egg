@@ -11,8 +11,10 @@
 // what we're not sure about.
 //
 // Filter chips (§B5b): category facet (compact select), used-in-this-level,
-// exit-triggers, and needs-setup (sprites with neighbour-deps — badge + chip,
-// the designerRule as tooltip). All persisted in `shinyEgg.picker.v1`.
+// and exit-triggers. All persisted in `shinyEgg.picker.v1`.
+// Two informational sprite badges that do NOT filter (the sprite stays listed
+// like any other): "setup" (neighbour-deps — the designerRule as tooltip) and
+// "spawn-only" (obj-metadata `spawnedOnly`, runtime-spawned children).
 
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { usePickerThumbnails } from '../hooks/usePickerThumbnails'
@@ -41,9 +43,12 @@ interface Row {
   tip: string
   /** Fires a screen exit (door/pipe/teleport) — the "exits" chip's facet. */
   exit: boolean
-  /** Sprite neighbour-dependency designer rules (non-empty ⇒ "setup" badge +
-   *  the "needs setup" chip facet). Objects: always empty. */
+  /** Sprite neighbour-dependency designer rules (non-empty ⇒ "setup" badge,
+   *  the rules as tooltip). Objects: always empty. */
   setupRules: string[]
+  /** Runtime-spawned-only sprite (obj-metadata `spawnedOnly`) ⇒ "spawn-only"
+   *  badge. Objects / specials: always false. */
+  spawnedOnly: boolean
   item: PlacementItem
 }
 
@@ -58,6 +63,7 @@ function objectRows(): Row[] {
       tip: objectTip(label, `0x${hex(id, 2)}`, info),
       exit: info.exitTrigger,
       setupRules: [],
+      spawnedOnly: false,
       item: { kind: 'object', num: id, w: info.defaultWidth, h: info.defaultHeight, label }
     }
   })
@@ -71,6 +77,7 @@ function objectRows(): Row[] {
       tip: objectTip(label, `ext 0x${hex(id, 2)}`, info),
       exit: info.exitTrigger,
       setupRules: [],
+      spawnedOnly: false,
       item: { kind: 'object', num: 0, exnum: id, w: info.defaultWidth, h: info.defaultHeight, label }
     }
   })
@@ -108,6 +115,7 @@ function specialRows(): Row[] {
         'destination (or switch it to a minibattle) in Properties.',
       exit: true,
       setupRules: [],
+      spawnedOnly: false,
       item: { kind: 'exit', label: 'Screen Exit' }
     }
   ]
@@ -124,6 +132,7 @@ function spriteRows(): Row[] {
       tip: `${label} (0x${hex(id, 3)})`,
       exit: info.exitTrigger,
       setupRules: getSpriteNeighborDeps(id).map((d) => d.designerRule),
+      spawnedOnly: !!info.spawnedOnly,
       item: { kind: 'sprite', num: id, label }
     }
   })
@@ -232,7 +241,6 @@ interface PickerPrefs {
   thisLevel: boolean
   usedHere: boolean
   exits: boolean
-  needsSetup: boolean
   objectCategory: string
   spriteCategory: string
 }
@@ -240,7 +248,6 @@ const DEFAULT_PREFS: PickerPrefs = {
   thisLevel: true,
   usedHere: false,
   exits: false,
-  needsSetup: false,
   objectCategory: '',
   spriteCategory: ''
 }
@@ -314,10 +321,10 @@ export function PickerBody({
         (tab === 'special' ||
           ((!category || r.category === category) &&
             (!prefs.exits || r.exit) &&
-            (!prefs.usedHere || usedKeys.has(r.key)) &&
-            (!prefs.needsSetup || tab !== 'sprite' || r.setupRules.length > 0)))
+            (!prefs.usedHere || usedKeys.has(r.key))))
     )
     const annotated = matched.map((r) => ({ row: r, validity: rowValidity(r, validity) }))
+    // Hide only definite render-failures (when "in level tileset" is on).
     const kept = prefs.thisLevel ? annotated.filter((a) => !a.validity.failing) : annotated
     return { filtered: kept, hidden: annotated.length - kept.length }
   }, [rows, query, validity, prefs, category, usedKeys, tab])
@@ -373,26 +380,14 @@ export function PickerBody({
       />
       {tab !== 'special' && (
       <div className="se-picker__chips">
-        <label
-          className="se-picker__filter"
-          title="Hide entries whose graphics aren't loaded under this level's header (red 'no gfx'). Amber badges (partial / unknown) stay visible."
-        >
-          <input
-            type="checkbox"
-            checked={prefs.thisLevel}
-            onChange={(e) => setPref('thisLevel', e.target.checked)}
-          />
-          In Level Tileset
-        </label>
+        {chip('in level tileset', prefs.thisLevel, () => setPref('thisLevel', !prefs.thisLevel),
+          "Hide entries whose graphics aren't loaded under this level's header (red 'no gfx'). Amber badges (partial / unknown) stay visible.")}
         {chip('used here', prefs.usedHere, () => setPref('usedHere', !prefs.usedHere),
           'Only entries already placed in the loaded level — "give me another of those".')}
         {chip('exits', prefs.exits, () => setPref('exits', !prefs.exits),
           'Only entries that can fire a screen exit (doors / enterable pipes / teleports).')}
-        {tab === 'sprite' &&
-          chip('needs setup', prefs.needsSetup, () => setPref('needsSetup', !prefs.needsSetup),
-            'Only sprites that read surrounding placed data (a rail, a partner sprite, a keyhole…) — see each row’s "setup" badge.')}
         <select
-          className="se-picker__category"
+          className={`se-picker__category${category ? ' is-active' : ''}`}
           value={category}
           title="Category facet"
           onChange={(e) =>
@@ -445,6 +440,14 @@ export function PickerBody({
                   title={`Needs surrounding setup:\n${r.setupRules.join('\n')}`}
                 >
                   setup
+                </span>
+              )}
+              {r.spawnedOnly && (
+                <span
+                  className="se-picker__badge se-picker__badge--spawn"
+                  title="Spawned only at runtime by another sprite (projectile / sub-part / event actor). Not normally hand-placed — it relies on its parent for setup."
+                >
+                  spawn-only
                 </span>
               )}
             </span>

@@ -1,14 +1,19 @@
 name: Release
 
-# Push a version tag (e.g. `v0.1.0`) to build the Windows app and publish a
-# GitHub Release with two artifacts:
-#   - shiny-egg-<version>-setup.exe  (NSIS installer)
-#   - shiny-egg-<version>-win.zip    (zipped portable app = win-unpacked contents)
+# Push a version tag (e.g. `v0.1.0`) to build the app for Windows + Linux and
+# publish a GitHub Release with the artifacts:
+#   - shiny-egg-<version>-setup.exe       (Windows NSIS installer)
+#   - shiny-egg-<version>-win.zip         (zipped portable app = win-unpacked contents)
+#   - shiny-egg-<version>-linux.AppImage  (portable Linux app)
 # The release body is the matching `## v<version>` section of CHANGELOG.md
 # (auto-generated commit notes are appended after it; if the section is
 # missing, the release falls back to the auto notes alone).
-# A manual run (workflow_dispatch) just builds and uploads the artifacts to the
-# run (no release), handy for testing the build.
+#
+# Structure: a per-OS `build` matrix always uploads its artifacts to the run; a
+# single `release` job (tag push only) downloads them all and publishes ONE
+# release — so the two OS builds never race to create the same release.
+# A manual run (workflow_dispatch) runs only the build matrix (no release),
+# handy for testing the build.
 
 on:
   push:
@@ -20,8 +25,21 @@ permissions:
   contents: write
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: build:win
+            artifacts: |
+              dist/*-setup.exe
+              dist/*-win.zip
+          - os: ubuntu-latest
+            script: build:linux
+            artifacts: |
+              dist/*-linux.AppImage
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,19 +53,42 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
+      # Fresh per-OS install pulls the correct platform electron binary. (The
+      # CLAUDE.md "install from Windows only" caveat is about the shared
+      # WSL/Windows dev tree, not a clean CI runner.)
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Windows app (NSIS installer + zip)
-        run: pnpm run build:win
+      - name: Build app
+        run: pnpm run ${{ matrix.script }}
 
-      # Tag push → pull this version's section out of CHANGELOG.md for the
-      # release body. Matches the heading's second field against the tag
-      # (`## v0.3.5 — …`), so the trailing date/"unreleased" note is ignored.
-      # No matching section ⇒ empty file ⇒ auto-generated notes only.
+      # Always keep per-OS artifacts on the run: the release job downloads them
+      # (tag push), and a manual run leaves them here for inspection.
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiny-egg-${{ matrix.os }}
+          path: ${{ matrix.artifacts }}
+
+  release:
+    # Tag push only: gather both OS builds and publish a single release.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # Pull this version's section out of CHANGELOG.md for the release body.
+      # Matches the heading's second field against the tag (`## v0.3.5 — …`), so
+      # the trailing date/"unreleased" note is ignored. No matching section ⇒
+      # empty file ⇒ auto-generated notes only.
       - name: Extract changelog section
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
         run: |
           awk -v tag="${GITHUB_REF_NAME}" '
             /^## / { on = ($2 == tag) ; next }
@@ -56,24 +97,13 @@ jobs:
             echo "::warning::CHANGELOG.md has no \"## ${GITHUB_REF_NAME}\" section — release body will be auto-generated notes only."
           fi
 
-      # Tag push → publish a release with exactly the two artifacts.
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
           files: |
-            dist/*-setup.exe
-            dist/*-win.zip
+            artifacts/**/*-setup.exe
+            artifacts/**/*-win.zip
+            artifacts/**/*-linux.AppImage
           fail_on_unmatched_files: true
           generate_release_notes: true
-
-      # Manual run → keep the artifacts on the workflow run for inspection.
-      - name: Upload build artifacts
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: shiny-egg-win
-          path: |
-            dist/*-setup.exe
-            dist/*-win.zip

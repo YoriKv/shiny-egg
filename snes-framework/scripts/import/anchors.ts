@@ -28,6 +28,30 @@ export const LEVEL_COUNT = 222;
  *  cart is V1.0-derived and to validate the header-bit-widths anchor. */
 const EXPECTED_HEADER_WIDTHS = [5, 4, 5, 5, 6, 6, 6, 7, 4, 5, 6, 5, 5, 4, 2];
 
+/**
+ * Per-field maximum observed across ALL 220 vanilla V1.0 levels — the "plausible
+ * header" envelope. A foreign record whose decoded header exceeds this in ANY
+ * field is not a real level: it's an abandoned/clobbered record slot whose stale
+ * pointer reads garbage (all-`0xFF` regions decode to all-bits-set fields; a
+ * reused free-space region decodes to out-of-range junk). Every vanilla level
+ * sits inside this envelope BY CONSTRUCTION, so the check NEVER rejects real data
+ * (the project's "validity gates may be too-strict, never too-loose" caveat is
+ * satisfied on the base corpus). Calibrated by tmp/header-cal*.ts; re-derive and
+ * widen here if a future extract adds a level that legitimately exceeds it.
+ *
+ * Several fields equal their bit-width max (0,1,3,7,8,14) — vanilla genuinely
+ * uses the full range there, so those carry no constraint; the discriminating
+ * fields are 2,4,5,6,9,10,11,12,13. (The reported corruption — record 0x05 in a
+ * bad ROM import — tripped field 2 = 31 > 29 and field 10 = 53 > 17.)
+ */
+const VANILLA_HEADER_ENVELOPE = [31, 15, 29, 31, 49, 46, 53, 127, 15, 15, 17, 27, 20, 13, 3];
+
+/** Generous absolute count caps (well above the vanilla maxima — 447 objects,
+ *  98 sprites — so a legitimately large hacked level still passes, while a
+ *  garbage over-read that decodes to thousands of entries is rejected). */
+const MAX_PLAUSIBLE_OBJECTS = 512;
+const MAX_PLAUSIBLE_SPRITES = 160;
+
 /** Sentinel stream pointers — vanilla points two record slots at 1-byte/garbage
  *  placeholders, not real streams (see extract.ts). Skipped on read. */
 export const SENTINEL_OBJ_SNES = 0x15fcea;
@@ -172,6 +196,39 @@ export function pointsAtValidSprStream(cart: Buffer, sprSnes: number): boolean {
     if ((cart[p] | (cart[p + 1] << 8)) === 0xffff) return true;
   }
   return false; // hit the cap without a stride-aligned terminator
+}
+
+/**
+ * Plausibility gate on a DECODED foreign level — the count/range check the
+ * stream-walk gates (`pointsAtValidObjStream`/`pointsAtValidSprStream`) can't
+ * make, because they walk raw bytes to a terminator without decoding. A garbage
+ * region can still walk to clean terminators (so it passes the stream gates) yet
+ * decode to an impossible header or absurd entry counts; this catches that.
+ * Returns a short reason string when the level is implausible (→ caller blocks
+ * the import), or null when it looks like a real level. Calibrated to zero false
+ * positives on the 220 vanilla levels — see VANILLA_HEADER_ENVELOPE.
+ */
+export function implausibleLevelHeader(
+  header: number[],
+  objectCount: number,
+  spriteCount: number
+): string | null {
+  if (header.length < VANILLA_HEADER_ENVELOPE.length) {
+    return `short header (${header.length} fields)`;
+  }
+  for (let i = 0; i < VANILLA_HEADER_ENVELOPE.length; i++) {
+    if (header[i] > VANILLA_HEADER_ENVELOPE[i]) {
+      return `header field ${i} = ${header[i]} exceeds the vanilla maximum ${VANILLA_HEADER_ENVELOPE[i]}`;
+    }
+  }
+  if (objectCount === 0) return 'no objects (empty object stream)';
+  if (objectCount > MAX_PLAUSIBLE_OBJECTS) {
+    return `${objectCount} objects exceeds the plausible cap ${MAX_PLAUSIBLE_OBJECTS}`;
+  }
+  if (spriteCount > MAX_PLAUSIBLE_SPRITES) {
+    return `${spriteCount} sprites exceeds the plausible cap ${MAX_PLAUSIBLE_SPRITES}`;
+  }
+  return null;
 }
 
 interface PtrsScore {

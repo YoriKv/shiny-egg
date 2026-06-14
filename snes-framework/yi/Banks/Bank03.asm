@@ -13274,7 +13274,7 @@ CODE_kamek_ending_phase6_cast:                       ; phase 6: cast spell, set 
 	STA.w $7542,x
 	LDA.w #$FF00
 	STA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,x
-	LDA.w #$0009
+	LDA.w #!Define_YI_MusicID09_BossBattle
 	STA.w !RAM_YI_Global_PlayMusicLo
 	LDY.b $16,x
 	INY
@@ -15192,7 +15192,7 @@ CODE_03F4DE:
 	BRA.b CODE_03F530
 
 CODE_03F529:
-	LDA.w #!Define_YI_SoundID42
+	LDA.w #!Define_YI_SoundID42_DeniedAction
 	JSL.l CODE_push_sound_queue
 CODE_03F530:
 	RTS

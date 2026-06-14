@@ -282,51 +282,10 @@ export function ImportRomDialog({
               applyResult={applyResult}
               removeVanilla={removeVanillaResult}
               unblockOn={selUnblock}
+              onToggleUnblock={toggleUnblock}
+              selRemoveVanilla={selRemoveVanilla}
+              onToggleRemoveVanilla={() => setSelRemoveVanilla((v) => !v)}
             />
-          )}
-
-          {phase === 'report' && report?.ok && report.levels.some((l) => l.unblockAction) && (
-            <label
-              className="se-import__cat"
-              title={
-                'Some changed levels can only import after a one-time layout change: 0x7D needs a free-space ' +
-                'migration (its own self-contained object copy) and 0x19/0xCB need de-coupling (their own ' +
-                'sprite blob). Checking this makes them selectable and flips those toggles automatically ' +
-                'before the import writes. 0xBF/0xD0 stay blocked (shared room data — no resolution).'
-              }
-            >
-              <input type="checkbox" checked={selUnblock} onChange={toggleUnblock} />
-              <span className="se-import__catname">Unblock imports</span>
-              <span className="se-import__catinfo">
-                pre-emptively de-couple / migrate blocked levels (
-                {report.levels
-                  .filter((l) => l.unblockAction)
-                  .map((l) => hex(l.recordId))
-                  .join(', ')}
-                )
-              </span>
-            </label>
-          )}
-
-          {phase === 'report' && report?.ok && (
-            <label
-              className="se-import__cat se-import__cat--danger"
-              title={
-                'After the import applies, remove every remaining unedited vanilla level — their bytes free up ' +
-                'for your levels at the next build. Imported levels, rooms they warp into, and engine-required ' +
-                'rooms (boot/minigame/arena) are kept. World-map slots of removed levels are marked unused.'
-              }
-            >
-              <input
-                type="checkbox"
-                checked={selRemoveVanilla}
-                onChange={() => setSelRemoveVanilla((v) => !v)}
-              />
-              <span className="se-import__catname">Remove all vanilla levels</span>
-              <span className="se-import__catinfo">
-                after import — frees every level the hack didn’t change or reach
-              </span>
-            </label>
           )}
         </div>
 
@@ -375,6 +334,9 @@ interface ReportViewProps {
   removeVanilla: RemoveVanillaResult | null
   /** The "unblock imports" option — makes resolvable-blocked levels selectable. */
   unblockOn: boolean
+  onToggleUnblock: () => void
+  selRemoveVanilla: boolean
+  onToggleRemoveVanilla: () => void
 }
 
 function ReportView({
@@ -395,7 +357,10 @@ function ReportView({
   phase,
   applyResult,
   removeVanilla,
-  unblockOn
+  unblockOn,
+  onToggleUnblock,
+  selRemoveVanilla,
+  onToggleRemoveVanilla
 }: ReportViewProps): JSX.Element {
   return (
     <>
@@ -555,6 +520,51 @@ function ReportView({
               <span className="se-import__pill se-import__pill--blocked">{report.counts.blocked} blocked</span>
             )}
           </p>
+
+          {phase === 'report' && (
+            <div className="se-import__cats">
+              {report.levels.some((l) => l.unblockAction) && (
+                <label
+                  className="se-import__cat"
+                  title={
+                    'Some changed levels can only import after a one-time layout change: 0x7D needs a free-space ' +
+                    'migration (its own self-contained object copy) and 0x19/0xCB need de-coupling (their own ' +
+                    'sprite blob). Checking this makes them selectable and flips those toggles automatically ' +
+                    'before the import writes. 0xBF/0xD0 stay blocked (shared room data — no resolution).'
+                  }
+                >
+                  <input type="checkbox" checked={unblockOn} onChange={onToggleUnblock} />
+                  <span className="se-import__catname">Unblock imports</span>
+                  <span className="se-import__catinfo">
+                    pre-emptively de-couple / migrate blocked levels (
+                    {report.levels
+                      .filter((l) => l.unblockAction)
+                      .map((l) => hex(l.recordId))
+                      .join(', ')}
+                    )
+                  </span>
+                </label>
+              )}
+              <label
+                className="se-import__cat se-import__cat--danger"
+                title={
+                  'After the import applies, remove every remaining unedited vanilla level — their bytes free up ' +
+                  'for your levels at the next build. Imported levels, rooms they warp into, and engine-required ' +
+                  'rooms (boot/minigame/arena) are kept. World-map slots of removed levels are marked unused.'
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={selRemoveVanilla}
+                  onChange={onToggleRemoveVanilla}
+                />
+                <span className="se-import__catname">Remove all vanilla levels</span>
+                <span className="se-import__catinfo">
+                  after import — frees every level the hack didn’t change or reach
+                </span>
+              </label>
+            </div>
+          )}
 
           {report.counts.conflicts > 0 && (
             <p className="se-import__warn">

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.8 - Unreleased
+
+- Linux support: the editor now ships as a Linux AppImage (x64) alongside the Windows build. In-game testing on Linux uses BizHawk's EmuHawk.sh launcher.
+- The Add picker flags runtime-spawned sprites - projectiles, thrown children, boss parts, event actors - with a "spawn-only" badge, so it's clear which sprites the game creates on its own rather than ones you place by hand.
+- ROM import now rejects abandoned or clobbered level slots that decode to garbage instead of importing them as real levels, and explains why in the report.
+- Fix: Testing a level in-game no longer hangs the music — the loader warms up the overworld first so death/defeat jingles and the bonus theme play correctly.
+- Fix: Removing a level no longer leaves phantom checkpoint restart points on a neighbouring level in the world map.
+- Fix: Saving a level now verifies its data survives a clean round-trip and refuses to write corrupt data, guarding against phantom objects and broken builds.
+- Fix: The Object Finder refreshes its results after switching projects or importing a ROM.
+- Fix: Pressing Escape, or finishing a placement, now clears the Place tool so its toolbar button de-highlights.
+
 ## v0.3.7 - 2026-06-12
 
 - Vanilla levels can now be removed from the game with a preview of the impact before confirming (freed space, world-map slots, warps that would be stranded). Removed levels can be restored later, and new blank levels can be created in freed or unused slots.

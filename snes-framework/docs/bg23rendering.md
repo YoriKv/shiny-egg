@@ -310,9 +310,8 @@ fog phase) — see `bossengine.md §2.2 / §4.2`.
 Scenario: **`trace-harness/scenarios/bg23-render/`** — build-once, loads any level by
 `paramsText` (`slot=$XX | world=$XX`, or `warp=$XX | wworld=$XX | wx | wy | went`) and
 captures a settled gm`$0F` frame. The load uses CurrentWorld (`$0218`) + a top-of-WRAM
-sentinel (`$7F:FFFF`) + the screen-exit warp path (see the scenario; ported from
-`shiny-egg/bizhawk-harness`). Run with `--reuse-build` to sweep (the level is a runtime
-WRAM write, not a build define).
+sentinel (`$7F:FFFF`) + the screen-exit warp path (see the scenario). Run with
+`--reuse-build` to sweep (the level is a runtime WRAM write, not a build define).
 
 Per-level capture (`output/lvl<LID>/`): `regs.txt` (scene/IRQ regs + scroll mirrors +
 camera + header fields + HDMAen), `vram.bin` (64 KB), `cgram.bin`, `gradient.bin`

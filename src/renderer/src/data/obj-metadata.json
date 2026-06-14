@@ -7696,7 +7696,8 @@
       "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x003": {
       "name": "Crate, key",
@@ -7762,7 +7763,8 @@
       "name": "Rubble",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x009": {
       "name": "Fire watermelon",
@@ -7810,7 +7812,8 @@
           "failureMode": "explosion is cosmetic only",
           "designerRule": "explosions excavate tag-$08 dirt"
         }
-      ]
+      ],
+      "spawnedOnly": true
     },
     "0x00C": {
       "name": "Raphael the Raven",
@@ -7828,13 +7831,15 @@
       "name": "G O A L !",
       "category": "interactive",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x00F": {
       "name": "BONUS CHALLENGE",
       "category": "interactive",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x010": {
       "name": "Caged Ghost, round mound",
@@ -7850,7 +7855,8 @@
       "name": "Item Card",
       "category": "item",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x012": {
       "name": "Boss Door",
@@ -7877,7 +7883,8 @@
       "name": "Boss Explosion",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x014": {
       "name": "Key from defeated boss",
@@ -7923,14 +7930,16 @@
       "name": "Flame of Red Watermelon",
       "category": "item",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x019": {
       "name": "Bubble",
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x01A": {
       "name": "Ski lift",
@@ -8090,14 +8099,16 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x029": {
       "name": "Giant Egg, Yoshi while Super Baby Mario",
       "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x02A": {
       "name": "Red Giant Egg",
@@ -8131,7 +8142,8 @@
       "name": "Salvo the Slime's eyes",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x02F": {
       "name": "Little Mouser's Nest",
@@ -8206,7 +8218,8 @@
       "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x036": {
       "name": "(BG3) Falling down wall",
@@ -8228,7 +8241,8 @@
       "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x039": {
       "name": "(BG3) Spinning wooden platform",
@@ -8313,14 +8327,16 @@
       "name": "Baby Luigi",
       "category": "decoration",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x041": {
       "name": "Stork",
       "category": "decoration",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x042": {
       "name": "Vertical pipe entrance",
@@ -8385,19 +8401,22 @@
       "name": "The head of fire of the Thunder Lakitu",
       "category": "hazard",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x04A": {
       "name": "Fire of Thunder Lakitu",
       "category": "hazard",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x04B": {
       "name": "Hypocenter of the thunder",
       "category": "hazard",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x04C": {
       "name": "Upside down Blow Hard",
@@ -8476,7 +8495,8 @@
       "category": "boss",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x054": {
       "name": "Upside down Wild Piranha",
@@ -8594,7 +8614,8 @@
       "name": "Spark of Raphael the Raven",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x05B": {
       "name": "Coin Bandit",
@@ -8645,7 +8666,8 @@
           "failureMode": "explosion is cosmetic only",
           "designerRule": "explosions excavate tag-$08 dirt"
         }
-      ]
+      ],
+      "spawnedOnly": true
     },
     "0x061": {
       "name": "Baby Mario",
@@ -8848,7 +8870,7 @@
       "spritesetFiles": []
     },
     "0x074": {
-      "name": "Spike",
+      "name": "Spike ball thrower",
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": [
@@ -8857,10 +8879,13 @@
       "cel": "A"
     },
     "0x075": {
-      "name": "Spiked ball",
+      "name": "Spike ball",
       "category": "hazard",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": [
+        "0x26"
+      ],
+      "spawnedOnly": true
     },
     "0x076": {
       "name": "Piro Dangle, clockwise",
@@ -8957,7 +8982,8 @@
       "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x084": {
       "name": "Teleport sprite",
@@ -9133,7 +9159,8 @@
       "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x09A": {
       "name": "Chained green Flatbed Ferry",
@@ -9155,7 +9182,8 @@
       "name": "Mace",
       "category": "hazard",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x09D": {
       "name": "!-switch",
@@ -9188,13 +9216,15 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x0A2": {
       "name": "Fireball of Thunder Lakitu",
       "category": "hazard",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0A3": {
       "name": "Bandit, getting under cover, left",
@@ -9269,13 +9299,15 @@
           "failureMode": "floor never crumbles",
           "designerRule": "route over bitable tiles"
         }
-      ]
+      ],
+      "spawnedOnly": true
     },
     "0x0A9": {
       "name": "Shadow of falling Incoming Chomp",
       "category": "decoration",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0AA": {
       "name": "Shy Guy in background",
@@ -9291,13 +9323,15 @@
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x0AC": {
       "name": "Sign Arrow and Shadow",
       "category": "decoration",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0AD": {
       "name": "Hint Block",
@@ -9543,19 +9577,22 @@
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x0CE": {
       "name": "Bowser's flame",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0CF": {
       "name": "Bowser's quake",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0D0": {
       "name": "Horizontal entrance, towards right",
@@ -9608,7 +9645,8 @@
       "name": "Giant Milde",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0D4": {
       "name": "Large Milde",
@@ -9624,7 +9662,8 @@
       "name": "Moutain backgrounds at fight with Hookbill the Koopa",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0D6": {
       "name": "(BG3) Ghost with Flatbed Ferry on its head",
@@ -9684,7 +9723,8 @@
       "name": "Closer, in Naval Piranha's room",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0DE": {
       "name": "Falling Rock",
@@ -9757,7 +9797,8 @@
       "name": "Green Needlenose",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0E6": {
       "name": "Gusty, left / right / infinite right / infinite left",
@@ -9837,14 +9878,16 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x0F0": {
       "name": "Petal of Eggo-Dill",
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x0F1": {
       "name": "Bubble-Plant",
@@ -9942,7 +9985,8 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x0FA": {
       "name": "Flower",
@@ -10008,7 +10052,8 @@
       "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x0FF": {
       "name": "Poochy",
@@ -10117,7 +10162,8 @@
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x108": {
       "name": "Milde",
@@ -10168,7 +10214,8 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x10E": {
       "name": "Crate, 6 stars",
@@ -10221,7 +10268,8 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x113": {
       "name": "Snifit",
@@ -10235,14 +10283,16 @@
       "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x115": {
       "name": "Coin, gravity affected",
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": [],
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x116": {
       "name": "Floating round platform on water",
@@ -10303,14 +10353,16 @@
       "category": "platform",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x11D": {
       "name": "Spiny Egg",
       "category": "hazard",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x11E": {
       "name": "Brown Arrow Wheel",
@@ -10379,7 +10431,8 @@
       "name": "? Pulley",
       "category": "interactive",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x128": {
       "name": "Ground shake",
@@ -10391,7 +10444,8 @@
       "name": "Fuzzy",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x12A": {
       "name": "Shy Guy, with Bandit hidden",
@@ -10419,13 +10473,15 @@
       "name": "Yoshi, in the intro scene",
       "category": "decoration",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x12E": {
       "name": "unknown",
       "category": "unknown",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x12F": {
       "name": "Lava Drop, moving horizontally",
@@ -10530,7 +10586,8 @@
       "name": "Baby Bowser",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x135": {
       "name": "Raven, always circling, anticlockwise / clockwise",
@@ -10592,7 +10649,8 @@
       "name": "Stomach Acid",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x13C": {
       "name": "Flipper, downwards",
@@ -11003,7 +11061,8 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x164": {
       "name": "Nipper Plant",
@@ -11137,7 +11196,8 @@
       "name": "Naval Bud",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x173": {
       "name": "Baron Von Zeppelin, red Suy Guy",
@@ -11228,7 +11288,8 @@
       "category": "enemy",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x180": {
       "name": "Spinning Log",
@@ -11806,7 +11867,8 @@
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "B"
+      "cel": "B",
+      "spawnedOnly": true
     },
     "0x1A3": {
       "name": "Little Skull Mouser",
@@ -12025,7 +12087,8 @@
       "name": "Kamek's magic",
       "category": "boss",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1AF": {
       "name": "Coin",
@@ -12038,62 +12101,72 @@
       "name": "(BG3) Balloon",
       "category": "platform",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1B1": {
       "name": "Coin Cannon for Mini Battle",
       "category": "item",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1B2": {
       "name": "Coin for Mini Battle",
       "category": "item",
       "dynamicGfx": false,
       "spritesetFiles": null,
-      "cel": "A"
+      "cel": "A",
+      "spawnedOnly": true
     },
     "0x1B3": {
       "name": "Bandit for Mini Battle",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1B4": {
       "name": "Checkered Platform for Mini Battle",
       "category": "platform",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1B5": {
       "name": "Bandit for Mini Battle",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1B6": {
       "name": "Red Balloon for Mini Battle",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1B7": {
       "name": "Bandit for Mini Battle",
       "category": "enemy",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1B8": {
       "name": "Watermelon Pot for Mini Battle",
       "category": "item",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1B9": {
       "name": "possibly Bandit for Mini Battle?",
       "category": "unknown",
       "dynamicGfx": false,
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x1BA": {
       "name": "Graphic / Palette Changer 00",

@@ -7141,7 +7141,7 @@ CODE_04B4B8:
 	LDX.b $12
 	LDY.b #$00
 	STY.b $76,x
-	LDA.w #$0009
+	LDA.w #!Define_YI_MusicID09_BossBattle
 	STA.w !RAM_YI_Global_PlayMusicLo
 	PLA
 	RTL
@@ -7949,7 +7949,7 @@ CODE_04BB1A:
 	STA.w $7182,y
 	LDA.w #$0002
 	STA.w !EXRAM_YI_Level_NorSpr_GenericTable7019D6|!EXRAMBankMirror,y
-	LDA.w #!Define_YI_SoundID81_Unknown
+	LDA.w #!Define_YI_SoundID81_BigBooPop
 	JSL.l CODE_push_sound_queue
 	JSR.w CODE_04B601
 	LDA.w #$0040
@@ -8002,7 +8002,7 @@ CODE_bigger_boo_state_04_hit_recoil:
 	STZ.w $60C4
 	LDA.w $7A98,x
 	BNE.b CODE_04BBA1
-	LDA.w #$0009
+	LDA.w #!Define_YI_MusicID09_BossBattle
 	STA.w !RAM_YI_Global_PlayMusicLo
 	DEC.w $7A98,x
 CODE_04BBA1:
@@ -14299,7 +14299,7 @@ CODE_04F6E2:
 	STA.w !EXRAM_YI_Player_CurrentStateLo|!EXRAMBankMirror
 	STA.w !EXRAM_YI_Level_FreezeSpritesFlagLo|!EXRAMBankMirror
 	STZ.w $61D6
-	LDA.w #$0007
+	LDA.w #!Define_YI_MusicID07_BonusAndDefeatTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 CODE_04F6F1:
 	LDA.w !RAM_YI_Level_CurrentLevelFromMapLo

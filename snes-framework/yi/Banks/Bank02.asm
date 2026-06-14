@@ -2656,7 +2656,7 @@ CODE_0299C6:
 	STA.w $6114
 	STZ.w !EXRAM_YI_Level_FreezeYoshiFlagLo|!EXRAMBankMirror
 	STZ.w !EXRAM_YI_Level_FreezeSpritesFlagLo|!EXRAMBankMirror
-	LDA.w #$0002
+	LDA.w #!Define_YI_MusicID02_StoryAndLevelTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 	STZ.w $0205
 CODE_029A50:
@@ -4494,7 +4494,7 @@ CODE_02A916:
 	ADC.w #$0070
 	CMP.w #$0050
 	BCS.b CODE_02A915
-	LDA.w #$0005
+	LDA.w #!Define_YI_MusicID05_BonusAndVictoryTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 	LDA.w #!Define_YI_SoundID3B_Pop
 	JSL.l CODE_push_sound_queue
@@ -9370,7 +9370,7 @@ CODE_sluggy_arrival_cutscene:
 	BEQ.b CODE_02D368
 	LSR
 	BNE.b CODE_sluggy_idle_animate
-	LDA.w #$0009                                ; play boss music ID
+	LDA.w #!Define_YI_MusicID09_BossBattle ; play boss music ID
 	STA.w !RAM_YI_Global_PlayMusicLo
 CODE_02D368:
 	LDA.b $14
@@ -10527,7 +10527,7 @@ CODE_02DB92:
 	CPY.b #$0A
 	BCC.b CODE_02DC03
 	INC.b $18,x
-	LDA.w #$0006
+	LDA.w #!Define_YI_MusicID06_BonusAndBossTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 	LDA.w #$00FF
 	STA.w $74A2,x

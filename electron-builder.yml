@@ -20,12 +20,16 @@ files:
   # match this node_modules copy, so exclude it explicitly.
   - '!node_modules/snes-framework/**'
 extraResources:
-  # The on-disk inputs asar.exe needs at runtime, plus the engine docs as
-  # bundled reference material. The framework's TS is bundled into the Electron
-  # main process; node config, license, extracted assets, build outputs, and
-  # reference carts do not ship.
-  - from: snes-framework/asar.exe
-    to: snes-framework/asar.exe
+  # The on-disk inputs asar needs at runtime, plus the engine docs as bundled
+  # reference material. The framework's TS is bundled into the Electron main
+  # process; node config, extracted assets, build outputs, and reference carts
+  # do not ship. The asar binary itself is platform-specific (asar.exe vs asar)
+  # and ships per-OS under win:/linux: below; its LGPL-3.0 license text ships on
+  # both platforms (asar is invoked as a separate executable, not linked).
+  - from: snes-framework/asar-licenses
+    to: snes-framework/asar-licenses
+    filter:
+      - '**/*'
   - from: snes-framework/global
     to: snes-framework/global
     filter:
@@ -57,6 +61,10 @@ win:
   # Default name for win targets; nsis overrides below. The `zip` target packs
   # the unpacked app (the same contents as dist/win-unpacked) → release artifact.
   artifactName: ${name}-${version}-win.${ext}
+  # Windows-native assembler; the Linux build ships `asar` instead (see linux:).
+  extraResources:
+    - from: snes-framework/asar.exe
+      to: snes-framework/asar.exe
   target:
     - target: nsis
       arch:
@@ -69,3 +77,17 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+linux:
+  # Single portable AppImage (x64). The runtime makes the bundled `asar` binary
+  # executable on first use (resources are read-only; see runAsar's chmod).
+  # BizHawk (Launch / Test Level) is user-provided via EmuHawk.sh, not bundled.
+  artifactName: ${name}-${version}-linux.${ext}
+  category: Development
+  icon: resources/icon.png # 256x256; AppImage builds fine (electron-builder may warn it prefers 512)
+  extraResources:
+    - from: snes-framework/asar
+      to: snes-framework/asar
+  target:
+    - target: AppImage
+      arch:
+        - x64

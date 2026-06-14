@@ -9738,7 +9738,7 @@ CODE_0DCBE6:
 	DEX
 	BNE.b CODE_0DCBE6
 	LDX.b $12
-	LDA.w #$000B
+	LDA.w #!Define_YI_MusicID0B_BabyBowserBattlePhase1
 	STA.w !RAM_YI_Global_PlayMusicLo
 CODE_0DCBF6:
 	LDA.w #$0030
@@ -9885,7 +9885,7 @@ CODE_0DCE63:
 	SEP.b #$10
 	STZ.w $0C1E
 	STZ.w !EXRAM_YI_Player_CurrentStateLo|!EXRAMBankMirror
-	LDA.w #$000C
+	LDA.w #!Define_YI_MusicID0C_BabyBowserAndCastleBossTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 	LDA.w #$0400
 	STA.w $75E2,x
@@ -10216,7 +10216,7 @@ CODE_0DD300:
 	JSL.l CODE_disable_nmi
 	LDX.b #$0C
 	JSL.l CODE_set_level_music
-	LDA.b #$01
+	LDA.b #!Define_YI_MusicID01_MapAndLevelTheme
 	STA.b !RAM_YI_Global_PlayMusicLo
 	STA.w $0205
 	LDA.b #$B1
@@ -11067,7 +11067,7 @@ CODE_0DDA76:
 	BPL.b CODE_0DDAB9
 	CMP.w #$00E0
 	BMI.b CODE_0DDAD3
-	LDA.w #!Define_YI_SoundID81_Unknown
+	LDA.w #!Define_YI_SoundID81_BigBooPop
 	JSL.l CODE_push_sound_queue
 	LDA.w #$0200
 	STA.w $61C8
@@ -11830,7 +11830,7 @@ CODE_0DECE2:
 	BNE.b CODE_0DED46
 	LDA.l $70336C
 	BNE.b CODE_0DECF4
-	LDA.w #$0009
+	LDA.w #!Define_YI_MusicID09_BossBattle
 	STA.w !RAM_YI_Global_PlayMusicLo
 CODE_0DECF4:
 	CMP.w #$0020

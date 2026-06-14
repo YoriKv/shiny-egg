@@ -20,13 +20,14 @@ to be done, but should be very usable despite that.
 ## Requirements
 
 - A legally-owned Yoshi's Island ROM - **USA V1.0**.
-- Windows (x64).
-- [BizHawk](https://tasvideos.org/BizHawk) (EmuHawk) for testing levels in-game.
+- Windows (x64) or Linux (x64, AppImage).
+- [BizHawk](https://tasvideos.org/BizHawk) (EmuHawk) for testing levels in-game
+  — on Linux, BizHawk's `EmuHawk.sh` launcher.
 
 ## Getting started
 
-1. Download the latest installer from the
-   [Releases](../../releases) page and run it.
+1. Download the latest build for your OS — the Windows installer (`.exe`) or the
+   Linux `.AppImage` — from the [Releases](../../releases) page and run it.
 2. On first launch, point the editor at your ROM to extract its data.
 3. Pick a level to start editing.
 
@@ -68,3 +69,9 @@ work this tool couldn't exist. So thank you to these folks and many more.
   affiliated with or endorsed by Nintendo.
 - No game ROM is included or distributed with this editor. You must supply your
   own legally-obtained copy.
+- This editor bundles the **asar** assembler (© Alcaro and contributors) to
+  build ROMs. Asar is licensed under the GNU LGPL v3.0; its full license text
+  ships with the install under `resources/snes-framework/asar-licenses/`, and the
+  upstream source is at https://github.com/RPGHacker/asar. Asar is run as a
+  separate program (not linked into the editor) and can be replaced with your own
+  copy of the binary.

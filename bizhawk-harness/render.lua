@@ -110,6 +110,18 @@ local LOAD_SCREENEXIT_IDX_ADDR = 0x038E      -- $038E byte-offset into the scree
 local LOAD_SCREENEXIT_BUFFER_OFF = 0x17E00   -- $7F:7E00 = WRAM offset $17E00
 local LOAD_GM0C           = 0x0C
 local LOAD_GM0F           = 0x0F
+-- Overworld route (gm$20 prepare_overworld -> gm$22 overworld active). A level's
+-- death/defeat jingle (song $07) and the bonus theme live in SPC block $1C, which
+-- ONLY the overworld's music set uploads. A direct gm$07 -> gm$0C jump skips the
+-- overworld, so that block is absent — and the SPC music driver HANGS when the
+-- death song is requested (no voice ever keys on; the prior song's buffer just
+-- repeats). Bouncing through the overworld first uploads the block; the level's
+-- own gm$0C load keeps it resident (it only re-uploads the level's music slots).
+-- Cart-agnostic (waits for the engine's gm$22, not a cart-specific music id).
+-- Full diagnosis: yi-shiny trace-harness/scenarios/spike-audio/PLAN.md.
+local LOAD_GM20           = 0x20
+local LOAD_GM22           = 0x22
+local LOAD_OVERWORLD_TIMEOUT = 600
 -- gm$07 = post-boot cutscene tick. Per the yi-shiny Mesen reference and
 -- empirical BizHawk testing, this is the canonical safe injection point
 -- — gm$0C from gm$07 cleanly transitions to the level loader. From
@@ -220,6 +232,25 @@ local function loadLevel(arg)
     return
   end
   for _ = 1, LOAD_SETTLE_FRAMES do emu.frameadvance() end
+
+  -- Route through the overworld first so the defeat/bonus-theme SPC block is
+  -- resident (see the LOAD_GM20/GM22 note above). Enter the world-1 overworld
+  -- (its music set uploads the block) and wait for it to go active (gm$22); the
+  -- level load below then keeps the block resident. Without this, the SPC music
+  -- driver HANGS when the level's death song is requested.
+  memory.write_u8(LOAD_WORLD_ADDR,          0x00,      "WRAM")   -- world 1 overworld
+  memory.write_u8(LOAD_WORLD_ADDR + 1,      0x00,      "WRAM")
+  memory.write_u8(LOAD_LEVEL_SLOT_ADDR,     id,        "WRAM")
+  memory.write_u8(LOAD_TYPE_ADDR,           0x00,      "WRAM")
+  memory.write_u8(LOAD_GAMEMODE_ADDR,       LOAD_GM20, "WRAM")   -- gm$20 prepare_overworld
+  local ow_frames = 0
+  while memory.read_u8(LOAD_GAMEMODE_ADDR, "WRAM") ~= LOAD_GM22
+        and ow_frames < LOAD_OVERWORLD_TIMEOUT do
+    emu.frameadvance()
+    ow_frames = ow_frames + 1
+  end
+  -- (If gm$22 isn't reached in time we fall through: the direct level load below
+  -- still works, just without the defeat-theme block resident.)
 
   -- CurrentWorld is stored as (world_index * 2) per Bank17.asm:4905
   -- (ASL ; STA pattern). World index = floor(id / 12) for the standard

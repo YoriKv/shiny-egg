@@ -5458,7 +5458,7 @@ CODE_05A622:
 	STA.w $7A36,x
 	LDA.w #$0040
 	STA.w $7AF6,x
-	LDA.w #$0009
+	LDA.w #!Define_YI_MusicID09_BossBattle
 	STA.w !RAM_YI_Global_PlayMusicLo
 	INC.b $76,x
 	LDA.w #$0048

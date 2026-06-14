@@ -411,6 +411,9 @@ export default function App(): JSX.Element {
     setPlacement(item)
     setActiveTool('place')
   }, [])
+  // Drop out of the Place tool back to Select so the toolbar button de-highlights
+  // (Escape clears the armed placement too — see useLevelKeyboardShortcuts).
+  const cancelPlacement = useCallback(() => setActiveTool('select'), [])
   const onPlaceAt = useCallback(
     (cx: number, cy: number) => {
       if (!placement) return
@@ -925,6 +928,7 @@ export default function App(): JSX.Element {
     primarySelection,
     setSelection,
     setPlacement,
+    cancelPlacement,
     globalUndo,
     globalRedo,
     propTable,
@@ -1329,7 +1333,11 @@ export default function App(): JSX.Element {
                   onJump={focusCell}
                 />
               ) : w.kind === 'finder' ? (
-                <ObjectFinderBody onJump={jumpToInstance} currentLevelRecordId={selectedLevelRecordId} />
+                <ObjectFinderBody
+                  onJump={jumpToInstance}
+                  currentLevelRecordId={selectedLevelRecordId}
+                  projectScope={projectScope}
+                />
               ) : w.kind === 'patches' ? (
                 <PatchesBody projectId={projectScope} onMutated={markRomDirty} />
               ) : w.kind === 'banks' ? (

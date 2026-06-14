@@ -93,7 +93,7 @@ CODE_118050:
 	LDA.b #$09
 	STA.w $0127
 	JSL.l CODE_prepare_tilemap_dma_queue_l
-	LDA.b #$02
+	LDA.b #!Define_YI_MusicID02_StoryAndLevelTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 	STZ.w $0205
 	LDX.w $03A7
@@ -2026,7 +2026,7 @@ CODE_11920D:
 	BCC.b CODE_119229
 	CMP.b #$14
 	BCS.b CODE_119229
-	LDA.b #$06
+	LDA.b #!Define_YI_MusicID06_BonusAndBossTheme
 	STA.w !RAM_YI_Global_PlayMusicLo
 CODE_119229:
 	RTS

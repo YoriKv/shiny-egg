@@ -51,22 +51,11 @@ function readBin(name: string): Buffer {
 // partial. Serializer writes the full terminator (1 byte longer).
 const KNOWN_TRUNCATED_TERMINATOR_SPRITES = new Set<number>([0x19]);
 
-// 0x38 (the gm38 intro-cutscene backdrop): the cart's header has a garbage bit
-// set in the PADDING past the last packed field (the 15 fields span bits 0-74;
-// stream bit 75 — byte 9, mask $10 — is engine-unread slack). The serializer
-// writes zero padding, so the round-trip normalizes exactly that one bit.
-// Pin the exception precisely: byte 9, $70 → $60, everything else identical.
-const KNOWN_HEADER_PADDING_BIT = new Set<number>([0x38]);
-
-/** True if `actual` equals `expected` except byte 9's $10 padding bit cleared. */
-function isPaddingBitNormalization(expected: Buffer, actual: Buffer): boolean {
-  if (expected.length !== actual.length) return false;
-  for (let i = 0; i < expected.length; i++) {
-    if (expected[i] === actual[i]) continue;
-    if (i !== 9 || (expected[i] ^ actual[i]) !== 0x10 || (expected[i] & 0x10) === 0) return false;
-  }
-  return true;
-}
+// Record 0x38 (the gm38 intro-cutscene level) is NOT a standard level — its
+// stream is cutscene data, not objects — so loadLevel now returns it as
+// `special` and the round-trip loop skips it (see level.ts SPECIAL_LEVELS). It
+// used to be tolerated here via a header-padding-bit exception; that's gone now
+// that it's correctly special-cased upstream.
 
 /** True if `actual` equals `expected` plus exactly N trailing `0xFF` bytes
  *  where N ∈ {1,2}. Models the truncated-terminator case. */
@@ -122,19 +111,12 @@ for (const id of CATALOG_IDS) {
       level.diag.headerBytes + level.diag.objectBytes + level.diag.exitBytes;
     const expected = src.subarray(0, lenObj);
     if (Buffer.compare(expected, serialized.objectBytes) !== 0) {
-      if (
-        KNOWN_HEADER_PADDING_BIT.has(id) &&
-        isPaddingBitNormalization(Buffer.from(expected), serialized.objectBytes)
-      ) {
-        tolerated++;
-      } else {
-        console.error(
-          `  ✗ level 0x${id.toString(16).padStart(2, '0')} object section ` +
-            `(${entry.objectFile}): ` +
-            diffPreview(Buffer.from(expected), serialized.objectBytes)
-        );
-        failures++;
-      }
+      console.error(
+        `  ✗ level 0x${id.toString(16).padStart(2, '0')} object section ` +
+          `(${entry.objectFile}): ` +
+          diffPreview(Buffer.from(expected), serialized.objectBytes)
+      );
+      failures++;
     }
   }
 

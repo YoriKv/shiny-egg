@@ -8,7 +8,7 @@
 // Part 4).
 
 import { describe, it, expect } from 'vitest'
-import { listSprites } from './obj-metadata'
+import { getSprite, listSprites } from './obj-metadata'
 
 // "0xNNN cls/spatial" per enforced dep. 29 = 11 rail + 7 tile-read +
 // 6 sprite-pair + 5 screen-exit.
@@ -54,6 +54,34 @@ describe('neighborDeps enforce inventory', () => {
       if (dep.spatial === 'note' || dep.spatial === 'carried') {
         expect(dep.enforce).toBe(false)
       }
+    }
+  })
+})
+
+// The `spawnedOnly` flag (runtime-spawned children the picker badges "spawn-only").
+// The exact set vs the asm derivation is gated by engine/spawned-only.test.ts;
+// these always-run pins guard the metadata against hand-edits + the count drift
+// (regenerate with tmp/gen-spawned-only.ts after sprite-spawn asm changes).
+describe('spawnedOnly flag', () => {
+  // Representative runtime-spawned children (projectile / sub-part / event /
+  // mini-battle prop) — flagged; and clearly placeable enemies — not flagged.
+  const FLAGGED = [0x075, 0x060, 0x09c, 0x114, 0x1b2] // spike ball, bomb, mace, snifit bullet, mini-battle coin
+  const PLACEABLE = [0x074, 0x01e, 0x072] // spike, shy guy, train bandit
+
+  it('flags the known runtime-spawned children', () => {
+    for (const id of FLAGGED) expect(getSprite(id).spawnedOnly).toBe(true)
+  })
+
+  it('leaves placeable enemies unflagged', () => {
+    for (const id of PLACEABLE) expect(getSprite(id).spawnedOnly).not.toBe(true)
+  })
+
+  it('the flagged set is the audited size + sprite-only + always < 0x1BA', () => {
+    const flagged = listSprites().filter(({ info }) => info.spawnedOnly)
+    expect(flagged.length).toBe(71)
+    for (const { id, info } of flagged) {
+      expect(info.spawnedOnly).toBe(true) // a definite boolean, never truthy-other
+      expect(id).toBeLessThan(0x1ba) // normal sprites only; specials use another path
     }
   })
 })
