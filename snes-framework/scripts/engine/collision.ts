@@ -147,8 +147,12 @@ export interface CollisionEntry {
   /** Secondary tag index (0..31). */
   tag: number;
   /** Slope sub-index (byte 2) — only meaningful when `flags.sk === true`.
-   *  Values 0..31 reference a static slope_panels_table profile.
-   *  Values $80..$81 indicate runtime-supplied (animated/moving) slopes. */
+   *  The shipped static `bg_type_table` only ever uses $00..$1F (verified
+   *  across all 48 SK pages), each indexing a `slope_panels_table` profile.
+   *  $20..$7F is an unallocated gap; $80..$81 is a runtime-only marker the
+   *  game writes into the LIVE (RAM) collision table for moving / boss slopes,
+   *  so it never appears in the static cart data this decoder reads — treat the
+   *  >= $20 handling as a defensive guard, not a case shipped data reaches. */
   slopeIdx: number;
 }
 
@@ -304,9 +308,12 @@ export interface SlopeSample {
  *   GETB  → unsigned byte (subpixelY, units of 1/2 pixel)
  *   GETBS → signed byte (direction / "off-tile" marker)
  *
- * For slope_idx in `$80..$81` (RAM-supplied animated slopes), the caller
- * should NOT call this — the static table doesn't contain valid data.
- * For slope_idx >= 32, returns a zeroed profile (defensive fallback).
+ * For slope_idx in `$80..$81` (RAM-supplied animated slopes — moving / boss
+ * surfaces whose profile lives in live RAM), the caller should NOT call this;
+ * the static table doesn't contain valid data. For slope_idx >= 32, returns a
+ * zeroed profile (defensive fallback). NOTE: neither case is reachable from
+ * static cart data — the shipped table only populates `$00..$1F` (all 48 SK
+ * pages), so these guards matter only for a malformed / hand-edited entry.
  */
 export function decodeSlopeProfile(
   panels: SlopePanels,

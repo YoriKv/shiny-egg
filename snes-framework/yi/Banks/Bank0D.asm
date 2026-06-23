@@ -12633,6 +12633,7 @@ CODE_0DF3A4:
 
 table "Tables/Fonts/Main.txt"
 
+;@editable:ending-text begin
 DATA_0DF3E8:
 	db "Thus, due to the marvelous"
 	dw $0AFF
@@ -12656,6 +12657,7 @@ DATA_0DF3E8:
 	db " will meet the parents soon!"
 	dw $09FF
 	dw $FFFF
+;@editable:ending-text end
 
 cleartable
 

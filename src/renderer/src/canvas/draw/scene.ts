@@ -101,6 +101,8 @@ export interface SceneParams {
     view: View
     level: LevelData | null
     layers: LayerVisibility
+    /** Grid line colour (rgba string) — see canvas/draw/grid.ts. */
+    gridColor: string
     bg1Canvas: HTMLCanvasElement | null
     spriteCanvas: HTMLCanvasElement | null
     collisionCanvas: HTMLCanvasElement | null
@@ -150,6 +152,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         view,
         level,
         layers,
+        gridColor,
         bg1Canvas,
         spriteCanvas,
         collisionCanvas,
@@ -313,7 +316,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             drawObjectInfluence(ctx, influence)
         }
         if (layers.grid !== 'off') {
-            drawScreenGrid(ctx, view.zoom, layers.grid)
+            drawScreenGrid(ctx, view.zoom, layers.grid, gridColor)
         }
         // Object outlines / blueprint — gated on `bg1Outlines` (split from
         // `bg1` so the user can toggle outlines independently of the

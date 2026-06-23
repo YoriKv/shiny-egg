@@ -6,11 +6,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONTROL_CODES, SPECIAL_GLYPHS, decodeMessageBytes, encodeMessageMarkup, markupByteSize } from './msg-markup.ts';
+import { CONTROL_CODES, SPECIAL_GLYPHS, decodeMessageBytes, encodeMessageMarkup, markupBodyByteSize, markupByteSize } from './msg-markup.ts';
 import {
   loadFontTable,
+  parseEndingText,
+  parseIntroStory,
   parseLevelNameStrings,
   parseMessageText,
+  serializeEndingText,
+  serializeIntroStory,
   serializeLevelNameStrings,
   serializeMessageText
 } from '../strings.ts';
@@ -196,6 +200,99 @@ console.log('\n=== strings: editing one Bank51 region preserves the other (overl
       }
     }
   }
+}
+
+// Intro storybook (Bank0F) + ending (Bank0D) reuse the level-name in-place
+// quoted-literal splice: only `"..."` contents change, every control byte
+// ($FE/$FD/$FC line layout, $FF terminators, the `dw` row-advance words)
+// survives byte-for-byte. Pins the unedited identity + a shorten-a-line edit.
+console.log('\n=== strings: intro (Bank0F) + ending (Bank0D) cutscene text round-trip ===');
+{
+  const bank0F = fs.readFileSync(path.join(WORK_ROOT, 'yi', 'Banks', 'Bank0F.asm'), 'utf8');
+  const bank0D = fs.readFileSync(path.join(WORK_ROOT, 'yi', 'Banks', 'Bank0D.asm'), 'utf8');
+
+  // The editor's live byte count (sum of per-line markupBodyByteSize — NO per-line
+  // terminator) must equal the budget on vanilla data, else a pristine cart reads
+  // as over budget. (Regression: markupByteSize's +2 $FFFF terminator over-counted
+  // every glyph line.)
+  const glyphUsed = (m) =>
+    m.entries.reduce((s, e) => s + e.lines.reduce((t, l) => t + markupBodyByteSize(l), 0), 0);
+
+  const intro = parseIntroStory(bank0F, bank0F, ft);
+  assert(intro.entries.length > 1, `intro parsed multiple pages (got ${intro.entries.length})`);
+  assert(glyphUsed(intro) === intro.budgetChars, `intro vanilla used (${glyphUsed(intro)}) === budget (${intro.budgetChars})`);
+  assert(intro.entries[0].name.startsWith('Page 1'), `intro pages named "Page N" (got ${JSON.stringify(intro.entries[0].name)})`);
+  const introOut = serializeIntroStory(bank0F, bank0F, intro, ft);
+  assert(introOut.ok, `intro unedited serialize ok${introOut.ok ? '' : ': ' + introOut.error}`);
+  if (introOut.ok) assert(introOut.text === bank0F, 'intro serialize(parse(base)) === base (identity)');
+
+  // Shorten one line (in budget) → round-trips, every other page untouched.
+  const ei = intro.entries.findIndex((e) => e.lines.some((l) => l.length >= 3));
+  assert(ei >= 0, 'found an intro line to shorten');
+  if (ei >= 0) {
+    const li = intro.entries[ei].lines.findIndex((l) => l.length >= 3);
+    const shortened = intro.entries[ei].lines[li].slice(0, -1);
+    const edited = {
+      ...intro,
+      entries: intro.entries.map((e, i) =>
+        i === ei ? { ...e, lines: e.lines.map((l, j) => (j === li ? shortened : l)) } : e
+      )
+    };
+    const r = serializeIntroStory(bank0F, bank0F, edited, ft);
+    assert(r.ok, `intro edited serialize ok${r.ok ? '' : ': ' + r.error}`);
+    if (r.ok) {
+      assert(r.text !== bank0F, 'intro edited output differs from base');
+      const re = parseIntroStory(r.text, bank0F, ft);
+      assert(re.entries[ei].lines[li] === shortened, 'intro edit applied');
+      for (let i = 0; i < intro.entries.length; i++) {
+        if (i === ei) continue;
+        assert(
+          JSON.stringify(re.entries[i].lines) === JSON.stringify(intro.entries[i].lines),
+          `intro page ${i} unchanged`
+        );
+      }
+    }
+  }
+
+  // Insert a glyph: net-zero bytes (drop 2 chars, add the 2-byte [star]). The
+  // line round-trips with [star], the raw bytes land in the asm, and exceeding
+  // the byte budget (add [star] without freeing space) is rejected.
+  {
+    const gi = intro.entries.findIndex((e) => e.lines.some((l) => l.length >= 4));
+    assert(gi >= 0, 'found an intro line for a glyph insert');
+    if (gi >= 0) {
+      const gl = intro.entries[gi].lines.findIndex((l) => l.length >= 4);
+      const withGlyph = intro.entries[gi].lines[gl].slice(0, -2) + '[star]';
+      const edited = {
+        ...intro,
+        entries: intro.entries.map((e, i) =>
+          i === gi ? { ...e, lines: e.lines.map((l, j) => (j === gl ? withGlyph : l)) } : e
+        )
+      };
+      const r = serializeIntroStory(bank0F, bank0F, edited, ft);
+      assert(r.ok, `intro glyph insert serialize ok${r.ok ? '' : ': ' + r.error}`);
+      if (r.ok) {
+        assert(/\$F6,\$F7/.test(r.text), 'star glyph emitted as raw bytes $F6,$F7');
+        const re = parseIntroStory(r.text, bank0F, ft);
+        assert(re.entries[gi].lines[gl] === withGlyph, 'glyph line round-trips as [star]');
+      }
+      const over = {
+        ...intro,
+        entries: intro.entries.map((e, i) =>
+          i === gi ? { ...e, lines: e.lines.map((l, j) => (j === gl ? l + '[star]' : l)) } : e
+        )
+      };
+      assert(!serializeIntroStory(bank0F, bank0F, over, ft).ok, 'over-budget glyph insert rejected');
+    }
+  }
+
+  const ending = parseEndingText(bank0D, bank0D, ft);
+  assert(ending.entries.length === 1, `ending is a single entry (got ${ending.entries.length})`);
+  assert(ending.entries[0].lines.length > 1, `ending has several lines (got ${ending.entries[0].lines.length})`);
+  assert(glyphUsed(ending) === ending.budgetChars, `ending vanilla used (${glyphUsed(ending)}) === budget (${ending.budgetChars})`);
+  const endOut = serializeEndingText(bank0D, bank0D, ending, ft);
+  assert(endOut.ok, `ending unedited serialize ok${endOut.ok ? '' : ': ' + endOut.error}`);
+  if (endOut.ok) assert(endOut.text === bank0D, 'ending serialize(parse(base)) === base (identity)');
 }
 
 console.log('\n=== markup repeat sugar: [token_N] expands ↔ collapses ===');

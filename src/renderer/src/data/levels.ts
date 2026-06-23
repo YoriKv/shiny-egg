@@ -25,6 +25,15 @@ let current: LevelsCatalog = { groups: [] }
 let byId = indexById(current)
 const listeners = new Set<() => void>()
 
+// Renderer mirror of the active project's REMOVED record ids (records flagged
+// for build-time reclaim). The catalog already hides them from the dropdown
+// LIST, but free-form / discovery navigation (Go-to-room, the sub-room dropdown,
+// the object finder, warp-exit jumps) can still target one — `isRemovedRecord`
+// lets those paths refuse it. Refreshed inside `refreshLevelsCatalog` so it
+// rides every existing catalog-refresh point (mount, project switch, import,
+// and post-removal), staying current the instant project state changes.
+let removedRecords: ReadonlySet<number> = new Set()
+
 /**
  * Level IDs are stored as hex strings on disc (`"0x43"`) but the runtime
  * contract is a numeric `id`. Parse them at the load boundary; tolerant of
@@ -97,11 +106,34 @@ export function levelLabel(id: number, fallback: LevelLabelFallback = 'hex'): st
   return hex0x(id, 2)
 }
 
+function notify(): void {
+  for (const cb of listeners) cb()
+}
+
 /** Replace the active catalog and notify subscribers. */
 export function setCatalog(next: LevelsCatalog): void {
   current = next
   byId = indexById(next)
-  for (const cb of listeners) cb()
+  notify()
+}
+
+/** The live removed-record set (stable reference until the next refresh). */
+export function getRemovedRecords(): ReadonlySet<number> {
+  return removedRecords
+}
+
+/** Is this data record flagged removed in the active project? Removed records
+ *  are dropped from the ROM at the next build, so navigation must refuse them
+ *  (editing one would be silently discarded). The central nav guard enforces
+ *  this for every entry point; see hooks/useLevelNavigation. */
+export function isRemovedRecord(id: number): boolean {
+  return removedRecords.has(id)
+}
+
+/** React hook: the live removed-record set. Re-renders on any catalog/removed
+ *  refresh (shares the catalog's subscription). */
+export function useRemovedRecords(): ReadonlySet<number> {
+  return useSyncExternalStore(subscribeLevelsCatalog, getRemovedRecords, getRemovedRecords)
 }
 
 /** Subscribe to catalog mutations. Returns an unsubscribe function. */
@@ -118,8 +150,15 @@ export function subscribeLevelsCatalog(cb: () => void): () => void {
  * Resolves when the swap is done.
  */
 export async function refreshLevelsCatalog(): Promise<void> {
-  const next = await window.shinyEgg.getLevelsCatalog()
+  // Fetch the catalog and the removed-record set together so they swap in as one
+  // consistent snapshot. `removedLevels` is empty (and harmless) pre-extract.
+  const [next, removed] = await Promise.all([
+    window.shinyEgg.getLevelsCatalog(),
+    window.shinyEgg.editor.removedLevels().catch(() => [])
+  ])
+  removedRecords = new Set(removed.map((r) => r.recordId))
   if (next) setCatalog(normalizeCatalog(next))
+  else notify()
 }
 
 /**

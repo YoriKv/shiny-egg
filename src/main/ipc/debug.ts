@@ -8,12 +8,17 @@
 // through the overlay (~6 ms/level, cached by overlay signature). So the finder
 // reflects on-disk saved edits — but NOT unsaved in-canvas edits, which would
 // require serializing the live LevelData. See ObjectFinderBody in the renderer.
+//
+// Finally, instances in levels the project has REMOVED are dropped: a removed
+// level is taken out of the ROM at the next build, so the finder must neither
+// list nor jump to its objects/sprites (mirrors the catalog + dropdowns, which
+// also hide removed levels).
 
 import { ipcMain } from 'electron'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { editorDataRoot, frameworkWorkRoot, overlayRoot } from '../framework-paths'
-import { getCurrentProjectId } from '../projects'
+import { getCurrentProjectId, getProjectRemovedLevels } from '../projects'
 import {
   buildInstanceIndexForRecords,
   instanceIndexKey,
@@ -104,6 +109,13 @@ function findInstances(kind: FindInstanceKind, idHex: string): ObjectInstance[] 
     tuples = tuples
       .filter(([recordId]) => !override.records.has(recordId))
       .concat(override.index[kind]?.[key] ?? [])
+  }
+
+  // Hide instances in removed levels (see header) — they're dropped at build.
+  const projectId = getCurrentProjectId()
+  if (projectId) {
+    const removed = new Set(getProjectRemovedLevels(projectId))
+    if (removed.size > 0) tuples = tuples.filter(([recordId]) => !removed.has(recordId))
   }
 
   return tuples

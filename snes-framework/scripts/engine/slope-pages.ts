@@ -57,12 +57,15 @@ for (const idx of [...seenIdx.keys()].sort((a, b) => a - b)) {
         : best[0] === 'up-lo' ? s.subpixelYUp
           : s.directionUp;
   const isSub = best[0].endsWith('lo');
+  // foot-DOWN pick ⇒ ceiling (solid above); foot-UP ⇒ ground (solid below).
+  // Off-tile columns are solid or passable depending on that side — mirror the
+  // renderer's readSurface so this diagnostic doesn't mislabel ceiling slopes
+  // (idx $1C-$1F) the way the old hardcoded-ground mapping did.
+  const fillAbove = best[0].startsWith('down');
   const surf = prof.map((s) => {
-    const b = get(s);
-    if (isSub) return b < 0x20 ? (b >> 1) : 'S';
-    if (b >= 0 && b < 16) return b;
-    if (b >= 16) return 'P';
-    return 'S';
+    const y = isSub ? get(s) >> 1 : get(s);
+    if (y >= 0 && y < 16) return y;
+    return (y >= 16) === fillAbove ? 'S' : 'P';
   });
   const surfStr = surf.map((v) => String(v).padStart(3)).join('');
   console.log(

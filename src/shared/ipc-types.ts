@@ -55,8 +55,17 @@ export interface Settings {
    *  "Locate Aseprite" button (for opening exported `.aseprite` projects). */
   asepritePath?: string
   /** Canvas background colour (the area behind/around the level), as a `#rrggbb`
-   *  hex. App-wide, set via the toolbar swatch; absent ⇒ black. */
+   *  hex. App-wide, set via the toolbar swatch; absent ⇒ the renderer default. */
   canvasBackgroundColor?: string
+  /** Grid line colour (both the per-screen and per-cell grid), as an `rgba(...)`
+   *  string so the user can pick colour AND opacity. App-wide, set via the
+   *  toolbar swatch beside the background; absent ⇒ the renderer default. The
+   *  renderer scales this alpha across the cell/screen/boundary depth tiers. */
+  gridColor?: string
+  /** One-time-migration marker: set the first time settings load, so the legacy
+   *  pure-black canvas-background default is bumped to the new grey exactly once
+   *  (a user who later re-picks black keeps it). See main/settings.ts. */
+  canvasBgDefaultMigrated?: boolean
 }
 
 /** Result of the `aseprite:locate` file picker (same shape as the BizHawk one):
@@ -283,6 +292,14 @@ export interface RenderImage {
   rgba: Uint8Array
   width: number
   height: number
+}
+
+/** A rendered preview of one special markup glyph (button icon / arrow / star /
+ *  …), for the Message-Text markup keyboard. `dataUrl` is a PNG of the glyph's
+ *  1bpp font cell(s), white-on-transparent. Keyed by its markup `token`. */
+export interface MessageGlyphPreview {
+  token: string
+  dataUrl: string
 }
 
 export interface DecodedLevelLayout {
@@ -877,7 +894,8 @@ export interface PatchSummary {
   chunkCount: number
   /** Total bytes the patch writes (from the current `.ips`). */
   totalBytes: number
-  /** Number of build-time asm edits (`org` directives in the `asm` block). */
+  /** Number of build-time asm edits — distinct ROM write regions in the patch's
+   *  asm (`org` / `%patchcode` / `%patchdata` / legacy `freecode`/`freedata`). */
   asmCount: number
   /** Enabled (applied at build) for the active project. */
   enabled: boolean
@@ -897,7 +915,8 @@ export interface PrepackagedPatch {
   romVersionAuthored?: RomVersion
   chunkCount: number
   totalBytes: number
-  /** Number of build-time asm edits (`org` directives in the `asm` block). */
+  /** Number of build-time asm edits — distinct ROM write regions in the patch's
+   *  asm (`org` / `%patchcode` / `%patchdata` / legacy `freecode`/`freedata`). */
   asmCount: number
   /** Already copied into the active project. */
   added: boolean
@@ -924,9 +943,11 @@ export interface PatchPreview {
   conflicts: Array<{ offset: number; length: number; patchIds: string[] }>
 }
 
-/** Result of importing an `.ips` into the active project. */
+/** Result of importing an `.ips` / `.asm` into the active project. `notes` carries
+ *  any conversion advisories (asar `.asm` import rewrites the source — e.g.
+ *  `freecode` → the reserved patch pool — and reports what it changed). */
 export type PatchImportResult =
-  | { ok: true; patch: PatchSummary }
+  | { ok: true; patch: PatchSummary; notes?: string[] }
   | { ok: false; error: string }
 
 /** Generic patch-mutation result (enable/disable/reorder/remove). */

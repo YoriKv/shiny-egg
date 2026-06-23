@@ -5,3 +5,4 @@
 export * from './ips.ts';
 export * from './checksum.ts';
 export * from './apply.ts';
+export * from './asar-import.ts';

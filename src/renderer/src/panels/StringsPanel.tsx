@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState, type JSX } from 'react'
-import { markupByteSize } from 'snes-framework/msg-markup'
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { markupBodyByteSize, markupByteSize } from 'snes-framework/msg-markup'
 import type {
   MarkupToken,
   MessagePtrOption,
@@ -8,6 +8,11 @@ import type {
 } from '../../../preload/api'
 import { useOverlayDocument, type DocHistory } from '../edit-session/useOverlayDocument'
 import { useCommitOnBlur } from '../hooks/useCommitOnBlur'
+import { persistedState } from '../lib/persisted-state'
+
+/** Markup-keyboard dock open/collapsed state — persisted so it survives reloads. */
+const kbdDockPref = persistedState('shinyEgg.stringsKbd.v1', true)
+import { useWindowedList } from '../hooks/useWindowedList'
 
 export interface StringsEditorState {
   /** Resource id (the `;@editable` marker id) — also the EditSession key suffix. */
@@ -63,7 +68,10 @@ export function useStringsEditor(
   })
 
   const draft = doc.draft
-  const allowed = useMemo(() => new Set(draft?.allowedChars ?? []), [draft])
+  // Keyed on `allowedChars` (the legal charset, constant per table — `commit`'s
+  // spread keeps the same array ref), not the whole `draft`, so the Set isn't
+  // reallocated on every line edit (keeps its identity stable for memoized rows).
+  const allowed = useMemo(() => new Set(draft?.allowedChars ?? []), [draft?.allowedChars])
 
   // Bytes used. Line model: 1 font byte per char. Markup model: the ENCODED byte
   // size (markupByteSize — tokens are 1–3 bytes, cosmetic `\n`s are 0), which
@@ -72,7 +80,15 @@ export function useStringsEditor(
   const usedBytes = useMemo(() => {
     let n = 0
     if (draft) {
+      // markup + glyph-line models both encode `[token]`s to bytes, so size via
+      // markupByteSize (text char = 1 byte, glyph token = its byte count); a raw
+      // char count would over-count the bracketed tokens. Pure line model = chars.
       if (draft.markup) for (const e of draft.entries) n += markupByteSize(e.markup ?? '')
+      // Glyph lines have NO per-line terminator (the cutscene's terminators are
+      // separate control directives, not counted in the budget), so size the body
+      // only — markupByteSize's +2 terminator would over-count every line.
+      else if (draft.glyphLines)
+        for (const e of draft.entries) for (const l of e.lines) n += markupBodyByteSize(l)
       else for (const e of draft.entries) for (const l of e.lines) n += [...l].length
     }
     return n
@@ -80,8 +96,9 @@ export function useStringsEditor(
 
   // Markup tokens (`[B]`, `[$cc]`) contain chars outside the font's legal set, so
   // per-char validation would false-positive — the codec validates tokens on save.
+  // (Same for the glyph-line model's `[glyph]` tokens.)
   const hasInvalid = useMemo(() => {
-    if (!draft || draft.markup) return false
+    if (!draft || draft.markup || draft.glyphLines) return false
     for (const e of draft.entries)
       for (const l of e.lines) for (const ch of l) if (!allowed.has(ch)) return true
     return false
@@ -264,23 +281,41 @@ export function StringsBody({ tabs }: { tabs: StringsTab[] }): JSX.Element {
  *  stays local + snappy; commits up to the draft model (which triggers the
  *  table-wide budget/dirty recompute) only on blur or Enter — not per
  *  keystroke. Re-syncs when the committed `value` changes externally
- *  (discard / reload / tab switch). */
+ *  (discard / reload / tab switch). On the glyph-line tabs (intro/ending) it's
+ *  `tokenAware` — `[glyph]` tokens are excluded from the per-char validation
+ *  (the codec validates them on save) — and registers an `insert` fn with the
+ *  glyph keyboard on focus (undoable execCommand insert, like MarkupInput). */
 function LineInput({
   value,
   allowed,
-  onCommit
+  onCommit,
+  tokenAware,
+  onActivate
 }: {
   value: string
   allowed: ReadonlySet<string>
   onCommit: (v: string) => void
+  tokenAware?: boolean
+  onActivate?: (insert: ((text: string) => void) | null) => void
 }): JSX.Element {
   const { local, setLocal, commit } = useCommitOnBlur(value, onCommit)
-  const invalid = [...local].some((ch) => !allowed.has(ch))
+  const ref = useRef<HTMLInputElement>(null)
+  const insert = useCallback((text: string) => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    document.execCommand('insertText', false, text)
+  }, [])
+  // Ignore `[token]` spans when token-aware — they're validated by the codec.
+  const check = tokenAware ? local.replace(/\[[^\]]*\]/g, '') : local
+  const invalid = [...check].some((ch) => !allowed.has(ch))
   return (
     <input
+      ref={ref}
       className={`se-strings__field se-strings__line${invalid ? ' is-invalid' : ''}`}
       value={local}
       spellCheck={false}
+      onFocus={onActivate ? () => onActivate(insert) : undefined}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
@@ -294,61 +329,154 @@ function LineInput({
  *  multiline string of plain text + `[token]`s (see asm/msg-markup.ts). Mirrors
  *  `LineInput`'s local-state / commit-on-blur pattern, but a textarea (messages
  *  span several visual rows + scroll runs). Enter inserts a newline (cosmetic in
- *  markup); commit is on blur only. */
+ *  markup); commit is on blur only. On focus it hands the markup keyboard an
+ *  `insert` fn (splice-at-caret) so token buttons target THIS textarea. */
 function MarkupInput({
   value,
-  onCommit
+  onCommit,
+  onActivate
 }: {
   value: string
   onCommit: (v: string) => void
+  /** Register/forget this input's splice-at-caret fn as the keyboard's target. */
+  onActivate: (insert: ((text: string) => void) | null) => void
 }): JSX.Element {
   const { local, setLocal, commit } = useCommitOnBlur(value, onCommit)
+  const taRef = useRef<HTMLTextAreaElement>(null)
+
+  // Insert `text` at the caret via execCommand('insertText') rather than a manual
+  // splice, so the edit lands on the textarea's NATIVE undo stack (Ctrl+Z reverts
+  // a keyboard-inserted token like any typed text) and the caret lands after it.
+  // The resulting `input` event flows through onChange → setLocal, keeping the
+  // controlled value in sync; since the value then matches the DOM, React's
+  // re-render is a no-op write and the undo stack survives. The keyboard button's
+  // mousedown is preventDefault'd, so focus + selection are still on this textarea.
+  const insert = useCallback((text: string) => {
+    const ta = taRef.current
+    if (!ta) return
+    ta.focus()
+    document.execCommand('insertText', false, text)
+  }, [])
+
   const rows = Math.min(8, Math.max(2, local.split('\n').length))
   return (
     <textarea
+      ref={taRef}
       className="se-strings__field se-strings__markup"
       value={local}
       rows={rows}
       spellCheck={false}
+      onFocus={() => onActivate(insert)}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={commit}
     />
   )
 }
 
-/** Collapsible reference of the insertable markup tokens (special glyphs +
- *  control codes), read from the model's `markupGuide`. Each row shows the
- *  `[token]` to type and its meaning; any byte can also be written as `[$XX]`. */
-function MarkupGuide({ guide }: { guide: MarkupToken[] }): JSX.Element {
+/** The markup "keyboard" — a dock of token buttons that splice `[token]` into the
+ *  focused message textarea at the caret (`onInsert`). Docked to the LEFT of the
+ *  message list (not inside it), so it stays put while the messages scroll. Its
+ *  own body scrolls independently. Collapsible via the header toggle (`open` /
+ *  `onToggle`). Special glyphs show their real in-game pixel image
+ *  (`glyphPreviews`, keyed by token); control codes have no glyph, so they stay
+ *  text-labelled. Any byte can also be typed by hand as `[$XX]` / `[$XXFF]`. */
+function MarkupKeyboard({
+  guide,
+  onInsert,
+  glyphPreviews,
+  open,
+  onToggle
+}: {
+  guide: MarkupToken[]
+  onInsert: (token: string) => void
+  glyphPreviews?: ReadonlyMap<string, string>
+  open: boolean
+  onToggle: () => void
+}): JSX.Element {
   const glyphs = guide.filter((g) => g.kind === 'glyph')
   const controls = guide.filter((g) => g.kind === 'control')
-  const group = (title: string, items: MarkupToken[]): JSX.Element => (
+  const group = (title: string, items: MarkupToken[], showGlyph: boolean): JSX.Element | null =>
+    items.length === 0 ? null : (
     <div className="se-strings__guide-group">
       <div className="se-strings__guide-head">{title}</div>
       <div className="se-strings__guide-grid">
-        {items.map((t) => (
-          <div className="se-strings__guide-row" key={`${t.kind}:${t.token}`}>
-            <code className="se-strings__guide-token">[{t.token}]</code>
-            <span className="se-strings__guide-label">{t.label}</span>
-          </div>
-        ))}
+        {items.map((t) => {
+          const preview = showGlyph ? glyphPreviews?.get(t.token) : undefined
+          return (
+            <button
+              type="button"
+              className="se-strings__guide-row se-strings__guide-btn"
+              key={`${t.kind}:${t.token}`}
+              title={`${t.label} — insert [${t.token}]`}
+              // Keep focus (and the caret) on the textarea so insert targets it.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onInsert(t.token)}
+            >
+              {preview ? (
+                <img className="se-strings__guide-glyph" src={preview} alt={t.label} />
+              ) : (
+                <code className="se-strings__guide-token">[{t.token}]</code>
+              )}
+              <span className="se-strings__guide-label">{t.label}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
   return (
-    <details className="se-strings__guide">
-      <summary>Markup guide</summary>
-      <p className="se-strings__guide-note">
-        Type a token in brackets to insert a glyph or control code. Any raw byte can
-        be written as <code>[$XX]</code> (or <code>[$XXFF]</code> for a control word).
-        Repeat a token with <code>[scroll_8]</code> (= eight <code>[scroll]</code>s).
-        A line break in the box is cosmetic — use <code>[br]</code> / <code>[row2]</code>
-        for in-game layout.
-      </p>
-      {group('Special glyphs', glyphs)}
-      {group('Control codes', controls)}
-    </details>
+    <div className={`se-strings__kbd${open ? ' is-open' : ''}`}>
+      <button
+        type="button"
+        className="se-strings__kbd-toggle"
+        onClick={onToggle}
+        title={open ? 'Collapse the markup keyboard' : 'Expand the markup keyboard'}
+      >
+        {open ? '◀ Keyboard' : '⌨'}
+      </button>
+      {open && (
+        <div className="se-strings__kbd-body">
+          <p className="se-strings__guide-note">
+            {controls.length > 0 ? (
+              <>
+                Click a token to insert it at the cursor. Any raw byte can also be typed as{' '}
+                <code>[$XX]</code> / <code>[$XXFF]</code>; repeat with <code>[scroll_8]</code>. A line
+                break in the box is cosmetic — use <code>[br]</code> / <code>[row2]</code> for layout.
+              </>
+            ) : (
+              <>
+                Click a glyph to insert it at the cursor. A glyph costs 1–2 bytes of the budget, so
+                shorten the text to make room. Any raw font byte can also be typed as <code>[$XX]</code>.
+              </>
+            )}
+          </p>
+          {group('Special glyphs', glyphs, true)}
+          {group('Control codes', controls, false)}
+        </div>
+      )}
+    </div>
   )
+}
+
+/** Fetch the special-glyph PNG previews once (markup token → data URL) for the
+ *  keyboard, decoded main-side from the static 1bpp message font. Empty until
+ *  loaded / when disabled — buttons then fall back to their text token. */
+function useGlyphPreviews(enabled: boolean): ReadonlyMap<string, string> {
+  const [map, setMap] = useState<ReadonlyMap<string, string>>(new Map())
+  useEffect(() => {
+    if (!enabled || map.size > 0) return
+    let live = true
+    void window.shinyEgg.render
+      .messageFontGlyphs()
+      .then((list) => {
+        if (live) setMap(new Map(list.map((g) => [g.token, g.dataUrl])))
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [enabled, map.size])
+  return map
 }
 
 function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Element {
@@ -370,6 +498,33 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
   } = editor
   const [query, setQuery] = useState('')
   const canSave = dirty && !overBudget && !hasInvalid && !saving
+  // The focused message textarea's splice-at-caret fn — the markup keyboard's
+  // current target. Set by each MarkupInput on focus; a token button calls it.
+  const activeInsert = useRef<((text: string) => void) | null>(null)
+  const insertToken = useCallback((token: string) => activeInsert.current?.(`[${token}]`), [])
+  const glyphPreviews = useGlyphPreviews(!!model?.markup || !!model?.glyphLines)
+  const [kbdOpen, setKbdOpen] = useState(() => kbdDockPref.load())
+  const toggleKbd = useCallback(
+    () => setKbdOpen((v) => (kbdDockPref.save(!v), !v)),
+    []
+  )
+
+  // Filter by the entry's display name + asm label — both carry the friendly
+  // alias and the memory address (e.g. "DATA_msg_minigame_watermelon_seed
+  // (0x5140D3)"), so a name or address substring matches. `ei` is the entry's
+  // index in the FULL model — kept through the filter so the reducer edits the
+  // right entry while a search is active. Memoized so a line/markup commit (which
+  // re-renders the whole view) doesn't re-filter the table on every keystroke.
+  const q = query.trim().toLowerCase()
+  const visible = useMemo(() => {
+    if (!model) return []
+    return model.entries
+      .map((entry, ei) => ({ entry, ei }))
+      .filter(
+        ({ entry }) =>
+          !q || entry.name.toLowerCase().includes(q) || entry.label.toLowerCase().includes(q)
+      )
+  }, [model, q])
 
   if (error) {
     return (
@@ -387,18 +542,6 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
   }
 
   const isMarkup = !!model.markup
-  // Filter by the entry's display name + asm label — both carry the friendly
-  // alias and the memory address (e.g. "DATA_msg_minigame_watermelon_seed
-  // (0x5140D3)"), so a name or address substring matches. `ei` is the entry's
-  // index in the FULL model — kept through the filter so the reducer edits the
-  // right entry while a search is active.
-  const q = query.trim().toLowerCase()
-  const visible = model.entries
-    .map((entry, ei) => ({ entry, ei }))
-    .filter(
-      ({ entry }) =>
-        !q || entry.name.toLowerCase().includes(q) || entry.label.toLowerCase().includes(q)
-    )
 
   return (
     <div className="se-strings__panel">
@@ -410,30 +553,54 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
         placeholder="Search by name or address…"
         onChange={(e) => setQuery(e.target.value)}
       />
-      <div className="se-strings__list">
-        {isMarkup && model.markupGuide && <MarkupGuide guide={model.markupGuide} />}
-        {visible.map(({ entry, ei }) => (
-          <div className="se-strings__entry" key={entry.label} title={entry.label}>
-            <span className="se-strings__entry-name">{entry.name}</span>
-            {isMarkup ? (
-              <MarkupInput value={entry.markup ?? ''} onCommit={(v) => editMarkup(ei, v)} />
-            ) : (
-              <div className="se-strings__entry-lines">
-                {entry.lines.map((line, li) => (
-                  <LineInput
-                    key={li}
-                    value={line}
-                    allowed={allowed}
-                    onCommit={(v) => editLine(ei, li, v)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-        {q && visible.length === 0 && (
-          <p className="se-strings__hint">No entries match “{query}”.</p>
+      <div className="se-strings__body">
+        {model.markupGuide && (
+          <MarkupKeyboard
+            guide={model.markupGuide}
+            onInsert={insertToken}
+            glyphPreviews={glyphPreviews}
+            open={kbdOpen}
+            onToggle={toggleKbd}
+          />
         )}
+        <div className="se-strings__list">
+          {visible.map(({ entry, ei }) => (
+            <div className="se-strings__entry" key={entry.label} title={entry.label}>
+              <span className="se-strings__entry-name">{entry.name}</span>
+              {isMarkup ? (
+                <MarkupInput
+                  value={entry.markup ?? ''}
+                  onCommit={(v) => editMarkup(ei, v)}
+                  onActivate={(fn) => {
+                    activeInsert.current = fn
+                  }}
+                />
+              ) : (
+                <div className="se-strings__entry-lines">
+                  {entry.lines.map((line, li) => (
+                    <LineInput
+                      key={li}
+                      value={line}
+                      allowed={allowed}
+                      onCommit={(v) => editLine(ei, li, v)}
+                      tokenAware={model.glyphLines}
+                      onActivate={
+                        model.glyphLines
+                          ? (fn) => {
+                              activeInsert.current = fn
+                            }
+                          : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {q && visible.length === 0 && (
+            <p className="se-strings__hint">No entries match “{query}”.</p>
+          )}
+        </div>
       </div>
       <div className="se-strings__footer">
         <span className={`se-strings__budget${overBudget ? ' is-over' : ''}`}>
@@ -459,6 +626,17 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
   )
 }
 
+// Windowed pointer-table rows: a fixed pitch so only the visible slice mounts
+// (300 slots × a ~80-option <select> each is ~24k DOM nodes un-windowed — see
+// useWindowedList). PTR_ROW_H must match `.se-strings__list--windowed
+// .se-strings__ptr-row`'s CSS height; the +2 is the inter-row gap (rows are
+// absolutely positioned, so the gap lives in the pitch, not CSS).
+const PTR_ROW_H = 26
+const PTR_ROW_PITCH = PTR_ROW_H + 2
+const PTR_OVERSCAN = 8
+
+const ptrIdHex = (i: number): string => `0x${i.toString(16).toUpperCase().padStart(2, '0')}`
+
 /** The message-pointer-table editor (DATA_message_box_text_ptrs): one row per
  *  message-ID slot, each a dropdown that repoints the slot at a message body (or
  *  the null `$0000` option). The preview shows the target's first text line for
@@ -470,8 +648,9 @@ function MessagePtrTableView({ editor }: { editor: MessagePtrEditorState }): JSX
   const canSave = dirty && !saving
 
   // Option <option> elements are immutable descriptors, so the same array can be
-  // shared as children of every row's <select> (300 selects × ~80 options is a
-  // lot of DOM — if this ever feels heavy, virtualize the row list).
+  // shared as children of every row's <select>. With the row list windowed only
+  // the visible <select>s mount, so this materializes ~(viewport rows × options)
+  // option nodes, not 300 × options.
   const optionEls = useMemo(
     () =>
       (model?.options ?? []).map((o) => (
@@ -486,6 +665,29 @@ function MessagePtrTableView({ editor }: { editor: MessagePtrEditorState }): JSX
     for (const o of model?.options ?? []) m.set(o.id, o)
     return m
   }, [model])
+
+  // Match the message ID (hex) or the current target's id / name / preview. `i`
+  // is the message ID (slot index), preserved through the filter for setSlot.
+  // Memoized — it feeds the windowing math + reset key below.
+  const q = query.trim().toLowerCase()
+  const visible = useMemo(() => {
+    if (!model) return []
+    return model.slots
+      .map((slot, i) => ({ slot, i }))
+      .filter(({ slot, i }) => {
+        if (!q) return true
+        const opt = optionById.get(slot)
+        return (
+          ptrIdHex(i).toLowerCase().includes(q) ||
+          slot.toLowerCase().includes(q) ||
+          (opt?.name.toLowerCase().includes(q) ?? false) ||
+          (opt?.preview.toLowerCase().includes(q) ?? false)
+        )
+      })
+  }, [model, q, optionById])
+
+  // Window the rows (fixed-height): only the visible slice of `visible` mounts.
+  const win = useWindowedList(visible, PTR_ROW_PITCH, { overscan: PTR_OVERSCAN, resetKey: q })
 
   if (error) {
     return (
@@ -502,23 +704,6 @@ function MessagePtrTableView({ editor }: { editor: MessagePtrEditorState }): JSX
     )
   }
 
-  const idHex = (i: number): string => `0x${i.toString(16).toUpperCase().padStart(2, '0')}`
-  const q = query.trim().toLowerCase()
-  // Match the message ID (hex) or the current target's id / name / preview. `i`
-  // is the message ID (slot index), preserved through the filter for setSlot.
-  const visible = model.slots
-    .map((slot, i) => ({ slot, i }))
-    .filter(({ slot, i }) => {
-      if (!q) return true
-      const opt = optionById.get(slot)
-      return (
-        idHex(i).toLowerCase().includes(q) ||
-        slot.toLowerCase().includes(q) ||
-        (opt?.name.toLowerCase().includes(q) ?? false) ||
-        (opt?.preview.toLowerCase().includes(q) ?? false)
-      )
-    })
-
   return (
     <div className="se-strings__panel">
       <input
@@ -529,23 +714,31 @@ function MessagePtrTableView({ editor }: { editor: MessagePtrEditorState }): JSX
         placeholder="Search by message ID or target…"
         onChange={(e) => setQuery(e.target.value)}
       />
-      <div className="se-strings__list">
-        {visible.map(({ slot, i }) => (
-          <div className="se-strings__ptr-row" key={i}>
-            <span className="se-strings__ptr-id" title={`Message ID ${idHex(i)}`}>
-              {idHex(i)}
-            </span>
-            <select
-              className="se-strings__field se-strings__ptr-select"
-              value={slot}
-              onChange={(e) => setSlot(i, e.target.value)}
-            >
-              <option value="">(none — $0000)</option>
-              {optionEls}
-            </select>
-            <span className="se-strings__ptr-preview">{optionById.get(slot)?.preview ?? ''}</span>
-          </div>
-        ))}
+      <div
+        className="se-strings__list se-strings__list--windowed"
+        ref={win.listRef}
+        onScroll={win.onScroll}
+      >
+        <div className="se-strings__ptr-sizer" style={{ height: win.sizerHeight }}>
+          {win.slice.map(({ item: { slot, i }, top }) => (
+            <div className="se-strings__ptr-row" key={i} style={{ top }}>
+              <span className="se-strings__ptr-id" title={`Message ID ${ptrIdHex(i)}`}>
+                {ptrIdHex(i)}
+              </span>
+              <select
+                className="se-strings__field se-strings__ptr-select"
+                value={slot}
+                onChange={(e) => setSlot(i, e.target.value)}
+              >
+                <option value="">(none — $0000)</option>
+                {optionEls}
+              </select>
+              <span className="se-strings__ptr-preview">
+                {optionById.get(slot)?.preview ?? ''}
+              </span>
+            </div>
+          ))}
+        </div>
         {q && visible.length === 0 && (
           <p className="se-strings__hint">No slots match “{query}”.</p>
         )}

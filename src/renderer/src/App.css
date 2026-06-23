@@ -256,6 +256,21 @@ h3 { margin: 0; }
   min-width: 0;
 }
 
+/* Removed-record nav refusal — a dismissible inline notice beside the level
+   menus. Resets native <button> chrome and caps width so it can't push the row. */
+.se-toolbar__hint--removed {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--danger);
+  cursor: pointer;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .se-toolbar__tools {
   display: flex;
   align-items: center;
@@ -578,6 +593,12 @@ h3 { margin: 0; }
   font-size: 11px;
   color: #e06666;
 }
+.se-patches__info {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: pre-line;
+}
 .se-tool--bizhawk {
   width: auto;
   padding: 0 10px;
@@ -766,7 +787,17 @@ h3 { margin: 0; }
  * color input is restyled into a compact square that fits the toolbar row. */
 .se-toolbar__bgcolor {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
+  gap: 1px;
+}
+/* Tiny caption above a colour swatch ("BG" / "Grid"). */
+.se-toolbar__swatch-label {
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-3);
 }
 .se-toolbar__bgcolor input[type='color'] {
   width: 24px;
@@ -783,6 +814,73 @@ h3 { margin: 0; }
 .se-toolbar__bgcolor input[type='color']::-webkit-color-swatch {
   border: none;
   border-radius: 2px;
+}
+
+/* Colour-with-opacity picker (ColorAlphaButton): a swatch showing the solid RGB
+   colour that opens a popover holding the native RGB picker + an opacity slider. */
+.se-colorpick {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.se-colorpick__swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.se-colorpick__pop {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+}
+.se-colorpick__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.se-colorpick__row-label {
+  flex: 0 0 auto;
+  width: 36px;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.se-colorpick__pop input[type='color'] {
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+.se-colorpick__alpha {
+  width: 110px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.se-colorpick__pct {
+  min-width: 30px;
+  font-size: 10px;
+  text-align: right;
+  color: var(--ink-3);
 }
 
 .se-toolbar__layers {
@@ -1679,23 +1777,54 @@ h3 { margin: 0; }
 .se-strings__list {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Clear the 8px scrollbar so the full-width inputs don't sit under it. */
+  padding-right: 4px;
 }
 
 .se-strings__entry {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* No content-visibility here: entries are variable-height (line count /
+     textarea rows), and a fixed intrinsic-size estimate made the scroll-thumb
+     resize as off-screen entries were measured on scroll. Rendering all entries
+     keeps the scrollbar stable. Entry counts are modest (≤~80 messages); if a
+     much larger list ever needs it, windowing (as the pointer-table list already
+     does via useWindowedList) is the fix, not content-visibility. */
 }
 
-/* Message-pointer table: one row per message-ID slot — id · dropdown · preview. */
+/* Message-pointer table: one row per message-ID slot — id · dropdown · preview.
+   Fixed-height + windowed (see below), unlike the variable-height string list. */
 .se-strings__ptr-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Windowed pointer-table list: only the visible slice mounts, absolutely
+   positioned (top set inline = index × pitch) inside a full-height sizer so the
+   scrollbar is correct. Overrides the string list's flex-column/gap layout. See
+   PTR_ROW_* in StringsPanel + useWindowedList. */
+.se-strings__list--windowed {
+  display: block;
+  position: relative;
+  gap: 0;
+}
+.se-strings__ptr-sizer {
+  position: relative;
+  width: 100%;
+}
+.se-strings__list--windowed .se-strings__ptr-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 26px;
+  box-sizing: border-box;
 }
 
 .se-strings__ptr-id {
@@ -1707,14 +1836,17 @@ h3 { margin: 0; }
   text-align: right;
 }
 
+/* Dropdown + preview each take an equal share of the space left after the
+   fixed-width id column (flex: 1 1 0 → same basis, same grow). min-width: 0 lets
+   the <select> shrink below its longest option instead of forcing overflow. */
 .se-strings__ptr-select {
-  flex: 0 0 auto;
-  max-width: 280px;
+  flex: 1 1 0;
+  min-width: 0;
   padding: 2px 4px;
 }
 
 .se-strings__ptr-preview {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -1754,25 +1886,58 @@ h3 { margin: 0; }
   resize: vertical;
 }
 
-/* Collapsible glyph + control-code reference above the message list. */
-.se-strings__guide {
+/* Strings body: the markup keyboard dock (left, fixed) beside the scrolling
+   message list (right). Non-markup tabs render just the list here. */
+.se-strings__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+}
+
+/* Markup keyboard — a left dock that stays put while the message list scrolls,
+   so it sits alongside the inputs while editing. Its body scrolls on its own. */
+.se-strings__kbd {
   flex: 0 0 auto;
-  border: 1px solid var(--line-faint);
-  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  font-size: 11px;
+}
+.se-strings__kbd.is-open {
+  width: 360px;
+  border-right: 1px solid var(--line-faint);
+  padding-right: 8px;
+}
+.se-strings__kbd-toggle {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  appearance: none;
   background: var(--bg-elevated);
-  padding: 4px 8px;
-  font-size: 11px;
-}
-
-.se-strings__guide > summary {
-  cursor: pointer;
+  border: 1px solid var(--line-faint);
+  border-radius: 3px;
   color: var(--ink-2);
+  font: inherit;
   font-size: 11px;
-  user-select: none;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
 }
-
-.se-strings__guide[open] > summary {
-  margin-bottom: 6px;
+.se-strings__kbd-toggle:hover {
+  background: var(--bg-surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+/* Independent scroll: the dock does NOT scroll with the message list. */
+.se-strings__kbd-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
 }
 
 .se-strings__guide-note {
@@ -1810,6 +1975,35 @@ h3 { margin: 0; }
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+}
+
+/* Clickable token button (the markup keyboard) — inserts [token] at the caret. */
+.se-strings__guide-btn {
+  appearance: none;
+  align-items: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-faint);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.se-strings__guide-btn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--line);
+}
+
+.se-strings__guide-btn:active {
+  border-color: var(--accent);
+}
+
+.se-strings__guide-glyph {
+  flex: 0 0 auto;
+  height: 16px;
+  image-rendering: pixelated;
 }
 
 .se-strings__guide-token {
@@ -2255,9 +2449,10 @@ h3 { margin: 0; }
   opacity: 0.7;
 }
 /* Fill classes — same color families as the canvas collision overlay
-   (engine/render-collision.ts): solid red, exit green, collectible yellow,
-   tunnel blue, pass-through neutral. */
-.se-props__chip--solid   { border-color: rgba(230, 58, 58, 0.75);  background: rgba(230, 58, 58, 0.16);  color: #f0a6a6; }
+   (engine/render-collision.ts): solid red, semi-solid orange, exit green,
+   collectible yellow, tunnel blue, pass-through neutral. */
+.se-props__chip--solid     { border-color: rgba(230, 58, 58, 0.75);  background: rgba(230, 58, 58, 0.16);  color: #f0a6a6; }
+.se-props__chip--semisolid { border-color: rgba(240, 102, 42, 0.75); background: rgba(240, 102, 42, 0.16); color: #f2b48a; }
 .se-props__chip--exit    { border-color: rgba(53, 200, 85, 0.75);  background: rgba(53, 200, 85, 0.14);  color: #93dcaa; }
 .se-props__chip--collect { border-color: rgba(238, 204, 42, 0.75); background: rgba(238, 204, 42, 0.14); color: #e6d489; }
 .se-props__chip--tunnel  { border-color: rgba(60, 156, 232, 0.75); background: rgba(60, 156, 232, 0.16); color: #9ac8ef; }
@@ -2817,6 +3012,13 @@ h3 { margin: 0; }
 }
 .se-sublevelmenu__row:hover {
   background: var(--bg-elevated);
+}
+.se-sublevelmenu__row.is-removed {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.se-sublevelmenu__row.is-removed:hover {
+  background: none;
 }
 .se-sublevelmenu__row.is-active .se-sublevelmenu__rowtag,
 .se-sublevelmenu__row.is-active .se-sublevelmenu__rowid {

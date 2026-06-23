@@ -1,5 +1,5 @@
 import { useEffect, useRef, type JSX } from 'react'
-import { formatLevelId, levelLabel } from './data/levels'
+import { formatLevelId, levelLabel, useRemovedRecords } from './data/levels'
 import { useDropdown } from './hooks/useDropdown'
 
 export interface SubLevelMenuProps {
@@ -30,6 +30,10 @@ export function SubLevelMenu({
 }: SubLevelMenuProps): JSX.Element | null {
   const { open, setOpen, containerRef } = useDropdown()
   const activeRef = useRef<HTMLButtonElement>(null)
+  // A discovered sub-room can have been individually removed (its parent kept);
+  // disable it here so it's clearly not openable. The central nav guard refuses
+  // it regardless — this is the visible cue. See hooks/useLevelNavigation.
+  const removed = useRemovedRecords()
 
 
   useEffect(() => {
@@ -95,13 +99,18 @@ export function SubLevelMenu({
           {subLevels.map((id, i) => {
             const isActive = id === currentLevelRecordId
             const isRoot = id === rootLevelRecordId
-            const display = levelLabel(id, 'dash')
+            const isRemoved = removed.has(id)
+            const display = isRemoved ? 'removed' : levelLabel(id, 'dash')
             return (
               <button
                 key={id}
                 type="button"
                 ref={isActive ? activeRef : undefined}
-                className={`se-sublevelmenu__row${isActive ? ' is-active' : ''}`}
+                className={`se-sublevelmenu__row${isActive ? ' is-active' : ''}${
+                  isRemoved ? ' is-removed' : ''
+                }`}
+                disabled={isRemoved}
+                title={isRemoved ? 'Removed — restore it in Level Banks to open it' : undefined}
                 onClick={() => {
                   onSelect(id)
                   setOpen(false)

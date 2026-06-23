@@ -7,36 +7,41 @@ import {
   SCREEN_CELLS
 } from '../geometry'
 import type { GridMode } from '../../types'
+import { parseRgba, withAlphaScale } from '../../lib/rgba'
 
-// Grid stroke colour — black, reading as a neutral overlay over the colourful
-// level art and the bright COLDATA backdrop gradients. Three alpha tiers keep
-// the depth hierarchy readable: per-cell (faintest) < per-screen < outer
-// boundary (most opaque).
-const GRID_RGB = '0, 0, 0'
+// The grid is one user-picked colour (`color` arg — an rgba() string from the
+// toolbar swatch beside the canvas background, default DEFAULT_GRID_COLOR in
+// App.tsx). The picked colour AND alpha apply directly to BOTH the per-screen
+// and per-cell (tile) lines. The outer editable-boundary rect reuses the same
+// colour but a touch more opaque (×BOUNDARY_ALPHA_SCALE, clamped) so the
+// playfield edge still reads as the hardest line.
+const BOUNDARY_ALPHA_SCALE = 1.3
 
 /**
- * Draw the level's spatial bounds. `mode` selects how much grid:
- *   'screen' — faint per-SCREEN lines (every 16 cells) across the full
- *              256×128-cell extent.
- *   'tile'   — additionally draws the finer per-CELL lines underneath, with the
- *              per-screen lines still emphasized on top (so the tile grid
- *              "also shows the screen grid").
- * Both modes draw the brighter rectangle marking the hard editable boundary
- * (nothing can be moved/scaled/placed past it — see canvas/limits.ts). Lines
- * stay 1 device pixel thick regardless of zoom so they don't compete visually
- * with object outlines. (`mode` is never 'off' here — the caller gates on that.)
+ * Draw the level's spatial bounds in `color` (an rgba() string). `mode` selects
+ * how much grid:
+ *   'screen' — per-SCREEN lines (every 16 cells) across the full 256×128-cell
+ *              extent.
+ *   'tile'   — additionally draws the finer per-CELL lines underneath.
+ * Both modes draw the rectangle marking the hard editable boundary (nothing can
+ * be moved/scaled/placed past it — see canvas/limits.ts). Lines stay 1 device
+ * pixel thick regardless of zoom so they don't compete visually with object
+ * outlines. (`mode` is never 'off' here — the caller gates on that.)
  */
 export function drawScreenGrid(
   ctx: CanvasRenderingContext2D,
   zoom: number,
-  mode: GridMode
+  mode: GridMode,
+  color: string
 ): void {
+  const rgba = parseRgba(color)
+  const lineStyle = withAlphaScale(rgba, 1) // screen + tile lines: the picked colour+alpha
   ctx.save()
   // Per-CELL (tile) lines first — only in 'tile' mode. Cells that coincide with
-  // a screen line are skipped here so they read as the brighter per-screen line
-  // drawn over them below.
+  // a screen line are skipped here so they read as the per-screen line drawn
+  // over them below (same colour, but no double-stroke darkening at overlaps).
   if (mode === 'tile') {
-    ctx.strokeStyle = `rgba(${GRID_RGB}, 0.45)`
+    ctx.strokeStyle = lineStyle
     ctx.lineWidth = 1 / zoom
     ctx.beginPath()
     for (let c = 0; c <= LEVEL_CELLS_W; c++) {
@@ -54,7 +59,7 @@ export function drawScreenGrid(
     ctx.stroke()
   }
   // Per-screen lines (both modes).
-  ctx.strokeStyle = `rgba(${GRID_RGB}, 0.5)`
+  ctx.strokeStyle = lineStyle
   ctx.lineWidth = 1 / zoom
   ctx.beginPath()
   for (let c = 0; c <= LEVEL_CELLS_W; c += SCREEN_CELLS) {
@@ -70,7 +75,7 @@ export function drawScreenGrid(
   ctx.stroke()
   // Outer boundary — the spatial limit, most opaque so the playfield edge reads
   // clearly, but kept thin (1px, like the interior lines).
-  ctx.strokeStyle = `rgba(${GRID_RGB}, 0.85)`
+  ctx.strokeStyle = withAlphaScale(rgba, BOUNDARY_ALPHA_SCALE)
   ctx.lineWidth = 1 / zoom
   ctx.strokeRect(0, 0, LEVEL_PX_W, LEVEL_PX_H)
   ctx.restore()

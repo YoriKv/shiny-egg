@@ -9934,6 +9934,7 @@ CODE_0FCF2D:
 
 table "Tables/Fonts/Main.txt"
 
+;@editable:intro-story begin
 DATA_0FCF78:
 	db $FE,$00,$FD,$00,$FC,$2E
 	db "A long, long time ago ..."
@@ -10139,6 +10140,7 @@ DATA_0FD52A:
 	db $FE,$01,$FD,$08,$FC,$21
 	db "reach their parents safely?"
 	db $FF
+;@editable:intro-story end
 
 cleartable
 

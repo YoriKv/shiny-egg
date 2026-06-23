@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.1 - 2026-06-23
+
+- String now editor supports intro story and ending text
+- On screen keyboard for inserting special glyphs into the string editor
+- Color picker for setting the color of grid lines
+
 ## v0.4.0 - 2026-06-22
 
 - Level object/tile rendering is now a byte exact match with the base rom running in an emulator, except for 2 boss levels.

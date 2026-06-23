@@ -62,6 +62,7 @@ import { useEmulatorActions } from './hooks/useEmulatorActions'
 import { useLevelNavigation } from './hooks/useLevelNavigation'
 import { getAllLevels, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
+import { ColorAlphaButton } from './toolbar/ColorAlphaButton'
 import type { IncomingExit, LayerVisibility, PlacementItem, Selection } from './types'
 import { nextGridMode } from './types'
 
@@ -450,15 +451,22 @@ export default function App(): JSX.Element {
   const openLog = useCallback(() => setLogOpenSignal((n) => n + 1), [])
 
   // Canvas background colour (the area behind/around the level) — an app-wide
-  // setting, defaulting to black. Loaded once from settings.json; the toolbar
-  // swatch persists + previews it. Applied as the `--se-canvas-bg` CSS var that
-  // `.se-canvas` reads (the canvas clears to transparent, so this CSS background
-  // shows through — see scene.ts).
-  const DEFAULT_CANVAS_BG = '#000000'
+  // setting, defaulting to a near-black 25,25,25 grey. Loaded once from
+  // settings.json; the toolbar swatch persists + previews it. Applied as the
+  // `--se-canvas-bg` CSS var that `.se-canvas` reads (the canvas clears to
+  // transparent, so this CSS background shows through — see scene.ts).
+  const DEFAULT_CANVAS_BG = '#191919'
+  // Grid line colour as rgba (carries alpha). The toolbar picks it via
+  // ColorAlphaButton (a swatch that opens an RGB picker + opacity slider).
+  // Default reproduces the prior hardcoded look (black at 0.65). Applies to both
+  // the screen + tile grid (see draw/grid.ts).
+  const DEFAULT_GRID_COLOR = 'rgba(0, 0, 0, 0.65)'
   const [canvasBg, setCanvasBg] = useState(DEFAULT_CANVAS_BG)
+  const [gridColor, setGridColor] = useState(DEFAULT_GRID_COLOR)
   useEffect(() => {
     void window.shinyEgg.settings.get().then((s) => {
       if (s.canvasBackgroundColor) setCanvasBg(s.canvasBackgroundColor)
+      if (s.gridColor) setGridColor(s.gridColor)
     })
   }, [])
   useEffect(() => {
@@ -467,6 +475,10 @@ export default function App(): JSX.Element {
   const onCanvasBgChange = useCallback((color: string) => {
     setCanvasBg(color)
     void window.shinyEgg.settings.set({ canvasBackgroundColor: color })
+  }, [])
+  const onGridColorChange = useCallback((color: string) => {
+    setGridColor(color)
+    void window.shinyEgg.settings.set({ gridColor: color })
   }, [])
 
   // Activate a toolbar tool — shared by the tool buttons and the Q/W/E/R
@@ -764,6 +776,8 @@ export default function App(): JSX.Element {
     canForward,
     clearLevelSelection,
     resolvingRoot,
+    navNotice,
+    dismissNavNotice,
     cameraRef,
     focusReq,
     cameraReq,
@@ -856,6 +870,10 @@ export default function App(): JSX.Element {
   const levelNameStrings = useStringsEditor('level-name-strings', 'Level Names', projectScope, markRomDirtyAndRefreshCatalog, docHistory)
   const messageStrings = useStringsEditor('message-box-text', 'Message Text', projectScope, markRomDirty, docHistory)
   const messagePtrs = useMessagePtrTableEditor('message-box-text-ptrs', 'Message Pointers', projectScope, markRomDirty, docHistory)
+  // Intro storybook (Bank0F) + ending (Bank0D) cutscene text. Don't feed the
+  // level dropdown, so plain markRomDirty (not the catalog-refreshing variant).
+  const introStory = useStringsEditor('intro-story', 'Intro Story', projectScope, markRomDirty, docHistory)
+  const endingText = useStringsEditor('ending-text', 'Ending Text', projectScope, markRomDirty, docHistory)
   // Palette colour-edit document — its `draft` is fed to the canvas as a live
   // render override; its Save (or the global Save / Test Level) persists the
   // delta to the overlay before a build.
@@ -908,11 +926,11 @@ export default function App(): JSX.Element {
       kind === 'palette'
         ? [paletteEditor]
         : kind === 'strings'
-          ? [levelNameStrings, messageStrings, messagePtrs]
+          ? [levelNameStrings, messageStrings, messagePtrs, introStory, endingText]
           : kind === 'world-map'
             ? [worldMapEditor]
             : [],
-    [paletteEditor, levelNameStrings, messageStrings, messagePtrs, worldMapEditor]
+    [paletteEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor]
   )
   const requestCloseWindow = useCallback(
     (w: WindowDef): void => {
@@ -1206,6 +1224,16 @@ export default function App(): JSX.Element {
               finding parent…
             </span>
           )}
+          {navNotice && (
+            <button
+              type="button"
+              className="se-toolbar__hint se-toolbar__hint--removed"
+              title="Removed levels are dropped from the ROM at the next build. Click to dismiss."
+              onClick={dismissNavNotice}
+            >
+              {navNotice}
+            </button>
+          )}
         </div>
 
         <nav className="se-toolbar__tools">
@@ -1231,12 +1259,19 @@ export default function App(): JSX.Element {
           ))}
           <span className="se-toolbar__divider" />
           <label className="se-toolbar__bgcolor" title="Canvas background color">
+            <span className="se-toolbar__swatch-label">BG</span>
             <input
               type="color"
               value={canvasBg}
               onChange={(e) => onCanvasBgChange(e.target.value)}
             />
           </label>
+          <ColorAlphaButton
+            value={gridColor}
+            onChange={onGridColorChange}
+            label="Grid"
+            title="Grid color + opacity (screen + tile grid)"
+          />
           <span className="se-toolbar__divider" />
           <LayerToggles layers={layers} onToggle={toggleLayer} />
         </nav>
@@ -1424,6 +1459,7 @@ export default function App(): JSX.Element {
           paletteOverride={paletteEditor.draft}
           renderRefresh={renderRefresh}
           canvasBackground={canvasBg}
+          gridColor={gridColor}
         />
         {/* Rendered after the canvas (so it sits above the level visuals) but with
             auto z-index, so the positive-z floating panels stay above it. Shows the
@@ -1474,7 +1510,9 @@ export default function App(): JSX.Element {
                   tabs={[
                     { kind: 'strings', editor: levelNameStrings },
                     { kind: 'strings', editor: messageStrings },
-                    { kind: 'ptr-table', editor: messagePtrs }
+                    { kind: 'ptr-table', editor: messagePtrs },
+                    { kind: 'strings', editor: introStory },
+                    { kind: 'strings', editor: endingText }
                   ]}
                 />
               ) : w.kind === 'world-map' ? (

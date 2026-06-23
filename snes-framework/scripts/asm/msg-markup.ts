@@ -344,7 +344,11 @@ export function encodeMessageMarkup(markup: string, fontTable: FontTable): Encod
  * budget — unlike a raw character count, which over-counts multi-char tokens
  * (e.g. `[scroll]` = 8 chars but 2 bytes) and cosmetic newlines.
  */
-export function markupByteSize(markup: string): number {
+/** Encoded byte size of a markup BODY (plain text = 1 byte/char, each `[token]`
+ *  = its byte count, cosmetic `\n`/`\r` = 0) — WITHOUT any terminator. This is the
+ *  size that matches a glyph-line's `db` argument bytes (no per-line terminator).
+ *  The message model adds the `$FFFF` terminator on top (markupByteSize). */
+export function markupBodyByteSize(markup: string): number {
   let n = 0;
   let i = 0;
   while (i < markup.length) {
@@ -364,5 +368,10 @@ export function markupByteSize(markup: string): number {
     n += 1; // one font byte per plain character
     i++;
   }
-  return n + 2; // $FFFF terminator
+  return n;
+}
+
+/** Encoded byte size of a whole message: the body plus its `$FFFF` terminator. */
+export function markupByteSize(markup: string): number {
+  return markupBodyByteSize(markup) + 2; // + $FFFF terminator
 }

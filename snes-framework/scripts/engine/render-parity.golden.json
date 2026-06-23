@@ -10,7 +10,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "061c93451362ab12",
-      "collision": "23d3c7f5071e308c"
+      "collision": "b96a477f03036284"
     },
     "0x01": {
       "decode": "ab81b58047363b13",
@@ -19,7 +19,7 @@
       "bg3": "2b4b58c84f04219d",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "89ef943a90e8d7a8"
+      "collision": "10f0990780bf64cc"
     },
     "0x02": {
       "decode": "2e51d4eceb280bcf",
@@ -37,7 +37,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "de181566a50f4c0e",
-      "collision": "1451e50acb8275af"
+      "collision": "01f0addac5f42369"
     },
     "0x04": {
       "decode": "35744703f3adb3eb",
@@ -46,7 +46,7 @@
       "bg3": "5d900818d24a7c29",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "b3ea879ef6e7c537"
+      "collision": "6ebce357c53d56da"
     },
     "0x05": {
       "decode": "c0aecee580d7a997",
@@ -55,7 +55,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "061c93451362ab12",
-      "collision": "7573ee36cfcd9fca"
+      "collision": "c291f27a41369f1f"
     },
     "0x06": {
       "decode": "eacfa1e5ac5780a9",
@@ -64,7 +64,7 @@
       "bg3": "8a39d2abd3999ab7",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "650c5064c036ebef"
+      "collision": "5074a011aeeb043d"
     },
     "0x07": {
       "decode": "54f93ae8b52a057a",
@@ -73,7 +73,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "c41eee56981ceafc"
+      "collision": "b045293467d8ea09"
     },
     "0x08": {
       "decode": "326d70c6f2f37f27",
@@ -82,7 +82,7 @@
       "bg3": "8f3be13713084e15",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "a852acb32fe8867f"
+      "collision": "e83360fcb0f08f8e"
     },
     "0x09": {
       "decode": "c803fb0ec27baae1",
@@ -91,7 +91,7 @@
       "bg3": "9e031109ff92a936",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "39e91f65a2865375"
+      "collision": "8c2a455d01d2c413"
     },
     "0x0a": {
       "decode": "45f1a113a1604927",
@@ -100,7 +100,7 @@
       "bg3": "d262a0f9d0d08a8b",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "ade22ceb7d0789c0"
+      "collision": "7138416b4c775d9b"
     },
     "0x0b": {
       "decode": "ed9bed5989ee2178",
@@ -109,7 +109,7 @@
       "bg3": "5fc9d3d0d93f7168",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "91bb36f97b4efd44"
+      "collision": "80b41c596f1df67d"
     },
     "0x0c": {
       "decode": "f5608e13b98e408a",
@@ -118,7 +118,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "3e6ccaf5c0aca77f"
+      "collision": "7fb0fe2e85d35b20"
     },
     "0x0d": {
       "decode": "840d661d3f4b5d0a",
@@ -127,7 +127,7 @@
       "bg3": "9e031109ff92a936",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "f266a82ea0585ea2"
+      "collision": "82f0a1250ba14e05"
     },
     "0x0e": {
       "decode": "726e59271c24b1b1",
@@ -136,7 +136,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "b24e72c1239fda4d"
+      "collision": "9e1bb86086402b53"
     },
     "0x0f": {
       "decode": "00bac556e7cede7a",
@@ -145,7 +145,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "428da8c2ed9c5166"
+      "collision": "71a8353714ccf1d2"
     },
     "0x10": {
       "decode": "18a18825524b8a89",
@@ -154,7 +154,7 @@
       "bg3": "ca57b6a912e526e9",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "49f92ac9b23c8914"
+      "collision": "72485c142ec285a1"
     },
     "0x11": {
       "decode": "306ea7d4971f36f7",
@@ -172,7 +172,7 @@
       "bg3": "9d18f116833ba64e",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "f8b95ea3490dec60"
+      "collision": "d9dbfbd05c34b73f"
     },
     "0x13": {
       "decode": "90b6be003563b6c0",
@@ -181,7 +181,7 @@
       "bg3": "5fc9d3d0d93f7168",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "4b06b40abf46f096"
+      "collision": "7bdf1b70fa39f311"
     },
     "0x14": {
       "decode": "a578499eb5e358e6",
@@ -190,7 +190,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "92e2cfe166640150",
-      "collision": "bf3590bd7eb19c1f"
+      "collision": "64fbb673468ee8b8"
     },
     "0x15": {
       "decode": "816b47d4fd8ee510",
@@ -199,7 +199,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "d782b132e1589e44"
+      "collision": "b8020dbf0eabfb2e"
     },
     "0x16": {
       "decode": "5ed4307ec178fba4",
@@ -217,7 +217,7 @@
       "bg3": "9e031109ff92a936",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "1a300d23339fd00a"
+      "collision": "57b917c9e534e103"
     },
     "0x18": {
       "decode": "4c85a07c1aafd937",
@@ -244,7 +244,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "2a9891e532397519",
-      "collision": "d4bc90da0a3f46d3"
+      "collision": "60ae32b6b8b30c24"
     },
     "0x1b": {
       "decode": "d1caa77e3980fe9e",
@@ -253,7 +253,7 @@
       "bg3": "5d900818d24a7c29",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "da7afbd86b2e69f2"
+      "collision": "737c0cfbdf87a46d"
     },
     "0x1c": {
       "decode": "f7e07ce574c4c490",
@@ -271,7 +271,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "67fa4bee1fe0b009"
+      "collision": "b99a403d9d31d8be"
     },
     "0x1e": {
       "decode": "bc461e56c2d9121a",
@@ -289,7 +289,7 @@
       "bg3": "5d900818d24a7c29",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "7a33d35252e63c54"
+      "collision": "3eab215ef935b9de"
     },
     "0x20": {
       "decode": "16a5a5f060bee432",
@@ -298,7 +298,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "4ff5b8c736fe7696",
-      "collision": "d4f3de92180e6ed5"
+      "collision": "2d620228e826c6d1"
     },
     "0x21": {
       "decode": "bde957fa3fa2e352",
@@ -307,7 +307,7 @@
       "bg3": "da8b6ede1e3795c9",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "c5080ef26df8cb98"
+      "collision": "9f514112027d4cf4"
     },
     "0x22": {
       "decode": "15c7268a1d770db5",
@@ -316,7 +316,7 @@
       "bg3": "ca57b6a912e526e9",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "99f295a11421cf34"
+      "collision": "0bcc2dfb1584ff2a"
     },
     "0x23": {
       "decode": "46dc519911b815d8",
@@ -325,7 +325,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "aa446634920a467f"
+      "collision": "bcee685ae329f4dc"
     },
     "0x24": {
       "decode": "0c09c9c7099d3b02",
@@ -334,7 +334,7 @@
       "bg3": "a4c45700433a62a1",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "0d68cbc58cf5e5e7"
+      "collision": "ee50f6c111862f71"
     },
     "0x25": {
       "decode": "68c190ff117619b9",
@@ -343,7 +343,7 @@
       "bg3": "3e98c2a913adf8ff",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "7dacd58bca92341d"
+      "collision": "75298027569f176a"
     },
     "0x26": {
       "decode": "c1d3cb30102b5776",
@@ -352,7 +352,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "803b0a5ae3e72135"
+      "collision": "7fbf7c6d6c16dfbf"
     },
     "0x27": {
       "decode": "b3ea99ce057e01f0",
@@ -361,7 +361,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "92e2cfe166640150",
-      "collision": "ce3b2a3959ae3f75"
+      "collision": "6717d3c1db065441"
     },
     "0x28": {
       "decode": "9c7ad8c8c4b10674",
@@ -370,7 +370,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "963781b0f63aefcf",
-      "collision": "31d58ea6937bc818"
+      "collision": "720c15f0f36db7b7"
     },
     "0x29": {
       "decode": "f41bdc3af86fc3ba",
@@ -379,7 +379,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "0c228388ad55db51",
-      "collision": "77687727f96a4673"
+      "collision": "1ba772c602810774"
     },
     "0x2a": {
       "decode": "ffc6d08c50a73728",
@@ -388,7 +388,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "2718fcfa52dcd0a2"
+      "collision": "a3cc3b4be3cc2582"
     },
     "0x2b": {
       "decode": "a4f02ec351ab2755",
@@ -397,7 +397,7 @@
       "bg3": "8f3be13713084e15",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "50dc6f4e2e547168"
+      "collision": "b67a67d2d81719f0"
     },
     "0x2c": {
       "decode": "bfcd13e7bf8e67c9",
@@ -406,7 +406,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "b28b41b42e9138c7",
-      "collision": "53323e3f3f1f6927"
+      "collision": "019157b7389076ac"
     },
     "0x2d": {
       "decode": "aed003bc4115074c",
@@ -415,7 +415,7 @@
       "bg3": "a3411095bcbae989",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "c39059ee1157252a"
+      "collision": "4df1f49bd9856b6b"
     },
     "0x2e": {
       "decode": "5e7aa19ee796e9e4",
@@ -424,7 +424,7 @@
       "bg3": "86a42b4b4b26eeff",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "131f0b7c586f6100"
+      "collision": "90605630a0da985a"
     },
     "0x2f": {
       "decode": "8e4ee40dbcd7682c",
@@ -433,7 +433,7 @@
       "bg3": "8a39d2abd3999ab7",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "aa63b6b27f619629"
+      "collision": "bf68089036dff1b8"
     },
     "0x30": {
       "decode": "fa7a44ca81d496fb",
@@ -451,7 +451,7 @@
       "bg3": "86a42b4b4b26eeff",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "038bb86cfb18cf8e"
+      "collision": "676cf4ad396814d6"
     },
     "0x32": {
       "decode": "0b5a45846132ea64",
@@ -460,7 +460,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "09058a136a2f15b6"
+      "collision": "159dd8a028aaaddd"
     },
     "0x33": {
       "decode": "2a0fe7f0bdebb17a",
@@ -469,7 +469,7 @@
       "bg3": "59daa8a158127c2b",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "dd60e267c2d86153"
+      "collision": "91cc7ed283792317"
     },
     "0x34": {
       "decode": "a5b070dd693cff79",
@@ -487,7 +487,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "92e2cfe166640150",
-      "collision": "f6789400bb768b5c"
+      "collision": "81dca3cb178d7762"
     },
     "0x36": {
       "decode": "1c886babadaf9ed2",
@@ -496,7 +496,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "f14c0edbf8d46c99"
+      "collision": "c6154827bb8e2bc1"
     },
     "0x37": {
       "decode": "9f231a826d7e1184",
@@ -505,7 +505,7 @@
       "bg3": "85124812bd008668",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "fcd3e299a2cfb04c"
+      "collision": "6c50c5a74b1b3510"
     },
     "0x39": {
       "decode": "8aa5eace562cb594",
@@ -514,7 +514,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "061c93451362ab12",
-      "collision": "67039b7b6f6765fa"
+      "collision": "358f42a6e6d83f40"
     },
     "0x3a": {
       "decode": "e03341c068d5fbfa",
@@ -532,7 +532,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "537d0c1f1177b806"
+      "collision": "cf4d3c65d3660217"
     },
     "0x3c": {
       "decode": "3f62559a5c9462f5",
@@ -541,7 +541,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "6c139d64fa22b390",
-      "collision": "8efa9241564a98f1"
+      "collision": "deac673090fec58c"
     },
     "0x3d": {
       "decode": "8926668356a51e8d",
@@ -550,7 +550,7 @@
       "bg3": "66db602011ad1359",
       "bg2Front": "484d24dce79ac093",
       "bg3Front": "none",
-      "collision": "1a1a5140a7f96e89"
+      "collision": "2e6d8526ae4f8d6e"
     },
     "0x3e": {
       "decode": "3760c1f1d7206a2b",
@@ -559,7 +559,7 @@
       "bg3": "be18f09f59738f8e",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "785112ef9893f863"
+      "collision": "24b19c8db3e215d0"
     },
     "0x3f": {
       "decode": "e64ea1788852f08b",
@@ -568,7 +568,7 @@
       "bg3": "d262a0f9d0d08a8b",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "061d1b62e23ed0f7"
+      "collision": "b872a32d02b165a3"
     },
     "0x40": {
       "decode": "3b97c6bf266f1782",
@@ -577,7 +577,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "18c4b9ec2d224148",
-      "collision": "00e8610494a283d5"
+      "collision": "1aab75ff549c3638"
     },
     "0x41": {
       "decode": "fe4338292c05c525",
@@ -586,7 +586,7 @@
       "bg3": "9e031109ff92a936",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "07d6508881bfe018"
+      "collision": "3b9217cc1e5aab40"
     },
     "0x42": {
       "decode": "b68ae87179c471bc",
@@ -595,7 +595,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "cadfda1016fc6774"
+      "collision": "6b8d134e348ef250"
     },
     "0x43": {
       "decode": "62a0ec449326eb84",
@@ -604,7 +604,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "acd6ac8a540b63d3",
-      "collision": "3aa087ceeb281645"
+      "collision": "cc9216075960c9b3"
     },
     "0x44": {
       "decode": "1876b35b55582e11",
@@ -613,7 +613,7 @@
       "bg3": "ed8496246c728e39",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "b5db84b611d42fd2"
+      "collision": "d9108d1bef00ead8"
     },
     "0x45": {
       "decode": "e74a940f9dd60fa8",
@@ -631,7 +631,7 @@
       "bg3": "3b8180f3994a7694",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "c5bb0445eccfbfe4"
+      "collision": "9a0f5c0983a8c76c"
     },
     "0x47": {
       "decode": "2350847120ffd7fd",
@@ -640,7 +640,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "557548f5b2fa45fc"
+      "collision": "9a1239ee7d18e155"
     },
     "0x48": {
       "decode": "348879499448ec14",
@@ -658,7 +658,7 @@
       "bg3": "e90290c1488665ea",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "50d13931f7d00684"
+      "collision": "b20cbc66289ae261"
     },
     "0x4a": {
       "decode": "9c37e9077eecccf4",
@@ -667,7 +667,7 @@
       "bg3": "d262a0f9d0d08a8b",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "89592cefccb6b14b"
+      "collision": "17922dc5ee41c801"
     },
     "0x4b": {
       "decode": "65b9d9f582710671",
@@ -676,7 +676,7 @@
       "bg3": "ed8496246c728e39",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "281aab09599b1ce8"
+      "collision": "4d8fa371961e85e1"
     },
     "0x4c": {
       "decode": "82b5ab433379d646",
@@ -685,7 +685,7 @@
       "bg3": "5fc9d3d0d93f7168",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "b108c869d12b0d6d"
+      "collision": "ea1058fd00bb34a4"
     },
     "0x4d": {
       "decode": "7ece7a863b190edd",
@@ -694,7 +694,7 @@
       "bg3": "3b8180f3994a7694",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "424bb8984cf83497"
+      "collision": "e23ba7b753bb9ac3"
     },
     "0x4e": {
       "decode": "f49c3c9f2f1edb9e",
@@ -712,7 +712,7 @@
       "bg3": "8f3be13713084e15",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "781570950b0b6c40"
+      "collision": "d78c97dff36c4267"
     },
     "0x50": {
       "decode": "fa1d843383e2901c",
@@ -721,7 +721,7 @@
       "bg3": "ed8496246c728e39",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "e5a05d7dce007c79"
+      "collision": "a215901967bac50d"
     },
     "0x51": {
       "decode": "d706600d4a70bb8c",
@@ -730,7 +730,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "92e2cfe166640150",
-      "collision": "4cd13ac806234ffc"
+      "collision": "16619789612630d2"
     },
     "0x52": {
       "decode": "73366f4a18e46087",
@@ -739,7 +739,7 @@
       "bg3": "8a39d2abd3999ab7",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "51fae91dccea4d60"
+      "collision": "2f65eac5a40d384a"
     },
     "0x53": {
       "decode": "95513ef2b2d25606",
@@ -748,7 +748,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "a7b482daa7daaa55"
+      "collision": "71091edf19e7dbcc"
     },
     "0x54": {
       "decode": "76b89036ff9dc802",
@@ -757,7 +757,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "208b4caa68bec590",
-      "collision": "39220813c8b1dde6"
+      "collision": "2551ce94818f5d3c"
     },
     "0x55": {
       "decode": "4f608111cf334aef",
@@ -766,7 +766,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "31507ce266da422d",
-      "collision": "986cd4bd05d5efd1"
+      "collision": "9243a6fb08f4c877"
     },
     "0x56": {
       "decode": "fc50ed3c48830607",
@@ -775,7 +775,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "c4d9a274c4697e6b",
-      "collision": "faaf390fb0edf956"
+      "collision": "7568ef2a8abcbc54"
     },
     "0x57": {
       "decode": "247629bf0315de76",
@@ -784,7 +784,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "7de2107243e587af",
-      "collision": "87c53fac7e76d09f"
+      "collision": "0a94afe823cbff63"
     },
     "0x58": {
       "decode": "2a30e633987e0b02",
@@ -793,7 +793,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "49220e32a5ade206"
+      "collision": "fa0476ca79ad9c0e"
     },
     "0x59": {
       "decode": "499279484d6703c1",
@@ -802,7 +802,7 @@
       "bg3": "ca57b6a912e526e9",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "e200e8919d0a3153"
+      "collision": "b92e36d0c6223616"
     },
     "0x5a": {
       "decode": "7350051ac90d8034",
@@ -811,7 +811,7 @@
       "bg3": "85124812bd008668",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "723f7ed7983b0a68"
+      "collision": "afacd6b0618294e4"
     },
     "0x5b": {
       "decode": "a8875b241eb1b4c7",
@@ -829,7 +829,7 @@
       "bg3": "3e98c2a913adf8ff",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "6855b9b84d953018"
+      "collision": "93f2e3e97cfe670b"
     },
     "0x5d": {
       "decode": "f5bc48c8e6de7557",
@@ -838,7 +838,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "38af1069acce52d0"
+      "collision": "7e733bdd84fc2a23"
     },
     "0x5e": {
       "decode": "7e7d4363753824c2",
@@ -847,7 +847,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "92e2cfe166640150",
-      "collision": "45d96d78827504d0"
+      "collision": "0de6e221c416a383"
     },
     "0x5f": {
       "decode": "92a4772db40b6c87",
@@ -856,7 +856,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "963781b0f63aefcf",
-      "collision": "a7bc1c829a9c6e45"
+      "collision": "411d11cc30974c0e"
     },
     "0x60": {
       "decode": "c0f69ca29b4341b3",
@@ -865,7 +865,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "963781b0f63aefcf",
-      "collision": "51097af2512027a1"
+      "collision": "1907980bcb682fd0"
     },
     "0x61": {
       "decode": "5622ce5bd3249b30",
@@ -883,7 +883,7 @@
       "bg3": "8f3be13713084e15",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "ab99bf957a6dd86d"
+      "collision": "da43cee5c8daccfb"
     },
     "0x63": {
       "decode": "793cda00015582f6",
@@ -901,7 +901,7 @@
       "bg3": "da5aae90d6577839",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "b87873a839965106"
+      "collision": "b256a681db15f361"
     },
     "0x65": {
       "decode": "9dfcc43c9e9b5cfc",
@@ -928,7 +928,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "a28db4b840e8091e",
-      "collision": "fc311c92bffb27ac"
+      "collision": "f9b9f0cb2f3be2c5"
     },
     "0x68": {
       "decode": "fe5d97779b1cdff2",
@@ -937,7 +937,7 @@
       "bg3": "3b8180f3994a7694",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "84688cd8f19960be"
+      "collision": "954fa49dabf341c7"
     },
     "0x69": {
       "decode": "4ef8331a3e67f57a",
@@ -946,7 +946,7 @@
       "bg3": "476f0bf891b28d2b",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "20b3c3dcbb403e6c"
+      "collision": "db2f097057a0d46a"
     },
     "0x6a": {
       "decode": "84b785591784c7f9",
@@ -955,7 +955,7 @@
       "bg3": "131d053c6bd89ee5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "4ec602f3c9e9ad01"
+      "collision": "b826aaddd513c49e"
     },
     "0x6b": {
       "decode": "207a606e4964c9ba",
@@ -973,7 +973,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "31507ce266da422d",
-      "collision": "98741986be05cd69"
+      "collision": "4bc73a115e151628"
     },
     "0x6d": {
       "decode": "c264b80ded115238",
@@ -982,7 +982,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "de181566a50f4c0e",
-      "collision": "e48040150418909e"
+      "collision": "58d4c615138e693a"
     },
     "0x6e": {
       "decode": "e8154bf2a096727a",
@@ -1018,7 +1018,7 @@
       "bg3": "ed8496246c728e39",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "593c6af589775636"
+      "collision": "9dce490d8e80f5e3"
     },
     "0x72": {
       "decode": "da2f9f375f2a4306",
@@ -1027,7 +1027,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "b3e2c41b376376df"
+      "collision": "0589acb88030408f"
     },
     "0x73": {
       "decode": "512fddebd9356a85",
@@ -1036,7 +1036,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "92e2cfe166640150",
-      "collision": "674fcc97ef1e767b"
+      "collision": "46dcafa34c7e5564"
     },
     "0x74": {
       "decode": "b11634d531f9c309",
@@ -1045,7 +1045,7 @@
       "bg3": "2a7ef1d249d52ff2",
       "bg2Front": "9143a3a43f8a8d34",
       "bg3Front": "none",
-      "collision": "bc92d43cfed7c3be"
+      "collision": "87de5430785d4f86"
     },
     "0x75": {
       "decode": "09758a271fc3c319",
@@ -1063,7 +1063,7 @@
       "bg3": "a3411095bcbae989",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "6a1710af2154e836"
+      "collision": "6a9451d878b02373"
     },
     "0x77": {
       "decode": "1c28fddc3cc32c67",
@@ -1072,7 +1072,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "0dce5cc965ec29a7"
+      "collision": "2ae3aba55065133d"
     },
     "0x78": {
       "decode": "dd205c4fe7ed7918",
@@ -1081,7 +1081,7 @@
       "bg3": "85124812bd008668",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "43f632dc20a2984b"
+      "collision": "0fda961339eff225"
     },
     "0x79": {
       "decode": "1e8349a1e60374b7",
@@ -1099,7 +1099,7 @@
       "bg3": "f2f89802071ae663",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "f046feb025e84429"
+      "collision": "8abf63fe3f3544f0"
     },
     "0x7b": {
       "decode": "1b0b978b3748db35",
@@ -1117,7 +1117,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "3034955f79e6a73b"
+      "collision": "0c8f72a9bcb62348"
     },
     "0x7d": {
       "decode": "d5c83da3e5734696",
@@ -1135,7 +1135,7 @@
       "bg3": "e14dbcd2918940ab",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "c46bab8c4741e6b4"
+      "collision": "cb8a87694898a77c"
     },
     "0x7f": {
       "decode": "33376837558432f6",
@@ -1144,7 +1144,7 @@
       "bg3": "71c1e7711116481a",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "117f35c212101a71"
+      "collision": "83f9667ccbca855d"
     },
     "0x80": {
       "decode": "ac3d1fa4bdc824a9",
@@ -1153,7 +1153,7 @@
       "bg3": "51e28c88ef654335",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "8c1da8865cf743a3"
+      "collision": "ef61eabb8891a9ea"
     },
     "0x81": {
       "decode": "aad061b4155ddf58",
@@ -1162,7 +1162,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "6c8be8b9eea5f323"
+      "collision": "ff3546b5010c5ab7"
     },
     "0x82": {
       "decode": "0edbfef57415c226",
@@ -1171,7 +1171,7 @@
       "bg3": "2a7ef1d249d52ff2",
       "bg2Front": "484d24dce79ac093",
       "bg3Front": "none",
-      "collision": "bd9f8f36365c8b52"
+      "collision": "f2fd5674c1ba8c7a"
     },
     "0x83": {
       "decode": "364f66ad9dc94b01",
@@ -1189,7 +1189,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "4ff5b8c736fe7696",
-      "collision": "c8b7a20d6bc2439e"
+      "collision": "250b12087f96b7db"
     },
     "0x85": {
       "decode": "ebe904ec42009bf1",
@@ -1198,7 +1198,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "208b4caa68bec590",
-      "collision": "c287c5542878ad07"
+      "collision": "17da2e7f85418f1a"
     },
     "0x86": {
       "decode": "71c4ddcbff267001",
@@ -1207,7 +1207,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "490152127f274f53",
-      "collision": "a835896e32204238"
+      "collision": "4cc4875d7763cacc"
     },
     "0x87": {
       "decode": "21b45ab3fc5fbeb7",
@@ -1216,7 +1216,7 @@
       "bg3": "bd3739222d5e6a0d",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "3d7ba361b687f143"
+      "collision": "855df6964f5fc0d1"
     },
     "0x88": {
       "decode": "156fa130b2fcbd8f",
@@ -1225,7 +1225,7 @@
       "bg3": "a4c45700433a62a1",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "37c7d90415c42a19"
+      "collision": "9548a80c08ef78e4"
     },
     "0x89": {
       "decode": "30de30a7676539f7",
@@ -1252,7 +1252,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "963781b0f63aefcf",
-      "collision": "aee7b762f68b17b5"
+      "collision": "80923a8226f96c56"
     },
     "0x8c": {
       "decode": "3b78ddd4775069df",
@@ -1261,7 +1261,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "0c228388ad55db51",
-      "collision": "7145bc5d4e57dabc"
+      "collision": "f2dc8e9ed8cb9d94"
     },
     "0x8d": {
       "decode": "1905189686f273a9",
@@ -1270,7 +1270,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "a31cb157621aa60a"
+      "collision": "9ba652ccfac8ddbd"
     },
     "0x8e": {
       "decode": "bbee7d9d805a3b86",
@@ -1279,7 +1279,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "c20ad120214ac7f8"
+      "collision": "bb5c88c5c2317eb8"
     },
     "0x8f": {
       "decode": "c9b00f06a0cdd764",
@@ -1288,7 +1288,7 @@
       "bg3": "3e98c2a913adf8ff",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "0c6e05eaf0080dd4"
+      "collision": "cbda566a05b25230"
     },
     "0x90": {
       "decode": "532c65a265e28a46",
@@ -1297,7 +1297,7 @@
       "bg3": "b3567ce980306711",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "7c4d2bc9609436f6"
+      "collision": "b36aacae7188797a"
     },
     "0x91": {
       "decode": "4d182439460894f5",
@@ -1315,7 +1315,7 @@
       "bg3": "7127ed4d03ac4d7f",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "25fdcb5c2a3e30e2"
+      "collision": "8552a194011e47a8"
     },
     "0x93": {
       "decode": "8ac84fbc4a186e36",
@@ -1333,7 +1333,7 @@
       "bg3": "3b8180f3994a7694",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "5c1142abf1824ff9"
+      "collision": "bb634af2c69f15b9"
     },
     "0x95": {
       "decode": "0ed3bd8d5a12cb6c",
@@ -1342,7 +1342,7 @@
       "bg3": "476f0bf891b28d2b",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "4bc6b9fc41e76ac7"
+      "collision": "4a5862c92ab2f788"
     },
     "0x96": {
       "decode": "cae53f8b57688f04",
@@ -1351,7 +1351,7 @@
       "bg3": "a3dc71a6d93dea3d",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "7400fb9aeda5b046"
+      "collision": "24dbeb67953a843f"
     },
     "0x97": {
       "decode": "edd5acd2aaa59034",
@@ -1369,7 +1369,7 @@
       "bg3": "8f3be13713084e15",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "75a5ab4d4f1bf587"
+      "collision": "5c94afe3fc6d354a"
     },
     "0x99": {
       "decode": "bdd2c77e834eb747",
@@ -1378,7 +1378,7 @@
       "bg3": "85124812bd008668",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "6644b333b5e9f537"
+      "collision": "f4df0d2d5a26b23d"
     },
     "0x9a": {
       "decode": "e837ba5d04d40d2f",
@@ -1396,7 +1396,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "31507ce266da422d",
-      "collision": "20dcdb3c0c8fd019"
+      "collision": "fc6bde75541bbbfe"
     },
     "0x9c": {
       "decode": "7de4e8b739e32ca5",
@@ -1405,7 +1405,7 @@
       "bg3": "ed8496246c728e39",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "0a757714ed5cb27c"
+      "collision": "e2d11d8e472ed1a0"
     },
     "0x9d": {
       "decode": "08852fb83910b080",
@@ -1414,7 +1414,7 @@
       "bg3": "ed8496246c728e39",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "be20a1c81b396532"
+      "collision": "64f9e34b0378d997"
     },
     "0x9e": {
       "decode": "a1f7c87e7a5c89af",
@@ -1423,7 +1423,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "6c139d64fa22b390",
-      "collision": "bad5eff3421f0b66"
+      "collision": "06d463abce321254"
     },
     "0x9f": {
       "decode": "26a961f7d2f5e7f3",
@@ -1441,7 +1441,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "40bbd9dfaecee2aa"
+      "collision": "55962e8c0c08f5a9"
     },
     "0xa1": {
       "decode": "75f8335800fefca1",
@@ -1450,7 +1450,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "867d66a29772a602"
+      "collision": "b5bbb330f8ead01a"
     },
     "0xa2": {
       "decode": "8d6e0798ebcf37e7",
@@ -1459,7 +1459,7 @@
       "bg3": "9e031109ff92a936",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "009d28f4715eca9a"
+      "collision": "d4ea2218c169317b"
     },
     "0xa3": {
       "decode": "29e3add9611c8357",
@@ -1495,7 +1495,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "2a9891e532397519",
-      "collision": "d8caef9bf72e867a"
+      "collision": "bfc6d2eea883d469"
     },
     "0xa7": {
       "decode": "d48016e8a3490d7d",
@@ -1513,7 +1513,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "ea49725a00bd2376"
+      "collision": "a9162b3a933b8ce1"
     },
     "0xa9": {
       "decode": "465412569c520ef9",
@@ -1531,7 +1531,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "31507ce266da422d",
-      "collision": "d0ec2b1d3d707ea1"
+      "collision": "1d525e403ae65223"
     },
     "0xab": {
       "decode": "5706785d7f38d727",
@@ -1558,7 +1558,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "9914e44f837eaf25"
+      "collision": "2af0e11efb74b74f"
     },
     "0xae": {
       "decode": "e9b766e33acf8ed8",
@@ -1603,7 +1603,7 @@
       "bg3": "d5fd0a70a57f9fa5",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "fc3d0c750173693a"
+      "collision": "15fc89b8aa7c901d"
     },
     "0xb3": {
       "decode": "228c6b8a3151ab74",
@@ -1612,7 +1612,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "a29b441ac57f4d7a",
-      "collision": "287e390afd3f27d8"
+      "collision": "f7045e77af2c545b"
     },
     "0xb4": {
       "decode": "bed74fe5bca89877",
@@ -1621,7 +1621,7 @@
       "bg3": "3e98c2a913adf8ff",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "849aeedb3cebdb2c"
+      "collision": "4fa51acc9105fd2b"
     },
     "0xb5": {
       "decode": "f8343dda8cb1ceb7",
@@ -1630,7 +1630,7 @@
       "bg3": "476f0bf891b28d2b",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "c86724619ae37b66"
+      "collision": "14574742fe166b28"
     },
     "0xb6": {
       "decode": "643d56959dc6070a",
@@ -1639,7 +1639,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "19b665adb7858151"
+      "collision": "94e34f0a56f8b18b"
     },
     "0xb7": {
       "decode": "792b791d437fb341",
@@ -1648,7 +1648,7 @@
       "bg3": "9c25a39161f5128d",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "8db7777cbcc65ef3"
+      "collision": "369e00f8857ede7e"
     },
     "0xb8": {
       "decode": "caedf94a0c0c8671",
@@ -1657,7 +1657,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "92e2cfe166640150",
-      "collision": "fd0200ff6c590488"
+      "collision": "0b736ac0d9699860"
     },
     "0xb9": {
       "decode": "0ffa810a93fb4c9f",
@@ -1711,7 +1711,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "917938efe0f1e803"
+      "collision": "f7665444832ce3f6"
     },
     "0xbf": {
       "decode": "63535f2925e0956c",
@@ -1729,7 +1729,7 @@
       "bg3": "f2f89802071ae663",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "fba4cd5fac9a9032"
+      "collision": "bc3c462426c4133e"
     },
     "0xc1": {
       "decode": "bfb95752045a67f3",
@@ -1747,7 +1747,7 @@
       "bg3": "3e98c2a913adf8ff",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "7632f2859b8e9bb9"
+      "collision": "dc68c6a6856b916c"
     },
     "0xc3": {
       "decode": "f469fe268872e8e7",
@@ -1783,7 +1783,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "c4d9a274c4697e6b",
-      "collision": "1ebc0b909fd736e2"
+      "collision": "9b397fb65da6b20b"
     },
     "0xc7": {
       "decode": "c330af99220cb94d",
@@ -1801,7 +1801,7 @@
       "bg3": "a25b0480b951d959",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "bb8004cdaec07940"
+      "collision": "50933ae866c5e60f"
     },
     "0xc9": {
       "decode": "bbdbdf7e5c0aa8e6",
@@ -1837,7 +1837,7 @@
       "bg3": "71c1e7711116481a",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "98087e9bc452b5f1"
+      "collision": "405fe4d59122da45"
     },
     "0xcd": {
       "decode": "1fd17dcf390681b9",
@@ -1855,7 +1855,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "a29b441ac57f4d7a",
-      "collision": "65d322e37199cc75"
+      "collision": "0f95058753275633"
     },
     "0xcf": {
       "decode": "d70ba3d997b9041f",
@@ -1891,7 +1891,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "fee6b0c49901adc3"
+      "collision": "85b98241dec5d57a"
     },
     "0xd3": {
       "decode": "7bcc93ccff2bb933",
@@ -1909,7 +1909,7 @@
       "bg3": "ca57b6a912e526e9",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "a759227b9b5b296b"
+      "collision": "f5be6a0e2ea60f8c"
     },
     "0xd5": {
       "decode": "95fd209e7d8518ea",
@@ -1918,7 +1918,7 @@
       "bg3": "9c25a39161f5128d",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "f36a8ea49cb04c93"
+      "collision": "91a45b6ad3ffb68a"
     },
     "0xd6": {
       "decode": "b98a3a94231fdaab",
@@ -1936,7 +1936,7 @@
       "bg3": "f2f89802071ae663",
       "bg2Front": "none",
       "bg3Front": "none",
-      "collision": "99ce0886dd7b7e88"
+      "collision": "957b8d06577d896a"
     },
     "0xd8": {
       "decode": "f0c7f9b0311ac9ee",
@@ -1945,7 +1945,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "92e2cfe166640150",
-      "collision": "067df3dc76970216"
+      "collision": "4eb01b12642acaa6"
     },
     "0xd9": {
       "decode": "288adb88a5b87cea",
@@ -1954,7 +1954,7 @@
       "bg3": "30e14955ebf13522",
       "bg2Front": "none",
       "bg3Front": "a28db4b840e8091e",
-      "collision": "17dfbcb30e4341a3"
+      "collision": "5660923823686575"
     },
     "0xdc": {
       "decode": "2a15fcfb4818367a",

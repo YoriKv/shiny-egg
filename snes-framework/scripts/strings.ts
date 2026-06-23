@@ -32,6 +32,12 @@ import {
   messageBodyToBytes,
   splitMessageEntries
 } from './asm/msg-asm.ts'
+import {
+  dbArgsToLine,
+  encodeLineToDbArgs,
+  isTextLineArgs,
+  parseDbArgs
+} from './asm/glyph-line.ts'
 import { snesToPC } from './engine/symbol-map.ts'
 import type {
   MarkupToken,
@@ -47,6 +53,15 @@ const MARKUP_GUIDE: MarkupToken[] = [
   ...CONTROL_CODES.map((c) => ({ token: c.token, label: c.label, kind: 'control' as const }))
 ]
 
+/** Glyph-only guide for the cutscene (intro/ending) editors — those edit plain
+ *  text + special glyphs; the layout control bytes are preserved verbatim, not
+ *  exposed as insertable tokens. */
+const GLYPH_GUIDE: MarkupToken[] = SPECIAL_GLYPHS.map((g) => ({
+  token: g.token,
+  label: g.label,
+  kind: 'glyph' as const
+}))
+
 export { loadFontTable, type FontTable }
 
 /** Marker id of the level-name string region in Bank51. */
@@ -60,6 +75,17 @@ export const MESSAGE_TEXT_ID = 'message-box-text'
  *  (`DATA_message_box_text_ptrs`: 300 symbolic `dw <body>` slots, message ID →
  *  message body). */
 export const MESSAGE_PTR_TABLE_ID = 'message-box-text-ptrs'
+
+/** Marker id of the intro-cutscene storybook text region in Bank0F ("A long,
+ *  long time ago …"). One `DATA_0F<addr>` body per cutscene screen; the bodies
+ *  are addressed by the symbolic `dw` sequence table at `DATA_0FCEDB`, so asar
+ *  recomputes them when the in-place splice shrinks a body. */
+export const INTRO_STORY_ID = 'intro-story'
+
+/** Marker id of the ending/epilogue text region in Bank0D ("…the twins are
+ *  reunited."). A single `DATA_0DF3E8` body of several quoted lines interleaved
+ *  with `dw` row-advance control words (preserved byte-for-byte by the splice). */
+export const ENDING_TEXT_ID = 'ending-text'
 
 /** A located editable literal: its text plus its char range within the region
  *  body (`inner`), so the save path can splice new text back in place. */
@@ -181,6 +207,16 @@ function buildNameMap(fileText: string): Map<string, string> {
   return byLabel
 }
 
+/** Name a cutscene text block's entries by their physical order — "<title> N"
+ *  (1-based), or just "<title>" for a single-entry block. For sequential text
+ *  with no external name table (the intro storybook, the ending). The asm
+ *  `DATA_<addr>` label still rides along in parens. */
+function sequentialNames(entries: { label: string }[], title: string): Map<string, string> {
+  return new Map(
+    entries.map((e, i) => [e.label, entries.length > 1 ? `${title} ${i + 1}` : title])
+  )
+}
+
 /** Build the editor model entries. The display name uses the friendly label when
  *  available with the asm label in parens (e.g. "1-1 (DATA_514A73)"); otherwise
  *  just the asm label, preferring the longest when a body has several (the more
@@ -248,6 +284,214 @@ export function parseLevelNameStrings(
     'Level Names',
     (_entries, text) => buildNameMap(text)
   )
+}
+
+// ── Glyph-line tables (intro storybook / ending) ───────────────────────────
+// Like the level-name in-place splice, but each text line is plain Main.txt text
+// PLUS insertable `[glyph]` tokens (button icons, star, …) emitted as raw font
+// bytes — `db "a",$F6,$F7,"b"`. The cutscene layout/control directives (intro
+// `$FE/$FD/$FC` byte directives, ending `$xxFF` word directives) are SEPARATE
+// directives, left byte-for-byte untouched; only text `db` directives flow
+// through the glyph-line codec. Verified safe: both renderers use the message
+// font and no glyph byte collides with either region's control bytes.
+
+/** A located editable text line: its decoded markup (text + `[glyph]`s), the
+ *  char range of its `db` argument list within the region body (for the splice),
+ *  and its byte cost (text chars + glyph bytes). */
+interface GlyphLocatedLine {
+  markup: string
+  argStart: number
+  argEnd: number
+  bytes: number
+}
+
+interface GlyphParsedEntry {
+  label: string
+  labels: string[]
+  lines: GlyphLocatedLine[]
+}
+
+/** Matches a `db` directive, capturing leading indent + the `db ` keyword (group
+ *  1) so the argument list starts right after it. */
+const DB_DIRECTIVE_RE = /^(\s*db\s+)(\S.*)$/
+
+/** Byte cost of a parsed text-line arg list (text chars × 1 + one per glyph byte). */
+function argsByteCount(args: ReturnType<typeof parseDbArgs>): number {
+  if (!args) return 0
+  let n = 0
+  for (const a of args) n += a.kind === 'text' ? [...a.value].length : 1
+  return n
+}
+
+/**
+ * Walk a region body into entries, directive-aware: a label begins an entry; a
+ * `db` directive whose args contain a quoted run is a TEXT line (decoded to
+ * markup, arg span recorded). `db $XX,…` / `dw …` control directives have no
+ * quoted run and are skipped (preserved verbatim by the splice). Entries with no
+ * text lines are dropped.
+ */
+function parseGlyphLineRegion(inner: string): GlyphParsedEntry[] {
+  const entries: GlyphParsedEntry[] = []
+  let cur: GlyphParsedEntry | null = null
+  let offset = 0
+  for (const rawLine of inner.split('\n')) {
+    const lineStart = offset
+    offset += rawLine.length + 1
+    const code = stripComment(rawLine)
+    const trimmed = code.trim()
+    if (trimmed === '') continue
+
+    const label = LABEL_RE.exec(trimmed)?.[1]
+    if (label) {
+      if (!cur || cur.lines.length > 0) {
+        cur = { label, labels: [label], lines: [] }
+        entries.push(cur)
+      } else {
+        cur.labels.push(label)
+      }
+    }
+    if (!cur) continue
+
+    const dbm = DB_DIRECTIVE_RE.exec(code)
+    if (!dbm) continue
+    const argText = dbm[2].replace(/\s+$/, '') // drop trailing ws before any comment
+    const args = parseDbArgs(argText)
+    if (!isTextLineArgs(args)) continue // control directive — leave untouched
+    const argStart = lineStart + dbm[1].length
+    cur.lines.push({
+      markup: dbArgsToLine(args!),
+      argStart,
+      argEnd: argStart + argText.length,
+      bytes: argsByteCount(args)
+    })
+  }
+  return entries.filter((e) => e.lines.length > 0)
+}
+
+function totalGlyphBytes(entries: GlyphParsedEntry[]): number {
+  let n = 0
+  for (const e of entries) for (const l of e.lines) n += l.bytes
+  return n
+}
+
+/** Parse a glyph-line region (intro/ending) into the editor model. `contentText`
+ *  (overlay-first) supplies the current lines; `budgetText` (pristine base) sizes
+ *  the byte budget. Entries are named sequentially (`title N`). */
+function parseGlyphLineTable(
+  contentText: string,
+  budgetText: string,
+  ft: FontTable,
+  id: string,
+  title: string,
+  namePrefix: string
+): StringTableModel {
+  const region = findRegion(contentText, id)
+  if (!region) throw new Error(`Region is missing the ;@editable:${id} markers.`)
+  const budgetRegion = findRegion(budgetText, id)
+  if (!budgetRegion) throw new Error(`Base region is missing the ;@editable:${id} markers.`)
+  const entries = parseGlyphLineRegion(region.inner)
+  const nameByLabel = sequentialNames(entries, namePrefix)
+  return {
+    id,
+    title,
+    allowedChars: ft.chars,
+    budgetChars: totalGlyphBytes(parseGlyphLineRegion(budgetRegion.inner)),
+    glyphLines: true,
+    markupGuide: GLYPH_GUIDE,
+    entries: entries.map((e) => {
+      const longest = e.labels.reduce((a, b) => (b.length > a.length ? b : a), e.labels[0])
+      const friendly = nameByLabel.get(e.label)
+      return {
+        label: e.label,
+        name: friendly ? `${friendly} (${longest})` : longest,
+        lines: e.lines.map((l) => l.markup)
+      }
+    })
+  }
+}
+
+/** Parse the intro storybook text (Bank0F) — one entry per cutscene screen,
+ *  named "Page N". Text + insertable `[glyph]` tokens; control bytes preserved. */
+export function parseIntroStory(
+  contentText: string,
+  budgetText: string,
+  ft: FontTable
+): StringTableModel {
+  return parseGlyphLineTable(contentText, budgetText, ft, INTRO_STORY_ID, 'Intro Story', 'Page')
+}
+
+/** Parse the ending/epilogue text (Bank0D) — a single entry of several lines,
+ *  named "Ending". Text + insertable `[glyph]` tokens; control bytes preserved. */
+export function parseEndingText(
+  contentText: string,
+  budgetText: string,
+  ft: FontTable
+): StringTableModel {
+  return parseGlyphLineTable(contentText, budgetText, ft, ENDING_TEXT_ID, 'Ending Text', 'Ending')
+}
+
+/**
+ * Splice edited glyph-line table entries back onto `contentText` (overlay-first),
+ * sizing the byte budget from `budgetText` (pristine base). Re-emits only CHANGED
+ * lines (encode markup → `db` arg list); unchanged lines + all control directives
+ * stay byte-for-byte. Validates charset / glyph tokens / line-count / budget.
+ */
+function serializeGlyphLineTable(
+  contentText: string,
+  budgetText: string,
+  model: StringTableModel,
+  ft: FontTable,
+  id: string
+): SerializeResult {
+  const region = findRegion(contentText, id)
+  if (!region) return { ok: false, error: `Region is missing the ;@editable:${id} markers.` }
+  const budgetRegion = findRegion(budgetText, id)
+  if (!budgetRegion) return { ok: false, error: `Base region is missing the ;@editable:${id} markers.` }
+
+  const base = parseGlyphLineRegion(region.inner)
+  const byLabel = new Map(base.map((e) => [e.label, e]))
+  const budget = totalGlyphBytes(parseGlyphLineRegion(budgetRegion.inner))
+
+  const edits: TextEdit[] = []
+  let newTotal = 0
+  for (const baseEntry of base) {
+    const edited = model.entries.find((e) => e.label === baseEntry.label)
+    const lines = edited ? edited.lines : baseEntry.lines.map((l) => l.markup)
+    if (edited && edited.lines.length !== baseEntry.lines.length) {
+      return {
+        ok: false,
+        error: `Entry "${baseEntry.label}" has ${edited.lines.length} line(s); the cart expects ${baseEntry.lines.length}.`
+      }
+    }
+    for (let i = 0; i < baseEntry.lines.length; i++) {
+      const orig = baseEntry.lines[i]
+      const want = lines[i]
+      if (want === orig.markup) {
+        newTotal += orig.bytes
+        continue
+      }
+      const enc = encodeLineToDbArgs(want, ft)
+      if (!enc.ok) return { ok: false, error: `Entry "${baseEntry.label}": ${enc.error}` }
+      newTotal += enc.bytes
+      edits.push({ start: orig.argStart, end: orig.argEnd, replacement: enc.args })
+    }
+  }
+
+  for (const e of model.entries) {
+    if (!byLabel.has(e.label)) {
+      return { ok: false, error: `Entry "${e.label}" is not in the current base file (out of date?).` }
+    }
+  }
+
+  if (newTotal > budget) {
+    return {
+      ok: false,
+      error: `Text uses ${newTotal} bytes but the budget is ${budget}. Shorten ${newTotal - budget} byte(s).`
+    }
+  }
+
+  const newInner = applyEdits(region.inner, edits)
+  return { ok: true, text: spliceRegion(contentText, id, newInner) }
 }
 
 /** Total message byte size of a message region (the shared byte budget). */
@@ -431,6 +675,24 @@ export function serializeLevelNameStrings(
   ft: FontTable
 ): SerializeResult {
   return serializeStringTable(contentText, budgetText, model, ft, LEVEL_NAME_STRINGS_ID)
+}
+
+export function serializeIntroStory(
+  contentText: string,
+  budgetText: string,
+  model: StringTableModel,
+  ft: FontTable
+): SerializeResult {
+  return serializeGlyphLineTable(contentText, budgetText, model, ft, INTRO_STORY_ID)
+}
+
+export function serializeEndingText(
+  contentText: string,
+  budgetText: string,
+  model: StringTableModel,
+  ft: FontTable
+): SerializeResult {
+  return serializeGlyphLineTable(contentText, budgetText, model, ft, ENDING_TEXT_ID)
 }
 
 /**

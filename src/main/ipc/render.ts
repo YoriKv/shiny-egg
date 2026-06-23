@@ -17,6 +17,8 @@ import {
   renderGfxFiles,
   type GfxFilesResult
 } from 'snes-framework/render-gfx-files'
+import { loadMessageFont, renderSpecialGlyphImages } from 'snes-framework/msg-font'
+import { encodePng } from 'snes-framework/png'
 import {
   decodeLevelFromLevelData,
   loadObjectPropertyTable,
@@ -50,6 +52,7 @@ import type {
   DecodedPalette,
   EntityRenderValidity,
   EntityValidityRequest,
+  MessageGlyphPreview,
   PickerThumbnails,
   PickerThumbnailsRequest,
   FitSurfaceRequest,
@@ -114,6 +117,19 @@ function loadLevelContext(req: LevelRenderRequest) {
 }
 
 export function registerRenderIpc(): void {
+  // Special markup-glyph previews for the Message-Text keyboard — decoded from
+  // the static 1bpp message font in the extract (no ROM/symbols needed). Each is
+  // a PNG data URL of the glyph's font cell(s), white-on-transparent.
+  ipcMain.handle('render:messageFontGlyphs', async (): Promise<MessageGlyphPreview[]> => {
+    const font = loadMessageFont(frameworkWorkRoot())
+    return renderSpecialGlyphImages(font).map((g) => ({
+      token: g.token,
+      dataUrl:
+        'data:image/png;base64,' +
+        encodePng({ width: g.width, height: g.height, rgba: g.rgba }).toString('base64')
+    }))
+  })
+
   ipcMain.handle(
     'render:map16',
     async (_event, args: RenderMap16Args): Promise<RenderImage> => {

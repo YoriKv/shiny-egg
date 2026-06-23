@@ -177,6 +177,8 @@ export interface CanvasProps {
   /** App-wide canvas background colour (`#rrggbb`) — also used for the level-
    *  switch wipe so that transient matches the surrounding background. */
   canvasBackground: string
+  /** App-wide grid line colour (rgba string, with alpha) — see draw/grid.ts. */
+  gridColor: string
 }
 
 /** Mouse movement (px) past which a press becomes a drag, not a click. */
@@ -227,7 +229,8 @@ export function Canvas({
   onClearTestSpawn,
   paletteOverride,
   renderRefresh,
-  canvasBackground
+  canvasBackground,
+  gridColor
 }: CanvasProps): JSX.Element {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -763,7 +766,7 @@ export function Canvas({
   // Render loop: redraws on view/level/size change.
   useEffect(() => {
     drawScene(canvasRef.current, {
-      size, view, level, layers, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
+      size, view, level, layers, gridColor, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
       spriteBounds, neighborStatus, behaviorProbes, generatorThumbs, renderValidity, influence, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
       incoming, testSpawn, spawnOverride: spawnDragOverlay ?? spawnOverride, paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
       exitDrag, incomingOverlay, marquee, paintDrag
@@ -795,6 +798,7 @@ export function Canvas({
     propTable,
     size,
     layers,
+    gridColor,
     incoming,
     testSpawn,
     spawnOverride,

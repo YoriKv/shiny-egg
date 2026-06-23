@@ -574,8 +574,14 @@ export interface StringTableModel {
    *  per-line model (`entry.lines`) — i.e. the message-text region. The editor
    *  renders a markup field per entry instead of per-line inputs. */
   markup?: boolean;
-  /** Reference list of the insertable markup tokens (special glyphs + control
-   *  codes) for the editor's guide. Present on markup models. */
+  /** True when entries use the per-line model BUT each line is text + insertable
+   *  `[glyph]` tokens (the intro/ending cutscene editors): plain Main.txt text
+   *  with special glyphs emitted as raw font bytes. The editor renders per-line
+   *  inputs (like the line model) AND shows the glyph keyboard. Control bytes are
+   *  preserved verbatim, so the guide is glyphs-only (no control codes). */
+  glyphLines?: boolean;
+  /** Reference list of the insertable markup tokens for the editor's guide:
+   *  glyphs + control codes on `markup` models, glyphs-only on `glyphLines`. */
   markupGuide?: MarkupToken[];
 }
 

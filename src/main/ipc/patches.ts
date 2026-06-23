@@ -10,6 +10,7 @@ import {
   createTemplatePatch,
   ensureProjectPatchesDir,
   getPatchPoolSettings,
+  importAsm,
   importIps,
   listPrepackagedPatches,
   listProjectPatches,
@@ -41,17 +42,23 @@ export function registerPatchesIpc(): void {
     addPrepackagedToProject(builtinId)
   )
 
-  // Pick one or more `.ips` files and import them into the active project.
+  // Pick one or more `.ips` / `.asm` files and import them into the active
+  // project, dispatching by extension: `.ips` → binary chunks; `.asm` → an
+  // asar-style hack converted to the build-compatible form (see importAsm).
   ipcMain.handle('patches:import', async (): Promise<PatchImportResult[]> => {
     const win = BrowserWindow.getFocusedWindow()
     const opts: Electron.OpenDialogOptions = {
-      title: 'Import IPS patch',
+      title: 'Import patch (.ips / .asm)',
       properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'IPS patch', extensions: ['ips'] }]
+      filters: [
+        { name: 'Patch (.ips / .asm)', extensions: ['ips', 'asm'] },
+        { name: 'IPS patch', extensions: ['ips'] },
+        { name: 'asar patch', extensions: ['asm'] }
+      ]
     }
     const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
     if (picked.canceled || picked.filePaths.length === 0) return []
-    return picked.filePaths.map((p) => importIps(p))
+    return picked.filePaths.map((p) => (/\.asm$/i.test(p) ? importAsm(p) : importIps(p)))
   })
 
   // Create a new self-documenting template patch (disabled) for the user to edit.

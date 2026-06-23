@@ -39,6 +39,7 @@
     "./types": "./scripts/types.ts",
     "./render-gallery": "./scripts/engine/render-gallery.ts",
     "./render-gfx-files": "./scripts/engine/render-gfx-files.ts",
+    "./msg-font": "./scripts/engine/msg-font.ts",
     "./screen-gfx": "./scripts/engine/screen-gfx.ts",
     "./world-map-level-icons": "./scripts/engine/world-map-level-icons.ts",
     "./world-map-terrain": "./scripts/engine/world-map-terrain.ts",

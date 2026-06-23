@@ -91,6 +91,7 @@ import type {
   ImportGraphicsResult,
   Map16BlockPreview,
   Map16SubTileEdit,
+  MessageGlyphPreview,
   RenderGfxFilesArgs,
   RenderHeaderRequest,
   RenderImage,
@@ -246,6 +247,7 @@ export type {
   ImportGraphicsResult,
   Map16BlockPreview,
   Map16SubTileEdit,
+  MessageGlyphPreview,
   RenderGfxFilesArgs,
   RenderHeaderRequest,
   RenderImage,
@@ -377,6 +379,9 @@ export interface BizHawkAPI {
 export interface RenderAPI {
   map16Gallery: (args: RenderMap16Args) => Promise<RenderImage>
   vramGrid: (args: RenderVramArgs) => Promise<RenderImage>
+  /** PNG previews (data URLs) of the special markup glyphs for the Message-Text
+   *  keyboard, decoded from the static 1bpp message font. */
+  messageFontGlyphs: () => Promise<MessageGlyphPreview[]>
   gfxFiles: (args: RenderGfxFilesArgs) => Promise<GfxFilesResult>
   /** The level's gfx-file manifest — which compressed files scene_gfx_layout
    *  loads into VRAM (file id, layer via dpSlot, VRAM offset, format, size).

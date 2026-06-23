@@ -71,9 +71,13 @@ import type { GfxFileEntry } from 'snes-framework/types'
 import {
   levelNameSlotLabels,
   loadFontTable,
+  parseEndingText,
+  parseIntroStory,
   parseLevelNameStrings,
   parseMessagePtrTable,
   parseMessageText,
+  serializeEndingText,
+  serializeIntroStory,
   serializeLevelNameStrings,
   serializeMessagePtrTable,
   serializeMessageText,
@@ -141,6 +145,16 @@ const ASM_REGIONS: Record<string, AsmRegionDef> = {
     file: 'yi/SuperFX/Banks/Bank51.asm',
     parse: parseMessagePtrTable,
     serialize: (c, b, m, ft) => serializeMessagePtrTable(c, b, m as MessagePtrTableModel, ft)
+  },
+  'intro-story': {
+    file: 'yi/Banks/Bank0F.asm',
+    parse: parseIntroStory,
+    serialize: (c, b, m, ft) => serializeIntroStory(c, b, m as StringTableModel, ft)
+  },
+  'ending-text': {
+    file: 'yi/Banks/Bank0D.asm',
+    parse: parseEndingText,
+    serialize: (c, b, m, ft) => serializeEndingText(c, b, m as StringTableModel, ft)
   }
 }
 

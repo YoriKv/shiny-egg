@@ -1,10 +1,14 @@
 // Custom-patch store + post-build apply (main side). A patch is byte-level edits
 // applied to the FINISHED build, after asar + the project overlay.
 //
-// On disk a patch is a single self-contained `<id>.json` (PatchFile): the source
-// of truth, hand-editable in a text editor (offsets + hex bytes + asm-label
-// anchors). IPS is import-only — importing converts an `.ips` into this JSON
-// (an edited `.ips` is just re-imported). Patches are **per project**: the editor
+// On disk a patch is `<id>.json` (PatchFile: metadata + binary `chunks`) plus an
+// OPTIONAL sibling `<id>.asm` holding the build-time asar source — both
+// hand-editable in a text editor. The sibling is the home for asm (so it has real
+// editor support); `readPatchFile` folds it back into `PatchFile.asm`. Back-compat:
+// a JSON with inline `asm` and no sibling still loads (every re-save migrates it
+// to the sibling). IPS is import-only — importing converts an `.ips` into chunks;
+// an asar `.asm` is imported by converting it to the build-compatible form (see
+// importAsm). Patches are **per project**: the editor
 // ships a read-only prepackaged catalog (snes-framework/patches/), and the user
 // "adds" (copies) one into the active project, or imports an external `.ips`. The
 // project's `patches.json` manifest records which local patches are enabled
@@ -26,6 +30,8 @@ import { readExtractionState } from 'snes-framework/state'
 import { mergeSymbolMaps, parseWlaSymbolMap, type SymbolMap } from 'snes-framework/symbol-map'
 import {
   applyPatches,
+  convertAsarPatch,
+  deriveAsmPatchMeta,
   flattenIps,
   chunksToStored,
   parseIps,
@@ -129,6 +135,12 @@ function writeManifest(projectId: string, m: PatchManifest): void {
   writeFileSync(projectPatchManifestPath(projectId), JSON.stringify(m, null, 2), 'utf8')
 }
 
+/** Path of a patch's sibling asm source (`<id>.asm`), the home for build-time
+ *  asar — paired with `<id>.json`. */
+function patchAsmPath(dir: string, id: string): string {
+  return join(dir, `${id}.asm`)
+}
+
 function readPatchFile(dir: string, id: string): PatchFile | null {
   const p = join(dir, `${id}.json`)
   if (!existsSync(p)) return null
@@ -138,11 +150,31 @@ function readPatchFile(dir: string, id: string): PatchFile | null {
     // (and any hand-authored `.json` still using it) keep loading.
     const raw = JSON.parse(readFileSync(p, 'utf8')) as PatchFile & { hunks?: StoredPatchChunk[] }
     const chunks = Array.isArray(raw.chunks) ? raw.chunks : Array.isArray(raw.hunks) ? raw.hunks : []
+    // Build-time asm lives in the sibling `<id>.asm` (the on-disk home); fall back
+    // to a legacy inline `asm` field so pre-split JSONs keep loading.
+    const asmPath = patchAsmPath(dir, id)
+    const asm = existsSync(asmPath) ? readFileSync(asmPath, 'utf8') : raw.asm
     // A patch must do something: binary chunks and/or build-time asm.
-    if (chunks.length === 0 && raw.asm === undefined) return null
-    return { ...raw, chunks }
+    if (chunks.length === 0 && asm === undefined) return null
+    return { ...raw, chunks, ...(asm !== undefined ? { asm } : {}) }
   } catch {
     return null
+  }
+}
+
+/** Write a patch to disk in the paired form: `<id>.json` (with `asm` stripped,
+ *  since it lives in the sibling) + the sibling `<id>.asm` when the patch carries
+ *  asm (else any stale sibling is removed). The single writer for created /
+ *  imported / template patches, so the on-disk shape stays consistent. */
+function writePatchFiles(dir: string, pf: PatchFile): void {
+  mkdirSync(dir, { recursive: true })
+  const { asm, ...json } = pf
+  writeFileSync(join(dir, `${pf.id}.json`), JSON.stringify(json, null, 2), 'utf8')
+  const asmPath = patchAsmPath(dir, pf.id)
+  if (asm !== undefined) {
+    writeFileSync(asmPath, Array.isArray(asm) ? asm.join('\n') : asm, 'utf8')
+  } else if (existsSync(asmPath)) {
+    rmSync(asmPath)
   }
 }
 
@@ -163,18 +195,20 @@ function totalBytesOf(pf: PatchFile): number {
   return (pf.chunks ?? []).reduce((n, h) => n + (h.bytes.length >> 1), 0)
 }
 
-/** Number of build-time asm edits — `org`/`freecode`/`freedata` directives in
- *  the patch's `asm` block (each starts a distinct ROM write region, the asm
- *  parallel to a chunk: an `org` in-place edit, or a freespace stub). Counts
- *  per-statement so `org $X : db ...` counts once; comments are stripped first
- *  so a `;` line never miscounts. */
+/** Number of build-time asm edits — each directive that starts a distinct ROM
+ *  write region in the patch's `asm`: an `org` in-place edit / trampoline, a
+ *  `%patchcode()`/`%patchdata()` pool routine, or a legacy `freecode`/`freedata`
+ *  stub. The asm parallel to a chunk, so a patch's "weight" reads consistently
+ *  whether it writes via chunks or asm. Counts per-statement so `org $X : db ...`
+ *  counts once; comments are stripped first so a `;` line never miscounts, and
+ *  `^…%patch` (not `%endpatch`) keeps the block CLOSE from double-counting. */
 function asmEditCountOf(pf: PatchFile): number {
   if (pf.asm === undefined) return 0
   const lines = Array.isArray(pf.asm) ? pf.asm : pf.asm.split('\n')
   let n = 0
   for (const line of lines) {
     for (const stmt of line.replace(/;.*$/, '').split(':')) {
-      if (/^\s*(?:org|freecode|freedata)\b/i.test(stmt)) n++
+      if (/^\s*(?:org|freecode|freedata|%patch(?:code|data))\b/i.test(stmt)) n++
     }
   }
   return n
@@ -305,6 +339,9 @@ export function addPrepackagedToProject(builtinId: string): PatchMutationResult 
   const dir = projectPatchesDir(projectId)
   mkdirSync(dir, { recursive: true })
   copyFileSync(join(builtinPatchesRoot(), `${builtinId}.json`), join(dir, `${builtinId}.json`))
+  // Bring the sibling asm source along (asm-bearing patches keep it in `<id>.asm`).
+  const builtinAsm = patchAsmPath(builtinPatchesRoot(), builtinId)
+  if (existsSync(builtinAsm)) copyFileSync(builtinAsm, patchAsmPath(dir, builtinId))
   // Append to the order (stable end position) and enable, in one manifest write.
   const m = readManifest(projectId)
   writeManifest(projectId, {
@@ -338,7 +375,6 @@ export function importIps(filePath: string): PatchImportResult {
   const chunks: PatchChunk[] = flattenIps(ips)
 
   const dir = projectPatchesDir(projectId)
-  mkdirSync(dir, { recursive: true })
   const id = uniqueId(projectId, slugify(basename(filePath).replace(/\.ips$/i, '')))
   const pf: PatchFile = {
     id,
@@ -348,9 +384,57 @@ export function importIps(filePath: string): PatchImportResult {
     ...(baseRomVersion() ? { romVersionAuthored: baseRomVersion() } : {}),
     chunks: chunksToStored(chunks)
   }
-  writeFileSync(join(dir, `${id}.json`), JSON.stringify(pf, null, 2), 'utf8')
+  writePatchFiles(dir, pf)
   appendToOrder(projectId, id)
   return { ok: true, patch: summaryOf(pf, false) }
+}
+
+/** Import an external asar `.asm` hack into the active project: convert the asar
+ *  idioms it uses (`freecode`/`autoclean`/`freespace`/raw-address `org`) into the
+ *  build-compatible form (the reserved `%patchcode` pool + drift-proofed label
+ *  orgs — see convertAsarPatch), then write the paired `<id>.json` + `<id>.asm`.
+ *  Disabled by default (the user reviews the converted asm + enables). Conversion
+ *  notes ride back in the result so the panel can surface what changed. */
+export function importAsm(filePath: string): PatchImportResult {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to import a patch into.' }
+
+  let src: string
+  try {
+    src = readFileSync(filePath, 'utf8')
+  } catch (e) {
+    return { ok: false, error: `Could not read "${filePath}": ${(e as Error).message}` }
+  }
+
+  const meta = deriveAsmPatchMeta(src, basename(filePath))
+  // Reference symbols (base build) drift-proof the converted `org`s; null ⇒ orgs
+  // stay raw (the converter notes it).
+  const { asm, notes } = convertAsarPatch(src, { refSym: loadBaseSym() ?? undefined })
+
+  const dir = projectPatchesDir(projectId)
+  const id = uniqueId(projectId, slugify(meta.name))
+  // Prepend a provenance + conversion-notes header so the stored asm is
+  // self-explanatory (it differs from the imported source).
+  const header = [
+    `; Imported from ${basename(filePath)} and converted for this cart's build.`,
+    ...(notes.length ? ['; Conversion notes:', ...notes.map((n) => `;   - ${n}`)] : []),
+    ''
+  ].join('\n')
+  const pf: PatchFile = {
+    id,
+    name: meta.name,
+    ...(meta.description ? { description: meta.description } : {}),
+    ...(meta.attribution ? { attribution: meta.attribution } : {}),
+    // The full comment block stays in the `.asm` body — no need to also store it
+    // in JSON `details`.
+    source: 'imported',
+    importedFrom: basename(filePath),
+    ...(baseRomVersion() ? { romVersionAuthored: baseRomVersion() } : {}),
+    asm: header + asm
+  }
+  writePatchFiles(dir, pf)
+  appendToOrder(projectId, id)
+  return { ok: true, patch: summaryOf(pf, false), ...(notes.length ? { notes } : {}) }
 }
 
 /** A self-documenting template `PatchFile` for the "New Patch" button: every
@@ -369,8 +453,8 @@ function templatePatchFile(id: string, romVersion: RomVersion): PatchFile {
     details: [
       'FORMAT REFERENCE (this `details` field is never shown in the UI — it documents',
       'the file for hand-editing). A patch edits the FINISHED build (after asar + your',
-      'project overlay). Provide `asm`, `chunks`, or both; delete the parts you do not',
-      'use.',
+      'project overlay). Provide build-time asm (in the sibling `<id>.asm` file),',
+      'binary `chunks` (below), or both; delete the parts you do not use.',
       '',
       'Fields:',
       '  id          stable id (also the filename); keep unique within the project.',
@@ -381,9 +465,11 @@ function templatePatchFile(id: string, romVersion: RomVersion): PatchFile {
       '  details     this reference text; never shown in the UI.',
       '  source      "user" for hand-authored patches (vs "builtin" / "imported").',
       '  romVersionAuthored  ROM the offsets target ("YI_U1" = USA V1.0).',
-      '  importedFrom  original filename; only set on imported .ips patches.',
-      '  asm         asar source assembled into the build (see below).',
+      '  importedFrom  original filename; only set on imported .ips / .asm patches.',
       '  chunks      raw byte writes (see below).',
+      '',
+      'Build-time asm lives in the SIBLING `<id>.asm` file (paired with this JSON, so',
+      'it gets real editor support). See its leading comments for the asar reference.',
       '',
       'chunks[]: each chunk is ONE contiguous byte write, addressed exactly ONE of',
       'two ways:',
@@ -392,20 +478,12 @@ function templatePatchFile(id: string, romVersion: RomVersion): PatchFile {
       '    pointing at the right code even after asm edits shift the cart.',
       '  - "label" (+ optional "labelOffset"): a .sym label (e.g. "CODE_018041")',
       '    resolved directly against the just-built ROM — name your own anchor.',
-      '  "bytes": uppercase hex, no separators ("EA" = NOP, "60" = RTS).',
-      '',
-      'asm: asar source assembled into the ROM at build time. Use `org $XXXXXX` (or an',
-      'injected `!CODE_*` label) for in-place edits / trampolines, and `%patchcode()` /',
-      '`%endpatchcode()` (the reserved patch pool) for NEW routines. Do NOT use asar',
-      '`freespace` / `freecode` — asar cannot confine them to a safe region on this cart,',
-      'and they would collide with the level-data relocation allocator (the pool is a',
-      'reserved carve-off of the Bank51 free region, kept clear of it). `;` starts a',
-      'comment. One string or an array of lines.'
+      '  "bytes": uppercase hex, no separators ("EA" = NOP, "60" = RTS).'
     ],
     source: 'user',
     romVersionAuthored: romVersion,
     asm: [
-      '; --- asar source assembled into the build (delete this whole field if unused) ---',
+      '; --- asar source assembled into the build (delete this file if unused) ---',
       '; Everything here is commented out, so it assembles to nothing until you edit it.',
       '; Engine labels are injected as `!CODE_*` / `!RAM_*` defines (the "define inject"),',
       '; resolved against the just-built ROM .sym so they survive asm drift. See the',
@@ -446,10 +524,9 @@ export function createTemplatePatch(): PatchImportResult {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to create a patch in.' }
   const dir = projectPatchesDir(projectId)
-  mkdirSync(dir, { recursive: true })
   const id = uniqueId(projectId, 'my-patch')
   const pf = templatePatchFile(id, baseRomVersion() ?? 'YI_U1')
-  writeFileSync(join(dir, `${id}.json`), JSON.stringify(pf, null, 2), 'utf8')
+  writePatchFiles(dir, pf) // splits the asm template into the sibling `<id>.asm`
   appendToOrder(projectId, id) // not enabled — the sample bytes are illustrative
   return { ok: true, patch: summaryOf(pf, false) }
 }
@@ -522,6 +599,8 @@ export function removePatch(id: string): PatchMutationResult {
   if (!projectPatch(projectId, id)) return { ok: false, error: `Patch "${id}" is not in this project.` }
   const p = join(projectPatchesDir(projectId), `${id}.json`)
   if (existsSync(p)) rmSync(p)
+  const asmPath = patchAsmPath(projectPatchesDir(projectId), id)
+  if (existsSync(asmPath)) rmSync(asmPath)
   const m = readManifest(projectId)
   writeManifest(projectId, {
     ...m,

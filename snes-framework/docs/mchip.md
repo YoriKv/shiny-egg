@@ -362,8 +362,15 @@ Byte 1 -- door bits + 5-bit secondary tag
 Byte 2 -- slope sub-index (only when SK bit set in byte 0)
   $00..$1F  → slope_panels_table[idx * 128], 32 static slope profiles
             (128 B / panel = 16 in-tile pixel rows x 8 B / row)
-  $80..$81  → "RAM-supplied" runtime slope (for moving / boss slopes)
+  $20..$7F  → unallocated (never populated)
+  $80..$81  → "RAM-supplied" runtime slope (moving / boss slopes) — written into
+            the LIVE RAM collision table at play time, never the static ROM table
 ```
+
+The shipped static table only ever uses `$00..$1F` (verified: all 48 SK pages
+fall in that range). A static-side decoder / renderer therefore never sees
+`$20..$81` — those arms are forward-looking guards, relevant only to a
+malformed or hand-edited entry.
 
 **Note on tag `$14` (DK "pipe") -- the pipe-mouth marker, with TWO
 consumers.** Only one Map16 page carries this tag: page `$7D` (also flagged

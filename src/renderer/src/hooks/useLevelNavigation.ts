@@ -3,8 +3,13 @@ import type { Dispatch, RefObject, SetStateAction } from 'react'
 import type { FindInstanceKind } from '../../../preload/api'
 import { INITIAL_VIEW, type View } from '../canvas/view'
 import { useNavHistory, type NavEntry } from './useNavHistory'
-import { getAllLevels, getLevel } from '../data/levels'
+import { formatLevelId, getAllLevels, getLevel, isRemovedRecord } from '../data/levels'
 import { findOwningTranslevel } from '../lib/warp-graph'
+
+/** Refusal message when a navigation targets a removed record (shared by the
+ *  forward guard in navigateTo and the back/forward guard in applyNavEntry). */
+const removedRoomNotice = (id: number): string =>
+  `Room ${formatLevelId(id)} was removed — restore it in Level Banks to open it.`
 
 /** Camera-focus request for the object finder (Canvas re-focuses on nonce bump). */
 export interface FocusRequest {
@@ -39,8 +44,9 @@ export interface LevelNavigationParams {
 }
 
 export interface LevelNavigationApi {
-  /** Forward-navigation entry point: record history + set the level ids. */
-  navigateTo: (root: number | null, selected: number | null) => void
+  /** Forward-navigation entry point: record history + set the level ids. Returns
+   *  false (and navigates nowhere) if `selected` is a removed record. */
+  navigateTo: (root: number | null, selected: number | null) => boolean
   /** Run `action` now, or hold it behind the discard modal when the level is dirty. */
   requestNav: (action: () => void) => void
   /** Main-dropdown / "Go to room": anchor the owning translevel + load the record. */
@@ -61,6 +67,10 @@ export interface LevelNavigationApi {
   clearLevelSelection: () => void
   /** True while a reverse parent-search is in flight (drives a "finding parent…" hint). */
   resolvingRoot: boolean
+  /** Transient message when a navigation was refused because the target record
+   *  is removed (auto-clears; `dismissNavNotice` clears it early). Null = none. */
+  navNotice: string | null
+  dismissNavNotice: () => void
   /** Live-view mirror written by Canvas; read on navigate-away to snapshot the camera. */
   cameraRef: RefObject<View>
   focusReq: FocusRequest | null
@@ -94,6 +104,16 @@ export function useLevelNavigation({
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null)
   const [navSaving, setNavSaving] = useState(false)
   const [navError, setNavError] = useState<string | null>(null)
+  // Removed-record refusal notice (auto-clears). Set by the central guard in
+  // navigateTo and the back/forward guard in applyNavEntry; App surfaces it as a
+  // toolbar hint. Declared up here so applyNavEntry (defined below) can set it.
+  const [navNotice, setNavNotice] = useState<string | null>(null)
+  const dismissNavNotice = useCallback(() => setNavNotice(null), [])
+  useEffect(() => {
+    if (navNotice === null) return
+    const t = window.setTimeout(() => setNavNotice(null), 6000)
+    return () => window.clearTimeout(t)
+  }, [navNotice])
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
   const selectedRef = useRef(selectedLevelRecordId)
@@ -110,6 +130,13 @@ export function useLevelNavigation({
   const cameraNonceRef = useRef(0)
   const readCamera = useCallback((): View => cameraRef.current, [])
   const applyNavEntry = useCallback((e: NavEntry) => {
+    // A history entry can point at a level removed after it was recorded — refuse
+    // it like any forward nav (the index still advanced; pressing again skips on).
+    if (e.selectedLevelRecordId != null && isRemovedRecord(e.selectedLevelRecordId)) {
+      setNavNotice(removedRoomNotice(e.selectedLevelRecordId))
+      return
+    }
+    setNavNotice(null)
     setRootLevelRecordId(e.rootLevelRecordId)
     setSelectedLevelRecordId(e.selectedLevelRecordId)
     if (e.selectedLevelRecordId != null) {
@@ -159,11 +186,24 @@ export function useLevelNavigation({
   // snapshots the camera we're leaving), then set the level ids. Every user-
   // initiated level switch routes through this so history capture lives in one
   // place. NOT used by back/forward restore (that sets ids directly).
+  //
+  // This is also the ONE place that refuses to OPEN a removed record: removed
+  // levels are dropped from the ROM at the next build, so editing one would be
+  // silently discarded. Guarding here covers every forward entry point at once —
+  // the Go-to-room field, the sub-room dropdown, the object finder, warp-exit
+  // double-clicks, the warp-network panel, and Banks jumps. (Back/forward and
+  // project-switch clears don't route through here, by design.)
   const navigateTo = useCallback(
-    (root: number | null, selected: number | null) => {
+    (root: number | null, selected: number | null): boolean => {
+      if (selected != null && isRemovedRecord(selected)) {
+        setNavNotice(removedRoomNotice(selected))
+        return false
+      }
+      setNavNotice(null)
       nav.record(root, selected)
       setRootLevelRecordId(root)
       setSelectedLevelRecordId(selected)
+      return true
     },
     [nav, setRootLevelRecordId, setSelectedLevelRecordId]
   )
@@ -218,7 +258,9 @@ export function useLevelNavigation({
     ) => {
       requestNav(() => {
         const focus = (root: number): void => {
-          navigateTo(root, inst.levelRecordId)
+          // Refused (removed record) ⇒ don't issue a focus for a level that
+          // won't load (it would strand a pending-focus in Canvas).
+          if (!navigateTo(root, inst.levelRecordId)) return
           setFocusReq({
             levelRecordId: inst.levelRecordId,
             x: inst.x,
@@ -305,6 +347,8 @@ export function useLevelNavigation({
     canForward: nav.canForward,
     clearLevelSelection,
     resolvingRoot,
+    navNotice,
+    dismissNavNotice,
     cameraRef,
     focusReq,
     cameraReq,

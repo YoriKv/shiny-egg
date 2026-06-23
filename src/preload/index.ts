@@ -62,6 +62,7 @@ import type {
   RemovedLevelEntry,
   RemoveLevelsResult,
   RestoreLevelsResult,
+  MessageGlyphPreview,
   RenderImage,
   RenderMap16Args,
   GbaImportApplyResult,
@@ -152,6 +153,10 @@ const api = {
       ipcRenderer.invoke('render:map16', args),
     vramGrid: (args: RenderVramArgs): Promise<RenderImage> =>
       ipcRenderer.invoke('render:vram', args),
+    /** PNG previews (data URLs) of the special markup glyphs — the Message-Text
+     *  keyboard's button icons, decoded from the static 1bpp message font. */
+    messageFontGlyphs: (): Promise<MessageGlyphPreview[]> =>
+      ipcRenderer.invoke('render:messageFontGlyphs'),
     /** Render the level's gfx files as a list of labeled blocks — one per
      *  scene_gfx_layout entry, sprite-region entries subdivided into
      *  8-tile bands, plus synthesized blocks for the animated coin /

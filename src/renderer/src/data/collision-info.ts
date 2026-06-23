@@ -10,8 +10,9 @@
 //
 // The chip classification mirrors the collision overlay's visual language
 // (snes-framework/scripts/engine/render-collision.ts): the FILL class answers
-// "can Yoshi pass?" (solid red / exit green / collectible yellow / tunnel
-// blue / pass-through), the OUTLINE group answers "what does it DO?"
+// "can Yoshi pass?" (solid red / semi-solid orange / exit green / collectible
+// yellow / tunnel blue / pass-through), the OUTLINE group answers "what does it
+// DO?"
 // (pipe-mouth, door, bonus-door, falling-floor, switch-block, damage,
 // water-lava). The panel's chip CSS carries the same colors.
 
@@ -135,7 +136,7 @@ const DAMAGE_TAGS = new Set([
 ])
 
 /** Overlay fill class — same partition as the collision layer's fill colors. */
-export type CollisionFillClass = 'solid' | 'exit' | 'collect' | 'tunnel' | 'none'
+export type CollisionFillClass = 'solid' | 'semisolid' | 'exit' | 'collect' | 'tunnel' | 'none'
 
 /** Behavioural-subclass group — same partition as the collision layer's
  *  dotted-outline colors. */
@@ -174,7 +175,7 @@ function fillBehavior(entry: CollisionEntry): { label: string; fill: CollisionFi
   if (entry.tag === COIN_TAG) return { label: 'Coin', fill: 'collect' }
   if (entry.tag === SWITCH_COIN_TAG) return { label: 'Switch coin', fill: 'collect' }
   if (entry.flags.al) return { label: withTag('Solid'), fill: 'solid' }
-  if (entry.flags.md) return { label: withTag('Semi-solid'), fill: 'solid' }
+  if (entry.flags.md) return { label: withTag('Semi-solid'), fill: 'semisolid' }
   if (entry.flags.sk) return { label: withTag('Slope'), fill: 'solid' }
   if (entry.flags.wt) return { label: withTag('Water'), fill: 'solid' }
   if (entry.flags.mg) return { label: withTag('Lava'), fill: 'solid' }
@@ -189,6 +190,9 @@ function describeEntry(entry: CollisionEntry): string {
   if (entry.flags.al) shapes.push('Solid')
   if (entry.flags.md) shapes.push('Semi-solid')
   if (entry.flags.sk) {
+    // The static bg_type_table only ever carries slopeIdx 0x00-0x1F; the >= 0x20
+    // ("runtime profile" — RAM-supplied moving/boss slopes) arm is defensive,
+    // unreachable from shipped cart data. See snes-framework/docs/mchip.md byte 2.
     shapes.push(entry.slopeIdx >= 0x20 ? 'Slope (runtime profile)' : `Slope 0x${hex(entry.slopeIdx)}`)
   }
   if (entry.flags.wt) shapes.push('Water')

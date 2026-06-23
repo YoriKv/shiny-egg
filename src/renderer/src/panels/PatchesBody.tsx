@@ -85,6 +85,8 @@ export function PatchesBody({ projectId, onMutated }: PatchesBodyProps): JSX.Ele
   const [pool, setPool] = useState<PatchPoolSettings | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Transient feedback (e.g. asar-import conversion notes); cleared by any action.
+  const [info, setInfo] = useState<string | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!projectId) { setProject([]); setCatalog([]); setPaths(null); setPool(null); return }
@@ -111,6 +113,7 @@ export function PatchesBody({ projectId, onMutated }: PatchesBodyProps): JSX.Ele
     ): Promise<void> => {
       setBusy(true)
       setError(null)
+      setInfo(null)
       try {
         const r = await fn()
         if (r && 'ok' in r && !r.ok) { setError(r.error ?? 'Action failed.'); return }
@@ -151,6 +154,13 @@ export function PatchesBody({ projectId, onMutated }: PatchesBodyProps): JSX.Ele
       if (failed.length > 0) {
         return { ok: false, error: failed.map((f) => ('error' in f ? f.error : '')).filter(Boolean).join('; ') }
       }
+      // Surface any asar-import conversion notes (freecode → pool, drift-proofed
+      // orgs, …) so the user knows the stored asm differs from the source.
+      const notes: string[] = []
+      for (const r of res) {
+        if (r.ok && r.notes && r.notes.length > 0) notes.push(`${r.patch.name}: ${r.notes.join(' ')}`)
+      }
+      if (notes.length > 0) setInfo(notes.join('\n'))
     }, false)
   // Create a self-documenting template patch (disabled) + open the folder so the
   // user can edit it. Disabled-by-default → doesn't affect the build (dirty=false).
@@ -194,7 +204,7 @@ export function PatchesBody({ projectId, onMutated }: PatchesBodyProps): JSX.Ele
             className="se-tool se-tool--reopen se-patches__btn"
             disabled={busy}
             onClick={() => void importFiles()}
-            title="Import an .ips file into this project"
+            title="Import an .ips or asar .asm patch into this project (.asm is converted to the build-compatible form)"
           >
             Import file…
           </button>
@@ -208,6 +218,7 @@ export function PatchesBody({ projectId, onMutated }: PatchesBodyProps): JSX.Ele
           </button>
         </div>
         {error && <div className="se-patches__error">{error}</div>}
+        {info && <div className="se-patches__info">{info}</div>}
       </div>
 
       <details className="se-patches__help">

@@ -39,12 +39,15 @@ for (const id of ids) {
   const pf = JSON.parse(fs.readFileSync(path.join(REPO, `${id}.json`), 'utf8')) as PatchFile;
   assert(pf.id === id, `${id}: id matches filename`);
   assert(pf.source === 'builtin', `${id}: source is builtin`);
-  // A patch must do something: binary chunks and/or build-time asm (mirrors the
-  // loader in patches.ts — asm-only patches carry `asm`, no `chunks`).
+  // Build-time asm lives in the sibling `<id>.asm` (the on-disk home; mirrors the
+  // loader in patches.ts). The JSON must NOT also carry a stale inline `asm`.
+  assert(pf.asm === undefined, `${id}: no inline asm in JSON (it belongs in <id>.asm)`);
+  const asmPath = path.join(REPO, `${id}.asm`);
+  const sidecarAsm = fs.existsSync(asmPath) ? fs.readFileSync(asmPath, 'utf8') : '';
+  // A patch must do something: binary chunks and/or a non-empty sibling asm.
   const hasChunks = Array.isArray(pf.chunks) && pf.chunks.length > 0;
-  const hasAsm =
-    pf.asm !== undefined && (Array.isArray(pf.asm) ? pf.asm.length > 0 : pf.asm.trim().length > 0);
-  assert(hasChunks || hasAsm, `${id}: has chunks or asm`);
+  const hasAsm = sidecarAsm.trim().length > 0;
+  assert(hasChunks || hasAsm, `${id}: has chunks or a non-empty sibling .asm`);
 
   let chunks;
   try {

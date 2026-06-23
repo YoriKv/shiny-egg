@@ -16,9 +16,10 @@
 // like any other): "setup" (neighbour-deps — the designerRule as tooltip) and
 // "spawn-only" (obj-metadata `spawnedOnly`, runtime-spawned children).
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { usePickerThumbnails } from '../hooks/usePickerThumbnails'
+import { useWindowedList } from '../hooks/useWindowedList'
 import {
   fallbackExtendedObjectName,
   fallbackObjectName,
@@ -433,31 +434,12 @@ export function PickerBody({
   }, [rows, query, validity, prefs, category, usedKeys, tab])
 
   // Windowed list: only the visible slice of `filtered` is mounted (see the
-  // PICKER_ROW_* note). Track scroll + viewport height; reset to top when the
-  // result set changes (new search / filter / tab) so you see the top hits.
-  const listRef = useRef<HTMLDivElement>(null)
-  const [scrollTop, setScrollTop] = useState(0)
-  const [viewportH, setViewportH] = useState(0)
-  useLayoutEffect(() => {
-    const el = listRef.current
-    if (!el) return
-    const measure = (): void => setViewportH(el.clientHeight)
-    measure() // before paint, so the first render windows to the real height
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = 0
-    setScrollTop(0)
-  }, [tab, query, category, prefs.thisLevel, prefs.usedHere, prefs.exits])
-
-  const total = filtered.length
-  const maxScroll = Math.max(0, total * PICKER_ROW_PITCH - viewportH)
-  const clampedTop = Math.min(scrollTop, maxScroll) // survives a list shrink
-  const winStart = Math.max(0, Math.floor(clampedTop / PICKER_ROW_PITCH) - PICKER_OVERSCAN)
-  const winEnd = Math.min(total, Math.ceil((clampedTop + viewportH) / PICKER_ROW_PITCH) + PICKER_OVERSCAN)
-  const visibleRows = filtered.slice(winStart, winEnd)
+  // PICKER_ROW_* note). `resetKey` scrolls to the top when the result set changes
+  // (new search / filter / tab) so you see the top hits.
+  const win = useWindowedList(filtered, PICKER_ROW_PITCH, {
+    overscan: PICKER_OVERSCAN,
+    resetKey: `${tab} ${query} ${category} ${prefs.thisLevel} ${prefs.usedHere} ${prefs.exits}`
+  })
 
   const chip = (
     label: string,
@@ -536,13 +518,9 @@ export function PickerBody({
         )}
       </div>
       )}
-      <div
-        className="se-picker__list"
-        ref={listRef}
-        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-      >
-        <div className="se-picker__list-sizer" style={{ height: total * PICKER_ROW_PITCH }}>
-        {visibleRows.map(({ row: r, validity: rv }, i) => {
+      <div className="se-picker__list" ref={win.listRef} onScroll={win.onScroll}>
+        <div className="se-picker__list-sizer" style={{ height: win.sizerHeight }}>
+        {win.slice.map(({ item: { row: r, validity: rv }, top }) => {
           const img =
             r.item.kind === 'object'
               ? thumbs?.objectThumb(r.item.num, r.item.exnum)
@@ -554,7 +532,7 @@ export function PickerBody({
             key={r.key}
             type="button"
             className={`se-picker__row${armed && sameItem(armed, r.item) ? ' is-armed' : ''}`}
-            style={{ top: (winStart + i) * PICKER_ROW_PITCH }}
+            style={{ top }}
             onClick={(e) => {
               if (e.shiftKey) {
                 const t = findTargetFor(r.item)
@@ -601,7 +579,7 @@ export function PickerBody({
           )
         })}
         </div>
-        {total === 0 && <p className="se-pop__empty">No matches.</p>}
+        {filtered.length === 0 && <p className="se-pop__empty">No matches.</p>}
       </div>
       <p className="se-picker__hint">
         {armed

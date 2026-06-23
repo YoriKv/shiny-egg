@@ -3,8 +3,10 @@
 // Produces a full-extent RGBA bitmap (matching `renderBg1`'s 4096×2048 size)
 // that visualises the cart's collision metadata as a semi-transparent
 // overlay drawn on top of BG1. Slope tiles render their actual per-pixel
-// surface line (from `slope_panels_table`); flat solid tiles render as a
-// uniform red fill; tunnel / cut tiles (the Layer-2 carve family — walls,
+// surface line (from `slope_panels_table`); flat fully-solid tiles render as a
+// uniform red fill while semi-solid (MD) jump-through platforms render a reddish
+// orange (solid from above, passable from below); tunnel / cut tiles (the
+// Layer-2 carve family — walls,
 // cross-sections, wall holes) render a more-transparent BLUE because they are
 // passage, NOT solid (Yoshi walks through them); exit triggers (pipe mouths +
 // doors) render green; on top of the fills, cells whose page carries a
@@ -94,15 +96,25 @@ function rgba(r: number, g: number, b: number, a: number): number {
 }
 
 // Palette by what the designer needs to distinguish, not by cart category:
-// every SOLID-collision category renders the SAME red (slopes too — one flat
-// red triangle, no separate edge line). The cart's solid-category distinctions
+// every FULLY-solid category renders the SAME red (slopes too — one flat red
+// triangle, no separate edge line). The cart's solid-category distinctions
 // (water vs mud vs lava etc.) still matter for gameplay but all communicate
-// "Yoshi can't pass through this surface" — one red reads cleaner than 6 hues.
-// The categories worth their own color are the NON-solid ones: tunnel / cut
-// (Layer-2 passage — walls, cross-sections, holes) renders a transparent blue
-// ("carved passage, walkable"), exit triggers render green ("Yoshi warps
-// here"), and collectibles render yellow ("overlap to collect, no physics").
+// "Yoshi can't pass through this surface at all" — one red reads cleaner than
+// 6 hues. The one solid category worth splitting out is the SEMI-solid (MD)
+// jump-through platform: Yoshi lands on top but passes up through it from
+// below, so it renders a reddish ORANGE — same warm "you can stand here" family,
+// but visibly not the impassable red mass. The remaining colors are the
+// NON-solid categories: tunnel / cut (Layer-2 passage — walls, cross-sections,
+// holes) renders a transparent blue ("carved passage, walkable"), exit triggers
+// render green ("Yoshi warps here"), and collectibles render yellow ("overlap
+// to collect, no physics").
 const SOLID_RED       = rgba(0xE6, 0x3A, 0x3A, ALPHA_RED);
+// Semi-solid (MD) jump-through platforms render a reddish ORANGE at the same
+// opacity as the solid red — still the warm "Yoshi can stand on this" family,
+// but visibly distinct from the impassable solid mass (you can jump up through
+// a semi-solid from below). Only PURE semi-solids reach this: COLOR.MD sits
+// below AL in priority, so a cell that's also fully-solid stays red.
+const SOLID_ORANGE    = rgba(0xF0, 0x66, 0x2A, ALPHA_RED);
 // Exit triggers (pipe mouths + doors) render GREEN — "Yoshi can WARP here" — to
 // set them apart from the red "solid surface" mass. See data/exit-triggers.ts.
 const SOLID_GREEN     = rgba(0x35, 0xC8, 0x55, ALPHA_FILL);
@@ -115,7 +127,7 @@ const TUNNEL_BLUE     = rgba(0x3C, 0x9C, 0xE8, ALPHA_TUNNEL);
 
 const COLOR = {
   AL: SOLID_RED,           // solid-all
-  MD: SOLID_RED,           // partial-solid
+  MD: SOLID_ORANGE,        // semi-solid (jump-through) — reddish orange, not red
   WT: SOLID_RED,           // water
   MG: SOLID_RED,           // lava
   TN: TUNNEL_BLUE,         // tunnel / cut — Layer-2 PASSAGE (walls 0x7A-0x7C, cut 0x14, hole 0x7F): passable, blue not red
@@ -229,8 +241,10 @@ type CellBitmap = Uint8Array | null;
 const CELL_BYTES = CELL_PX * CELL_PX * 4;
 
 /** Pick the base fill color (or null for "no overlay") for a non-slope,
- *  non-exit-trigger collision entry. Priority: AL > MD > WT > MG > TN > nothing.
- *  (Exit triggers — doors / pipe mouths — are handled earlier, in green.) */
+ *  non-exit-trigger collision entry. Priority: AL > MD > WT > MG > TN > nothing,
+ *  so a fully-solid (AL) cell stays red even if MD is also set; only a PURE
+ *  semi-solid reaches COLOR.MD (reddish orange). (Exit triggers — doors / pipe mouths —
+ *  are handled earlier, in green.) */
 function pickFlatColor(entry: CollisionEntry): number | null {
   if (entry.flags.al) return COLOR.AL;
   if (entry.flags.md) return COLOR.MD;
@@ -340,7 +354,19 @@ function renderFlatCell(color: number): Uint8Array {
  *     that's both the shape source AND, via its pair, the ground/ceiling
  *     fill direction (gotcha #3). For ground slopes the shape is usually
  *     byte 3 (foot-up direction); for ceiling slopes it's byte 1 (foot-
- *     down direction). The non-shape pair is a uniform off-tile marker. */
+ *     down direction). The non-shape pair is a uniform off-tile marker.
+ *
+ *  5. **Off-tile columns resolve solid/passable against `fillAbove`.** A
+ *     steep slope's surface byte can point ABOVE the tile (signed direction
+ *     < 0) or BELOW it (>= 16 px) when the diagonal spills into the stacked
+ *     sibling cell. Whether such a column is then wholly solid or wholly
+ *     empty is NOT fixed — it mirrors with the fill side: for a ceiling
+ *     (`fillAbove`) slope a surface-below-tile column is fully solid and a
+ *     surface-above-tile column is empty; for a ground slope it's the
+ *     reverse. Hardcoding the ground mapping made the $1C-$1F steep cross-
+ *     section slopes grow a full-solid half-cell rectangle in open air (their
+ *     `direction` byte ramps -16..+30 across the two cells) and over-filled
+ *     the $1B rounded-post top. `readSurface` keys this off `fillAbove`. */
 function renderSlopeCell(
   entry: CollisionEntry,
   slopePanels: SlopePanels
@@ -382,7 +408,10 @@ export interface SlopeCellSurface {
 /** Decode a slope cell's per-column surface from its slope panel — the byte-pair
  *  selection + ground/ceiling logic documented above `renderSlopeCell`. */
 export function slopeCellSurface(entry: CollisionEntry, slopePanels: SlopePanels): SlopeCellSurface {
-  // RAM-supplied animated slopes ($80..$81) — no static data; treat as fully solid.
+  // RAM-supplied runtime slopes ($80..$81 — moving / boss surfaces) live in the
+  // live RAM collision table, never the static cart table this renderer reads, so
+  // this is a defensive guard, not a case shipped data hits (the static table is
+  // $00..$1F only). No static data ⇒ fall back to fully solid.
   if (entry.slopeIdx >= 0x80) {
     return { surface: new Array<number | 'solid' | 'passable'>(CELL_PX).fill('solid'), fillAbove: false };
   }
@@ -423,15 +452,30 @@ export function slopeCellSurface(entry: CollisionEntry, slopePanels: SlopePanels
   // ceiling / overhang (solid above). See the renderSlopeCell header gotcha #3.
   const fillAbove = bestSel === 'down-lo' || bestSel === 'down-hi';
 
+  // Resolve a column's raw panel byte to its surface position, deciding the
+  // OFF-tile columns against which side is solid (`fillAbove`). A column's
+  // surface can sit above the tile (S<0), within it (0..15), or below it
+  // (S>=16); when it's off-tile the whole column is either solid or empty
+  // depending on whether the solid side faces into the tile:
+  //
+  //                      surface ABOVE tile (S<0)   surface BELOW tile (S>=16)
+  //   fillAbove (solid↑)      empty (passable)           whole column solid
+  //   !fillAbove (solid↓)     whole column solid         empty (passable)
+  //
+  // The two rows are mirror images — `surfaceBelowTile === fillAbove` is solid,
+  // the other diagonal is passable. Hardcoding the !fillAbove row (the old
+  // code) fills the wrong off-tile half on ceiling slopes: it made the steep
+  // cross-section slopes (idx $1C-$1F — a `fillAbove` ramp whose `direction`
+  // byte runs -16..+30 across the two stacked cells) sprout a full-solid
+  // half-cell rectangle in open air, and over-filled rounded-hump tiles
+  // (idx $1B, a ground slope whose off-tile sides should read passable).
   function readSurface(byte: number): number | 'solid' | 'passable' {
-    if (isSubpixel) {
-      // Unsigned subpixel-Y in 1/2-pixel units. 0..30 = in-tile (÷2 → pixel-Y). >=32 = off-tile bottom.
-      if (byte < 0x20) return byte >>> 1;
-      return 'solid';
-    }
-    if (byte >= 0 && byte < CELL_PX) return byte;
-    if (byte >= CELL_PX) return 'passable';   // direction beyond tile → no in-tile surface from this side
-    return 'solid';                            // direction < 0 → surface above tile (player below)
+    // Subpixel bytes are unsigned 1/2-px units (never above the tile); direction
+    // bytes are signed pixel-Y and can run negative (surface above the tile).
+    const s = isSubpixel ? byte >>> 1 : byte;
+    if (s >= 0 && s < CELL_PX) return s; // surface within this tile
+    const surfaceBelowTile = s >= CELL_PX;
+    return surfaceBelowTile === fillAbove ? 'solid' : 'passable';
   }
 
   const surface: Array<number | 'solid' | 'passable'> = [];
