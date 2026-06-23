@@ -1,6 +1,6 @@
 {
   "name": "shiny-egg",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A Yoshi's Island (SNES) level editor",
   "main": "./out/main/index.js",
   "author": "",

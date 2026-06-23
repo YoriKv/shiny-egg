@@ -1195,7 +1195,9 @@ export default function App(): JSX.Element {
   return (
     <div className="se">
       <header className="se-toolbar">
-        <div className="se-toolbar__row se-toolbar__row--primary">
+        <div
+          className={`se-toolbar__row se-toolbar__row--primary${hasAssets ? '' : ' is-locked'}`}
+        >
         <ProjectMenu
           current={project}
           onChange={onProjectChange}

@@ -119,7 +119,7 @@ export function BizHawkMenu({
           type="button"
           className="se-tool se-tool--bizhawk"
           onClick={onLocate}
-          title="Find EmuHawk.exe so the editor can run BizHawk. Saved for next time."
+          title="Find EmuHawk.exe so the editor can run BizHawk."
         >
           Locate BizHawk
         </button>

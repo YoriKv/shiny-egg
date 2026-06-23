@@ -95,28 +95,6 @@ export function RomMenu({
     if (requestOpen) setOpen(true)
   }, [requestOpen])
 
-  // Dev convenience: pre-select the reference cart sitting next to the project
-  // root so extraction doesn't require re-browsing for it. No-op in packaged
-  // builds (the IPC returns null). Runs when the menu opens with nothing already
-  // selected; if extract clears the selection, reopening re-selects it.
-  useEffect(() => {
-    if (!open || pending || running) return
-    let cancelled = false
-    void (async () => {
-      const devPath = await window.shinyEgg.getDevReferenceCart()
-      if (cancelled || !devPath) return
-      try {
-        const ident = await window.shinyEgg.identifyCart(devPath)
-        if (!cancelled) setPending(ident)
-      } catch {
-        // Dev-only convenience — ignore failures; the user can still browse.
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [open, pending, running])
-
   function startOp(op: Operation, initialLine: string): void {
     setRunning(op)
     setLog([initialLine])
@@ -135,6 +113,10 @@ export function RomMenu({
     try {
       const ident = await window.shinyEgg.identifyCart(cartPath)
       setPending(ident)
+      // First-run convenience: with no assets yet, a recognized cart extracts
+      // immediately (no separate Extract click). Re-extracts (assets already
+      // present) stay manual.
+      if (!state && ident.romVersion) await runExtract(ident)
     } catch (err) {
       append(`Identify failed: ${(err as Error).message}`)
     }
@@ -154,13 +136,14 @@ export function RomMenu({
     e.target.value = ''
   }
 
-  async function runExtract(): Promise<void> {
-    if (running || !pending?.romVersion) return
-    startOp('extract', `Extracting ${VERSION_LABELS[pending.romVersion]}…`)
+  async function runExtract(cart?: CartIdentification): Promise<void> {
+    const target = cart ?? pending
+    if (running || !target?.romVersion) return
+    startOp('extract', `Extracting ${VERSION_LABELS[target.romVersion]}…`)
     try {
       const result = await window.shinyEgg.extract({
-        romVersion: pending.romVersion,
-        referenceCartPath: pending.path
+        romVersion: target.romVersion,
+        referenceCartPath: target.path
       })
       append(`Extracted ${result.extracted} files (${result.empty} empty).`)
       // Pull the freshly emitted levels.json into the renderer-side store
@@ -199,7 +182,7 @@ export function RomMenu({
         className={`se-rommenu__trigger${open ? ' is-open' : ''}`}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className={`se-rommenu__dot${state ? ' is-ready' : ''}`} />
+        <span className={`se-rommenu__dot${state ? ' is-ready' : ' is-empty'}`} />
         <span className="se-rommenu__label">{triggerLabel}</span>
         {running && <span className="se-rommenu__spinner" />}
         <svg
@@ -303,7 +286,7 @@ export function RomMenu({
               <button
                 type="button"
                 className="se-btn is-primary"
-                onClick={runExtract}
+                onClick={() => runExtract()}
                 disabled={running !== null || !pending?.romVersion}
               >
                 {running === 'extract' ? 'Extracting…' : 'Extract'}

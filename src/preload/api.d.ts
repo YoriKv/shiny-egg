@@ -628,9 +628,6 @@ export interface ShinyEggAPI {
    *  (e.g. levels.json). 'stale' ⇒ the UI should prompt a re-extract. */
   getExtractFreshness: () => Promise<ExtractFreshness>
   extract: (args: FrameworkExtractArgs) => Promise<ExtractResult>
-  /** Dev-only: path of the reference cart next to the project root, or null in
-   *  packaged builds / when absent. Lets the extract UI pre-select it. */
-  getDevReferenceCart: () => Promise<string | null>
   build: () => Promise<BuildResult>
   /** Report whether the editor holds unsaved changes, so the main process can
    *  confirm before the window closes (quit guard). Fire-and-forget. */

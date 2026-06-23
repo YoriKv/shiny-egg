@@ -1908,7 +1908,7 @@ function CanvasEmpty({ hasAssets }: { hasAssets: boolean }): JSX.Element {
       <p className="se-canvas__hint">
         {hasAssets
           ? 'Pick a level from the menu bar to begin.'
-          : 'Extract assets from a reference cart to begin.'}
+          : 'Use the reference cart menu (top right corner) to extract assets from a reference cart to begin.'}
       </p>
     </div>
   )

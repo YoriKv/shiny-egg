@@ -1,10 +1,15 @@
 # Changelog
 
+## v0.4.2 - 2026-06-23
+
+- Better getting started readme and clearer first use pointing the user to extract reference assets.
+- Cleaned up initial size and position of all panels.
+
 ## v0.4.1 - 2026-06-23
 
-- String now editor supports intro story and ending text
-- On screen keyboard for inserting special glyphs into the string editor
-- Color picker for setting the color of grid lines
+- String now editor supports intro story and ending text.
+- On screen keyboard for inserting special glyphs into the string editor.
+- Color picker for setting the color of grid lines.
 
 ## v0.4.0 - 2026-06-22
 

@@ -120,12 +120,6 @@ const api = {
   extract: (args: FrameworkExtractArgs): Promise<ExtractResult> =>
     ipcRenderer.invoke('framework:extract', args),
 
-  /** Dev-only convenience: absolute path of the reference cart sitting next to
-   *  the project root, so the extract UI can pre-select it. Null in packaged
-   *  builds (and when the file is absent). */
-  getDevReferenceCart: (): Promise<string | null> =>
-    ipcRenderer.invoke('framework:devReferenceCart'),
-
   build: (): Promise<BuildResult> => ipcRenderer.invoke('framework:build'),
 
   setUnsavedChanges: (unsaved: boolean): void =>

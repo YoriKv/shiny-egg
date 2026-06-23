@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { persistedState } from '../lib/persisted-state'
 
+/** Where a window's *default* position anchors when no persisted position
+ *  exists — resolved against the stage in `defaultPos`. A persisted position
+ *  (saved the first time the window is shown) always wins, so this only governs
+ *  a window's very first appearance on a fresh layout. */
+export type WindowAnchor = 'top-right' | 'bottom-right' | 'top-center'
+
 export interface WindowDef {
   id: string
   title: string
@@ -10,6 +16,8 @@ export interface WindowDef {
   height?: number
   z: number
   open: boolean
+  /** Anchor for the default (no-persisted) start position — see WindowAnchor. */
+  anchor: WindowAnchor
   kind:
     | 'tiles'
     | 'props'
@@ -26,40 +34,47 @@ export interface WindowDef {
     | 'exits'
 }
 
+// Start positions are driven by each window's `anchor` (resolved against the
+// stage in `defaultPos`), not the `pos` below — `pos` is only a fallback for
+// headless/no-`window` contexts. Every panel except Properties and Find opens
+// at least 600px wide (a shared minimum for legibility); heights are tuned to
+// content. The user resizes from there.
 const INITIAL_WINDOWS: WindowDef[] = [
   {
     id: 'tiles',
     title: 'Tiles',
     pos: { x: 24, y: 24 },
-    // Map16 gallery is 256×256 source pixels; default to a 2×-ish view so
-    // cells are immediately legible. User can drag the SE corner to resize.
-    width: 540,
+    // Map16 gallery is 256×256 source pixels; the shared 600px minimum shows
+    // it at ~2.3×. User can drag the SE corner to resize.
+    width: 600,
     height: 580,
     z: 1,
     // Closed by default; reopen from the toolbar. Properties is the only
     // panel shown on a fresh launch.
     open: false,
+    anchor: 'top-center',
     kind: 'tiles'
   },
   {
     id: 'palette',
     title: 'Palette',
-    // Starts just below Tiles. Width matches the 16×14px swatch grid.
-    pos: { x: 24, y: 620 },
-    width: 244,
+    pos: { x: 24, y: 24 },
+    width: 400,
     z: 1,
     // Closed by default; reopen from the toolbar.
     open: false,
+    anchor: 'top-center',
     kind: 'palette'
   },
   {
     id: 'props',
     title: 'Properties',
-    // x is recomputed on first load (no persisted state) to anchor right
-    pos: { x: 0, y: 24 },
-    width: 260,
+    // Anchored to the top-right corner (see `anchor` / `defaultPos`).
+    pos: { x: 24, y: 24 },
+    width: 300,
     z: 2,
     open: true,
+    anchor: 'top-right',
     kind: 'props'
   },
   {
@@ -69,9 +84,10 @@ const INITIAL_WINDOWS: WindowDef[] = [
     // Auto-height (the fields lay out two-up per section, so ~8 rows).
     // Width holds two [label value] pairs side by side (see se-props__list--2col).
     pos: { x: 320, y: 80 },
-    width: 480,
+    width: 600,
     z: 8,
     open: false,
+    anchor: 'top-center',
     kind: 'header'
   },
   {
@@ -80,10 +96,11 @@ const INITIAL_WINDOWS: WindowDef[] = [
     // Secondary tool — closed by default; reopen from the toolbar (grouped with
     // Tiles/Palette). Tall enough to show the level-name list.
     pos: { x: 600, y: 24 },
-    width: 440,
+    width: 600,
     height: 560,
     z: 3,
     open: false,
+    anchor: 'top-center',
     kind: 'strings'
   },
   {
@@ -92,20 +109,22 @@ const INITIAL_WINDOWS: WindowDef[] = [
     // World-map entrance editor — spawn / progression per slot. Closed by
     // default; reopen from the toolbar. Tall enough for the per-world slot list.
     pos: { x: 640, y: 48 },
-    width: 460,
+    width: 600,
     height: 580,
     z: 3,
     open: false,
+    anchor: 'top-center',
     kind: 'world-map'
   },
   {
     id: 'picker',
     title: 'Place',
     pos: { x: 620, y: 600 },
-    width: 320,
+    width: 600,
     height: 420,
     z: 4,
     open: false,
+    anchor: 'top-center',
     kind: 'picker'
   },
   {
@@ -114,10 +133,11 @@ const INITIAL_WINDOWS: WindowDef[] = [
     // Screen-exit minimap + the root cluster's warp network (§B2). Closed by
     // default; reopen from the toolbar. Sized for the 16×8 grid + a few rooms.
     pos: { x: 660, y: 72 },
-    width: 380,
+    width: 600,
     height: 520,
     z: 3,
     open: false,
+    anchor: 'top-center',
     kind: 'exits'
   },
   {
@@ -127,16 +147,18 @@ const INITIAL_WINDOWS: WindowDef[] = [
     width: 300,
     z: 5,
     open: false,
+    anchor: 'bottom-right',
     kind: 'finder'
   },
   {
     id: 'patches',
     title: 'Patches',
     pos: { x: 700, y: 60 },
-    width: 380,
+    width: 600,
     height: 520,
     z: 6,
     open: false,
+    anchor: 'top-center',
     kind: 'patches'
   },
   {
@@ -145,10 +167,11 @@ const INITIAL_WINDOWS: WindowDef[] = [
     // Read-only byte-budget overview — closed by default; reopen from the
     // toolbar. Tall + scrollable: one section per level-data bank pool.
     pos: { x: 740, y: 100 },
-    width: 340,
+    width: 600,
     height: 540,
     z: 7,
     open: false,
+    anchor: 'top-center',
     kind: 'banks'
   },
   {
@@ -157,9 +180,10 @@ const INITIAL_WINDOWS: WindowDef[] = [
     // PNG export/import for external editing — closed by default; reopen from
     // the toolbar.
     pos: { x: 760, y: 120 },
-    width: 320,
+    width: 600,
     z: 8,
     open: false,
+    anchor: 'top-center',
     kind: 'graphics'
   },
   // Paint Surface window — hidden from the UI for now (kept for later). Body is
@@ -170,9 +194,10 @@ const INITIAL_WINDOWS: WindowDef[] = [
   //   id: 'paint',
   //   title: 'Paint Surface',
   //   pos: { x: 620, y: 560 },
-  //   width: 280,
+  //   width: 600,
   //   z: 7,
   //   open: false,
+  //   anchor: 'top-center',
   //   kind: 'paint'
   // }
 ]
@@ -203,10 +228,69 @@ function persistWindows(windows: WindowDef[]): void {
   windowsStore.save(data)
 }
 
+/** Margin from the stage edges for anchored (top-right / bottom-right) and
+ *  clamped windows. */
+const EDGE_MARGIN = 24
+
+/** The auto-height Find panel renders at a near-constant height (counter +
+ *  current line — no result list), so a fixed estimate is enough to anchor its
+ *  bottom edge near the stage bottom. */
+const FINDER_HEIGHT_ESTIMATE = 160
+
 /**
- * Merge persisted overrides into the defaults, and compute the right-anchored
- * default for the Properties panel if no persisted position exists for it.
- * Runs once at hook init.
+ * Usable bounds for floating windows. Their positioned ancestor (offsetParent)
+ * is `.se-stage`, which sits BELOW the toolbar in the app's `auto 1fr` grid, so
+ * window coordinates are stage-relative — and the stage is shorter than the
+ * viewport by the toolbar's height. Measuring the stage (instead of
+ * `window.innerHeight`) is what keeps a bottom-anchored window's bottom edge on
+ * the stage rather than the toolbar's height below it. Falls back to the
+ * viewport before the stage is mounted (the first render).
+ */
+function stageBounds(): { width: number; height: number } {
+  if (typeof document !== 'undefined') {
+    const stage = document.querySelector('.se-stage')
+    if (stage) {
+      const r = stage.getBoundingClientRect()
+      if (r.width > 0 && r.height > 0) return { width: r.width, height: r.height }
+    }
+  }
+  return {
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 720
+  }
+}
+
+/**
+ * Compute a window's default start position from the stage (the windows'
+ * positioned ancestor) per its `anchor`: Properties hugs the top-right, Find
+ * the bottom-right, everything else is horizontally centered a quarter of the
+ * way down. Falls back to the template `pos` when there's no `window` (headless
+ * test contexts). Only used when no persisted position exists for the window.
+ */
+function defaultPos(w: WindowDef): { x: number; y: number } {
+  if (typeof window === 'undefined') return w.pos
+  const { width: W, height: H } = stageBounds()
+  const right = Math.max(EDGE_MARGIN, W - w.width - EDGE_MARGIN)
+  switch (w.anchor) {
+    case 'top-right':
+      return { x: right, y: EDGE_MARGIN }
+    case 'bottom-right': {
+      const h = w.height ?? FINDER_HEIGHT_ESTIMATE
+      return { x: right, y: Math.max(EDGE_MARGIN, H - h - EDGE_MARGIN) }
+    }
+    case 'top-center':
+    default:
+      return {
+        x: Math.max(EDGE_MARGIN, Math.round((W - w.width) / 2)),
+        y: Math.round(H / 4)
+      }
+  }
+}
+
+/**
+ * Merge persisted overrides into the defaults. When a window has no persisted
+ * position (fresh layout), its start position is derived from its `anchor`
+ * against the stage (`defaultPos`). Runs once at hook init.
  */
 function resolveInitialWindows(): WindowDef[] {
   const persisted = windowsStore.load()
@@ -220,34 +304,28 @@ function resolveInitialWindows(): WindowDef[] {
       }
       return merged
     }
-    if (w.kind === 'props' && typeof window !== 'undefined') {
-      return { ...w, pos: { x: window.innerWidth - w.width - 24, y: 24 } }
-    }
-    return w
+    return { ...w, pos: defaultPos(w) }
   })
 }
 
 /**
- * Pull a window back on-screen if its (persisted) position leaves it **>90%
- * off-screen** — e.g. saved on a since-disconnected larger monitor. Returns the
- * current position unchanged when ≥10% of the window is visible. Otherwise clamps
- * the top-left into the viewport (small margin; keeps the title bar reachable).
- * Auto-height bodies use a height estimate just to judge visibility.
+ * Clamp a window fully within the stage when it's (re)opened. Window
+ * coordinates are stage-relative (see stageBounds), so clamping against the
+ * viewport would be off by the toolbar's height. A window already inside the
+ * stage is returned unchanged; one left off an edge — saved on a
+ * since-disconnected larger monitor, or pushed below the stage — is pulled back
+ * so its whole frame (title bar + body) is reachable. This is also what brings
+ * a bottom-anchored Find panel up to the stage bottom on open. Auto-height
+ * bodies use a height estimate.
  */
 function onscreenPos(w: WindowDef): { x: number; y: number } {
   if (typeof window === 'undefined') return w.pos
-  const W = window.innerWidth
-  const H = window.innerHeight
+  const { width: W, height: H } = stageBounds()
   const ww = w.width
-  const wh = w.height ?? 200
-  const visX = Math.max(0, Math.min(w.pos.x + ww, W) - Math.max(w.pos.x, 0))
-  const visY = Math.max(0, Math.min(w.pos.y + wh, H) - Math.max(w.pos.y, 0))
-  if (ww > 0 && wh > 0 && (visX * visY) / (ww * wh) >= 0.1) return w.pos
-  const margin = 8
-  return {
-    x: Math.max(margin, Math.min(w.pos.x, W - ww - margin)),
-    y: Math.max(margin, Math.min(w.pos.y, H - 40))
-  }
+  const wh = w.height ?? FINDER_HEIGHT_ESTIMATE
+  const x = Math.min(Math.max(w.pos.x, EDGE_MARGIN), Math.max(EDGE_MARGIN, W - ww - EDGE_MARGIN))
+  const y = Math.min(Math.max(w.pos.y, EDGE_MARGIN), Math.max(EDGE_MARGIN, H - wh - EDGE_MARGIN))
+  return x === w.pos.x && y === w.pos.y ? w.pos : { x, y }
 }
 
 export interface FloatingWindowsApi {

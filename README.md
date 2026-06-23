@@ -32,7 +32,9 @@ the changelog for the latest updates.
 
 1. Download the latest build for your OS — the Windows installer (`.exe`) or the
    Linux `.AppImage` — from the [Releases](../../releases) page and run it.
-2. On first launch, point the editor at your ROM to extract its data.
+2. On first launch, use the reference cart menu in the top right corner to
+   point the editor at an unedited Yoshi's Island USA 1.0 ROM to extract the base
+   assets. You will only have to do this once.
 3. Pick a level to start editing.
 
 ## Thank You

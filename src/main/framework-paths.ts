@@ -33,23 +33,10 @@ export function bizhawkExeName(): string {
   return process.platform === 'win32' ? 'EmuHawk.exe' : 'EmuHawk.sh'
 }
 
-// Dev-only convenience: the reference cart sitting next to the project root
-// (`<projectRoot>/../YI_USA1.sfc`, i.e. the external cart from CLAUDE.md). Lets
-// dev builds pre-select the extract cart without re-browsing each time. Returns
-// null in packaged builds, or when the file isn't there.
-export function devReferenceCartPath(): string | null {
-  if (app.isPackaged) return null
-  // frameworkSourceRoot() = <projectRoot>/snes-framework in dev, so two levels
-  // up is the project root's parent, where the external cart lives.
-  const p = join(frameworkSourceRoot(), '..', '..', 'YI_USA1.sfc')
-  return existsSync(p) ? p : null
-}
-
 // Dev-only convenience: BizHawk sitting as a sibling of the project root
 // (`<projectRoot>/../bizhawk/EmuHawk.exe`, or `EmuHawk.sh` on Linux/macOS, per
 // CLAUDE.md). Lets dev builds run Launch / Test Level without locating EmuHawk
-// first — the mirror of devReferenceCartPath for the emulator. Returns null in
-// packaged builds, or when the file isn't there.
+// first. Returns null in packaged builds, or when the file isn't there.
 export function devBizhawkPath(): string | null {
   if (app.isPackaged) return null
   const p = join(frameworkSourceRoot(), '..', '..', 'bizhawk', bizhawkExeName())

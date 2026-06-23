@@ -16,7 +16,7 @@ import {
   type ExtractFreshness,
   type ExtractionState
 } from 'snes-framework/state'
-import { asarBinPath, devReferenceCartPath, frameworkWorkRoot } from '../framework-paths'
+import { asarBinPath, frameworkWorkRoot } from '../framework-paths'
 import { getCurrentProjectId } from '../projects'
 import { buildProject } from '../build-tree'
 import { getBizHawk } from '../bizhawk'
@@ -49,13 +49,6 @@ export function registerFrameworkIpc(): void {
   ipcMain.handle(
     'framework:extractFreshness',
     async (): Promise<ExtractFreshness> => checkExtractFreshness(frameworkWorkRoot())
-  )
-
-  // Dev-only: the pre-selectable reference cart next to the project root, so the
-  // extract UI doesn't make us re-browse for it each run. null in packaged builds.
-  ipcMain.handle(
-    'framework:devReferenceCart',
-    async (): Promise<string | null> => devReferenceCartPath()
   )
 
   ipcMain.handle(

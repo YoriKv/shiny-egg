@@ -146,6 +146,14 @@ h3 { margin: 0; }
   min-height: 48px;
 }
 
+/* Before a reference cart is extracted there's nothing to edit — lock the
+   primary row's editing controls (project / level menus / tools / layers).
+   The ROM menu (`.se-toolbar__right`) is exempt: it's how you extract. */
+.se-toolbar__row--primary.is-locked > :not(.se-toolbar__right) {
+  pointer-events: none;
+  opacity: 0.4;
+}
+
 /* Row 2 — edit + emulator actions, left-aligned, separated by a hairline. */
 .se-toolbar__row--secondary {
   display: flex;
@@ -3078,6 +3086,9 @@ h3 { margin: 0; }
 .se-rommenu__dot.is-ready {
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent-glow);
+}
+.se-rommenu__dot.is-empty {
+  background: var(--danger);
 }
 
 .se-rommenu__label {
