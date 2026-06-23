@@ -121,7 +121,7 @@ DATA_5110DB:
 DATA_message_box_text_ptrs:              ; message-ID -> message-text pointer (consumed by FXCODE_09B03E via CODE_show_message_box; see docs/mchip.md 3.18)
 ;@editable:message-box-text-ptrs begin
 ; message-ID (slot index, 0-based) -> message-body label. 300 fixed-size slots;
-; the Shiny Egg editor repoints each `dw <body>`, never adds/removes slots.
+; a host application repoints each `dw <body>`, never adds/removes slots.
 ; `dw $0000` = null slot (no message). Format-preserving: only changed slots are
 ; re-emitted on save (see scripts/strings.ts parseMessagePtrTable).
 	dw DATA_msg_tutorial_making_eggs
@@ -427,7 +427,7 @@ DATA_message_box_text_ptrs:              ; message-ID -> message-text pointer (c
 ;@editable:message-box-text-ptrs end
 
 ;@editable:message-box-text begin
-; Intro-cutscene + message-box / prompt TEXT STRINGS, edited by the Shiny Egg
+; Intro-cutscene + message-box / prompt TEXT STRINGS, edited by a host
 ; string editor. Interleaved with glyph-bitmap payloads (raw db bytes) which the
 ; editor skips — only quoted `"..."` text is mutable. Each line is
 ; `dw $XXFF : db "text"` with optional inline glyph bytes ($F6,$F7,$D4,…) that
@@ -1728,7 +1728,7 @@ DATA_level_name_string_ptrs:                                       ; descriptive
 	dw DATA_51532F
 
 ;@editable:level-name-strings begin
-; Level-name display strings (2 centered lines each), edited by the Shiny Egg
+; Level-name display strings (2 centered lines each), edited by a host
 ; string editor. Bodies are pointer-table-indexed (DATA_5149BC above), so they
 ; relocate freely; only the text inside the quotes is editor-mutable. The total
 ; byte size must not grow past its original (fixed asm budget before the GSU

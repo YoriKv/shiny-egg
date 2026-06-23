@@ -13,21 +13,22 @@
 // surfaced). SINGLE SOURCE: every per-sprite parity mapping lives in
 // data/sprite-parity-variants.ts (which also feeds the Properties panel rows);
 // this module only derives badges from it — direction arrow, generator/
-// companion chevron-plus, prize glyph, orbit ring size — plus the one truly
-// draw-side family, AUTO_SPIN_SPRITES (its rate-sign→clockwise calibration is
-// about rendering, not data). Add new parity variants to the data table, not
-// here.
+// companion chevron-plus, orbit ring size — plus the one truly draw-side family,
+// AUTO_SPIN_SPRITES (its rate-sign→clockwise calibration is about rendering, not
+// data). Add new parity variants to the data table, not here. (Prizes are NOT a
+// badge here — `drawSpritePrize` draws a half-tile circular, selection-only icon
+// above the sprite from data/sprite-prizes.ts.)
 
 import type { LevelSprite, SpriteCelBounds } from '../../../../preload/api'
 import {
   parityDirection,
   parityOrbitWide,
-  parityPrize,
   paritySpawnBadge,
-  type ParityDirection,
-  type ParityPrizeKind
+  type ParityDirection
 } from '../../data/sprite-parity-variants'
 import { spriteOutlineBox, SPRITE_LABEL_MIN_ZOOM } from './sprites'
+import { CELL_PX } from '../geometry'
+import { spritePrizeAt, SPRITE_PRIZE_STYLE } from '../../data/sprite-prizes'
 
 const SPIN = 'rgba(245, 200, 60, 1)' // amber — distinct from error red + generator cyan
 const GENERATOR_CYAN = 'rgba(34, 211, 238, 1)' // bright cyan — sprite is a generator (emits enemies)
@@ -48,6 +49,71 @@ function drawBadgeBox(
   ctx.lineWidth = 1 / zoom
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)'
   ctx.strokeRect(x + 0.5 / zoom, y + 0.5 / zoom, size - 1 / zoom, size - 1 / zoom)
+}
+
+/** Round cousin of drawBadgeBox: a filled circle of `diameter` centred at (cx,cy)
+ *  with the same thin constant-screen-width black border. Used by the selection-only
+ *  prize icon so it reads as a distinct, lighter-weight marker than the square hint
+ *  badges. */
+function drawBadgeCircle(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  diameter: number,
+  zoom: number,
+  fill: string
+): void {
+  const r = diameter / 2
+  ctx.fillStyle = fill
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.lineWidth = 1 / zoom
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)'
+  ctx.beginPath()
+  ctx.arc(cx, cy, r - 0.5 / zoom, 0, Math.PI * 2)
+  ctx.stroke()
+}
+
+/** Selection-only: a HALF-TILE CIRCULAR prize icon centred on the cell ABOVE each selected
+ *  prize-bearing sprite, showing what it releases when popped/triggered (sprite-prizes.ts). This
+ *  is the ONLY prize indicator — it replaced the old always-on corner badge: placement-positioned,
+ *  selection-gated, and it covers EVERY prize sprite (Winged Clouds incl. single-prize ones, plus
+ *  the $161 defeat-all reward). Parity entries ($067/$0B5/$161) index by the placed cell. */
+export function drawSpritePrize(
+  ctx: CanvasRenderingContext2D,
+  sprites: LevelSprite[],
+  selSprUids: Set<number>,
+  zoom: number
+): void {
+  if (zoom < SPRITE_LABEL_MIN_ZOOM) return
+  ctx.save()
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const diameter = CELL_PX / 2 // half-tile circular badge
+  for (const s of sprites) {
+    if (s.uid === undefined || !selSprUids.has(s.uid)) continue
+    const prize = spritePrizeAt(s.num, s.x, s.y)
+    if (!prize) continue
+    const style = SPRITE_PRIZE_STYLE[prize]
+    // Centred in the tile directly above the cloud (same centre the full-tile square used).
+    const cx = s.x * CELL_PX + CELL_PX / 2
+    const cy = (s.y - 1) * CELL_PX + CELL_PX / 2
+    drawBadgeCircle(ctx, cx, cy, diameter, zoom, style.color)
+    // Single-glyph prizes (★ / ¢ / ! / ?) read large; 3-char labels shrink to fit the circle
+    // (its inscribed square is ~0.71× the diameter, so 3-char text rides smaller than in a box).
+    ctx.font = `bold ${diameter * (style.label.length <= 1 ? 0.66 : 0.34)}px 'JetBrains Mono', monospace`
+    const ty = cy + 0.5 / zoom
+    // Dark outline under the white glyph so the label stays legible over any badge colour
+    // (constant screen-width stroke, rounded joins so it hugs the glyph cleanly).
+    ctx.lineWidth = 2 / zoom
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
+    ctx.strokeText(style.label, cx, ty)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(style.label, cx, ty)
+  }
+  ctx.restore()
 }
 
 /** A small cyan "generator" badge (filled square + white up-chevron) with its
@@ -99,17 +165,19 @@ export function drawSpawnsExtraBadge(
  *   - `$064`/`$15E` rotating-platform cluster (`DATA_04C242` $80/$7F → `$19` sign)
  *   - `$1A0`/`$1A1` Firebar      (`DATA_0CA00B` $FF00/$0100 → `$78`, Bank0C:4316)
  *   - `$101`/`$102` SpikyMace    (±2 → `GenericTable701900`, Bank0D:82)
- *   - `$144` Flipper            (`DATA_0D9D2A` $0080/$FF80 → `$7A36`, Bank0D:3820)
  *   - `$135`/`$136` CirclingRaven (`init_small_raven` Bank0D:3162 — bit 4 of
  *     (X−8) → `$7400` facing 0/2; facing left walks its block anticlockwise.
  *     The metadata names pin the orientation: "anticlockwise / clockwise" in
  *     even/odd order.)
  *  The MANUAL clusters `$055`/`$056` rotate from Yoshi's push — no parity variant. */
-const AUTO_SPIN_SPRITES = new Set([0x064, 0x15e, 0x1a0, 0x1a1, 0x101, 0x102, 0x144, 0x135, 0x136])
+// NB: $144 is NOT here — it's a right/left FLIPPER (X-parity → $7A36 ±$80 → a 90° orientation,
+// not a spin), so it carries a left/right Direction parity variant instead (sprite-parity-variants).
+const AUTO_SPIN_SPRITES = new Set([0x064, 0x15e, 0x1a0, 0x1a1, 0x101, 0x102, 0x135, 0x136])
 
 /** Which X-cell parity yields a POSITIVE rotation rate differs by sprite:
- *  cluster / Firebar / SpikyMace give ODD-X → positive; Flipper `$144` is REVERSED
- *  (EVEN-X → positive, `DATA_0D9D2A` $0080/$FF80). Which sign is *visually*
+ *  cluster / Firebar / SpikyMace give ODD-X → positive. (The $144 flipper was once here as
+ *  "reversed", but it's a right/left orientation, not a spin — moved to a Direction parity
+ *  variant.) Which sign is *visually*
  *  clockwise can't be read from static asm (the orbit renderers are SuperFX), so
  *  it's a global calibration: positive rate maps to `CW_IS_POSITIVE`. Because
  *  direction is derived from each sprite's REAL sign (not raw parity), this one
@@ -132,37 +200,6 @@ function isClockwise(sprite: LevelSprite): boolean {
 export function spriteSpinDirection(sprite: LevelSprite): 'cw' | 'ccw' | null {
   if (!AUTO_SPIN_SPRITES.has(sprite.num)) return null
   return isClockwise(sprite) ? 'cw' : 'ccw'
-}
-
-/** Prize-kind presentation (glyph + colour) for the prize badge — the KIND is
- *  data (parityPrize, from the parity-variant table); how it looks lives here. */
-const PRIZE_STYLE: Record<ParityPrizeKind, { label: string; color: string }> = {
-  '1up': { label: '1', color: 'rgba(53, 200, 85, 1)' }, // green
-  stars: { label: '5', color: 'rgba(238, 204, 42, 1)' }, // gold
-  switch: { label: '!', color: 'rgba(230, 58, 58, 1)' }, // red
-  sunflower: { label: 'S', color: 'rgba(245, 158, 11, 1)' }, // orange ($067's 6-leaf sunflower)
-  flower: { label: 'F', color: 'rgba(236, 72, 153, 1)' }, // pink
-  coin: { label: 'C', color: 'rgba(238, 204, 42, 1)' }, // gold (label disambiguates vs stars)
-  key: { label: 'K', color: 'rgba(148, 163, 184, 1)' }, // slate
-  door: { label: 'D', color: 'rgba(168, 121, 80, 1)' } // wood brown
-}
-
-/** A small filled badge with a 1-char white label (the prize indicator). */
-function drawLabelBadge(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number,
-  zoom: number,
-  color: string,
-  label: string
-): void {
-  drawBadgeBox(ctx, x, y, size, zoom, color)
-  ctx.fillStyle = '#ffffff'
-  ctx.font = `bold ${size * 0.78}px 'JetBrains Mono', monospace`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(label, x + size / 2, y + size / 2 + 0.5 / zoom)
 }
 
 /** A straight arrow at (cx,cy) pointing `dir` — the linear-direction cousin of
@@ -240,9 +277,8 @@ export function drawSpriteVariantHints(
   for (const s of sprites) {
     const spin = AUTO_SPIN_SPRITES.has(s.num)
     const badge = paritySpawnBadge(s.num, s.x, s.y)
-    const prizeKind = parityPrize(s.num, s.x, s.y)
     const dir = parityDirection(s.num, s.x, s.y)
-    if (!spin && !badge && !prizeKind && !dir) continue
+    if (!spin && !badge && !dir) continue
     const box = spriteOutlineBox(s, bounds)
     if (dir) {
       // Bottom-right straight arrow: initial travel/facing (left/right) or
@@ -271,11 +307,8 @@ export function drawSpriteVariantHints(
       if (badge === 'generator') drawGeneratorBadge(ctx, bx, by, size, zoom)
       else drawSpawnsExtraBadge(ctx, bx, by, size, zoom)
     }
-    if (prizeKind) {
-      // Top-right labeled badge: which prize this Winged Cloud gives (by cell parity).
-      const style = PRIZE_STYLE[prizeKind]
-      drawLabelBadge(ctx, box.x0 + box.w - size, box.y0, size, zoom, style.color, style.label)
-    }
+    // (Prize is no longer a corner badge — see drawSpritePrize: a full-tile icon above the
+    //  sprite, shown only on selection, covering every prize-bearing sprite.)
   }
   ctx.restore()
 }

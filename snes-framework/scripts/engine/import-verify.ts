@@ -1,5 +1,5 @@
-// import-verify — post-import re-render confidence check (plan-rom-import.md
-// §11, plan-editor-remaining RI5c). For every changed level a foreign hack
+// import-verify — post-import re-render confidence check
+// (plan-editor-remaining.md RI5c). For every changed level a foreign hack
 // would import, prove the IMPORT PIPELINE is pixel-faithful: decode the
 // foreign streams (the apply payload), push them through the same
 // serialize → re-decode round-trip the overlay write + editor load perform,
@@ -47,6 +47,10 @@ function layerHashes(r: RenderedLevelLayers): Record<string, string> {
     bg1: md5(r.bg1.rgba),
     bg2: md5(r.bg2.rgba),
     bg3: md5(r.bg3.rgba),
+    // Foreground (priority-1) planes — hashed so a round-trip can't silently
+    // drop above-BG1 BG2/BG3 content. '(none)' = no foreground tiles.
+    bg2Front: r.bg2Front ? md5(r.bg2Front.rgba) : '(none)',
+    bg3Front: r.bg3Front ? md5(r.bg3Front.rgba) : '(none)',
     sprite: r.sprite ? md5(r.sprite.rgba) : '(none)',
     collision: md5(r.collision.rgba)
   };

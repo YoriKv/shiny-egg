@@ -50,7 +50,7 @@ import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { getMap16Left, getMap16Right } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, setProbeToCurrent, writeBuf16 } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ const stampRandom8phase: PerCellHandler = (state) => {
 // tile set, just at shifted column offsets.
 // ─────────────────────────────────────────────────────────────────────
 const initRandom8phase: InitHandler = (state) => {
-  state.zp15 = prngNext(state) & 0x07;
+  state.zp15 = prngNext(state, RNG_SITE.initRandom8phase) & 0x07;
   walkerSetupTrampoline(state, stampRandom8phase);
 };
 

@@ -75,6 +75,24 @@ import type { GfxFileEntry } from '../types.ts';
 // resolving GfxFileEntry now that its single definition lives in types.ts.
 export type { GfxFileEntry };
 
+/** Find the loaded gfx file covering a VRAM byte, with its file-relative tile index
+ *  (`tileBytes` = 32 for 4bpp, 16 for 2bpp). Returns `null` if no loaded file covers
+ *  it (an animated slot / borrowed char / miss). Shared by every CHR-slice path
+ *  (bg-region, object-metatile, sprite-metasprite). `dpSlot` lets a caller gate by
+ *  owning layer; 4bpp callers can ignore it. */
+export function fileForVramByte(
+  manifest: GfxFileEntry[],
+  vramByte: number,
+  tileBytes: number
+): { fileId: number; format: 'lz2' | 'lz16'; fileTile: number; dpSlot?: number } | null {
+  for (const e of manifest) {
+    if (vramByte >= e.vramByteOffset && vramByte < e.vramByteOffset + e.sizeBytes) {
+      return { fileId: e.fileId, format: e.format, fileTile: (vramByte - e.vramByteOffset) / tileBytes, dpSlot: e.dpSlot };
+    }
+  }
+  return null;
+}
+
 const VRAM_BYTES = 0x10000; // 64 KB
 const PROGRAM_END = 0xff;
 const INDIRECT_BASE = 0xf0;
@@ -96,7 +114,34 @@ export interface GfxHeader {
   spriteTileset: number;
   /** When true, use bg1_dark_tileset_files instead of bg1_tileset_files. */
   isWorld6: boolean;
+  /** Level header field 9 (LevelMode). When `$0A` (boss-arena cinema; only
+   *  level `$6B`) the cart's `load_levelmode_0A_gfx` ($00:B4D3) loads a
+   *  hardcoded special GFX layout — `scene_gfx_layout` from offset `$18A`, NOT
+   *  the header tileset fields — so `loadLevelGfx` routes through that program
+   *  instead of the standard header-driven walk. Optional; defaults to normal. */
+  levelMode?: number;
+  /** Optional explicit 6 sprite-gfx file IDs that REPLACE the
+   *  `DATA_spriteset_files[spriteTileset*6]` table lookup. BOTH consumers honour
+   *  it — `loadLevelGfx` DMAs these files into the variable OBJ VRAM slots, and
+   *  `spriteTileRow` resolves each sprite's tile-base slot against the same array
+   *  — so the VRAM contents and the per-sprite slot lookup stay in sync. Lets a
+   *  caller "mint" a spriteset that covers a level's sprites when no stock
+   *  spriteset does (`mintSpriteset`); the static-render way to provide a valid
+   *  spriteset without a ROM rebuild. Absent ⇒ read the cart table as usual.
+   *  Must be length 6 when present. */
+  spritesetOverride?: readonly number[];
 }
+
+/** Mode-$0A is YI's boss-arena cinema GFX variant (only level `$6B`): the cart
+ *  ignores the header tilesets and loads a fixed `scene_gfx_layout` program. */
+const LEVEL_MODE_0A = 0x0a;
+/** `scene_gfx_layout` byte offset of the mode-$0A program (cart: `LDY #$018A`
+ *  in `load_levelmode_0A_gfx`). */
+const LEVEL_MODE_0A_GFX_START = 0x18a;
+/** Spriteset the cart's `load_levelmode_0A_gfx` hardcodes ($6EB6..$6EBB). The
+ *  `$18A` program references its sprite files as LITERALS, so these DP slots are
+ *  unused by the walk itself — mirrored only for faithfulness to the cart. */
+export const LEVEL_MODE_0A_SPRITESET: readonly number[] = [0x67, 0x3c, 0x55, 0x1a, 0x1a, 0x29];
 
 
 /**
@@ -153,6 +198,23 @@ export function loadSpritesetFileIds(
  * Throws on malformed input (interpreter runs off the cart, source pointer
  * lands outside ROM, or VRAM destination would overflow).
  */
+/** Overwrite a just-decompressed VRAM region with a live gfx edit, if one exists
+ *  for this file. Clamped to the file's loaded size + the VRAM bound. */
+function applyGfxOverride(
+  vram: Uint8Array,
+  override: ReadonlyMap<string, Uint8Array> | undefined,
+  format: 'lz2' | 'lz16',
+  fileId: number,
+  destByteOff: number,
+  sizeBytes: number
+): void {
+  if (!override) return;
+  const ov = override.get(`${format}/${fileId}`);
+  if (!ov) return;
+  const n = Math.min(ov.length, sizeBytes, vram.length - destByteOff);
+  if (n > 0) vram.set(ov.subarray(0, n), destByteOff);
+}
+
 export function loadLevelGfx(
   rom: Uint8Array,
   symbols: SymbolMap,
@@ -160,7 +222,12 @@ export function loadLevelGfx(
   vram: Uint8Array,
   /** Optional collector — when supplied, the loader appends one entry per
    *  decompressed gfx file. Order matches `scene_gfx_layout` walk order. */
-  manifest?: GfxFileEntry[]
+  manifest?: GfxFileEntry[],
+  /** Optional live-edit overlay (`${format}/${fileId}` → decompressed tile bytes):
+   *  after a file decompresses into VRAM, its bytes are overwritten from here. Lets
+   *  the editor preview unsaved-to-build gfx edits without a rebuild (the gfx twin
+   *  of the live palette draft). Omit for the base cart (dev tools). */
+  gfxOverride?: ReadonlyMap<string, Uint8Array>
 ): void {
   if (vram.length < VRAM_BYTES) {
     throw new RangeError(
@@ -168,15 +235,36 @@ export function loadLevelGfx(
     );
   }
 
-  // Resolve label addresses up-front.
-  const SCENE_GFX_LAYOUT_PC = symbols.pc('DATA_scene_gfx_layout');
+  // Level-mode $0A (boss-arena cinema; only level $6B): the cart's
+  // `load_levelmode_0A_gfx` ($00:B4D3) ignores the header tileset fields and
+  // walks a fixed `scene_gfx_layout` program from $18A with a hardcoded
+  // spriteset. The header tilesets are all $00 for this level, so the standard
+  // path below would fill VRAM with the wrong graphics and the (correctly
+  // decoded) Map16 stamps would render garbage. Route through the shared scene
+  // walk instead — the engine twin of the cart's special loader.
+  if (header.levelMode === LEVEL_MODE_0A) {
+    loadSceneGfx(
+      rom,
+      symbols,
+      {
+        startOffset: LEVEL_MODE_0A_GFX_START,
+        // dp $17..$1C (sprite slots) = hardcoded spriteset; the walk uses literal
+        // file IDs so these are inert, but mirror the cart's register state.
+        dpSlots: [0, 0, 0, 0, 0, 0, 0, ...LEVEL_MODE_0A_SPRITESET]
+      },
+      vram,
+      manifest,
+      gfxOverride
+    );
+    return;
+  }
+
+  // Resolve stage-1 (header → DP file-id) label addresses up-front.
   const BG1_TILESET_FILES_PC = symbols.pc('DATA_bg1_tileset_files');
   const BG1_DARK_TILESET_FILES_PC = symbols.pc('DATA_bg1_dark_tileset_files');
   const BG2_TILESET_FILES_PC = symbols.pc('DATA_bg2_tileset_files');
   const BG3_TILESETS_FILES_PC = symbols.pc('DATA_bg3_tilesets_files');
   const SPRITESET_FILES_PC = symbols.pc('DATA_spriteset_files');
-  const COMPRESSED_GFX_TABLE_LZ2_PC = symbols.pc('DATA_lz2_compressed_gfx_ptrs');
-  const COMPRESSED_GFX_TABLE_LZ16_PC = symbols.pc('DATA_lz16_compressed_gfx_ptrs');
 
   // --- Stage 1: resolve file IDs into a 13-slot pseudo-DP buffer ---------
   // dp[0] corresponds to asm DP $10, dp[1] to $11, ..., dp[12] to $1C.
@@ -197,11 +285,71 @@ export function loadLevelGfx(
   dp[5] = rom[bg3Base + 0];
   dp[6] = rom[bg3Base + 1];
 
+  // Sprite slots: an explicit override (a minted spriteset) wins over the table —
+  // the per-sprite tile-base lookup (spriteTileRow) reads the SAME override, so the
+  // loaded VRAM and the slot resolution agree.
   const sprBase = SPRITESET_FILES_PC + header.spriteTileset * 6;
-  for (let i = 0; i < 6; i++) dp[7 + i] = rom[sprBase + i];
+  const sprOverride = header.spritesetOverride;
+  for (let i = 0; i < 6; i++) dp[7 + i] = sprOverride ? (sprOverride[i] ?? 0) & 0xff : rom[sprBase + i];
 
-  // --- Stage 2: walk scene_gfx_layout from offset 0 ----------------------
-  let prog = SCENE_GFX_LAYOUT_PC;
+  // --- Stage 2: walk scene_gfx_layout from offset 0 (the in-level scene) -
+  walkSceneGfx(rom, symbols, vram, dp, 0, manifest, gfxOverride);
+}
+
+/** A non-level "scene" for `loadSceneGfx` — a system screen (title, world map,
+ *  Nintendo-Presents, …) loaded by the SAME `scene_gfx_layout` interpreter as
+ *  levels, but from a different start offset with the DP $10..$1C file-id slots
+ *  set directly (the cart's `CODE_load_*_gfx` specialisations do exactly this).
+ *  See `screens.ts` for the per-screen descriptors. */
+export interface SceneGfx {
+  /** Byte offset into `scene_gfx_layout` where this scene's program starts. */
+  startOffset: number;
+  /** DP $10..$1C file-id slots (index 0 = $10) the scene's indirect chunk bytes
+   *  resolve against. Literal-only scenes (e.g. Nintendo Presents) pass []. */
+  dpSlots: readonly number[];
+}
+
+/**
+ * Load a non-level scene's gfx into `vram` via the shared `scene_gfx_layout`
+ * interpreter (the engine twin of the cart's `CODE_load_*_gfx` routines). Sets
+ * DP $10..$1C from `scene.dpSlots`, then walks from `scene.startOffset`.
+ */
+export function loadSceneGfx(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  scene: SceneGfx,
+  vram: Uint8Array,
+  manifest?: GfxFileEntry[],
+  gfxOverride?: ReadonlyMap<string, Uint8Array>
+): void {
+  if (vram.length < VRAM_BYTES) {
+    throw new RangeError(`loadSceneGfx: vram is ${vram.length} bytes, need ${VRAM_BYTES}`);
+  }
+  const dp = new Uint8Array(16);
+  for (let i = 0; i < scene.dpSlots.length && i < dp.length; i++) dp[i] = scene.dpSlots[i]! & 0xff;
+  walkSceneGfx(rom, symbols, vram, dp, scene.startOffset, manifest, gfxOverride);
+}
+
+/**
+ * Shared Stage-2 walk of `scene_gfx_layout` — used by both `loadLevelGfx` (the
+ * in-level scene at offset 0, DP from the header) and `loadSceneGfx` (a system
+ * screen at an arbitrary offset, DP set directly). `dp` holds the resolved
+ * $10..$1C file-id slots; the walk decompresses each chunk into `vram`.
+ */
+function walkSceneGfx(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  vram: Uint8Array,
+  dp: Uint8Array,
+  startOffset: number,
+  manifest?: GfxFileEntry[],
+  gfxOverride?: ReadonlyMap<string, Uint8Array>
+): void {
+  const SCENE_GFX_LAYOUT_PC = symbols.pc('DATA_scene_gfx_layout');
+  const COMPRESSED_GFX_TABLE_LZ2_PC = symbols.pc('DATA_lz2_compressed_gfx_ptrs');
+  const COMPRESSED_GFX_TABLE_LZ16_PC = symbols.pc('DATA_lz16_compressed_gfx_ptrs');
+
+  let prog = SCENE_GFX_LAYOUT_PC + startOffset;
   for (let guard = 0; guard < 10_000; guard++) {
     const chunkByte = rom[prog];
     if (chunkByte === PROGRAM_END) return;
@@ -212,7 +360,7 @@ export function loadLevelGfx(
       const slotIdx = chunkByte - INDIRECT_BASE;
       if (slotIdx >= dp.length) {
         throw new Error(
-          `loadLevelGfx: chunk byte $${chunkByte.toString(16)} at prog ${prog - SCENE_GFX_LAYOUT_PC} indirects past DP slots`
+          `walkSceneGfx: chunk byte $${chunkByte.toString(16)} at prog ${prog - SCENE_GFX_LAYOUT_PC} indirects past DP slots`
         );
       }
       fileId = dp[slotIdx];
@@ -232,17 +380,18 @@ export function loadLevelGfx(
         // A non-multiple would mean we'd produce fewer pixels than the size
         // word claims, leaving uninitialised tail bytes. Treat as malformed.
         throw new Error(
-          `loadLevelGfx: LZ16 size $${sizeWord.toString(16)} at prog ${prog - SCENE_GFX_LAYOUT_PC} is not a multiple of ${BYTES_PER_TILE_ROW}`
+          `walkSceneGfx: LZ16 size $${sizeWord.toString(16)} at prog ${prog - SCENE_GFX_LAYOUT_PC} is not a multiple of ${BYTES_PER_TILE_ROW}`
         );
       }
       const rowCount = sizeWord / BYTES_PER_TILE_ROW;
       const srcPC = resolveGfxSrcPC(rom, COMPRESSED_GFX_TABLE_LZ16_PC, fileId, 'LZ16');
       if (destByteOff + sizeWord > VRAM_BYTES) {
         throw new RangeError(
-          `loadLevelGfx: LZ16 dest $${destByteOff.toString(16)} + size $${sizeWord.toString(16)} > VRAM`
+          `walkSceneGfx: LZ16 dest $${destByteOff.toString(16)} + size $${sizeWord.toString(16)} > VRAM`
         );
       }
       lz16(rom, srcPC, vram, destByteOff, rowCount);
+      applyGfxOverride(vram, gfxOverride, 'lz16', fileId, destByteOff, sizeWord);
       manifest?.push({
         fileId, dpSlot, format: 'lz16', srcPC,
         vramByteOffset: destByteOff, sizeBytes: sizeWord
@@ -255,10 +404,11 @@ export function loadLevelGfx(
       // within VRAM. Bound it for safety.
       if (destByteOff >= VRAM_BYTES) {
         throw new RangeError(
-          `loadLevelGfx: LZ2 dest $${destByteOff.toString(16)} >= VRAM`
+          `walkSceneGfx: LZ2 dest $${destByteOff.toString(16)} >= VRAM`
         );
       }
       const result = lz2(rom, srcPC, vram, destByteOff);
+      applyGfxOverride(vram, gfxOverride, 'lz2', fileId, destByteOff, result.destEnd - destByteOff);
       manifest?.push({
         fileId, dpSlot, format: 'lz2', srcPC,
         vramByteOffset: destByteOff,
@@ -269,6 +419,6 @@ export function loadLevelGfx(
   }
 
   throw new Error(
-    `loadLevelGfx: interpreter exceeded guard (no $FF terminator within 10k entries)`
+    `walkSceneGfx: interpreter exceeded guard (no $FF terminator within 10k entries)`
   );
 }

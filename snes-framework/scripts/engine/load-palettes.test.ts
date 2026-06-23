@@ -9,7 +9,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
+import { loadLevelPalettes, bgPaletteBaseRows, type PaletteHeader } from './load-palettes.ts';
 import { bgr15ToRgb, readCgramColor } from './color.ts';
 import { parseWlaSymbolMap } from './symbol-map.ts';
 
@@ -146,6 +146,19 @@ console.log(`Loaded symbol map: ${symbols.size} labels`);
   for (let i = 0; i < 512; i++) if (cgramNormal[i] !== cgram0A[i]) diff++;
   assert(diff > 0, `mode-$0A CGRAM differs from normal-mode (${diff}/512 bytes)`);
   console.log(`Mode-$0A vs normal: ${diff} of 512 CGRAM bytes differ`);
+}
+
+// --- Test 5: BG palette base rows from scene_palette_layout --------------
+// The paletteless gfx-file preview colours a BG sheet with its layer's own
+// CGRAM row (not row 0, which holds the backdrop + BG3). The stock program
+// loads BG1 → row 4, BG2 → row 6, BG3 → row 0; pin those so a program/loader
+// change that shifts them is caught (BG1/BG2 sheets would preview in the wrong
+// palette otherwise).
+{
+  const rows = bgPaletteBaseRows(rom, symbols, 0x0b);
+  assert(rows.bg1 === 4, `BG1 palette base row is 4 (got ${rows.bg1})`);
+  assert(rows.bg2 === 6, `BG2 palette base row is 6 (got ${rows.bg2})`);
+  assert(rows.bg3 === 0, `BG3 palette base row is 0 (got ${rows.bg3})`);
 }
 
 console.log(`\n${failures === 0 ? '✓' : '✗'} ${failures === 0 ? 'all tests pass' : `${failures} failure(s)`}`);

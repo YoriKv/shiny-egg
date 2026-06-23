@@ -5,9 +5,8 @@
 // can fail with EPERM when the folder is held open elsewhere (e.g. the "Open
 // folder" Explorer window) — that case is surfaced as a friendly error.
 //
-// This is build-step 1 of research/plan-project-storage.md: scaffolding +
-// the current-project pointer (persisted in settings). Overlay load/save and
-// the build-tree merge land in later steps.
+// Scaffolding + the current-project pointer (persisted in settings). Overlay
+// load/save and the build-tree merge live in build-tree.ts / resources.ts.
 
 import {
   cpSync,
@@ -29,6 +28,8 @@ import {
   projectsRoot
 } from './framework-paths'
 import { getSettings, updateSettings } from './settings'
+import { clearGfxLiveCache, gfxLiveEdits } from './gfx-live-cache'
+import { restoreGfxLiveCache } from './gfx-live-persist'
 import type { ProjectInfo, ProjectSummary, RelocationState } from '../shared/ipc-types'
 
 const PROJECT_JSON = 'project.json'
@@ -215,6 +216,8 @@ export function setCurrentProject(id: string): ProjectSummary | null {
   const pf = readProjectFile(id)
   if (!pf) return null
   updateSettings({ lastProjectId: id })
+  clearGfxLiveCache() // switching projects: drop the previous project's live gfx edits
+  restoreGfxLiveCache(id) // …and load THIS project's, so its gfx edits preview immediately
   return pf
 }
 
@@ -246,6 +249,7 @@ export function createProject(name?: string): ProjectSummary {
   }
   writeProjectFile(pf)
   updateSettings({ lastProjectId: id })
+  clearGfxLiveCache() // new project: don't leak the previous project's live gfx edits
   return pf
 }
 
@@ -279,7 +283,13 @@ export function ensureCurrentProject(): ProjectSummary {
   const id = getCurrentProjectId()
   if (id) {
     const pf = readProjectFile(id)
-    if (pf) return pf
+    if (pf) {
+      // App startup: load the persisted gfx live cache so the canvas previews this
+      // project's gfx edits immediately (only when not already loaded, so repeated
+      // calls don't churn the render cache).
+      if (gfxLiveEdits().size === 0) restoreGfxLiveCache(id)
+      return pf
+    }
   }
   return createProject()
 }
@@ -420,5 +430,6 @@ export function deleteProject(id: string): void {
   if (getCurrentProjectId() === id) {
     const remaining = listProjects()
     updateSettings({ lastProjectId: remaining[0]?.id })
+    clearGfxLiveCache() // deleted the active project: drop its live gfx edits
   }
 }

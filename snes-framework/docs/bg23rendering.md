@@ -110,6 +110,19 @@ The table below is the **live in-level config** captured per LevelMode (the
 color math). CGADSUB `$20` = color-math disabled-ish (backdrop only); `$B3`/`$45`/`$24`
 = active add/subtract selecting specific layers.
 
+**BGMODE low 3 bits → SNES BG mode → per-layer COLOUR DEPTH.** This is easy to
+miss: a layer's bit depth is set by the BG mode, NOT fixed per layer, and it
+drives every tile renderer's byte stride (16 vs 32), decoder, and palette-group
+size. Almost every LevelMode is **BG Mode 1** (BGMODE low nibble `$9`): BG1/BG2
+4bpp, BG3 2bpp. The exceptions:
+- LevelMode `$03` → **BG Mode 2** (BGMODE `$22`): BG1/BG2 4bpp, BG3 = per-tile
+  offset data (not a pixel layer).
+- LevelMode `$09` → **BG Mode 7** (BGMODE `$07`): BG1 8bpp (Mode-7), BG2/BG3 off.
+- LevelMode `$0A` → **BG Mode 0** (BGMODE `$00`): **ALL backgrounds 2bpp** — so
+  BG1 is 2bpp here, the lone level (`$6B`) where BG1 is not 4bpp. Decoding it as
+  4bpp scrambles every tile. (Engine side: derive bpp from BGMODE via
+  `scene-regs.ts` `bgLayerBpp`, never hardcode.)
+
 ---
 
 ## 4. Per-scanline IRQ reconfiguration (resolved)

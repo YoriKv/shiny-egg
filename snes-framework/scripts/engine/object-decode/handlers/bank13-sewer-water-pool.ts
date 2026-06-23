@@ -51,9 +51,11 @@ const MARKER_STITCH_HERE  = 0x8101;
 const MARKER_STITCH_NEIGH = 0x8103;
 
 // Body-row stamps (cart `CODE_13EA23`):
-//   $12 == $0001 → $161F
-//   otherwise    → $1620
-const BODY_TILE_WHEN_CUR_IS_ONE = 0x161F;
+//   $2C (row) == $0001 → $161F
+//   otherwise          → $1620
+// NB: the cart reaches CODE_13EA23 via `LDA $2C ; BNE`, so A still holds the
+// ROW counter at the `CMP #$0001` — the binary pick is on the row, NOT $12.
+const BODY_TILE_WHEN_ROW_IS_ONE = 0x161F;
 const BODY_TILE_DEFAULT         = 0x1620;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -190,8 +192,8 @@ const sewerWaterPoolStamp: PerCellHandler = (state) => {
   const row = state.zp2C & 0xffff;
   let pick: number | null;
   if (row !== 0) {
-    // CODE_13EA23: body-row binary pick.
-    pick = (state.zp12 & 0xffff) === 0x0001 ? BODY_TILE_WHEN_CUR_IS_ONE : BODY_TILE_DEFAULT;
+    // CODE_13EA23: body-row binary pick on the ROW counter ($2C), not $12.
+    pick = row === 0x0001 ? BODY_TILE_WHEN_ROW_IS_ONE : BODY_TILE_DEFAULT;
   } else {
     pick = row0Pick(state);
   }

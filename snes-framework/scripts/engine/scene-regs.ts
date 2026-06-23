@@ -141,12 +141,25 @@ export function loadSceneRegs(
   symbols: SymbolMap,
   levelMode: number
 ): SceneRegs {
-  const levelmodeIdxBase = symbols.pc('DATA_levelmode_index');
+  // Step 1: levelMode → scene-mode byte-index (DATA_levelmode_index).
+  const sceneModeByteIdx = rom[symbols.pc('DATA_levelmode_index') + (levelMode & 0xff)];
+  return loadSceneRegsByIndex(rom, symbols, sceneModeByteIdx);
+}
+
+/**
+ * Decode a `scene_register_layout` row by its scene-mode byte-index directly
+ * (the post-`levelmode_index` value). System screens (title, world map,
+ * Nintendo Presents) call `CODE_init_scene_regs` with this index hardcoded
+ * (boot $02, overworld $28), bypassing the per-level-mode lookup.
+ */
+export function loadSceneRegsByIndex(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  sceneModeByteIdx: number
+): SceneRegs {
   const indicesBase = symbols.pc('DATA_scene_layout_indices');
   const layoutBase = symbols.pc('DATA_scene_register_layout');
 
-  // Step 1: levelMode → scene-mode byte-index (already in 2-byte stride).
-  const sceneModeByteIdx = rom[levelmodeIdxBase + (levelMode & 0xff)];
   // Step 2: read u16 LE at scene_layout_indices[sceneModeByteIdx] → row offset.
   const rowOffset = rom[indicesBase + sceneModeByteIdx] |
     (rom[indicesBase + sceneModeByteIdx + 1] << 8);
@@ -203,4 +216,25 @@ export function loadSceneRegs(
     objEnable: (tm & 0x10) !== 0,
     backdropScrollFlag
   };
+}
+
+/**
+ * A background layer's tile colour depth (2 or 4 bpp) for a given SNES BG mode.
+ * **This is the single source of truth** — render paths must derive bpp from the
+ * scene's `bgmodeMode`, NOT hardcode it. A tile's byte stride (32 vs 16),
+ * decoder, and palette-group size (16- vs 4-colour) all hinge on it; decoding a
+ * 2bpp tile as 4bpp scrambles every tile (the level-$6B / level-mode-$0A bug).
+ *
+ * Per SNES BG modes, for the depths YI's tile renderers handle:
+ *   - **BG Mode 0** (level mode $0A): ALL backgrounds are 2bpp.
+ *   - **BG Mode 1** (the 218 standard levels): BG1/BG2 4bpp, BG3 2bpp.
+ *   - **BG Mode 2** (level mode $03, offset-per-tile): BG1/BG2 4bpp (BG3 is
+ *     offset data, not a tile layer — not rendered).
+ *   - **BG Mode 7** (level mode $09, Raphael): BG1 is 8bpp, but the Mode-7 BG
+ *     isn't rendered through these tile paths (BG2/BG3 off) — callers gate it
+ *     out separately, so we just return the 4bpp default here.
+ */
+export function bgLayerBpp(bgmodeMode: number, layer: 'bg1' | 'bg2' | 'bg3'): 2 | 4 {
+  if (layer === 'bg3') return 2; // 2bpp in every mode YI uses as a BG3 tile layer
+  return bgmodeMode === 0 ? 2 : 4; // BG1/BG2: 2bpp only in BG Mode 0
 }

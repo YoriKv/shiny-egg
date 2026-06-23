@@ -57,8 +57,9 @@ import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupKeepSlope } from '../walker.ts';
 import { TT } from '../template-slots.ts';
 import {
-  stampCell, floorRowShiftUp, bgFloorRandomSlim,
+  stampCell, floorRowShiftUp,
 } from './_shared.ts';
+import { bgFloorRandom } from './bank13-floor.ts';
 
 // ─────────────────────────────────────────────────────────────────────
 // DATA_slope22_orientation_signs (Bank12.asm:2908)
@@ -163,9 +164,11 @@ const floorSlope22deg: PerCellHandler = (state) => {
   // Cart: LDA $2C ASL ; TAY ; CPY #$0008 BCC in_bounds.
   // CPY #$0008 with Y = row*2 fires for row >= 4.
   if (row >= 4) {
-    // Tail-call CODE_bg_floor_random (slim variant — neighbour-fix
-    // pass skipped; visually identical for slope tails).
-    bgFloorRandomSlim(state);
+    // Cart: `JSL.l CODE_bg_floor_random` — the FULL routine (early-outs +
+    // last-row branch + neighbour-fix + pick_random). The last-row branch
+    // gates whether a roll happens, so it must be present for the per-site
+    // PRNG replay ($13810C) to stay cadence-aligned with the cart.
+    bgFloorRandom(state);
     return;
   }
   // STZ $9B — clear rewound flag before per-row dispatch.

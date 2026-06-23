@@ -137,6 +137,22 @@ export interface TileAnimContext {
 const pcOf = (bankBasePC: number, offset16: number): number =>
   bankBasePC + (offset16 & 0xffff);
 
+/** A single ROM→VRAM transfer (intended src/dest/size, pre-clip). */
+export interface DmaTransfer {
+  srcPC: number;
+  /** Destination VRAM byte offset (= `vramWordAddr << 1`). */
+  vramByteOffset: number;
+  sizeBytes: number;
+}
+
+/** Per-transfer recorder consulted by `dmaToVram` when set. The frame
+ *  enumerator installs one (and clears it in a `finally`) so it can capture
+ *  which slot each animation frame was DMA'd from — both for rendering the
+ *  frame strip and for the round-trip write-back to the raw CHR source. Module
+ *  global, but only ever set synchronously around the enumerator loop; normal
+ *  `loadTileAnimation` runs leave it null. */
+let dmaTrace: ((t: DmaTransfer) => void) | null = null;
+
 /**
  * Simulate one DMA transfer from cart ROM to VRAM. `vramWordAddr` is the
  * 16-bit word address the cart writes to `$2116` ($00:2116 = VMADDL);
@@ -161,6 +177,7 @@ export function dmaToVram(
     );
   }
   const destByte = (vramWordAddr & 0xffff) << 1;
+  dmaTrace?.({ srcPC, vramByteOffset: destByte, sizeBytes });
   const end = Math.min(destByte + sizeBytes, VRAM_BYTES);
   const len = end - destByte;
   if (len <= 0) return;
@@ -564,6 +581,84 @@ const handlers: TileAnimHandler[] = [
   tileAnimation11,
 ];
 
+/** Resolved cart addresses + dispatch for one tile-animation run — the shared
+ *  setup `loadTileAnimation` (final-state) and `enumerateTileAnimationFrames`
+ *  (per-frame) both build before stepping. */
+interface TileAnimRun {
+  handler: TileAnimHandler;
+  ctx: TileAnimContext;
+  defaultVramPtrsPC: number;
+  defaultSrcPtrsPC: number;
+  variantGatePC: number;
+}
+
+/** Fresh zeroed run state (cold-boot interpretation — see file header). */
+function freshTileAnimState(): TileAnimState {
+  return { frame: 0, cycle: 0, subcycle: 0, reg0B69: 0, reg0B6B: 0, reg0B6F: 0, reg0B71: 0, variant: 0 };
+}
+
+/** Resolve the cart addresses + pick the handler for `header`. */
+function prepareTileAnimRun(symbols: SymbolMap, header: TileAnimHeader): TileAnimRun {
+  // SuperFX bank bases, resolved by the canonical SuperFX-native `DATA_*`
+  // definition labels (`DATA_gfx_bank52:`/`DATA_map_character_base:` in SuperFX/Banks/Bank5x.asm;
+  // the `FXDATA_*` form is the 65816-side cross-ref alias the asm uses in
+  // `#FXDATA_5x0000+$xxxx` literals). Both land in the FX `.sym` and resolve via
+  // the merged main+FX map — same convention as the sprite cel tables. $56 feeds
+  // handlers $01/$03/$05/$06/$09/$0A/$0B/$0D/$0E/$0F/$10 (smiley clouds / water
+  // cycles / butterflies / etc.).
+  const ctx: TileAnimContext = {
+    fxData520000PC: symbols.pc('DATA_gfx_bank52'),
+    fxData560000PC: symbols.pc('DATA_map_character_base'),
+    // The $56 animation tables are `dw DATA_568000+$xxxx` — bank $56 offset
+    // $8000 — so the handler displacement literals add to THIS base. (Distinct
+    // from DATA_map_character_base, which only tile_animation_07's bank-swap path uses.)
+    fxData568000PC: symbols.pc('DATA_568000'),
+  };
+  const handlerIdx = header.animationTileset;
+  const handler =
+    handlerIdx >= 0 && handlerIdx < handlers.length ? handlers[handlerIdx] : tileAnimationNoOp;
+  return {
+    handler,
+    ctx,
+    defaultVramPtrsPC: symbols.pc('DATA_default_tile_anim_vram_ptrs'),
+    defaultSrcPtrsPC: symbols.pc('DATA_default_tile_anim_source_ptrs'),
+    variantGatePC: symbols.pc('DATA_default_tile_anim_frame_masks'),
+  };
+}
+
+/** One iteration of `init_tileset_animation`: bump the frame counter, run the
+ *  per-tileset handler, then the always-on default-slots DMA. Mutates `vram` +
+ *  `state` in place. Extracted so the per-frame enumerator shares it verbatim. */
+function stepTileAnimation(
+  rom: Uint8Array,
+  vram: Uint8Array,
+  state: TileAnimState,
+  header: TileAnimHeader,
+  run: TileAnimRun
+): void {
+  // INC $7974
+  state.frame = (state.frame + 1) & 0xffff;
+
+  // Dispatch per-tileset handler.
+  run.handler(rom, vram, state, header, run.ctx);
+
+  // Always-on default-slots logic.
+  //   Y = ($7974 & $1E) << 1
+  let y = (state.frame & 0x1e) << 1;
+  //   if ($7E08 & DATA_default_tile_anim_frame_masks[Y]) != 0: Y += 2
+  if ((state.variant & u16le(rom, run.variantGatePC + y)) !== 0) {
+    y += 2;
+  }
+  const vramDest = u16le(rom, run.defaultVramPtrsPC + y);
+  const srcOff16 = u16le(rom, run.defaultSrcPtrsPC + y);
+  const srcPC = fxSrcPC(run.ctx, srcOff16);
+  dmaToVram(rom, srcPC, vram, vramDest, DEFAULT_DMA_SIZE);
+
+  // $0CFB water-flag branch: source is CARTRAM ($70:60C0 / $70:62C0),
+  // not ROM. Skipped — the cart only triggers this after specific
+  // mid-level events, so at level-load entry the flag is 0.
+}
+
 /**
  * Populate the always-on animated VRAM slots ($1400 / $1440 / $1480 /
  * $14C0) and any per-tileset slots covered by registered handlers.
@@ -590,67 +685,11 @@ export function loadTileAnimation(
     );
   }
 
-  const DEFAULT_VRAM_PTRS_PC = symbols.pc('DATA_default_tile_anim_vram_ptrs');
-  const DEFAULT_SRC_PTRS_PC = symbols.pc('DATA_default_tile_anim_source_ptrs');
-  const VARIANT_GATE_PC = symbols.pc('DATA_default_tile_anim_frame_masks');
-  // SuperFX bank bases, resolved by the canonical SuperFX-native `DATA_*`
-  // definition labels (`DATA_gfx_bank52:`/`DATA_map_character_base:` in SuperFX/Banks/Bank5x.asm;
-  // the `FXDATA_*` form is the 65816-side cross-ref alias the asm uses in
-  // `#FXDATA_5x0000+$xxxx` literals). Both land in the FX `.sym` and resolve via
-  // the merged main+FX map — same convention as the sprite cel tables. $56 feeds
-  // handlers $01/$03/$05/$06/$09/$0A/$0B/$0D/$0E/$0F/$10 (smiley clouds / water
-  // cycles / butterflies / etc.).
-  const data520000PC = symbols.pc('DATA_gfx_bank52');
-  const data560000PC = symbols.pc('DATA_map_character_base');
-  // The $56 animation tables are `dw DATA_568000+$xxxx` — bank $56 offset
-  // $8000 — so the handler displacement literals add to THIS base. (Distinct
-  // from DATA_map_character_base, which only tile_animation_07's bank-swap path uses.)
-  const data568000PC = symbols.pc('DATA_568000');
-
-  const ctx: TileAnimContext = {
-    fxData520000PC: data520000PC,
-    fxData560000PC: data560000PC,
-    fxData568000PC: data568000PC,
-  };
-  const state: TileAnimState = {
-    frame: 0,
-    cycle: 0,
-    subcycle: 0,
-    reg0B69: 0,
-    reg0B6B: 0,
-    reg0B6F: 0,
-    reg0B71: 0,
-    variant: 0,
-  };
-
-  const handlerIdx = header.animationTileset;
-  const handler =
-    handlerIdx >= 0 && handlerIdx < handlers.length
-      ? handlers[handlerIdx]
-      : tileAnimationNoOp;
+  const run = prepareTileAnimRun(symbols, header);
+  const state = freshTileAnimState();
 
   for (let i = 0; i < ITERATIONS; i++) {
-    // INC $7974
-    state.frame = (state.frame + 1) & 0xffff;
-
-    // Dispatch per-tileset handler (currently mostly no-op).
-    handler(rom, vram, state, header, ctx);
-
-    // Always-on default-slots logic.
-    //   Y = ($7974 & $1E) << 1
-    let y = (state.frame & 0x1e) << 1;
-    //   if ($7E08 & DATA_default_tile_anim_frame_masks[Y]) != 0: Y += 2
-    if ((state.variant & u16le(rom, VARIANT_GATE_PC + y)) !== 0) {
-      y += 2;
-    }
-    const vramDest = u16le(rom, DEFAULT_VRAM_PTRS_PC + y);
-    const srcOff16 = u16le(rom, DEFAULT_SRC_PTRS_PC + y);
-    const srcPC = fxSrcPC(ctx, srcOff16);
-    dmaToVram(rom, srcPC, vram, vramDest, DEFAULT_DMA_SIZE);
-
-    // $0CFB water-flag branch: source is CARTRAM ($70:60C0 / $70:62C0),
-    // not ROM. Skipped — the cart only triggers this after specific
-    // mid-level events, so at level-load entry the flag is 0.
+    stepTileAnimation(rom, vram, state, header, run);
   }
 
   // Emit one manifest entry per unique animated VRAM slot, with the

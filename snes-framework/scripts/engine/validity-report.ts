@@ -42,6 +42,7 @@ import { loadSpritesetFileIds } from './load-graphics.ts';
 import { effectiveBg1Tilesets } from './bg1-regions.ts';
 import { resolveSpriteValidity } from '../../../src/renderer/src/lib/sprite-render-validity.ts';
 import { objectThemeVerdict } from '../../../src/renderer/src/lib/theme-validity.ts';
+import { objectAnimVerdict } from '../../../src/renderer/src/lib/anim-validity.ts';
 import { hex0x } from '../hex.ts';
 import type { LevelData, ObjectRenderVerdict } from '../types.ts';
 
@@ -53,14 +54,14 @@ const meta = JSON.parse(
     'utf8'
   )
 ) as {
-  standardObjects: Record<string, { name?: string; defaultWidth: number; defaultHeight: number; bg1Tilesets?: string[] | null }>;
-  extendedObjects: Record<string, { name?: string; defaultWidth: number; defaultHeight: number; bg1Tilesets?: string[] | null }>;
+  standardObjects: Record<string, { name?: string; defaultWidth: number; defaultHeight: number; bg1Tilesets?: string[] | null; animTilesets?: string[] | null }>;
+  extendedObjects: Record<string, { name?: string; defaultWidth: number; defaultHeight: number; bg1Tilesets?: string[] | null; animTilesets?: string[] | null }>;
   sprites: Record<string, { name?: string; spritesetFiles?: string[] | null }>;
 };
 function objInfo(
   kind: 'std' | 'ext',
   id: number
-): { name?: string; defaultWidth: number; defaultHeight: number; bg1Tilesets?: string[] | null } | undefined {
+): { name?: string; defaultWidth: number; defaultHeight: number; bg1Tilesets?: string[] | null; animTilesets?: string[] | null } | undefined {
   return (kind === 'std' ? meta.standardObjects : meta.extendedObjects)[hex0x(id, 2)];
 }
 
@@ -122,13 +123,21 @@ function probeFor(level: LevelData, isW6: boolean): ValidityProbe {
 //     family). Statically wrong under EVERY tileset ⇒ `bg1Tilesets: []`
 //     (never theme-allowed) — so their own shipped placements probe invalid
 //     by design, pinned here.
+//   - The final-boss room (record $DD, ext $19/$1A "Destroyed Bowser's room")
+//     set-pieces: their layout includes one X-placeholder block ($9D68) under
+//     0xDD's own header, so the X-coverage probe escalates to invalid even
+//     though the room renders correctly (BG1 byte-exact vs the live cart — see
+//     bank12-ext-finalboss-setpiece.ts). Same truthful-but-benign category as
+//     $9D@$33: a single shipped X-tile inside an otherwise-valid placement.
 const EXPECTED_INVALID = new Set([
   '0x33:std:0x9D',
   '0x6B:std:0xF6',
   '0x6B:ext:0x0D',
   '0x6B:ext:0x0E',
   '0x6B:ext:0x1E',
-  '0x6B:ext:0x1F'
+  '0x6B:ext:0x1F',
+  '0xDD:ext:0x19',
+  '0xDD:ext:0x1A'
 ]);
 
 interface Failure {
@@ -188,6 +197,11 @@ for (const id of ids) {
       const tv = objectThemeVerdict(info?.bg1Tilesets, effectiveTs);
       if (tv === 'locked') v = 'invalid';
       else if (tv === 'unknown') v = 'unknown';
+      // The animation-tileset gate the editor hook also layers on: the
+      // header[10]-animated objects ($08/$09/$35/$47/$DC) pass coverage under
+      // any animation but only render right under their own (anim-validity.ts).
+      // Zero failures by construction — the field is the shipped header[10] set.
+      else if (objectAnimVerdict(info?.animTilesets, level.header[10] ?? 0) === 'locked') v = 'invalid';
     }
     objectTally.set(v, (objectTally.get(v) ?? 0) + 1);
     const what = `${kind} ${hex0x(objId, 2)} ${info?.name ?? '?'}`;

@@ -88,8 +88,9 @@ import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerRun } from '../walker.ts';
 import { TT } from '../template-slots.ts';
 import {
-  stampCell, floorRowShiftUp, bgFloorRandomSlim,
+  stampCell, floorRowShiftUp,
 } from './_shared.ts';
+import { bgFloorRandom } from './bank13-floor.ts';
 
 // ─────────────────────────────────────────────────────────────────────
 // DATA_slope45_widths (Bank12.asm:2969) — col-threshold $19
@@ -249,10 +250,11 @@ const floorSlope45degUp: PerCellHandler = (state) => {
   floorSlope45degDown(state);
 };
 
-// CODE_bg_floor_random row-handler is the shared `bgFloorRandomSlim` —
-// the trace specs for $06-$09 show probe events whose side effects only
-// fire when the probed neighbour equals RndAdjMatch (not the case for
-// any cell in the trace), so the slim variant is byte-exact.
+// The cart installs `CODE_bg_floor_random` (the FULL routine) into the $25
+// row-handler slot — see CODE_init_floor_slope_45deg's `LDA #CODE_bg_floor_random-$01 ;
+// STA $25`. We use the full `bgFloorRandom` (not a slim variant): its last-row
+// branch gates whether a roll happens, so it must be present for the per-site
+// PRNG replay ($13810C) to stay cadence-aligned with the cart.
 
 // ─────────────────────────────────────────────────────────────────────
 // CODE_init_floor_slope_45deg (Bank12.asm:2932)
@@ -291,7 +293,7 @@ function initFloorSlope45deg(state: DecodeState): void {
     state,
     /*oddCol=*/  floorSlope45degDown,
     /*evenCol=*/ floorSlope45degUp,
-    /*row=*/     bgFloorRandomSlim,
+    /*row=*/     bgFloorRandom,
     /*rowsEnd=*/ state.zp19,
   );
 }

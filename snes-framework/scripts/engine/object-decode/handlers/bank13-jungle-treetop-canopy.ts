@@ -82,7 +82,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupKeepSlope } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, signed8 } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ const jungleTreetopCanopyStamp: PerCellHandler = (state) => {
     // Even col: clear rewound flag; re-roll $A1 on the first row.
     state.rewound = 0;
     if ((state.zp2C & 0xffff) === 0) {
-      state.zpA1 = prngNext(state) & 0x0002;
+      state.zpA1 = prngNext(state, RNG_SITE.jungleTreetopCanopy) & 0x0002;
     }
   } else {
     // Odd col (post-rewind): mark the walker as rewound; keep $A1.

@@ -3,8 +3,6 @@
 // each offset is remapped through the reference symbols → nearest asm label +
 // delta → that label's address in the just-built ROM, so the write tracks asm
 // drift. Then the bytes are written and the checksum re-fixed.
-//
-// See research/plan-custom-patches.md.
 
 import type { SymbolMap } from '../engine/symbol-map.ts';
 import { fixSnesChecksum, storedSnesChecksum } from './checksum.ts';

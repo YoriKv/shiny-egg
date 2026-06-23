@@ -33,7 +33,7 @@ import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { getMap16Above, getMap16Below, getMap16Left, getMap16Right } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { readBuf16, setProbeToCurrent, stampCell, writeBuf16 } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ const lavaCastleStamp: PerCellHandler = (state) => {
     }
 
     // PRNG pool pick (with $0005 or 0 offset).
-    const y = prngNext(state) & 0x000E;
+    const y = prngNext(state, RNG_SITE.lavaCastleGrass) & 0x000E;
     const idx = y >>> 1;
     stampValue = (DATA_wall_random_top_tiles[idx]! + pickOffset) & 0xffff;
   }

@@ -1,15 +1,18 @@
 // Behavior-extent geometry for placed sprites — the declarative table behind
 // the canvas's selection-time behavior overlay (canvas/draw/sprite-behavior.ts)
-// and the Properties panel's read-only "Behavior" rows. Four mark kinds:
+// and the Properties panel's read-only "Behavior" rows. Five mark kinds:
 //
 //   zone   — a trigger/activation box, anchor-relative px (where the sprite
 //            wakes / fires / warps when Yoshi enters it)
 //   extent — a patrol/sweep segment along one axis, anchor-relative px
 //   orbit  — a flight circle (radius + centre offset from the anchor)
+//   reach  — a danger DOME (upper half-circle + flat base): how far a
+//            ground-anchored attacker can strike up/out, not into the floor
 //   snap   — the RUNTIME anchor the init moves the sprite to (ghost marker;
 //            the editor draws sprites at their placed cell, the game may not)
 //
 import { parityOrbitWide } from './sprite-parity-variants'
+import { PINWHEEL } from 'snes-framework/sprite-parity'
 
 // STORAGE RULE (mirrors sprite-parity-variants.ts): this module holds the
 // hand-authored, asm-verified geometry; canvas/draw holds only presentation.
@@ -54,6 +57,19 @@ export interface BehaviorOrbit {
   hint: string
 }
 
+export interface BehaviorReach {
+  kind: 'reach'
+  label: string
+  /** Dome radius, px (the upper half-circle the attacker can strike). */
+  r: number
+  /** Centre offset from the anchor CENTRE (anchor + (8,8)), px. The flat base
+   *  of the dome runs horizontally through this centre — nothing is drawn below
+   *  it (a ground enemy can't reach into the floor). */
+  cx: number
+  cy: number
+  hint: string
+}
+
 export interface BehaviorSnap {
   kind: 'snap'
   label: string
@@ -63,7 +79,7 @@ export interface BehaviorSnap {
   hint: string
 }
 
-export type BehaviorMark = BehaviorZone | BehaviorExtent | BehaviorOrbit | BehaviorSnap
+export type BehaviorMark = BehaviorZone | BehaviorExtent | BehaviorOrbit | BehaviorReach | BehaviorSnap
 
 /** Resolver per sprite num: placement cell coords → marks (possibly []). */
 type MarkResolver = (x: number, y: number) => BehaviorMark[]
@@ -74,6 +90,8 @@ const extent = (label: string, axis: 'x' | 'y', minus: number, plus: number, hin
   ({ kind: 'extent', label, axis, minus, plus, hint })
 const orbit = (label: string, rx: number, ry: number, cx: number, cy: number, hint: string): BehaviorOrbit =>
   ({ kind: 'orbit', label, rx, ry, cx, cy, hint })
+const reach = (label: string, r: number, cx: number, cy: number, hint: string): BehaviorReach =>
+  ({ kind: 'reach', label, r, cx, cy, hint })
 
 /** The 32px-block centre snap shared by both arrow signs (`CODE_0F89C6`:
  *  `AND #$FFE0 / ADC #$0008` on both axes). */
@@ -170,14 +188,24 @@ export const SPRITE_BEHAVIOR_MARKS: Record<number, MarkResolver> = {
   // plot path's +8 re-centre, mirroring the firebar's X−8). $064's radius is
   // resolved via parityOrbitWide so the ring can never disagree with the
   // panel's Orbit row or the spin badge's ring size.
-  0x055: () => [orbit('Platform orbit', 40, 40, 0, -8, 'The four platforms (32px wide) circle this ring. Manual: spins from Yoshi\'s push; off a rail the spin free-rolls the whole cluster sideways.')],
-  0x056: () => [orbit('Platform orbit', 24, 24, 0, -8, 'The four platforms (24px wide) circle this ring. Manual: spins from Yoshi\'s push; off a rail the spin free-rolls the whole cluster sideways.')],
+  0x055: () => [orbit('Platform orbit', PINWHEEL.radiusWide, PINWHEEL.radiusWide, 0, -8, 'The four platforms circle this ring. Manual: spins from Yoshi\'s push; off a rail the spin free-rolls the whole cluster sideways.')],
+  0x056: () => [orbit('Platform orbit', PINWHEEL.radiusTight, PINWHEEL.radiusTight, 0, -8, 'The four platforms circle this ring. Manual: spins from Yoshi\'s push; off a rail the spin free-rolls the whole cluster sideways.')],
   0x064: (x, y) => {
     const wide = parityOrbitWide(0x064, x, y)
-    const r = wide ? 40 : 24
-    return [orbit('Platform orbit', r, r, 0, -8, `The four platforms (${wide ? 32 : 24}px wide) circle this ring — radius from the Y-cell parity (the Orbit row). Spin direction from the X-cell parity (spin badge).`)]
+    const r = wide ? PINWHEEL.radiusWide : PINWHEEL.radiusTight
+    return [orbit('Platform orbit', r, r, 0, -8, 'The four platforms circle this ring — radius from the Y-cell parity (the Orbit row). Spin direction from the X-cell parity (spin badge).')]
   },
   0x15e: () => [orbit('Platform orbit', 40, 40, 0, -8, 'The four platforms (32px wide, each carrying a Shy Guy) circle this ring. Spin direction from the X-cell parity (spin badge).')],
+
+  // ── Reach domes (a danger zone, not a motion path) ───────────────────────
+  // $082 Chain Chomp: the anchored ball bites when Yoshi is within ±$40 px HORIZONTALLY
+  // (CODE_chain_chomp_state_idle, Bank05:3080 — |dx|+$40 vs $80) and lunges to that range;
+  // beyond ±$40 it can still surprise-leap (RNG-gated, CODE_0594A1). 64px (±$40 = 4 tiles) is
+  // the reliable strike zone. A DOME (not a full circle): the bite check is X-only and the lunge
+  // arcs UP over the band (the head zooms toward $01FE ≈ 2× mid-lunge,
+  // DATA_chain_chomp_lunge_arc_targets), and the ground-anchored ball can't reach into the floor
+  // below it — so the half-circle's flat base sits at the ball's centre.
+  0x082: () => [reach('Lunge reach', 64, 0, 0, 'The anchored ball lunges to bite Yoshi within ±$40 px (4 tiles) of its rest spot — the reliable strike zone (it arcs up and out, not into the floor below). It can also surprise-leap from further out (random). Only one Chain Chomp works per room (the chain state is shared).')],
 
   // ── Runtime snaps / generator lanes ──────────────────────────────────────
   // Arrow signs re-centre in their 32px block (init tail CODE_0F89C6,
@@ -233,6 +261,8 @@ export function behaviorRows(num: number, x: number, y: number): BehaviorRow[] {
           value: m.rx === m.ry ? `circle, radius ${px(m.rx)}` : `ellipse, ${px(m.rx)} × ${px(m.ry)}`,
           hint: m.hint
         }
+      case 'reach':
+        return { label: m.label, value: `dome, radius ${px(m.r)}`, hint: m.hint }
       case 'snap':
         return { label: m.label, value: `cell (${Math.floor(m.px / 16)}, ${Math.floor(m.py / 16)})`, hint: m.hint }
     }

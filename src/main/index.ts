@@ -34,6 +34,12 @@ function createWindow(): void {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
+    // Floor the window width so the toolbar + stage stay usable; the canvas
+    // tracks the viewport (App.css `.se` grid-template-columns) so its
+    // right-anchored overlays (coords readout, Reset view) never drift
+    // off-screen above this minimum.
+    minWidth: 1000,
+    minHeight: 600,
     show: false,
     autoHideMenuBar: true,
     title: 'Shiny Egg',

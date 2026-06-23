@@ -20,7 +20,6 @@
 // (tile animation overwrites sprite-region slots; same split as
 // buildLevelVramCgram's `animate` flag).
 
-import { decodeLevelFromLevelData } from './object-decode/index.ts';
 import { loadMap16Tables } from './map16.ts';
 import { loadSceneRegs } from './scene-regs.ts';
 import { loadLevelGfx, type GfxHeader } from './load-graphics.ts';
@@ -31,8 +30,17 @@ import { resolveCellGrid, GRID_COLS, GRID_ROWS } from './cell-grid.ts';
 import { resolveSpriteCel } from './sprite-tile-base.ts';
 import { renderSpriteCel } from './sprite-cel.ts';
 import { DYNAMIC_BODY_SOURCES } from './sprite-dynamic-gfx.ts';
+import { SYNTHESIZED_CELS } from './sprite-synth-cel.ts';
+import { CUSTOM_SPRITE_RENDERERS } from './sprite-custom-render.ts';
+import { CEL_B_NUMS, FORMAT_A_NUMS, SETTLED_PALETTE_ROW, REST_FRAME } from './sprite-render-facts.ts';
+import { HIDDEN_REVEAL } from './sprite-parity.ts';
+import {
+  decodeSingleObject,
+  singleObjectDonorLevel,
+  type SingleObjectDecode
+} from './single-object-decode.ts';
 import type { SymbolMap } from './symbol-map.ts';
-import type { GfxFileEntry, LevelData, LevelObject } from '../types.ts';
+import type { GfxFileEntry, LevelData } from '../types.ts';
 
 const CELL_PX = 16;
 /** Clamp huge objects to their top-left N×N stamped cells — a thumbnail, not
@@ -52,11 +60,14 @@ export interface EntityThumbnailerArgs {
   /** Header + serializer donor — same contract as createValidityProbe. */
   donor: LevelData;
   isWorld6: boolean;
-  /** The metadata cel gates, mirroring `render:spriteLayer`'s request fields
-   *  (`cel === 'B'` / `cel === 'A'` nums). Sprites outside the gate (and the
-   *  dynamic-body table) are glyph-tier → null thumbnails. */
-  celRenderableNums: ReadonlySet<number>;
-  formatANums: ReadonlySet<number>;
+  /** Shared single-object decode (the unified picker-catalog pass): when set,
+   *  `objectThumb()` decodes through it instead of inline, reusing the decode
+   *  the validity probe already made for the same candidate. Omit for
+   *  standalone use (gfx-png export / tests). Sprites never decode. */
+  decode?: SingleObjectDecode;
+  // NB: the sprite cel-format gate (Format-A/B), settled palette row (SP4) and rest frame (SP3)
+  // are engine-owned asm-fixed facts (sprite-render-facts.ts) — read directly in spriteThumb,
+  // identical to render-sprite-layer, so picker thumbnails match the canvas.
 }
 
 export interface EntityThumbnailer {
@@ -70,14 +81,15 @@ export interface EntityThumbnailer {
 }
 
 export function createEntityThumbnailer(args: EntityThumbnailerArgs): EntityThumbnailer {
-  const { rom, symbols, workRoot, donor, celRenderableNums, formatANums } = args;
+  const { rom, symbols, workRoot, donor, decode } = args;
   const h = donor.header;
   const gfxHeader: GfxHeader = {
     bg1Tileset: h[1] ?? 0,
     bg2Tileset: h[3] ?? 0,
     bg3Tileset: h[5] ?? 0,
     spriteTileset: h[7] ?? 0,
-    isWorld6: args.isWorld6
+    isWorld6: args.isWorld6,
+    levelMode: h[9] ?? 0
   };
   const palHeader: PaletteHeader = {
     bgColor: h[0] ?? 0,
@@ -113,25 +125,9 @@ export function createEntityThumbnailer(args: EntityThumbnailerArgs): EntityThum
     h0: number
   ): ThumbImage | null => {
     if (mode7) return null;
-    const obj: LevelObject = {
-      index: 0,
-      num: kind === 'std' ? id : 0,
-      exnum: kind === 'ext' ? id : undefined,
-      x: 24,
-      y: 64,
-      w: Math.max(1, w0),
-      h: Math.max(1, h0),
-      raw: []
-    };
-    let decoded;
-    try {
-      decoded = decodeLevelFromLevelData({
-        rom, symbols, workRoot,
-        levelData: { ...donor, objects: [obj], sprites: [], exits: [] }
-      });
-    } catch {
-      return null;
-    }
+    const decoded = decode
+      ? decode(kind, id, w0, h0)
+      : decodeSingleObject(rom, symbols, workRoot, singleObjectDonorLevel(donor, kind, id, w0, h0));
     if (!decoded || decoded.stats.aborted) return null;
 
     // Bounding box of the stamped cells.
@@ -192,14 +188,39 @@ export function createEntityThumbnailer(args: EntityThumbnailerArgs): EntityThum
   };
 
   const spriteThumb = (num: number): ThumbImage | null => {
-    const preferFormatA = formatANums.has(num);
-    const renderable =
-      celRenderableNums.has(num) || preferFormatA || num in DYNAMIC_BODY_SOURCES;
-    if (!renderable) return null;
+    // Custom-code offramp (last resort) — checked first for registered sprites. The picker has
+    // no placement, so cell parity is 0 (the canonical/even variant), matching the layer's parity-0.
+    const customRenderer = CUSTOM_SPRITE_RENDERERS[num];
+    if (customRenderer) {
+      // `vramObj` is the pre-animation gfx copy — it still holds the BG1 tiles
+      // loadLevelGfx loaded, so the Map16-stamp donut renderers ($117/$118) read
+      // their BG blocks correctly here too; `gfxHeader` carries `levelMode`.
+      const rs = customRenderer({ rom, symbols, vram: vramObj, cgram, cellX: 0, cellY: 0, header: gfxHeader });
+      if (!rs || rs.width <= 0 || rs.height <= 0) return null;
+      let op = false;
+      for (let i = 3; i < rs.rgba.length; i += 4) if (rs.rgba[i] !== 0) { op = true; break; }
+      return op ? { rgba: rs.rgba, width: rs.width, height: rs.height } : null;
+    }
+    // Hidden-until-interaction sprites ($067/$0B5) have no cel of their own. Mirror the level
+    // layer (render-sprite-layer.ts): render the asm-defined REVEALED target instead — chosen by
+    // spawn-cell parity, which is 0 in the picker (no placement) — and halve its alpha, so the row
+    // shows a faded prize rather than nothing. Everything below keys off `renderNum`, not `num`.
+    let renderNum = num;
+    let revealed = false;
+    const baseRenderable =
+      CEL_B_NUMS.has(num) || FORMAT_A_NUMS.has(num) || num in DYNAMIC_BODY_SOURCES || num in SYNTHESIZED_CELS;
+    if (!baseRenderable) {
+      const targets = HIDDEN_REVEAL[num];
+      if (!targets) return null;
+      renderNum = targets[0]!; // parityIndex(0,0) = 0 → the canonical revealed target
+      revealed = true;
+    }
+    const preferFormatA = FORMAT_A_NUMS.has(renderNum);
     let resolved;
     try {
       resolved = resolveSpriteCel(
-        rom, symbols, gfxHeader, num, manifest, preferFormatA, palHeader.spritePalette
+        rom, symbols, gfxHeader, renderNum, manifest, preferFormatA, palHeader.spritePalette,
+        revealed ? { x: 0, y: 0 } : undefined, SETTLED_PALETTE_ROW.get(renderNum), REST_FRAME.get(renderNum)
       );
     } catch {
       return null;
@@ -218,6 +239,11 @@ export function createEntityThumbnailer(args: EntityThumbnailerArgs): EntityThum
       if (img.rgba[i] !== 0) { opaque = true; break; }
     }
     if (!opaque) return null;
+    // Revealed (hidden-until-interaction) target ⇒ 50% opacity, halving each pixel's alpha byte
+    // — matches the faded stand-in the level layer draws for these sprites.
+    if (revealed) {
+      for (let i = 3; i < img.rgba.length; i += 4) img.rgba[i] = img.rgba[i]! >> 1;
+    }
     return { rgba: img.rgba, width: img.width, height: img.height };
   };
 

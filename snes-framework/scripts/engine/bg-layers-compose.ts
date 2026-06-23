@@ -31,10 +31,10 @@
 // tools (render-cli / render-snapshot, via render-level-layers.ts) composite
 // BG2/BG3 the same way — one source of truth for the model.
 
-import { renderBgLayer } from './render-bg-layers.ts';
+import { renderBgLayer, tilemapHasForeground } from './render-bg-layers.ts';
 import { loadBg2Tilemap, loadBg3Tilemap } from './load-bg-tilemaps.ts';
 import { buildBackdrop, type Backdrop } from './backdrop.ts';
-import { loadSceneRegs, type SceneRegs } from './scene-regs.ts';
+import { loadSceneRegs, bgLayerBpp, type SceneRegs } from './scene-regs.ts';
 import type { GfxHeader } from './load-graphics.ts';
 import type { PaletteHeader } from './load-palettes.ts';
 import type { RenderResult } from './render-gallery.ts';
@@ -42,10 +42,20 @@ import type { SymbolMap } from './symbol-map.ts';
 import type { BgLayerDescriptor } from '../types.ts';
 
 export interface ComposedBgLayers {
-  /** BG2 tilemap rendered to RGBA (sized to its tilemap extent). */
+  /** BG2 BACKGROUND plane (priority-0 tiles) rendered to RGBA — drawn behind
+   *  BG1. When the layer has foreground tiles this excludes them (they go in
+   *  `bg2Front`); otherwise it's the whole layer. */
   bg2: RenderResult;
-  /** BG3 tilemap rendered to RGBA. */
+  /** BG3 background plane (priority-0 tiles). */
   bg3: RenderResult;
+  /** BG2 FOREGROUND plane (priority-1 tiles) — drawn ABOVE BG1 (source-over),
+   *  or `null` when the layer has no foreground tiles (the common case). The
+   *  cart's per-tile priority bit puts these tiles in front of BG1 (e.g. 1-1's
+   *  foreground flowers). REQUIRED-but-nullable so every consumer accounts for
+   *  it — see research notes / the priority-split investigation. */
+  bg2Front: RenderResult | null;
+  /** BG3 foreground plane (priority-1 tiles), or `null` when none. */
+  bg3Front: RenderResult | null;
   /** Per-level backdrop (solid CGRAM[0] color or 24-stop vertical gradient). */
   backdrop: Backdrop;
   /** Compositing descriptor for BG2 (visibility + blend + role). */
@@ -87,34 +97,55 @@ export function composeBgLayers(args: ComposeBgLayersArgs): ComposedBgLayers {
   const bg3Load = loadBg3Tilemap(rom, symbols, gfxHeader.bg3Tileset, vram);
 
   const regs = loadSceneRegs(rom, symbols, levelMode);
+  const { bg2Layer, bg3Layer } = deriveDescriptors(regs, levelMode, bg3Load.bg3Disabled);
 
-  // BG2: 4bpp (mode 1/2), color-index-0 transparent so the cart's filler tiles
-  // (e.g. tile $EE in 1-2's BG2, all color-0) don't paint a solid rectangle.
-  const bg2 = renderBgLayer(vram, cgram, {
-    tilemapAddr: regs.bg2TilemapAddr,
-    charAddr: regs.bg2CharAddr,
-    scSize: regs.bg2ScSize,
-    bpp: 4,
-    tileSize: regs.bg2TileSize,
-    transparentZero: true,
-    loadedBytes: bg2LoadedBytes
-  });
-  // BG3: 2bpp in mode 1; index-0 transparent. tileSize per BGMODE.
-  const bg3 = renderBgLayer(vram, cgram, {
-    tilemapAddr: regs.bg3TilemapAddr,
-    charAddr: regs.bg3CharAddr,
-    scSize: regs.bg3ScSize,
-    bpp: 2,
-    tileSize: regs.bg3TileSize,
-    transparentZero: true,
-    loadedBytes: bg3Load.bytesWritten
-  });
+  // Per-tile PRIORITY split (only for background-role layers — a color-math
+  // SUBTRACT overlay is a whole-layer darkening pass, not a fg/bg split). With
+  // YI's BG3-priority mode, a priority-1 BG2/BG3 tile renders ABOVE BG1 (e.g.
+  // 1-1's foreground flowers). We render the layer's priority-0 cells as the
+  // background plane (drawn behind BG1) and, only when the layer actually has
+  // priority-1 cells, a foreground plane (drawn above BG1). Most levels have no
+  // foreground tiles → no extra render, and `bg2`/`bg3` stay byte-identical to
+  // the un-split single-plane render. bpp is BGMODE-derived (bgLayerBpp), index-0
+  // transparent (cart filler tiles are colour-0 so they don't paint a solid rect).
+  const bg2HasFg =
+    bg2Layer.role === 'background' &&
+    tilemapHasForeground(vram, regs.bg2TilemapAddr, bg2LoadedBytes);
+  const bg3HasFg =
+    bg3Layer.role === 'background' &&
+    tilemapHasForeground(vram, regs.bg3TilemapAddr, bg3Load.bytesWritten);
+
+  const renderBg2 = (priority?: 'low' | 'high'): RenderResult =>
+    renderBgLayer(vram, cgram, {
+      tilemapAddr: regs.bg2TilemapAddr,
+      charAddr: regs.bg2CharAddr,
+      scSize: regs.bg2ScSize,
+      bpp: bgLayerBpp(regs.bgmodeMode, 'bg2'),
+      tileSize: regs.bg2TileSize,
+      transparentZero: true,
+      loadedBytes: bg2LoadedBytes,
+      priority
+    });
+  const renderBg3 = (priority?: 'low' | 'high'): RenderResult =>
+    renderBgLayer(vram, cgram, {
+      tilemapAddr: regs.bg3TilemapAddr,
+      charAddr: regs.bg3CharAddr,
+      scSize: regs.bg3ScSize,
+      bpp: bgLayerBpp(regs.bgmodeMode, 'bg3'),
+      tileSize: regs.bg3TileSize,
+      transparentZero: true,
+      loadedBytes: bg3Load.bytesWritten,
+      priority
+    });
+
+  const bg2 = renderBg2(bg2HasFg ? 'low' : undefined);
+  const bg3 = renderBg3(bg3HasFg ? 'low' : undefined);
+  const bg2Front = bg2HasFg ? renderBg2('high') : null;
+  const bg3Front = bg3HasFg ? renderBg3('high') : null;
 
   const backdrop = buildBackdrop(rom, symbols, cgram, palHeader.bgColor);
 
-  const { bg2Layer, bg3Layer } = deriveDescriptors(regs, levelMode, bg3Load.bg3Disabled);
-
-  return { bg2, bg3, backdrop, bg2Layer, bg3Layer, regs };
+  return { bg2, bg3, bg2Front, bg3Front, backdrop, bg2Layer, bg3Layer, regs };
 }
 
 /**
@@ -127,9 +158,14 @@ export function deriveDescriptors(
   bg3Disabled: boolean
 ): { bg2Layer: BgLayerDescriptor; bg3Layer: BgLayerDescriptor } {
   // Modes with no normal BG2/BG3 tile layers at all.
-  //  - level mode $0A (Kamek cinema): gm$0C bypasses the normal tilemap loaders
-  //    (load_levelmode_0A_gfx) → our loaded tilemaps are garbage. Suppress both.
-  //  - BGMODE mode 7 (level mode $09, Raphael): Mode-7, BG2/BG3 off.
+  //  - level mode $0A (Kamek cinema, only level $6B): the gm$0C convergence
+  //    (Bank01 CODE_01B118) SKIPS both load_bg2_tilemap and load_bg3_tilemap for
+  //    modes $09 and $0A, so the cart never loads standard BG2/BG3 tilemaps here
+  //    — we load the header-driven ones unconditionally, so suppress them. (For
+  //    $6B this is moot anyway: its BG2 renders fully empty / 0% opaque and its
+  //    real cinema backdrop comes from a GSU path we don't model.)
+  //  - BGMODE mode 7 (level mode $09, Raphael; only sub-room $CB, not in the
+  //    playable catalog): Mode-7, BG2/BG3 off (BG1 itself renders ~empty).
   const isCinemaMode = levelMode === 0x0a;
   const isMode7 = regs.bgmodeMode === 7;
   // BG3 is a real pixel layer only in BG Mode 0/1. In BG Mode 2 (level mode

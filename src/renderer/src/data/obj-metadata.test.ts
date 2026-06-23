@@ -44,9 +44,13 @@ describe('neighborDeps enforce inventory', () => {
   // their rail-follower rows (they branch around the $87 spawn-cell probe,
   // CODE_04C530, and never travel; see docs/sprite-neighbor-dependencies.md
   // Class A correction).
-  it('total dep inventory matches the audited model (66 sprites / 72 deps)', () => {
-    expect(all.length).toBe(72)
-    expect(new Set(all.map(({ id }) => id)).size).toBe(66)
+  // 2026-06-17: up to 67/73 — $0A7 GroupOfIncomingChomps gained the bitable-
+  // floor `note` annotation (it shares main_incoming_chomp's state machine +
+  // CODE_0E8A3F carve with $0A6/$0A8; see the chomp rows in
+  // research/sprite-neighbor-index.tsv).
+  it('total dep inventory matches the audited model (67 sprites / 73 deps)', () => {
+    expect(all.length).toBe(73)
+    expect(new Set(all.map(({ id }) => id)).size).toBe(67)
   })
 
   it('annotation deps (spatial note) and carried deps are never enforced', () => {

@@ -30,47 +30,55 @@
 // $85xx-blend table. A base/blend value of $0000 means "skip" (the hole
 // corners).
 //
-// ── Static-decode model ────────────────────────────────────────────────
-// At static-decode time the LevelDataBuffer is empty under this 4×4
-// setpiece, so the cart's `get_current_map16_tile` latches $12 = $0000 for
-// every cell. With $12 = $0000:
-//   * the $8500 branch is not taken, so $04 = 0 (no $85xx blend table).
-//   * $02 = ($0000 - $7799) & $00FE = $66; that selects the blend-delta
-//     table entry that, added to each row's base table, yields the final
-//     tile:  rows 0 & 3 add DATA_12B9C8[$02] = +$0003 to every non-zero
-//     base; rows 1 & 2 add DATA_12BA1E[$02] = +$181A to their two EDGE
-//     columns (col 0, col 3) only, passing the two interior columns
-//     through unchanged. A base-table entry of $0000 means "skip" (the
-//     four carved hole corners). I replayed this exact logic with the
-//     real DATA tables and it reproduces all 16 cells of the spec.json
-//     trace 1:1 — so the grid below is the faithful output, not a guess.
+// ── Blend model ─────────────────────────────────────────────────────────
+// CODE_12B97B is a READ-MODIFY-WRITE stamper: the tile already in the buffer
+// ($12, latched by the walker) decides each cell's output. There are three
+// regimes, all ported below:
 //
-// The $04/$85xx blend path (taken only when an $8500-range tile is already
-// in the buffer) and the $79xx/$1500-underneath skip branches are NOT
-// exercised by any cell in the trace (cur_tile is $0000 throughout) and are
-// left UNVERIFIED — they only fire if a pipe_hole_4x4 overlaps a
-// pre-stamped $85xx/$79xx/$15xx tile, which does not happen in static
-// editor decode (the walker always sees an empty buffer here). Flagged for
-// the parent's consolidation sweep.
+//   1. EMPTY buffer ($12 == $0000) — the common non-overlap case. The cart's
+//      $02 = ($0000-$7799)&$00FE = $66 OVERRUNS DATA_12B9C8 (24 bytes) and
+//      reads into the tables/code laid out after it (caps add +$0003 from
+//      DATA_12BA1E's tail, mids add +$181A on the edge columns from bytes
+//      inside CODE_12BA74). Those overrun reads collapse to the fixed grid
+//      below — verified 1:1 against the ext-88 spec.json trace. We return the
+//      grid directly for $12==0 rather than model the cross-table/code read.
 //
-// Per-cell grid (final stamp values, indexed [row][col]):
+//   2. NON-BLEND overlap ($12 != 0, high byte != $85) — e.g. a pipe mouth
+//      carved into a $77xx wall/decoration. $02 = ($12-$7799)&$00FE indexes
+//      the per-row delta table (DATA_12B9C8 caps / DATA_12BA1E mids) by word
+//      ($02>>1); cap rows skip when $12 is $79xx (and $15xx for row 3) so the
+//      wall shows through, and skip the four hole corners; mid rows add the
+//      delta only on the edge columns. A full all-levels decode sweep shows
+//      every real overlap offset lands IN-BOUNDS (≤$16) — the only offsets
+//      that would overrun belong to $79xx/$15xx tiles, which the guards skip
+//      before the lookup, so the cross-table read of regime 1 only ever
+//      happens for the empty buffer.
+//
+//   3. BLEND overlap ($12 high byte == $85) — a pipe mouth over another
+//      already-stamped pipe-mouth tile. $02 = $12-$854B is ADDED to the
+//      per-row $85xx-blend table (cap rows skip a $0000 entry; mid rows add
+//      $02 only on the edge columns).
+//
+// Cart base/blend/delta tables (verbatim, Bank12.asm):
+//   row0 base DATA_12B9B8  blend DATA_12B9C0   } caps, delta DATA_12B9C8
+//   row3 base DATA_12BAA2  blend DATA_12BAAA   }
+//   row1 base DATA_12BA0E  blend DATA_12BA16   } mids, delta DATA_12BA1E
+//   row2 base DATA_12BA64  blend DATA_12BA6C   }
+//
+// Per-cell EMPTY-buffer grid (regime 1), indexed [row][col]:
 //   row0: skip    $8503  $8506  skip
 //   row1: $9D20   $77EC  $77ED  $9D24
 //   row2: $9D28   $1800  $77EE  $9D2C
 //   row3: skip    $8519  $851C  skip
-//
-// (Trace cell order is column-major — the walker runs row-fastest within
-// each column; the spec's `xy=-1` entries are per-column row-wrap markers,
-// not stamps.)
 
 import { registerExtObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { stampCell } from './_shared.ts';
 
-// Final post-blend Map16 grid for the empty-buffer ($12=$0000) case the
-// static decoder always hits. `null` = cart base-table $0000 → skip (hole
-// corner). Values verified 1:1 against ext-88 spec.json per-cell STAMPs.
+// Final stamp values for the empty-buffer ($12=$0000) case — see regime 1.
+// `null` = cart base-table $0000 → skip (hole corner). Verified 1:1 against
+// ext-88 spec.json per-cell STAMPs.
 const PIPE_HOLE_4X4_GRID: readonly (readonly (number | null)[])[] = [
   [null, 0x8503, 0x8506, null], // row 0
   [0x9D20, 0x77EC, 0x77ED, 0x9D24], // row 1
@@ -78,19 +86,82 @@ const PIPE_HOLE_4X4_GRID: readonly (readonly (number | null)[])[] = [
   [null, 0x8519, 0x851C, null], // row 3
 ];
 
+// Per-row blend descriptor — one entry per the 4 row sub-handlers dispatched
+// by DATA_12B973 = {B9E0, BA36, BA74, BAB2}.
+//   base/blend : 4-entry (one per column) Map16 tables. base = non-blend
+//                ($12 not $85xx) path; blend = $85xx-underlying path.
+//   delta      : signed add table indexed by ($02 >> 1) on the non-blend path.
+//   cap        : rows 0/3 (a $0000 base/blend entry is a hole corner → skip;
+//                non-blend skips when $12's high byte is in `guardHi`).
+//                rows 1/2 (`cap:false`) add the delta/$02 only on edge columns
+//                (0,3) and never guard or skip-on-zero.
+//   guardHi    : underlying-tile high bytes that force a cap-row skip (leave
+//                the wall tile showing through).
+interface PipeHoleRow {
+  base: readonly number[];
+  blend: readonly number[];
+  delta: readonly number[];
+  cap: boolean;
+  guardHi: readonly number[];
+}
+const DELTA_CAP = [
+  0x0002, 0x0001, 0x0000, 0x0002, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0000, 0x0001, 0x0000, 0x0000,
+]; // DATA_12B9C8
+const DELTA_MID = [
+  0x0002, 0x0001, 0x0000, 0x0002, 0x0000, 0x0000,
+  0x0000, 0x0000, 0x0003, 0x0001, 0x0000, 0x0003,
+]; // DATA_12BA1E
+const PIPE_HOLE_ROWS: readonly PipeHoleRow[] = [
+  { base: [0x0000, 0x8500, 0x8503, 0x0000], blend: [0x0000, 0x857A, 0x857E, 0x0000], delta: DELTA_CAP, cap: true, guardHi: [0x7900] },
+  { base: [0x8506, 0x77EC, 0x77ED, 0x850A], blend: [0x8582, 0x77EC, 0x77ED, 0x8586], delta: DELTA_MID, cap: false, guardHi: [] },
+  { base: [0x850E, 0x1800, 0x77EE, 0x8512], blend: [0x858A, 0x1800, 0x77EE, 0x858E], delta: DELTA_MID, cap: false, guardHi: [] },
+  { base: [0x0000, 0x8516, 0x8519, 0x0000], blend: [0x0000, 0x8592, 0x8596, 0x0000], delta: DELTA_CAP, cap: true, guardHi: [0x1500, 0x7900] },
+];
+
+/** Port of one row sub-handler (CODE_12B9E0 / BA36 / BA74 / BAB2) for the
+ *  overlap case ($12 != 0). Returns the Map16 to stamp, or `null` to skip
+ *  (leave the underlying tile). `z` is the latched underlying tile ($12). */
+function pipeHoleOverlapTile(z: number, row: number, col: number): number | null {
+  const R = PIPE_HOLE_ROWS[row]!;
+  const isEdge = col === 0 || col === 3;
+  let result: number;
+  if ((z & 0xff00) === 0x8500) {
+    // Blend mode ($04=1): $02 = $12 - $854B, added to the $85xx-blend table.
+    const add = (z - 0x854b) & 0xffff;
+    const v = R.blend[col]!;
+    if (R.cap) {
+      if (v === 0) return null; // cart BEQ → store 0 → skip
+      result = (v + add) & 0xffff;
+    } else {
+      result = isEdge ? (v + add) & 0xffff : v; // interior cols pass through
+    }
+  } else {
+    // Non-blend: $02 = ($12 - $7799) & $00FE = byte offset into the delta table.
+    const off = (z - 0x7799) & 0x00fe;
+    const v = R.base[col]!;
+    if (R.cap) {
+      if (v === 0) return null; // hole corner
+      if (R.guardHi.includes(z & 0xff00)) return null; // $79xx/$15xx → show wall
+      result = (v + (R.delta[off >> 1] ?? 0)) & 0xffff;
+    } else {
+      result = isEdge ? (v + (R.delta[off >> 1] ?? 0)) & 0xffff : v;
+    }
+  }
+  return result === 0 ? null : result; // preamble: stamp only when $00 != 0
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// CODE_12B97B per-cell stamper. Read-modify-write hole stamper; see header.
-// For the empty-buffer case ($12 == $0000) the blend collapses to the
-// fixed grid above. We honour the cart's "buffer tile underneath decides
-// the output" contract by gating on zp12: when a $85xx/$79xx tile is
-// already present (never at static decode) we fall back to the same grid,
-// documenting that those blend branches are unverified.
+// CODE_12B97B per-cell stamper — read-modify-write hole stamper; see header.
 // ─────────────────────────────────────────────────────────────────────
 const pipeHole4x4Stamp: PerCellHandler = (state) => {
   const col = state.zp28 & 0x03;
   const row = state.zp2C & 0x03;
-  const id = PIPE_HOLE_4X4_GRID[row]?.[col];
-  if (id == null) return; // cart base-table entry $0000 → skip (hole corner)
+  const z = state.zp12 & 0xffff;
+  const id = z === 0
+    ? PIPE_HOLE_4X4_GRID[row]?.[col] // empty buffer → fixed grid (regime 1)
+    : pipeHoleOverlapTile(z, row, col); // overlap → real blend (regimes 2/3)
+  if (id == null) return; // skip (hole corner, guard, or $00 result)
   stampCell(state, id);
 };
 

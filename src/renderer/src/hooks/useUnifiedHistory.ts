@@ -18,6 +18,28 @@ interface CrossLevelEdit {
   after: { x: number; y: number }
 }
 
+// The entrance-type twin of CrossLevelEdit: a cross-level warp-exit entrance
+// edit (the incoming-marker's Entrance dropdown). Auto-saves the SOURCE level
+// (not the loaded one) and is undoable by re-applying `before` via
+// `setExitEntrance`. `screenIndex` is the source exit's screen.
+interface CrossLevelEntranceEdit {
+  sourceLevelRecordId: number
+  screenIndex: number
+  before: number
+  after: number
+}
+
+// One optimistic per-exit override, keyed `${sourceLevelRecordId}:${sourceScreenIndex}`.
+// Only the field(s) a pending cross-level edit changed are present; the `incoming`
+// memo overlays whichever are set. The x/y move the visible landing marker without
+// a BFS re-walk; `entranceType` keeps a re-click's Properties dropdown correct (it
+// isn't drawn on the canvas, so it only needs to survive in the marker data).
+interface IncomingOverride {
+  x?: number
+  y?: number
+  entranceType?: number
+}
+
 // One step in the unified, most-recent-first edit history. A `level` token
 // defers to the per-level reducer's own undo snapshot (one token per real
 // commit, kept in lockstep via the reducer's `commits` counter); a `cross`
@@ -31,6 +53,7 @@ interface CrossLevelEdit {
 type UndoToken =
   | { kind: 'level' }
   | { kind: 'cross'; edit: CrossLevelEdit }
+  | { kind: 'crossEntrance'; edit: CrossLevelEntranceEdit }
   // Generic overlay-document edit (strings, palette, …): a before/after snapshot
   // the registered applier re-applies on undo/redo. See
   // edit-session/useOverlayDocument.ts. `key` selects the applier.
@@ -58,6 +81,10 @@ export interface UnifiedHistoryApi {
   globalUndo: () => void
   globalRedo: () => void
   onMoveIncoming: (inc: IncomingExit, destX: number, destY: number) => Promise<void>
+  /** Commit an entrance-type change on an incoming marker → rewrite the SOURCE
+   *  exit's entranceType (auto-save), optimistic + undoable. The dropdown twin
+   *  of `onMoveIncoming`. */
+  onSetIncomingEntrance: (inc: IncomingExit, entranceType: number) => Promise<void>
   // ── Generic overlay-document channel (edit-session/useOverlayDocument) ──────
   /** Push one undoable before/after snapshot for the document `key`. */
   recordDocEdit: (key: string, before: unknown, after: unknown) => void
@@ -86,13 +113,15 @@ export function useUnifiedHistory({
   setNeedsBuild,
   setSelection
 }: UnifiedHistoryParams): UnifiedHistoryApi {
-  // Optimistic landing-cell overrides for incoming markers, keyed by
+  // Optimistic per-exit overrides for incoming markers, keyed by
   // `${sourceLevelRecordId}:${sourceScreenIndex}`. A cross-level exit edit writes
-  // disk AND patches the marker here, so it moves instantly in the same render
-  // as the drag overlay clears — no full BFS re-walk (which would blank +
-  // repopulate every marker, the flicker). Cleared when the root changes (the
-  // BFS then re-reads disk, which already has the saved edit).
-  const [incomingPatch, setIncomingPatch] = useState<Map<string, { x: number; y: number }>>(
+  // disk AND patches the marker here, so a dragged marker moves instantly in the
+  // same render as the drag overlay clears — no full BFS re-walk (which would
+  // blank + repopulate every marker, the flicker). An entrance-type edit patches
+  // the same map (the dropdown twin) so re-selecting the marker shows the new
+  // value. Cleared when the root changes (the BFS then re-reads disk, which
+  // already has the saved edit).
+  const [incomingPatch, setIncomingPatch] = useState<Map<string, IncomingOverride>>(
     () => new Map()
   )
   const incomingPatchRef = useRef(incomingPatch)
@@ -115,11 +144,18 @@ export function useUnifiedHistory({
       // definition — the disk edit it mirrored was read back at level load.
       if (inc.sourceLevelRecordId === selectedLevelRecordId) return inc
       const p = incomingPatch.get(`${inc.sourceLevelRecordId}:${inc.sourceScreenIndex}`)
-      if (p && (p.x !== inc.destX || p.y !== inc.destY)) {
-        changed = true
-        return { ...inc, destX: p.x, destY: p.y }
+      if (!p) return inc
+      const next = { ...inc }
+      let did = false
+      if (p.x !== undefined && p.x !== inc.destX) { next.destX = p.x; did = true }
+      if (p.y !== undefined && p.y !== inc.destY) { next.destY = p.y; did = true }
+      if (p.entranceType !== undefined && p.entranceType !== inc.entranceType) {
+        next.entranceType = p.entranceType
+        did = true
       }
-      return inc
+      if (!did) return inc
+      changed = true
+      return next
     })
     return changed ? out : base
   }, [selectedLevelRecordId, incomingByLevel, incomingPatch])
@@ -174,7 +210,7 @@ export function useUnifiedHistory({
       // Optimistic, synchronous marker move BEFORE the async write: it lands in
       // the same render as Canvas's drag-overlay clear (no snap-back) and avoids
       // a full BFS re-walk. Restored to its prior value if the write fails.
-      setIncomingPatch((m) => new Map(m).set(key, { x: target.x, y: target.y }))
+      setIncomingPatch((m) => new Map(m).set(key, { ...m.get(key), x: target.x, y: target.y }))
       const restore = (): void =>
         setIncomingPatch((m) => {
           const n = new Map(m)
@@ -198,6 +234,44 @@ export function useUnifiedHistory({
         return true
       } catch (err) {
         appendLog(`Exit edit failed — ${(err as Error).message}`)
+        restore()
+        return false
+      }
+    },
+    [appendLog, setNeedsBuild]
+  )
+
+  // The entrance-type twin of applyCrossLevel: write the source exit's
+  // entranceType (auto-save) and optimistically patch the marker's value so a
+  // re-select shows it without a BFS re-walk. Restores the prior override if the
+  // write fails. Marks the build dirty on success.
+  const applyCrossLevelEntrance = useCallback(
+    async (edit: CrossLevelEntranceEdit, target: number): Promise<boolean> => {
+      const key = `${edit.sourceLevelRecordId}:${edit.screenIndex}`
+      const prev = incomingPatchRef.current.get(key)
+      setIncomingPatch((m) => new Map(m).set(key, { ...m.get(key), entranceType: target }))
+      const restore = (): void =>
+        setIncomingPatch((m) => {
+          const n = new Map(m)
+          if (prev) n.set(key, prev)
+          else n.delete(key)
+          return n
+        })
+      try {
+        const r = await window.shinyEgg.editor.setExitEntrance(
+          edit.sourceLevelRecordId,
+          edit.screenIndex,
+          target
+        )
+        if (!r.ok) {
+          appendLog(`Exit entrance edit failed — ${r.error}`)
+          restore()
+          return false
+        }
+        setNeedsBuild(true)
+        return true
+      } catch (err) {
+        appendLog(`Exit entrance edit failed — ${(err as Error).message}`)
         restore()
         return false
       }
@@ -229,19 +303,21 @@ export function useUnifiedHistory({
     if (!top) return
     if (top.kind === 'level') dispatchLevel({ type: 'undo' })
     else if (top.kind === 'cross') void applyCrossLevel(top.edit, top.edit.before)
+    else if (top.kind === 'crossEntrance') void applyCrossLevelEntrance(top.edit, top.edit.before)
     else docAppliers.current.get(top.key)?.(top.before)
     setUndoStack((s) => s.slice(0, -1))
     setRedoStack((s) => [...s, top])
-  }, [applyCrossLevel, dispatchLevel])
+  }, [applyCrossLevel, applyCrossLevelEntrance, dispatchLevel])
   const globalRedo = useCallback(() => {
     const top = redoStackRef.current[redoStackRef.current.length - 1]
     if (!top) return
     if (top.kind === 'level') dispatchLevel({ type: 'redo' })
     else if (top.kind === 'cross') void applyCrossLevel(top.edit, top.edit.after)
+    else if (top.kind === 'crossEntrance') void applyCrossLevelEntrance(top.edit, top.edit.after)
     else docAppliers.current.get(top.key)?.(top.after)
     setRedoStack((s) => s.slice(0, -1))
     setUndoStack((s) => [...s, top])
-  }, [applyCrossLevel, dispatchLevel])
+  }, [applyCrossLevel, applyCrossLevelEntrance, dispatchLevel])
 
   // Incoming-marker drag commit (from Canvas): edit the SOURCE exit's landing
   // cell, auto-save it, and record a reversible cross-level undo entry. Keep the
@@ -264,6 +340,27 @@ export function useUnifiedHistory({
     [applyCrossLevel, setSelection]
   )
 
+  // Incoming-marker entrance commit (from the Properties dropdown): edit the
+  // SOURCE exit's entranceType, auto-save it, and record a reversible cross-level
+  // undo entry. Keep the marker selected with its new value (the selection holds
+  // a snapshot, so the dropdown would otherwise show the stale entrance).
+  const onSetIncomingEntrance = useCallback(
+    async (inc: IncomingExit, entranceType: number) => {
+      if (inc.entranceType === entranceType) return
+      const edit: CrossLevelEntranceEdit = {
+        sourceLevelRecordId: inc.sourceLevelRecordId,
+        screenIndex: inc.sourceScreenIndex,
+        before: inc.entranceType,
+        after: entranceType
+      }
+      if (!(await applyCrossLevelEntrance(edit, edit.after))) return
+      setUndoStack((s) => [...s, { kind: 'crossEntrance', edit }])
+      setRedoStack([])
+      setSelection([{ kind: 'incoming', incoming: { ...inc, entranceType } }])
+    },
+    [applyCrossLevelEntrance, setSelection]
+  )
+
   return {
     incoming,
     canUndo,
@@ -271,6 +368,7 @@ export function useUnifiedHistory({
     globalUndo,
     globalRedo,
     onMoveIncoming,
+    onSetIncomingEntrance,
     recordDocEdit,
     registerDocApplier,
     unregisterDocApplier

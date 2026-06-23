@@ -1,12 +1,19 @@
-// IPC for the ROM-import feature (plan-rom-import.md). The renderer's import
-// window picks a modified `.sfc`, gets back a diff report (anchors + changed
-// levels + overwrite warnings), then applies the chosen records into the active
-// project's overlay. Applied edits mark the build dirty (renderer side, like the
-// other tools). Analysis/apply live in src/main/rom-import.ts.
+// IPC for the import features. The renderer's import window picks a source ROM,
+// gets back a report, then applies the chosen records into the active project's
+// overlay. Two sources:
+//   - ROM import (`import:*`): a modified `.sfc` diffed against the extracted
+//     V1.0 base → changed-level report (src/main/rom-import.ts).
+//   - GBA import (`gbaImport:*`): an SMA3 (U) `.gba` cart → its importable
+//     sublevels, overwriting chosen SNES records (src/main/gba-import.ts).
+// Applied edits mark the build dirty (renderer side, like the other tools).
 
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { analyzeRom, applyRomImport } from '../rom-import'
+import { analyzeGbaRom, applyGbaImport } from '../gba-import'
 import type {
+  GbaImportApplyResult,
+  GbaImportApplySelection,
+  GbaImportReport,
   RomImportApplyResult,
   RomImportReport,
   RomImportSelection
@@ -33,5 +40,27 @@ export function registerImportIpc(): void {
     'import:apply',
     async (_e, selection: RomImportSelection): Promise<RomImportApplyResult> =>
       applyRomImport(selection)
+  )
+
+  // Pick an SMA3 (U) GBA cart and list its importable sublevels. Returns null
+  // when the dialog is cancelled.
+  ipcMain.handle('gbaImport:analyze', async (): Promise<GbaImportReport | null> => {
+    const win = BrowserWindow.getFocusedWindow()
+    const opts: Electron.OpenDialogOptions = {
+      title: 'Import level from GBA (Super Mario Advance 3)',
+      properties: ['openFile'],
+      filters: [{ name: 'GBA ROM', extensions: ['gba', 'agb', 'bin'] }]
+    }
+    const picked = win
+      ? await dialog.showOpenDialog(win, opts)
+      : await dialog.showOpenDialog(opts)
+    if (picked.canceled || picked.filePaths.length === 0) return null
+    return analyzeGbaRom(picked.filePaths[0])
+  })
+
+  ipcMain.handle(
+    'gbaImport:apply',
+    async (_e, selection: GbaImportApplySelection): Promise<GbaImportApplyResult> =>
+      applyGbaImport(selection)
   )
 }

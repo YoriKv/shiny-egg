@@ -11,6 +11,7 @@ import type {
     LevelData,
     LevelObject,
     LevelSprite,
+    RenderImage,
     ScreenExit
 } from '../../../../preload/api'
 import type {IncomingExit, LayerVisibility, Selection} from '../../types'
@@ -24,14 +25,17 @@ import {drawPaintOverlay} from './paint'
 import {drawObjects} from './objects'
 import {drawDecodedBg1} from './decoded-bg1'
 import {drawCollisionLayer} from './collision'
-import {drawBgLayers, drawBgOverlays, type BgLayerBitmaps} from './bg-layers'
+import {drawBgLayers, drawBgOverlays, drawBgForeground, type BgLayerBitmaps} from './bg-layers'
 import {drawSpriteGlyphs, drawSpriteOutlines} from './sprites'
+import {drawEntranceGlyphs} from './entrance-glyphs'
+import {drawCommandObjectBadges, drawCommandSpriteBadges} from './command-badges'
+import {drawGeneratorBadges} from './generator-badges'
 import {drawNeighborIndicators, drawNeighborSelectionOverlay} from './sprite-neighbors'
 import {drawBehaviorSelectionOverlay, drawCapWarnings} from './sprite-behavior'
 import type {BehaviorProbeMap} from '../../hooks/useBehaviorProbes'
 import {drawObjectValidityIndicators, drawSpriteValidityIndicators} from './render-validity'
 import type {EntityValidityView} from '../../hooks/useEntityRenderValidity'
-import {drawSpriteVariantHints} from './sprite-variant-hints'
+import {drawSpriteVariantHints, drawSpritePrize} from './sprite-variant-hints'
 import type {NeighborStatusMap} from '../../hooks/useNeighborDependencies'
 import {drawLinks} from './links'
 import {drawObjectInfluence} from './object-influence'
@@ -106,6 +110,10 @@ export interface SceneParams {
     /** Probe-derived behavior geometry (chain lengths, march tracks, rail
      *  traces) for the selected-sprite overlay. Null until resolved. */
     behaviorProbes: BehaviorProbeMap | null
+    /** Cached enemy thumbnails (num → bitmap) for the generator badges — the
+     *  spawned-enemy icon drawn inside each generator/stopper sprite's purple
+     *  square. Null until the first fetch resolves (badge draws empty). */
+    generatorThumbs: Map<number, RenderImage> | null
     /** Render-validity view for the loaded level (gfx-missing markers on placed
      *  entities). Null until the first fetch resolves — no markers. */
     renderValidity: EntityValidityView | null
@@ -149,6 +157,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         spriteBounds,
         neighborStatus,
         behaviorProbes,
+        generatorThumbs,
         renderValidity,
         influence,
         hovered,
@@ -284,6 +293,12 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         if (bg1Canvas && layers.bg1) {
             drawDecodedBg1(ctx, bg1Canvas)
         }
+        // Phase 6.3a: BG2/BG3 FOREGROUND planes — priority-1 tiles the cart draws
+        // ABOVE BG1 (e.g. 1-1's foreground flowers). Source-over, above BG1 and
+        // below the darkening overlay + sprites. Null planes (most levels) no-op.
+        if (bgLayers && (bgLayerBg2 || bgLayerBg3)) {
+            drawBgForeground(ctx, bgLayers, {bg2: bgLayerBg2, bg3: bgLayerBg3})
+        }
         // Phase 6.3: BG2/BG3 darkening OVERLAYS — subscreen layers the cart's
         // color math subtracts from the foreground (e.g. mode-$0E cave-shadow
         // BG3). These composite ABOVE BG1 (multiply blend); a no-op for the
@@ -297,8 +312,8 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         if (influence && influence.cells.length > 0) {
             drawObjectInfluence(ctx, influence)
         }
-        if (layers.grid) {
-            drawScreenGrid(ctx, view.zoom)
+        if (layers.grid !== 'off') {
+            drawScreenGrid(ctx, view.zoom, layers.grid)
         }
         // Object outlines / blueprint — gated on `bg1Outlines` (split from
         // `bg1` so the user can toggle outlines independently of the
@@ -321,6 +336,9 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
                     drawResizeHandles(ctx, objectResizeHandles(so, sm), view.zoom)
                 }
             }
+            // Command objects (Transparent tile, Scroll stopper, Tile eraser, …) render no/clear
+            // tiles — mark them with the same half-transparent command-abbreviation badge.
+            drawCommandObjectBadges(ctx, drawObjs)
         }
         // Selection-linkage line goes UNDER the marker glyphs so the line's
         // endpoints tuck neatly into each glyph; the line is visible in the
@@ -340,6 +358,15 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             drawDecodedBg1(ctx, spriteCanvas)
         }
         if (layers.sprites) drawSpriteGlyphs(ctx, drawSprs, view.zoom)
+        // Entrance / teleport sprites have no in-game cel — draw their stand-in arrow /
+        // portal glyph here on the same Sprites graphics layer (entrance-glyphs.ts).
+        if (layers.sprites) drawEntranceGlyphs(ctx, drawSprs)
+        // Command sprites (Graphic/Palette Changer, auto-scroll, …) have no cel either —
+        // mark them with a half-transparent command-abbreviation badge (command-badges.ts).
+        if (layers.sprites) drawCommandSpriteBadges(ctx, drawSprs)
+        // Generator sprites — purple square with the spawned enemy's (cached) thumbnail,
+        // plus a red X for stoppers (generator-badges.ts).
+        if (layers.sprites) drawGeneratorBadges(ctx, drawSprs, generatorThumbs)
         // Spawn flag rides the Sprites layer (grouped with the goal / checkpoint
         // landmark glyphs); its selectable outline rides Sprite Editing below.
         // The world-map draft overrides the base spawn so an unsaved edit moves
@@ -386,6 +413,10 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
                 const spr = drawSprs.find((s) => s.uid === primary.uid)
                 if (results && spr) drawNeighborSelectionOverlay(ctx, spr, results, view.zoom)
             }
+        }
+        // Prize: full-tile icon on the cell above each SELECTED prize-bearing sprite (its contents).
+        if (layers.spriteOutlines && !moveOverlay && !groupMove) {
+            drawSpritePrize(ctx, drawSprs, selSprUids, view.zoom)
         }
         // Spawn's sprite-style selectable outline (Sprite Editing layer).
         if (layers.spriteOutlines && spawn) {

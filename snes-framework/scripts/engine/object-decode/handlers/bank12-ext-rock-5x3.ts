@@ -57,12 +57,19 @@ import { registerExtObjectHandler } from './index.ts';
 // DATA_12B03B column table for orientation $15 = 2, indexed [col][row]
 // (col 0..4, row 0..2). ROM-literal entries DATA_12B01F..029 stored
 // pre-dereferenced to their 1-word ROM contents ($01B1..$01B6).
+// Transpose of the row-major DATA_12B03B (table[row*5+col]):
+//   row0: $0000 $1A04 $1A44 $1A52 $0000
+//   row1: $19DC $01B1 $01B2 $01B3 $19F0   (DATA_12B01F/021/023 = $01B1/$01B2/$01B3)
+//   row2: $19E6 $01B4 $01B5 $01B6 $19FA   (DATA_12B025/027/029 = $01B4/$01B5/$01B6)
+// (An earlier transcription mis-placed $19F0 at col1/row2, shifting the row-2
+// rock-art tiles one column right — left col1/row2 reading a template slot
+// instead of the literal $01B4, record $09.)
 const COLUMN_TABLE: RockEntry[][] = [
-  /* col 0 */ [{ skip: true }, { slot: 0x19dc }, { slot: 0x19e6 }],   // row0 entry == 0
-  /* col 1 */ [{ slot: 0x1a04 }, { mapid: 0x01b1 }, { slot: 0x19f0 }], // row1 = DATA_12B01F
-  /* col 2 */ [{ slot: 0x1a44 }, { mapid: 0x01b2 }, { mapid: 0x01b4 }], // DATA_12B021 / 025
-  /* col 3 */ [{ slot: 0x1a52 }, { mapid: 0x01b3 }, { mapid: 0x01b5 }], // DATA_12B023 / 027
-  /* col 4 */ [{ skip: true }, { slot: 0x19f0 }, { slot: 0x19fa }],   // row0 entry == 0
+  /* col 0 */ [{ skip: true }, { slot: 0x19dc }, { slot: 0x19e6 }],     // row0 entry == 0
+  /* col 1 */ [{ slot: 0x1a04 }, { mapid: 0x01b1 }, { mapid: 0x01b4 }], // DATA_12B01F / 025
+  /* col 2 */ [{ slot: 0x1a44 }, { mapid: 0x01b2 }, { mapid: 0x01b5 }], // DATA_12B021 / 027
+  /* col 3 */ [{ slot: 0x1a52 }, { mapid: 0x01b3 }, { mapid: 0x01b6 }], // DATA_12B023 / 029
+  /* col 4 */ [{ skip: true }, { slot: 0x19f0 }, { slot: 0x19fa }],     // row0 entry == 0
 ];
 
 // CODE_12B101 — per-cell stamper (shared family routine).

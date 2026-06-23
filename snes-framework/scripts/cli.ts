@@ -2,7 +2,7 @@
 //
 // Dispatcher for the code-search analysis tools (xref / closure). Wired up
 // to root pnpm scripts so `pnpm xref` / `pnpm closure` Just Work from the
-// shiny-egg repo root.
+// repo root.
 //
 // `workRoot` is derived from this script's own filesystem location (the
 // directory containing `scripts/`) rather than `process.cwd()` so the
@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   const symPath = path.join(workRoot, 'build', `${stem}.sym`);
   const superfxSymPath = path.join(workRoot, 'build', `${stem}-superfx.sym`);
 
-  // shiny-egg's build always emits both .sym files alongside the .sfc; this
+  // the build always emits both .sym files alongside the .sfc; this
   // block is only here for the first-run case where the user hasn't built
   // yet. The build phase rewrites both .sym files every time, so codegraph's
   // MD5-keyed cache invalidates automatically when the asm/labels change.

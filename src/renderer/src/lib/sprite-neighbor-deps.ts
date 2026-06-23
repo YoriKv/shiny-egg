@@ -36,6 +36,11 @@ export interface NeighborContext {
    *  Optional: a context with no class-F dep can omit it; the `tileLiterals`
    *  fallback still resolves the common $79F1/$79F2 pipe mouth without it. */
   collisionTagOfPage?: (page: number) => number | undefined
+  /** Is this Map16 page **side-solid** (collision byte-0 `AL` flag, `raw0 & 0x02`)?
+   *  Drives `dep.matchSolid` — the grinder monkeys grab any solid wall beside them
+   *  (asm `CODE_02ADC1`'s `R7 & $0002`). Optional: contexts with no `matchSolid`
+   *  dep can omit it. */
+  isSolidPage?: (page: number) => boolean
   /** Sprite nums placed anywhere in the warp-reachable level group (forward
    *  BFS from this record over its screen-exit warps) — the `carried` deps'
    *  fallback: a locked door is satisfied by a Key in a connected sub-room,
@@ -88,6 +93,8 @@ function cellTargetMatches(
     const tag = ctx.collisionTagOfPage((id >> 8) & 0xff)
     if (tag !== undefined && tag === parseInt(dep.collisionTag, 16)) return true
   }
+  // Side-solid page (collision AL flag) — the grinder grabs any solid wall beside it.
+  if (dep.matchSolid && id !== 0 && ctx.isSolidPage?.((id >> 8) & 0xff)) return true
   return false
 }
 

@@ -76,20 +76,20 @@
 //   $15 high bit set → neighbour_fixup skipped (BMI taken)
 // So for $F0-$F3 we can omit the neighbour_fixup branch entirely.
 //
-// PRNG carry caveat:
+// PRNG sites (shared with bank13-stone-3d.ts — same cart routine):
 //   `CODE_stone_3d_body_shape_select` calls `JSL CODE_prng` then `AND #$0002`
-//   or `AND #$0003` before mixing into Y. The cart's `ADC $2C` lacks a
-//   preceding CLC, so the carry comes from whatever the PHP/PLP pair
-//   restored. Our deterministic LFSR can't reproduce that, but the only
-//   downstream consumer is the cosmetic variant pick within
-//   DATA_stone_3d_body_main_tiles / DATA_stone_3d_body_alt_tiles — all variants
-//   still come from the right tables, just possibly a different entry
-//   than a specific cart-snapshot trace would show.
+//   or `AND #$0003` before mixing into Y. The cart's `ADC $2C` IS preceded by
+//   an explicit `CLC` (verified in Bank13.asm: `AND #$0003 ; CLC ; ADC $2C`),
+//   so `(prng&3)+$2C` is exact — no carry-in uncertainty. The three rolls are
+//   tagged with `RNG_SITE.stone3dBody{Alt,Main,MainHi}` (cart PCs $13FCE0 /
+//   $13FCF4 / $13FD04) for per-site replay against a `bg1-render` capture, which
+//   reproduces the live variant pick exactly. Untagged, they fall to the LFSR
+//   and the cosmetic variant differs from a specific cart-snapshot trace.
 
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { probeLeftTile, probeRightTile, stampCell } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -236,25 +236,30 @@ function pipeBodyShapeSelect(state: DecodeState, candidate: number): number {
       y = rowMinus3 & 0x06;
     } else {
       // JSL prng ; AND #$0002 ; CLC ; ADC #$0004 → y ∈ {4, 6}.
-      y = ((prngNext(state) & 0x02) + 0x04) & 0x06;
+      y = ((prngNext(state, RNG_SITE.stone3dBodyAlt) & 0x02) + 0x04) & 0x06;
     }
     return DATA_stone_3d_body_alt_tiles[y >>> 1]!;
   }
   if (v === 0x0109 || v === 0x79E3 || v === 0x79E6) {
-    // CODE_13FCC2: probe left → if cell is empty ($0000) or end-of-pipe
-    // ($79E7), keep candidate as-is; otherwise INC the candidate.
+    // CODE_13FCC2: store the PROBE-LEFT tile (not the candidate). The cart's
+    // `JSR probe_left ; CMP #0/CMP #$79E7 BEQ store ; INC ; store` keeps A (the
+    // probe result) all the way to `STA $04`, so $04 becomes the left tile
+    // ($0000 / $79E7 as-is) or left+1 — mirroring the odd-column body cell onto
+    // its left neighbour to form the 3D pipe pair ($79E2→$79E3, $79E5→$79E6,
+    // $0108→$0109). The earlier port returned `v`/`v+1`, collapsing every odd
+    // cell to $0109/$010A.
     const probe = probeLeftTile(state) & 0xffff;
-    if (probe === 0x0000 || probe === 0x79E7) return v;
-    return (v + 1) & 0xffff;
+    if (probe === 0x0000 || probe === 0x79E7) return probe;
+    return (probe + 1) & 0xffff;
   }
   // CODE_13FCF0: PRNG-driven main-table pick.
   // Y = ((prng & 3) + $2C) * 2 — byte offset into a word-table starting
   // at FC94, but the asm indexes from FC94-$06 so callers can use $2C
   // directly. We fold that into a (Y/2 - 3) word index.
-  let yByte = (((prngNext(state) & 0x03) + (state.zp2C & 0xff)) << 1) & 0xffff;
+  let yByte = (((prngNext(state, RNG_SITE.stone3dBodyMain) & 0x03) + (state.zp2C & 0xff)) << 1) & 0xffff;
   if (yByte >= 0x16) {
     // Re-roll between entries 6 and 7 (Y = $12 or $14).
-    yByte = (((prngNext(state) & 0x02) + 0x12)) & 0xffff;
+    yByte = (((prngNext(state, RNG_SITE.stone3dBodyMainHi) & 0x02) + 0x12)) & 0xffff;
   }
   // (Y - 6) / 2 = the word-array index into DATA_stone_3d_body_main_tiles.
   // For yByte = 6 → idx 0; yByte = $14 → idx 7. Clamp to table size.

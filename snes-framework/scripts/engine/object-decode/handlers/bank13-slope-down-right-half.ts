@@ -30,8 +30,8 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupKeepSlope } from '../walker.ts';
-import { prngNext } from '../prng.ts';
-import { stampCell, signed8, shiftOriginNibble } from './_shared.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
+import { stampCell, signed8, shiftOriginNibble, jungleFloorRandomFillBiased } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
 // Tile records — 5 distinct 4-word arrays at `DATA_13F97F..DATA_13F99F`
@@ -53,24 +53,11 @@ const SLOPE_DOWN_RIGHT_HALF_RECORDS: readonly (readonly number[])[] = [
 // decodes back to variant 0..7 → record below.
 const SLOPE_DOWN_RIGHT_HALF_VARIANT_TO_RECORD = [4, 3, 2, 1, 0, 3, 1, 0] as const;
 
-// `DATA_jungle_floor_fill_tiles` / `DATA_jungle_floor_fill_tiles` (Bank13.asm:14359) —
-// duplicated here from `bank13-slopes-misc.ts` to keep this file self-
-// contained (a follow-up consolidation pass can lift it into _shared.ts
-// once both slope families settle).
-const DATA_jungle_floor_fill_tiles = [
-  0x79BB, 0x79BC, 0x79BD, 0x79BE, 0x79BF, 0x79C0, 0x79C1, 0x79C2,
-  0x79C3, 0x79C4, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0,
-] as const;
-
-/** `CODE_jungle_floor_random_fill` (`Bank13.asm:14374`) — `bias` enters
- *  in `$00`. PRNG-pick 0..15, ADD bias, clamp to 15, stamp. */
-function jungleFloorRandomFillBiased(state: DecodeState, bias: number): void {
-  let pick = (prngNext(state) & 0x0F) + bias;
-  if (pick > 0x0F) pick = 0x0F;
-  stampCell(state, DATA_jungle_floor_fill_tiles[pick]!);
-}
-
-const stampSlopeDownRightHalf: PerCellHandler = (state) => {
+// Exported so the shoreline-right handler ($EC) can reuse it as its rows-0..2
+// body, mirroring the cart's `CODE_stamp_shoreline_slope_right`
+// (`JSL CODE_stamp_slope_down_right_half`) — the shared call that makes the
+// $13F9C6 variant roll fire for shoreline columns too.
+export const stampSlopeDownRightHalf: PerCellHandler = (state) => {
   // Cart `CODE_stamp_slope_down_right_half` writes `$9B = 1` unconditionally at entry; the
   // walker honours this on column-wrap by rewinding `$2C` to 0. We mirror
   // by setting `rewound` so the walker's per-column reset path engages.
@@ -79,7 +66,7 @@ const stampSlopeDownRightHalf: PerCellHandler = (state) => {
   const row = signed8(state.zp2C);
   if (row === 0) {
     // (prng & 7) << 1 → byte-offset $00,$02,...,$0E into the 8-ptr table.
-    state.zpA1 = (prngNext(state) & 0x07) << 1;
+    state.zpA1 = (prngNext(state, RNG_SITE.slopeDownRightHalf) & 0x07) << 1;
   }
 
   const variant = (state.zpA1 >>> 1) & 0x07;

@@ -26,12 +26,17 @@ export interface ObjectFinderBodyProps {
    *  shows the previous project's overlay results (the splice is main-side and
    *  project-scoped). Null when no project is active. */
   projectScope: string | null
+  /** External seed (Place-panel shift-click): set the search kind + id and
+   *  re-run the query. `nonce` lets the same value re-seed (shift-clicking the
+   *  same row again); null never clobbers what the user is typing. */
+  seed?: { kind: FindInstanceKind; id: number; nonce: number } | null
 }
 
 export function ObjectFinderBody({
   onJump,
   currentLevelRecordId,
-  projectScope
+  projectScope,
+  seed
 }: ObjectFinderBodyProps): JSX.Element {
   const [kindIdx, setKindIdx] = useState(0)
   const [idText, setIdText] = useState('')
@@ -43,6 +48,19 @@ export function ObjectFinderBody({
   // Focus the id box when the panel opens (it mounts on open).
   const idRef = useRef<HTMLInputElement>(null)
   useEffect(() => idRef.current?.focus(), [])
+
+  // Apply an external seed (Place-panel shift-click → find this object/sprite):
+  // set the kind + id box and focus it; the fetch effect below then queries.
+  // Keyed on the nonce so re-seeding the same value re-applies, and a null seed
+  // never clobbers what the user is typing.
+  useEffect(() => {
+    if (!seed) return
+    const idx = KINDS.findIndex((k) => k.key === seed.kind)
+    if (idx >= 0) setKindIdx(idx)
+    setIdText(seed.id.toString(16).toUpperCase())
+    idRef.current?.focus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.nonce])
 
   // Fetch matches on (kind, id, project) change, debounced. Reset the cursor
   // each time. projectScope is in the deps so switching projects (or a ROM
@@ -104,7 +122,7 @@ export function ObjectFinderBody({
         <span className="se-finder__prefix">0x</span>
         <input
           ref={idRef}
-          className="se-finder__input"
+          className="se-input se-finder__input"
           value={idText}
           onChange={(e) => setIdText(e.target.value)}
           placeholder="ID"

@@ -1,4 +1,4 @@
-// Dev CLI for the ROM-import analyzer (plan-rom-import.md). Headless, no native
+// Dev CLI for the ROM-import analyzer. Headless, no native
 // deps, runs from WSL against raw cart files:
 //
 //   node snes-framework/scripts/engine/import-rom.ts <foreign.sfc> [base.sfc]

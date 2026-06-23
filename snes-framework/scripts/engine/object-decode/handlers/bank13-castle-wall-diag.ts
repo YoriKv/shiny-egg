@@ -68,7 +68,6 @@ import {
   probeLeftTile,
   readBuf16,
   setProbeToCurrent,
-  signed8,
   stampCell,
 } from './_shared.ts';
 import { getMap16Above } from '../fetch.ts';
@@ -152,24 +151,15 @@ function castleWallDiagLeftPostProcess(state: DecodeState): void {
  *  Otherwise probes LEFT; if mid-slope, stamps `DATA_castle_wall_diag_seam_left[idx]`.
  *  `idx` is the byte offset (Y) divided by 2. */
 function castleWallDiagRightPostProcess(state: DecodeState, byteY: number): void {
-  // Negative-row guard (static-render divergence from the literal asm).
-  //
-  // The cart's neighbour primitives fold the row counter as
-  // `($2C & $000F) << 4` (CODE_get_map16_above, $12:8719) — they DISCARD the
-  // sign of $2C. For an upward slope ($2E negative ⇒ $2C runs 0,$FFFF,$FFFE…)
-  // the "above" probe at row -1 ($2C=$FFFF) therefore carries into the
-  // screen-Y nibble and resolves to the screen *below*, not above. At runtime
-  // that wrongly-probed screen usually isn't decoded yet (sliding-window
-  // timing), so the seam never fires and the cap stays $00CA. Our whole-level
-  // decode has every screen populated, so the probe reads a neighbouring
-  // wall tile ($015A/$015B ∈ [$0153,$0161)) and spuriously remaps the cap to
-  // a seam tile ($77DB/$77E3).
-  //
-  // Semantically, the top cap of an upward slope has nothing genuinely above
-  // it, so the seam must never fire there. Skipping the remap for negative
-  // rows reproduces the game's appearance for every upward slope; downward
-  // slopes keep $2C ≥ 0 and are unaffected. (Verified against 4-4's std-CC.)
-  if (signed8(state.zp2C) < 0) return;
+  // (Formerly a `signed8($2C) < 0` guard skipped the seam on negative
+  // (upward-slope) rows, theorising the cart's seam "never fires at runtime
+  // (sliding-window timing)". That premise conflated runtime VRAM streaming with
+  // the gm$0C object-decode pass, which builds the WHOLE level's LDB in one go —
+  // no sliding window. The bg1-render single-load capture is ground truth and
+  // shows the seam DOES fire on those negative-row caps (records $22/$03 produce
+  // $77DB/$77E3 there). Removing the guard matches every captured level —
+  // including 4-4 (record $1E), the case it was written for — so the probe runs
+  // unconditionally, exactly as the cart does.
 
   const idx = (byteY >> 1) & 0x03;
   setProbeToCurrent(state);
@@ -244,9 +234,13 @@ function makeCastleWallDiagStamp(cfg: CastleWallDiagConfig): PerCellHandler {
       castleWallDiagLeftPostProcess(state);
     }
 
-    // Last-row hook: row+1 == row_extent → above-probe + castle_wall_corner_top_row_probe.
-    const rowPlus1 = (state.zp2C + 1) & 0xff;
-    if (rowPlus1 !== (state.zp2E & 0xff)) return;
+    // Last-row hook: the cart does `LDA $2C ; DEC ; CMP $2E ; BNE exit`, so the
+    // above-probe + castle_wall_corner_top_row_probe run when ($2C - 1) == $2E,
+    // NOT $2C+1. The diag's rewound walker ($9B=1, $17=1) grows $2E per column,
+    // so $2C reaches $2E+1 at the staircase tail — that's the cell the cart
+    // blends to $00C6. (Was `+1`, which never matched → left the base $00C2/$00C7.)
+    const rowMinus1 = (state.zp2C - 1) & 0xff;
+    if (rowMinus1 !== (state.zp2E & 0xff)) return;
 
     if (state.zp12 === 0x00D5) {
       state.zpA1 = 0;

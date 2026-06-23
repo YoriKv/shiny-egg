@@ -1,6 +1,5 @@
 // Custom-patch store + post-build apply (main side). A patch is byte-level edits
-// applied to the FINISHED build, after asar + the project overlay — see
-// research/plan-custom-patches.md.
+// applied to the FINISHED build, after asar + the project overlay.
 //
 // On disk a patch is a single self-contained `<id>.json` (PatchFile): the source
 // of truth, hand-editable in a text editor (offsets + hex bytes + asm-label

@@ -1,55 +1,84 @@
-// Bank12 extended-object handler family: pipe_arrow_4dir (ext $89-$8C).
+// Bank12 extended-object handler family: sewer arrow-sign DECORATION (ext
+// $89-$8C). These are flat wall decorations (a 2-tile directional arrow in the
+// sewer tileset), NOT pipe geometry — they carry no collision and just blend a
+// sign onto whatever wall is beneath them.
 //
-// init_handler CODE_extobj_handler_pipe_arrow_4dir ($12:xxxx) — confirmed via
-// each spec.json `init_handler` field. One shared init dispatches on the
-// direction nibble (low nibble of the ext ID = $15) to one of two walker
-// geometries, re-encoding $15 to the orientation byte the walker observes:
+// init_handler CODE_extobj_handler_pipe_arrow_4dir ($12:8E1F) — one shared
+// init dispatches on the ext-id low nibble ($15) to one of two walker
+// geometries + stampers, re-encoding $15 to 0/2 (the table index the stamper
+// reads). Extents from DATA_128E0B/DATA_128E13; stamper from DATA_128E1B:
 //
-//   $89 up    : $15 89→00, col_extent 2 row_extent 1 (HORIZONTAL pair)
-//   $8A down  : $15 8A→02, col_extent 2 row_extent 1 (HORIZONTAL pair)
-//   $8B left  : $15 8B→00, col_extent 1 row_extent 2 (VERTICAL  pair)
-//   $8C right : $15 8C→02, col_extent 1 row_extent 2 (VERTICAL  pair)
+//   $89 left  : col 2 row 1 (HORIZONTAL pair) → stamper CODE_12BAED
+//   $8A right : col 2 row 1 (HORIZONTAL pair) → stamper CODE_12BAED
+//   $8B up    : col 1 row 2 (VERTICAL  pair) → stamper CODE_12BB2A
+//   $8C down  : col 1 row 2 (VERTICAL  pair) → stamper CODE_12BB2A
 //
-// Walker-driven (shape 2). The init sets $2A/$2E and tail-calls the bare
-// walker trampoline. The per-cell stamper lays a 2-tile run:
-//   - $89/$8A: stamper CODE_12BAED, advances by column → base, base+1.
-//   - $8B/$8C: stamper CODE_12BB2A, advances by row    → base, base+1.
-// Either way exactly one walker axis moves, so (col + row) gives the linear
-// cell index 0,1 and the tile is base + index.
+// (Direction labels per the editor metadata; the geometry agrees — a left/right
+// arrow is a horizontal 2-wide pair, an up/down arrow a vertical 2-tall pair.)
 //
-// Per-cell BASE tiles (verified 1:1 against each spec.json STAMP cell):
-//   $89 → $8521,$8522   $8A → $8529,$852A
-//   $8B → $8531,$8532   $8C → $8539,$853A
+// ── Overlap (read-modify-write) stamper ─────────────────────────────────────
+// Both stampers are READ-MODIFY-WRITE: the tile already in the buffer ($12,
+// latched by the walker) shifts the sign tile, and on one specific underlying
+// alignment the sign ALSO writes a neighbour cell. Per cell:
 //
-// (Spec `xy=-1` cells are the walker's per-column row-wrap markers
-// (CODE_128874), not stamps — they fall out of the walker naturally.)
+//   $00 = ($12 - sub) & $000E              ; sub = $77A9 ($89/$8A) | $7799 ($8B/$8C)
+//   stamp(current) = $00 + primary[v] + axis   ; axis = col $28 ($89/$8A) | row $2C ($8B/$8C)
+//   if $00 == 0:                           ; underlying aligned on a 16-tile boundary
+//       stamp(neighbour) = secondary[v] + axis  ; neighbour = below ($89/$8A) | right ($8B/$8C)
+//
+//   CODE_12BAED ($89/$8A): primary DATA_12BAE5 {$851B,$8523}, secondary
+//     DATA_12BAE9 {$8521,$8529}, axis col $28, neighbour get_map16_below.
+//   CODE_12BB2A ($8B/$8C): primary DATA_12BB22 {$852B,$8533}, secondary
+//     DATA_12BB26 {$8531,$8539}, axis row $2C, neighbour get_map16_right.
+//
+// EMPTY-buffer case ($12 = $0000), the common non-overlap placement: $00 =
+// ($0000 - sub) & $000E = $6 (both subs end $99/$A9, so the wrap lands at $6),
+// and $00 != 0 so the neighbour write never fires. The per-cell tile collapses
+// to `$6 + primary[v] + axis`, i.e. the fixed two-tile run below — which is what
+// the previous port hardcoded (it baked the +$6 into the base and dropped the
+// blend + neighbour write entirely, so any overlap rendered wrong):
+//   $89 → $8521,$8522   $8A → $8529,$852A   $8B → $8531,$8532   $8C → $8539,$853A
 
 import { registerExtObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { stampCell } from './_shared.ts';
+import { getMap16Below, getMap16Right } from '../fetch.ts';
+import { stampCell, writeBuf16, setProbeToCurrent } from './_shared.ts';
 
-// Walker geometry + tile base + re-encoded $15 per ext ID, indexed by ID.
-interface PipeArrowVariant {
+// Walker geometry + the two cart tile tables + which axis advances / neighbour
+// is written, per ext ID. `primary` is the current-cell base, `secondary` the
+// neighbour-cell base used only on the $00==0 alignment.
+interface SewerArrowVariant {
   readonly col: number; // $2A col extent (post-init)
   readonly row: number; // $2E row extent (post-init)
-  readonly orient: number; // re-encoded $15 the walker sees
-  readonly base: number; // base Map16 ID of the first stamped cell
+  readonly orient: number; // re-encoded $15 the walker init writes (parity record)
+  readonly sub: number; // subtracted from $12 to form $00 = (… ) & $000E
+  readonly primary: number; // DATA_12BAE5 / DATA_12BB22 entry (current cell)
+  readonly secondary: number; // DATA_12BAE9 / DATA_12BB26 entry (neighbour cell)
+  readonly axis: 'col' | 'row'; // counter added to the tile + indexed by walker
+  readonly neighbour: 'below' | 'right'; // cell written when $00 == 0
 }
 
-const VARIANTS: Record<number, PipeArrowVariant> = {
-  0x89: { col: 0x0002, row: 0x0001, orient: 0x00, base: 0x8521 },
-  0x8a: { col: 0x0002, row: 0x0001, orient: 0x02, base: 0x8529 },
-  0x8b: { col: 0x0001, row: 0x0002, orient: 0x00, base: 0x8531 },
-  0x8c: { col: 0x0001, row: 0x0002, orient: 0x02, base: 0x8539 },
+const VARIANTS: Record<number, SewerArrowVariant> = {
+  0x89: { col: 0x0002, row: 0x0001, orient: 0x00, sub: 0x77a9, primary: 0x851b, secondary: 0x8521, axis: 'col', neighbour: 'below' },
+  0x8a: { col: 0x0002, row: 0x0001, orient: 0x02, sub: 0x77a9, primary: 0x8523, secondary: 0x8529, axis: 'col', neighbour: 'below' },
+  0x8b: { col: 0x0001, row: 0x0002, orient: 0x00, sub: 0x7799, primary: 0x852b, secondary: 0x8531, axis: 'row', neighbour: 'right' },
+  0x8c: { col: 0x0001, row: 0x0002, orient: 0x02, sub: 0x7799, primary: 0x8533, secondary: 0x8539, axis: 'row', neighbour: 'right' },
 };
 
-// CODE_12BAED / CODE_12BB2A per-cell stampers. Both produce base + linear
-// cell index; only one axis advances per variant, so (col + row) ∈ {0,1}.
-function makeInit(variant: PipeArrowVariant): (state: DecodeState) => void {
+// CODE_12BAED ($89/$8A) / CODE_12BB2A ($8B/$8C) per-cell stampers — see header.
+function makeInit(variant: SewerArrowVariant): (state: DecodeState) => void {
   const perCell: PerCellHandler = (state) => {
-    const index = ((state.zp28 & 0xff) + (state.zp2C & 0xff)) & 0xff;
-    stampCell(state, (variant.base + index) & 0xffff);
+    const axisVal = (variant.axis === 'col' ? state.zp28 : state.zp2C) & 0xff;
+    // $00 = ($12 - sub) & $000E (a 16-tile-wrap alignment of the buffer tile).
+    const blend = ((state.zp12 & 0xffff) - variant.sub) & 0x000e;
+    // Current cell: $00 + primary base + walker axis counter.
+    stampCell(state, (blend + variant.primary + axisVal) & 0xffff);
+    if (blend !== 0) return; // BNE — no neighbour write
+    // $00 == 0: also blend the secondary tile onto the neighbour cell.
+    setProbeToCurrent(state);
+    const off = variant.neighbour === 'below' ? getMap16Below(state) : getMap16Right(state);
+    writeBuf16(state, off, (variant.secondary + axisVal) & 0xffff);
   };
 
   return (state: DecodeState) => {

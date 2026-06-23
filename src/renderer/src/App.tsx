@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
 import type {
+  BgRegionRect,
   ExtractFreshness,
   ExtractionState,
   FindInstanceKind,
@@ -8,7 +9,8 @@ import type {
   LevelSprite,
   OverlayDriftReport,
   ProjectBackupResult,
-  ProjectSummary
+  ProjectSummary,
+  TestInventory
 } from '../../preload/api'
 import { Canvas } from './Canvas'
 import {
@@ -20,12 +22,13 @@ import { objectSizeMode } from './data/object-record'
 import { useObjectPropertyTable } from './hooks/useObjectPropertyTable'
 import { useLevelKeyboardShortcuts } from './hooks/useLevelKeyboardShortcuts'
 import { BlockerBar } from './BlockerBar'
-import { isBlocked, gates, poolSummary } from './lib/level-blockers'
+import { isBlocked, gates, poolSummary, type Blocker } from './lib/level-blockers'
 import { useLevelBlockers } from './hooks/useLevelBlockers'
 import { LevelMenu } from './LevelMenu'
 import { SubLevelMenu } from './SubLevelMenu'
 import { RomMenu } from './RomMenu'
-import { BizHawkMenu } from './BizHawkMenu'
+import { BizHawkMenu, clampInventory } from './BizHawkMenu'
+import { PanelGroupMenu } from './PanelGroupMenu'
 import { ProjectMenu } from './ProjectMenu'
 import { useEditDocument, useEditSession } from './edit-session/EditSession'
 import type { DocHistory } from './edit-session/useOverlayDocument'
@@ -48,6 +51,7 @@ import { PaintBody } from './panels/PaintPanel'
 import { usePaintTool } from './hooks/usePaintTool'
 import { ObjectFinderBody } from './panels/ObjectFinderBody'
 import { BanksBody } from './panels/BanksPanel'
+import { GraphicsBody } from './panels/GraphicsPanel'
 import { PatchesBody } from './panels/PatchesBody'
 import { useSubLevelBFS } from './hooks/useSubLevelBFS'
 import { useFloatingWindows, type WindowDef } from './hooks/useFloatingWindows'
@@ -59,6 +63,7 @@ import { useLevelNavigation } from './hooks/useLevelNavigation'
 import { getAllLevels, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
 import type { IncomingExit, LayerVisibility, PlacementItem, Selection } from './types'
+import { nextGridMode } from './types'
 
 type Operation = 'extract' | 'build' | null
 
@@ -152,16 +157,28 @@ const DEFAULT_LAYERS: LayerVisibility = {
   // pre-date this field) pick up the `true` default automatically, so no
   // version bump is needed.
   spriteOutlines: true,
-  // Background grid default on — preserves the previous always-drawn
-  // behavior. Same shallow-merge-with-defaults story as the fields above, so
-  // pre-existing v2 payloads pick up `true` without a version bump.
-  grid: true
+  // Background grid defaults to its lightest mode (per-screen lines) —
+  // preserves the previous always-drawn screen grid. `grid` is a 3-state
+  // GridMode now ('off' | 'screen' | 'tile'), so the storage key is bumped to
+  // v3: a pre-existing boolean `grid: true` from a v2 payload would otherwise
+  // shallow-merge in and break the off/screen/tile comparisons.
+  grid: 'screen'
 }
 
-// v2 bumped from v1 when foreground/background split into bg1/bg2/bg3.
+// v3 bumped from v2 when `grid` went boolean → 3-state GridMode (v2 itself
+// bumped from v1 when foreground/background split into bg1/bg2/bg3).
 const layersStore = persistedState<LayerVisibility>(
-  'shinyEgg.layers.v2',
+  'shinyEgg.layers.v3',
   DEFAULT_LAYERS
+)
+
+// Test Level inventory (the eggs/keys steppers by the Test Level button) —
+// which items Yoshi enters the level holding. Persisted so the choice sticks
+// across sessions; defaults to a vanilla empty-handed boot. v2 bumped from v1
+// when the 'none'|'all-eggs'|'eggs-and-key' preset became { eggs, keys } counts.
+const testInventoryStore = persistedState<TestInventory>(
+  'shinyEgg.testInventory.v2',
+  { eggs: 0, keys: 0 }
 )
 
 // Panel-toggle buttons (toolbar row 2, right-aligned). Each opens its floating
@@ -171,6 +188,7 @@ const PANEL_TOGGLES = [
   { kind: 'picker', label: 'Place', title: 'Place panel' },
   // { kind: 'paint', label: 'Paint', title: 'Paint surface' }, // hidden — see TOOLS note
   { kind: 'finder', label: 'Find', title: 'Object finder' },
+  { kind: 'graphics', label: 'Graphics', title: 'Export/import graphics as PNGs' },
   { kind: 'tiles', label: 'Tiles', title: 'Tiles' },
   { kind: 'palette', label: 'Palette', title: 'Palette' },
   { kind: 'exits', label: 'Exits Map', title: 'Exits map + warp network' },
@@ -180,6 +198,13 @@ const PANEL_TOGGLES = [
   { kind: 'banks', label: 'Level Banks', title: 'Bank byte budgets' },
   { kind: 'patches', label: 'Patches', title: 'Custom patches' }
 ] as const
+type PanelKind = (typeof PANEL_TOGGLES)[number]['kind']
+// Panel toggles collapsed behind toolbar "panel group" dropdowns instead of
+// inline buttons: the ROM-global panels (cart-wide data, not the loaded level)
+// under "Global Panels", and the art panels under "Graphics Panels". Everything
+// else stays an inline toggle button.
+const GLOBAL_PANEL_KINDS = new Set<string>(['strings', 'world-map', 'banks', 'patches'])
+const GRAPHICS_PANEL_KINDS = new Set<string>(['graphics', 'tiles', 'palette'])
 
 // Resolve a finder jump's (kind, id, cell) to the loaded level's matching
 // object/sprite as a Selection, by editor-session uid — so the jump can land
@@ -220,6 +245,10 @@ export default function App(): JSX.Element {
   const [running, setRunning] = useState<Operation>(null)
   const [log, setLog] = useState<string[]>([])
   const [activeTool, setActiveTool] = useState<string>('select')
+  // Graphics "Region" tab → BG1: while `pickingRegion`, a shift-drag marquee on the
+  // canvas captures `bg1RegionRect` (the area to export) instead of selecting.
+  const [pickingRegion, setPickingRegion] = useState(false)
+  const [bg1RegionRect, setBg1RegionRect] = useState<BgRegionRect | null>(null)
   // Per-session Test Level spawn override (the "Set Spawn" tool / middle-click).
   // In CELL coords + the level it was placed in; in-memory only (never saved to
   // the ROM, gone on reload). Tied to a level so it only shows / applies on the
@@ -227,6 +256,17 @@ export default function App(): JSX.Element {
   const [testSpawn, setTestSpawn] = useState<{ levelRecordId: number; x: number; y: number } | null>(
     null
   )
+  // Test Level inventory (the eggs/keys steppers) — persisted, applied on the
+  // next Test Level boot. Defaults to empty-handed (vanilla behaviour). Clamped
+  // on load so a stale/corrupt payload can't exceed the 6-slot egg trail.
+  const [testInventory, setTestInventory] = useState<TestInventory>(() =>
+    clampInventory(testInventoryStore.load())
+  )
+  const handleTestInventoryChange = useCallback((inv: TestInventory) => {
+    const next = clampInventory(inv)
+    setTestInventory(next)
+    testInventoryStore.save(next)
+  }, [])
   // selectedLevelRecordId = the level currently loaded in the canvas (may change
   // via exit jumps or sub-level dropdown picks). rootLevelRecordId = the user's
   // last main-dropdown pick — anchors the BFS that discovers sub-rooms.
@@ -256,6 +296,9 @@ export default function App(): JSX.Element {
   // it imperatively and nothing renders from it; it survives across levels in a
   // session.
   const clipboardRef = useRef<{ objects: LevelObject[]; sprites: LevelSprite[] } | null>(null)
+  // Live canvas viewport pixel size, mirrored by Canvas (like cameraRef). Read
+  // imperatively by paste to keep an off-screen target on-screen.
+  const viewportRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
   // Entity armed in the Add-picker for click-to-place. `placing` (a derived
   // bool passed to Canvas) gates the canvas place gesture.
   const [placement, setPlacement] = useState<PlacementItem | null>(null)
@@ -291,7 +334,8 @@ export default function App(): JSX.Element {
         sourceLevelRecordId: lvl.recordId,
         sourceScreenIndex: e.screenIndex,
         destX: e.destX,
-        destY: e.destY
+        destY: e.destY,
+        entranceType: e.entranceType
       })
       out.set(e.destLevelRecordId, list)
     }
@@ -354,7 +398,10 @@ export default function App(): JSX.Element {
     window.shinyEgg.setUnsavedChanges(anyDirty)
   }, [anyDirty])
   // Reset-level confirm dialog (delete the level's overlay → reload from base).
+  // Plain-click opens an informational modal (resetInfoOpen); the destructive
+  // confirm dialog (confirmReset) only opens on a deliberate shift-click.
   const [confirmReset, setConfirmReset] = useState(false)
+  const [resetInfoOpen, setResetInfoOpen] = useState(false)
   // Tracks whether any saveLevel has happened since the last successful build.
   // Used by the BizHawk "Test Level" chain to skip rebuilds when nothing has
   // changed on disk. Kept in a ref (the async chain needs a synchronous
@@ -382,6 +429,14 @@ export default function App(): JSX.Element {
   // edits, which (unlike level data) don't render live and only reach the editor
   // through a rebuild.
   const markRomDirty = useCallback(() => setNeedsBuild(true), [setNeedsBuild])
+  // A graphics edit (PNG import / BG region / reset) both marks the build dirty
+  // AND previews live: main mirrors saveGfxEdit into the gfx-live cache, so a
+  // render refresh repaints the canvas with the edit without a rebuild — the gfx
+  // twin of the palette draft (which previews via paletteOverride).
+  const onGfxEdited = useCallback(() => {
+    markRomDirty()
+    bumpRenderRefresh()
+  }, [markRomDirty, bumpRenderRefresh])
   // A Banks-panel free-space migrate / de-couple toggle changes the build layout
   // (mark dirty) AND the per-level byte budget of every bank-mate (bump the
   // layout version so the budget gate re-fetches and stale "N over" banners clear).
@@ -394,6 +449,26 @@ export default function App(): JSX.Element {
   const [logOpenSignal, setLogOpenSignal] = useState<number>(0)
   const openLog = useCallback(() => setLogOpenSignal((n) => n + 1), [])
 
+  // Canvas background colour (the area behind/around the level) — an app-wide
+  // setting, defaulting to black. Loaded once from settings.json; the toolbar
+  // swatch persists + previews it. Applied as the `--se-canvas-bg` CSS var that
+  // `.se-canvas` reads (the canvas clears to transparent, so this CSS background
+  // shows through — see scene.ts).
+  const DEFAULT_CANVAS_BG = '#000000'
+  const [canvasBg, setCanvasBg] = useState(DEFAULT_CANVAS_BG)
+  useEffect(() => {
+    void window.shinyEgg.settings.get().then((s) => {
+      if (s.canvasBackgroundColor) setCanvasBg(s.canvasBackgroundColor)
+    })
+  }, [])
+  useEffect(() => {
+    document.documentElement.style.setProperty('--se-canvas-bg', canvasBg)
+  }, [canvasBg])
+  const onCanvasBgChange = useCallback((color: string) => {
+    setCanvasBg(color)
+    void window.shinyEgg.settings.set({ canvasBackgroundColor: color })
+  }, [])
+
   // Activate a toolbar tool — shared by the tool buttons and the Q/W/E/R
   // hotkeys. The Place tool also pops the Place panel so an entity can be armed.
   const selectTool = useCallback(
@@ -401,6 +476,22 @@ export default function App(): JSX.Element {
       setActiveTool(id)
       if (id === 'place') openWindow('picker')
       if (id === 'paint') openWindow('paint')
+    },
+    [openWindow]
+  )
+
+  // Object-finder seed: shift-clicking an entry in the Place panel populates the
+  // Object Finder with that entity's kind + id and opens it (instead of arming
+  // it for placement). The nonce lets shift-clicking the same row re-seed.
+  const [finderSeed, setFinderSeed] = useState<{
+    kind: FindInstanceKind
+    id: number
+    nonce: number
+  } | null>(null)
+  const onFindObject = useCallback(
+    (kind: FindInstanceKind, id: number) => {
+      setFinderSeed((prev) => ({ kind, id, nonce: (prev?.nonce ?? 0) + 1 }))
+      openWindow('finder')
     },
     [openWindow]
   )
@@ -525,6 +616,7 @@ export default function App(): JSX.Element {
     globalUndo,
     globalRedo,
     onMoveIncoming,
+    onSetIncomingEntrance,
     recordDocEdit,
     registerDocApplier,
     unregisterDocApplier
@@ -559,6 +651,28 @@ export default function App(): JSX.Element {
       await onMoveIncoming(inc, destX, destY)
     },
     [levelState.level, onMoveIncoming]
+  )
+
+  // Incoming-marker entrance commit (Properties dropdown): the entrance-type twin
+  // of onMoveIncomingLive. Same self-warp guard — when the marker's SOURCE is the
+  // level being edited, route through the reducer (the cross-level disk path would
+  // diverge from the unsaved in-memory copy); other sources take the disk path.
+  const onSetIncomingEntranceLive = useCallback(
+    async (inc: IncomingExit, entranceType: number) => {
+      const lvl = levelState.level
+      if (lvl && inc.sourceLevelRecordId === lvl.recordId) {
+        const exit = lvl.exits.find(
+          (e) => e.variant === 'warp' && e.screenIndex === inc.sourceScreenIndex
+        )
+        if (exit) {
+          dispatchLevel({ type: 'setExitFields', uid: exit.uid!, patch: { entranceType } })
+          setSelection([{ kind: 'incoming', incoming: { ...inc, entranceType } }])
+          return
+        }
+      }
+      await onSetIncomingEntrance(inc, entranceType)
+    },
+    [levelState.level, onSetIncomingEntrance]
   )
 
   // Reset the current level: delete its overlay (discard saved + unsaved edits)
@@ -807,6 +921,30 @@ export default function App(): JSX.Element {
     },
     [closeDocs, closeWindow]
   )
+  // Toggle a panel's floating window open/closed — the shared action behind both
+  // the inline panel-toggle buttons and the Global Panels menu. Closing routes
+  // through requestCloseWindow so a dirty overlay doc prompts to save first.
+  const togglePanel = useCallback(
+    (kind: PanelKind): void => {
+      const win = windows.find((w) => w.kind === kind)
+      if (win?.open) requestCloseWindow(win)
+      else openWindow(kind)
+    },
+    [windows, openWindow, requestCloseWindow]
+  )
+  // Build the PanelGroupMenu entries for a set of window kinds — current open
+  // state + a bound toggle for each, in PANEL_TOGGLES order.
+  const groupPanels = useCallback(
+    (kinds: ReadonlySet<string>) =>
+      PANEL_TOGGLES.filter((p) => kinds.has(p.kind)).map((p) => ({
+        kind: p.kind,
+        label: p.label,
+        title: p.title,
+        open: windows.find((w) => w.kind === p.kind)?.open ?? false,
+        onToggle: () => togglePanel(p.kind)
+      })),
+    [windows, togglePanel]
+  )
   const onCloseSave = useCallback(async (): Promise<void> => {
     if (!pendingClose) return
     setCloseSaving(true)
@@ -846,6 +984,7 @@ export default function App(): JSX.Element {
     selectedLevelRecordId,
     rootLevelRecordId,
     testSpawn,
+    testInventory,
     appendLog
   })
 
@@ -911,6 +1050,12 @@ export default function App(): JSX.Element {
   }, [layers])
 
   const toggleLayer = useCallback((key: keyof LayerVisibility) => {
+    // The grid is a 3-state cycle (off → screen → tile → off), not a boolean —
+    // advance it through GridMode. Every other layer is a plain on/off flip.
+    if (key === 'grid') {
+      setLayers((l) => ({ ...l, grid: nextGridMode(l.grid) }))
+      return
+    }
     setLayers((l) => ({ ...l, [key]: !l[key] }))
   }, [])
 
@@ -932,7 +1077,9 @@ export default function App(): JSX.Element {
     globalUndo,
     globalRedo,
     propTable,
-    clipboardRef
+    clipboardRef,
+    cameraRef,
+    viewportRef
   })
 
   // App-wide shortcuts: Ctrl/Cmd+S = Save all, Ctrl/Cmd+R = Test Level. Handled
@@ -956,9 +1103,11 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [onSaveAll, handleTestLevel])
 
-  // Tool hotkeys: Q/W/E/R pick the toolbar tools (Select / Place / Erase / Set
-  // Spawn) — see TOOL_HOTKEYS. Plain keys only: ignored while typing in a field
-  // and whenever a modifier is held, so Ctrl+R (Test Level) etc. still win.
+  // Plain-key shortcuts: Q/W/E/R pick the toolbar tools (Select / Place / Erase /
+  // Set Spawn) — see TOOL_HOTKEYS — and G toggles the grid overlay (cycling its
+  // off → screen → tile modes, same as the toolbar button). Plain keys only:
+  // ignored while typing in a field and whenever a modifier is held, so Ctrl+R
+  // (Test Level) etc. still win.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
@@ -972,14 +1121,20 @@ export default function App(): JSX.Element {
       ) {
         return
       }
-      const id = TOOL_HOTKEYS[e.key.toLowerCase()]
+      const k = e.key.toLowerCase()
+      if (k === 'g') {
+        e.preventDefault()
+        toggleLayer('grid')
+        return
+      }
+      const id = TOOL_HOTKEYS[k]
       if (!id) return
       e.preventDefault()
       selectTool(id)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectTool])
+  }, [selectTool, toggleLayer])
 
   // Project change from the toolbar Project menu. On an actual switch (new /
   // open / delete) clear the level selection so the canvas drops back to "pick
@@ -1074,6 +1229,14 @@ export default function App(): JSX.Element {
               </svg>
             </button>
           ))}
+          <span className="se-toolbar__divider" />
+          <label className="se-toolbar__bgcolor" title="Canvas background color">
+            <input
+              type="color"
+              value={canvasBg}
+              onChange={(e) => onCanvasBgChange(e.target.value)}
+            />
+          </label>
           <span className="se-toolbar__divider" />
           <LayerToggles layers={layers} onToggle={toggleLayer} />
         </nav>
@@ -1174,14 +1337,14 @@ export default function App(): JSX.Element {
             <button
               type="button"
               className="se-tool se-tool--reset"
-              onClick={() => setConfirmReset(true)}
+              onClick={(e) => (e.shiftKey ? setConfirmReset(true) : setResetInfoOpen(true))}
               disabled={
                 isSaving ||
                 !levelState.level ||
                 levelState.level.empty ||
                 levelState.level.special
               }
-              title="Reset level — discard all changes (saved + unsaved) and reload from the base cart"
+              title="Reset level — discard all changes (saved + unsaved) and reload from the base cart. Shift-click to reset."
             >
               Reset
             </button>
@@ -1192,24 +1355,29 @@ export default function App(): JSX.Element {
               onLocate={onLocateBizhawk}
               onLaunch={handleLaunch}
               onTestLevel={handleTestLevel}
+              testInventory={testInventory}
+              onTestInventoryChange={handleTestInventoryChange}
             />
           </div>
           <div className="se-toolbar__row-right">
-            {PANEL_TOGGLES.map((p) => {
-              const win = windows.find((w) => w.kind === p.kind)
-              const open = win?.open ?? false
+            {PANEL_TOGGLES.filter(
+              (p) => !GLOBAL_PANEL_KINDS.has(p.kind) && !GRAPHICS_PANEL_KINDS.has(p.kind)
+            ).map((p) => {
+              const open = windows.find((w) => w.kind === p.kind)?.open ?? false
               return (
                 <button
                   key={p.kind}
                   type="button"
                   className={`se-tool se-tool--reopen${open ? ' is-open' : ''}`}
-                  onClick={() => (open && win ? requestCloseWindow(win) : openWindow(p.kind))}
+                  onClick={() => togglePanel(p.kind)}
                   title={open ? `Close ${p.title}` : `Open ${p.title}`}
                 >
                   {p.label}
                 </button>
               )
             })}
+            <PanelGroupMenu label="Graphics Panels" panels={groupPanels(GRAPHICS_PANEL_KINDS)} />
+            <PanelGroupMenu label="Global Panels" panels={groupPanels(GLOBAL_PANEL_KINDS)} />
           </div>
         </div>
       </header>
@@ -1230,9 +1398,15 @@ export default function App(): JSX.Element {
           poolLabel={poolLabel}
           focusRequest={focusReq}
           cameraRef={cameraRef}
+          viewportRef={viewportRef}
           cameraRequest={cameraReq}
           placing={activeTool === 'place' && placement !== null}
           onPlaceAt={onPlaceAt}
+          regionPickMode={pickingRegion}
+          onRegionPicked={(rect) => {
+            setBg1RegionRect(rect)
+            setPickingRegion(false)
+          }}
           eraseTool={activeTool === 'erase'}
           spawnTool={activeTool === 'spawn'}
           paintTool={activeTool === 'paint' && levelState.level !== null}
@@ -1249,9 +1423,13 @@ export default function App(): JSX.Element {
           onSpawnCommit={onSpawnCommit}
           paletteOverride={paletteEditor.draft}
           renderRefresh={renderRefresh}
+          canvasBackground={canvasBg}
         />
-        {/* Rendered after the canvas (so it sits above the level visuals) but
-            with auto z-index, so the positive-z floating panels stay above it. */}
+        {/* Rendered after the canvas (so it sits above the level visuals) but with
+            auto z-index, so the positive-z floating panels stay above it. Shows the
+            byte-budget blockers. (Palette + graphics edits preview live on the
+            canvas — gfx via the persisted live cache, palette via the draft — so
+            there's no "visuals out of date" banner; Test Level / Launch rebuild.) */}
         <BlockerBar
           blockers={blockers}
           onDismiss={(id) => {
@@ -1302,7 +1480,13 @@ export default function App(): JSX.Element {
               ) : w.kind === 'world-map' ? (
                 <WorldMapBody editor={worldMapEditor} onJump={onWorldMapJump} />
               ) : w.kind === 'picker' ? (
-                <PickerBody armed={placement} level={levelState.level} onPick={onPickPlacement} />
+                <PickerBody
+                  armed={placement}
+                  level={levelState.level}
+                  onPick={onPickPlacement}
+                  onFind={onFindObject}
+                  renderRefresh={renderRefresh}
+                />
               ) : w.kind === 'paint' ? (
                 <PaintBody
                   tileset={paint.tileset}
@@ -1337,6 +1521,7 @@ export default function App(): JSX.Element {
                   onJump={jumpToInstance}
                   currentLevelRecordId={selectedLevelRecordId}
                   projectScope={projectScope}
+                  seed={finderSeed}
                 />
               ) : w.kind === 'patches' ? (
                 <PatchesBody projectId={projectScope} onMutated={markRomDirty} />
@@ -1348,6 +1533,16 @@ export default function App(): JSX.Element {
                   onLayoutChange={onLayoutChange}
                   onLevelsRemoved={onLevelsRemoved}
                 />
+              ) : w.kind === 'graphics' ? (
+                <GraphicsBody
+                  level={levelState.level}
+                  onMutated={onGfxEdited}
+                  bg1RegionRect={bg1RegionRect}
+                  pickingRegion={pickingRegion}
+                  onStartRegionPick={() => setPickingRegion(true)}
+                  onClearRegion={() => setBg1RegionRect(null)}
+                />
+
               ) : (
                 <PropertiesBody
                   selection={selection}
@@ -1358,6 +1553,7 @@ export default function App(): JSX.Element {
                   dispatchLevel={dispatchLevel}
                   worldMapSpawn={worldMapSpawn}
                   onSpawnCommit={onSpawnCommit}
+                  onIncomingEntranceCommit={onSetIncomingEntranceLive}
                 />
               )}
             </FloatingWindow>
@@ -1381,6 +1577,27 @@ export default function App(): JSX.Element {
           onDiscard={() => void onResetLevel()}
           onCancel={() => setConfirmReset(false)}
         />
+        {resetInfoOpen && (
+          <div className="se-modal-backdrop" onMouseDown={() => setResetInfoOpen(false)}>
+            <div className="se-modal" onMouseDown={(e) => e.stopPropagation()}>
+              <h3 className="se-modal__title">Reset level</h3>
+              <p className="se-modal__body">
+                Resetting deletes all of your changes to this level — both saved and
+                unsaved — and restores it to the base cart&rsquo;s original data. This
+                can&rsquo;t be undone. If you&rsquo;re sure, hold Shift and click Reset.
+              </p>
+              <div className="se-modal__actions">
+                <button
+                  type="button"
+                  className="se-btn"
+                  onClick={() => setResetInfoOpen(false)}
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <DiscardChangesModal
           open={pendingClose !== null}
           title="Unsaved changes"

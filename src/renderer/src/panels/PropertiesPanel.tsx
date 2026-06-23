@@ -25,6 +25,7 @@ import {
 } from '../data/object-record'
 import { useObjectPropertyTable } from '../hooks/useObjectPropertyTable'
 import {
+  ENTRANCE_TYPES,
   exitFields,
   objectFields,
   spriteFields,
@@ -69,6 +70,9 @@ export interface PropertiesBodyProps {
   /** Commit an absolute spawn cell to the entrance-table document. Absent → the
    *  spawn shows read-only. */
   onSpawnCommit?: (x: number, y: number) => void
+  /** Commit an entrance-type change on an incoming marker → rewrites the source
+   *  room's exit entranceType (auto-saves it; undoable). Absent → read-only. */
+  onIncomingEntranceCommit?: (inc: IncomingExit, entranceType: number) => void
 }
 
 export function PropertiesBody({
@@ -79,7 +83,8 @@ export function PropertiesBody({
   selectedObjectInfluence,
   dispatchLevel,
   worldMapSpawn,
-  onSpawnCommit
+  onSpawnCommit,
+  onIncomingEntranceCommit
 }: PropertiesBodyProps): JSX.Element {
   if (selection.length === 0) {
     return <p className="se-props__empty">Nothing selected.</p>
@@ -127,7 +132,7 @@ export function PropertiesBody({
       const exit = level?.exits.find((e) => e.uid === sel.uid)
       return exit ? <ExitProps exit={exit} dispatchLevel={dispatchLevel} /> : nothing
     }
-    case 'incoming': return <IncomingProps incoming={sel.incoming} />
+    case 'incoming': return <IncomingProps incoming={sel.incoming} onEntranceCommit={onIncomingEntranceCommit} />
     case 'spawn':    return <SpawnProps spawn={worldMapSpawn ?? sel.spawn} onCommit={onSpawnCommit} />
   }
 }
@@ -372,7 +377,15 @@ function ObjectProps({
   )
 }
 
-function IncomingProps({ incoming }: { incoming: IncomingExit }): JSX.Element {
+function IncomingProps({
+  incoming,
+  onEntranceCommit
+}: {
+  incoming: IncomingExit
+  /** Commit an entrance-type change → rewrites the source exit's entranceType.
+   *  Absent → the entrance shows read-only. */
+  onEntranceCommit?: (inc: IncomingExit, entranceType: number) => void
+}): JSX.Element {
   const screen = `${incoming.sourceScreenIndex & 0x0f},${(incoming.sourceScreenIndex >> 4) & 0x0f}`
   const source = getLevel(incoming.sourceLevelRecordId)
   return (
@@ -390,13 +403,31 @@ function IncomingProps({ incoming }: { incoming: IncomingExit }): JSX.Element {
       </dd>
       <dt>Lands at</dt>
       <dd>{incoming.destX}, {incoming.destY}</dd>
+      {/* Entrance type — edits the SOURCE room's exit entranceType (the value
+          twin of the drag-to-move-landing-cell). Auto-saves + undoable like the
+          drag; read-only display when no commit handler is wired. */}
+      {onEntranceCommit ? (
+        <FieldRow
+          label="Entrance"
+          field={{ kind: 'enum', options: ENTRANCE_TYPES }}
+          value={incoming.entranceType}
+          hint="How the player arrives — the entry animation/spawn state. Writes back to the source room's exit (auto-saves it; undoable)."
+          onCommit={(v) => onEntranceCommit(incoming, v)}
+        />
+      ) : (
+        <>
+          <dt>Entrance</dt>
+          <dd>0x{hex(incoming.entranceType)}</dd>
+        </>
+      )}
       <dt>Hint</dt>
       <dd className="se-props__desc">
         Drag the marker to move where the source room&apos;s exit lands the
-        player (edits the source level&apos;s exit and auto-saves it; undoable).
-        Double-click to jump back to the source room and center on its outgoing
-        exit — an editor-only reverse navigation the player can&apos;t make
-        in-game.
+        player, or set the <strong>Entrance</strong> above to change how the
+        player arrives — both edit the source level&apos;s exit and auto-save it
+        (undoable). Double-click to jump back to the source room and center on
+        its outgoing exit — an editor-only reverse navigation the player
+        can&apos;t make in-game.
       </dd>
     </dl>
   )

@@ -393,9 +393,6 @@ screen). The verified model:
    generators that emit enemies *out* of the pipe. See
    `docs/family-shyguys.md` §2.
 
-The editor's canonical exit-mechanism reference is
-`src/renderer/src/data/exit-triggers.ts`.
-
 The `BG_HDFTCK` head/foot consumer tests `MD+SK` ($05) for head probes
 and `SK` ($04) for foot probes. On an SK hit, it indexes
 `DATA_0ABD0E / slope_panels_table` at
@@ -937,7 +934,7 @@ Porting requires:
    walk/run/swim/jump/slip/ride states.
 
 Probably 1-2 weeks of work for a faithful port. Worth it only if you need
-in-editor physics preview or a save-state-driven test runner.
+an emulator-free physics preview or a save-state-driven test runner.
 
 ### 6.5 BG collision -- HARD (depends on physics)
 

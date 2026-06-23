@@ -59,7 +59,7 @@ import { registerExtObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { stampCell } from './_shared.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 
 // A table entry is either a literal Map16 ID or a per-tileset template
 // slot to deref via state.templateAt. The cart stores both as raw words;
@@ -116,7 +116,7 @@ function initMushroomSmallPair(state: DecodeState): void {
   state.zp2A = MSP_COL_EXTENT; // LDA #$0002 : STA $2A
   state.zp2E = MSP_ROW_EXTENT; // STA $2E (same value)
   // JSL CODE_prng : AND #$0004 : STA $A1 — half-table offset (0 or 4).
-  state.zpA1 = prngNext(state) & 0x0004;
+  state.zpA1 = prngNext(state, RNG_SITE.initMushroomSmallPair) & 0x0004;
   // LDA $15 : AND #$0001 : STA $15 — collapse object ID to bit-0 selector.
   state.zp15 = state.zp15 & 0x0001;
   const handler = state.zp15 !== 0 ? mushroomStampB5 : mushroomStampB4;

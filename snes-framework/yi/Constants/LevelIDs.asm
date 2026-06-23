@@ -23,7 +23,7 @@
 ;# cutscene / Welcome). Earlier revisions of this file glossed each define with "Ptrs[$XX] =
 ;# ..." as if the values were record ids -- that conflation is exactly the trap the
 ;# "two ID spaces" warning above exists for. Per-define "plays record" glosses below are derived from
-;# the cart entrance tables (shiny-egg's editor-data/yi/level-map.json).
+;# the cart entrance tables (editor-data/yi/level-map.json).
 ;#
 ;# Each world reserves 12 slots: 8 main + Extra (slot 8) + Bonus tile (slot 9, code-scene
 ;# minigame) + 2 padding -- except World 1, whose slots 10/11 are the engine-loaded intro
@@ -34,7 +34,7 @@
 ;#   yi/Banks/Bank17.asm DATA_17B4BD -- the bonus-tile dispatch (GameMode $2A).
 ;#   yi/Banks/Bank04.asm:12365 -- the Welcome boot tweak (SMWC $04E1B4).
 ;#   docs/levelloader.md S3 -- the full translevel -> record -> Ptrs resolution.
-;#   shiny-egg's snes-framework/scripts/types.ts -- the editor's translevelId/recordId contract.
+;#   scripts/types.ts -- the translevelId/recordId contract.
 ;#############################################################################################################
 
 ; --- World 1 map slots $00-$0B: 8 main + Extra ($08) + Bonus tile ($09) + intro-cutscene slot $0A + Welcome slot $0B ---

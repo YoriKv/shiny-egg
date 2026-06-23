@@ -45,7 +45,7 @@ import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { getMap16Left, getMap16Right } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { readBuf16, setProbeToCurrent, stampCell } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -135,8 +135,10 @@ function pipeCapSelect(state: DecodeState, y: number): number {
         ? DATA_stone_3d_cap_tiles_wall_alt[yClamp]!
         : DATA_stone_3d_cap_tiles_alt[yClamp]!;
     }
-    // No edge match — INC default.
-    return (candidate + 1) & 0xffff;
+    // No edge match — the cart's `INC` here operates on A, which still holds the
+    // PROBED LEFT-NEIGHBOUR tile (from CODE_probe_left_tile), NOT the default
+    // candidate ($04). So the stamped tile is leftTile + 1, not candidate + 1.
+    return (leftTile + 1) & 0xffff;
   }
 
   // CODE_13FC44: middle column.
@@ -207,19 +209,25 @@ function pipeBodyShapeSelect(state: DecodeState, cand: number): number {
       y = adjusted;
     } else {
       // PRNG branch: A = (PRNG & $0002) + $0004 → {4, 6}.
-      y = ((prngNext(state) & 0x02) + 0x04) & 0xffff;
+      y = ((prngNext(state, RNG_SITE.stone3dBodyAlt) & 0x02) + 0x04) & 0xffff;
     }
     y &= 0x06;
     return DATA_stone_3d_body_alt_tiles[y >>> 1]!;
   }
 
   if (cand === 0x0109 || cand === 0x79E3 || cand === 0x79E6) {
-    // CODE_13FCC2.
+    // CODE_13FCC2: store the PROBE-LEFT tile (not the candidate). The cart
+    // does `JSR probe_left ; CMP #0/CMP #$79E7 BEQ store ; INC ; store` where
+    // `store` is `STA $04` — A holds the probe result throughout, so $04
+    // becomes the left tile ($0000 / $79E7 kept as-is) or left+1 otherwise.
+    // This mirrors the odd-column body cell onto its left neighbour to form
+    // the 3D pipe pair ($79E2→$79E3, $79E5→$79E6, $0108→$0109). The earlier
+    // port returned `cand`/`cand+1`, collapsing every odd cell to $0109/$010A.
     setProbeToCurrent(state);
     const leftOff = getMap16Left(state);
     const leftTile = readBuf16(state, leftOff) & 0xffff;
-    if (leftTile === 0x0000 || leftTile === 0x79E7) return cand;
-    return (cand + 1) & 0xffff;
+    if (leftTile === 0x0000 || leftTile === 0x79E7) return leftTile;
+    return (leftTile + 1) & 0xffff;
   }
 
   // CODE_13FCF0: main-table dispatch.
@@ -227,9 +235,9 @@ function pipeBodyShapeSelect(state: DecodeState, cand: number): number {
   //   y = (a + $2C) * 2          ; ASL after ADC
   //   if y >= $0016 → y = (PRNG & 2) + $12 → {$12, $14}
   //   tile = DATA_stone_3d_body_main_tiles[(y - 6) / 2]
-  let y2 = (((prngNext(state) & 0x03) + (state.zp2C & 0xff)) << 1) & 0xffff;
+  let y2 = (((prngNext(state, RNG_SITE.stone3dBodyMain) & 0x03) + (state.zp2C & 0xff)) << 1) & 0xffff;
   if (y2 >= 0x0016) {
-    y2 = ((prngNext(state) & 0x02) + 0x12) & 0xffff;
+    y2 = ((prngNext(state, RNG_SITE.stone3dBodyMainHi) & 0x02) + 0x12) & 0xffff;
   }
   const mainIdx = ((y2 - 6) >>> 1) & 0xff;
   // Cart `LDA DATA_stone_3d_body_main_tiles-$06,y` resolves to DATA_stone_3d_body_main_tiles[(y-6)/2].

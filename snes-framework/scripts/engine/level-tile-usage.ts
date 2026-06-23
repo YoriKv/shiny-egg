@@ -59,7 +59,7 @@ export function levelMap16Usage(
   const gfxManifest: GfxFileEntry[] = [];
   loadLevelGfx(
     rom, symbols,
-    { bg1Tileset: h[1] ?? 0, bg2Tileset: h[3] ?? 0, bg3Tileset: h[5] ?? 0, spriteTileset: h[7] ?? 0, isWorld6: input.isWorld6 },
+    { bg1Tileset: h[1] ?? 0, bg2Tileset: h[3] ?? 0, bg3Tileset: h[5] ?? 0, spriteTileset: h[7] ?? 0, isWorld6: input.isWorld6, levelMode: h[9] ?? 0 },
     vram, gfxManifest
   );
   loadTileAnimation(rom, symbols, { animationTileset: h[10] ?? 0, bg1Tileset: h[1] ?? 0, levelMode: h[9] ?? 0 }, vram);

@@ -58,7 +58,7 @@ export function devBizhawkPath(): string | null {
 
 // ── Per-project storage ───────────────────────────────────────────────────
 // User edits live in their own project folder under userData, separate from
-// the pristine base (frameworkWorkRoot). See research/plan-project-storage.md.
+// the pristine base (frameworkWorkRoot).
 // Projects stay in userData (a "Reveal project folder" button is a TODO).
 
 export function projectsRoot(): string {
@@ -78,7 +78,7 @@ export function overlayRoot(id: string): string {
 
 // Bundled, read-only repository of pre-packaged patches (shipped via
 // electron-builder extraResources, alongside yi/ + global/). Read from the
-// source tree, never the writable copy. See research/plan-custom-patches.md.
+// source tree, never the writable copy.
 export function builtinPatchesRoot(): string {
   return join(frameworkSourceRoot(), 'patches')
 }

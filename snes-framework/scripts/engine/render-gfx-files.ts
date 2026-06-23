@@ -30,13 +30,18 @@ import {
   type GfxHeader,
   type GfxFileEntry
 } from './load-graphics.ts';
-import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
+import { loadLevelPalettes, bgPaletteBaseRows, type PaletteHeader, type BgPaletteRows } from './load-palettes.ts';
 import {
   loadTileAnimation,
   type TileAnimationEntry
 } from './load-tile-animation.ts';
 import { loadSceneRegs } from './scene-regs.ts';
-import type { SymbolMap } from './symbol-map.ts';
+import { loadBg2Tilemap, loadBg3Tilemap } from './load-bg-tilemaps.ts';
+import { type SymbolMap } from './symbol-map.ts';
+import { u24le } from './rom-read.ts';
+import { encodePng } from './png.ts';
+import { gfxToImage, lz16Layout, lz2Layout, type GfxImageLayout } from './gfx-png.ts';
+import { gfxFileAseprite } from './gfx-aseprite.ts';
 // GfxFileBlock + GfxFilesResult live in `../types.ts` (Node-free, so the
 // renderer-facing contract can re-export them); imported for local use and
 // re-exported to keep the `snes-framework/render-gfx-files` import path intact.
@@ -52,9 +57,29 @@ const TILE_BYTES_2BPP = 16;
  *  `render:vram`). Sprites in YI sit in the upper 8KB of VRAM. */
 const SPRITE_VRAM_START = 0x6000;
 
+/**
+ * Palette row to PREVIEW an animated slot with (the Tiles-gallery animated-slot
+ * blocks). The always-on universal collectibles — coins / !-switch / !-coin / star,
+ * at VRAM byte $2800-$2980 — are coloured from the FIXED universal-object palette
+ * (CGRAM rows 1-3: red / gold / green), NOT the level's BG1 palette, so a coin
+ * previews gold in every level. Every OTHER (per-tileset) animated band is level
+ * terrain (water / lava / torch) tinted by the level's own BG1 palette → the BG1 row.
+ * Keyed by VRAM byte offset.
+ */
+const UNIVERSAL_ANIM_PALETTE_ROW: Record<number, number> = {
+  0x2800: 2, // Coins ($1400) — gold
+  0x2880: 3, // !-Switch ($1440)
+  0x2900: 1, // !-Coin ($1480) — red
+  0x2980: 3 // Star ($14C0)
+};
+const animSlotPaletteRow = (vramByteOffset: number, bg1Row: number): number =>
+  UNIVERSAL_ANIM_PALETTE_ROW[vramByteOffset] ?? bg1Row;
+
 interface RenderHeader extends GfxHeader, PaletteHeader {
   animationTileset?: number;
   levelMode?: number;
+  /** header[11] animation-palette mode — flags BG3 palette-cycle levels. */
+  animationPalette?: number;
 }
 
 /** Map dpSlot (0..12 = asm DP $10..$1C) → layer name. */
@@ -88,33 +113,38 @@ function dpSlotLayer(slot: number): 'BG1' | 'BG2' | 'BG3' | 'Sprite' {
  * convention as authoritative. A modded ROM that violates it (e.g.
  * recompresses a BG1 file as LZ16) will get mislabeled. The cart
  * itself doesn't enforce the convention — the chunk-list bit-15
- * flag is the only runtime check — so future shiny-egg work that
+ * flag is the only runtime check — so future work that
  * adds files should keep BG1/BG3 as LZ2 and BG2/Sprite as LZ16. */
 function inferRenderParams(
   entry: GfxFileEntry,
-  bg3CharAddr: number
+  bg3CharAddr: number,
+  bgRows: BgPaletteRows
 ): { bpp: 2 | 4; paletteRow: number; layer: string } {
+  // Non-sprite paletteRow = the layer's REAL CGRAM row (bgPaletteBaseRows), not 0
+  // — row 0 holds the backdrop + BG3, so BG1/BG2 sheets coloured at row 0 show
+  // the wrong palette. (The per-tile renderer reads the row per cell; a
+  // paletteless file preview has to pick the layer's base row.)
   if (entry.dpSlot !== undefined) {
     const layer = dpSlotLayer(entry.dpSlot);
-    if (layer === 'BG3') return { bpp: 2, paletteRow: 0, layer: 'BG3' };
+    if (layer === 'BG3') return { bpp: 2, paletteRow: bgRows.bg3, layer: 'BG3' };
     if (layer === 'Sprite') return { bpp: 4, paletteRow: 8, layer: 'Sprite' };
-    return { bpp: 4, paletteRow: 0, layer };
+    return { bpp: 4, paletteRow: layer === 'BG2' ? bgRows.bg2 : bgRows.bg1, layer };
   }
   if (
     bg3CharAddr > 0 &&
     entry.vramByteOffset >= bg3CharAddr &&
     entry.vramByteOffset < bg3CharAddr + 0x2000
   ) {
-    return { bpp: 2, paletteRow: 0, layer: 'BG3' };
+    return { bpp: 2, paletteRow: bgRows.bg3, layer: 'BG3' };
   }
   if (entry.vramByteOffset >= SPRITE_VRAM_START) {
     // LZ format breaks the BG1-vs-sprite tie in upper VRAM.
     if (entry.format === 'lz2') {
-      return { bpp: 4, paletteRow: 0, layer: 'BG1' };
+      return { bpp: 4, paletteRow: bgRows.bg1, layer: 'BG1' };
     }
     return { bpp: 4, paletteRow: 8, layer: 'Sprite' };
   }
-  return { bpp: 4, paletteRow: 0, layer: 'BG1/BG2' };
+  return { bpp: 4, paletteRow: bgRows.bg1, layer: 'BG1/BG2' };
 }
 
 function bytesPerTile(bpp: 2 | 4): number {
@@ -220,6 +250,10 @@ export function renderGfxFiles(
   // Scene-regs lookup tells us where BG3 char data lives — needed for
   // the "is this entry BG3?" classification for literal chunk bytes.
   const regs = loadSceneRegs(rom, symbols, header.levelMode ?? 0);
+  // The CGRAM row each BG layer's palette actually loads into (BG1 row 4, BG2
+  // row 6, BG3 row 0 in the stock program) — so each sheet previews in its own
+  // colours instead of row 0.
+  const bgRows = bgPaletteBaseRows(rom, symbols, header.levelMode ?? 0);
 
   const bgU32 = bgr15ToImageDataU32(0x0000);
   const blocks: GfxFileBlock[] = [];
@@ -238,7 +272,7 @@ export function renderGfxFiles(
 
   // --- Chunk-list entries ----------------------------------------------------
   for (const entry of gfxManifest) {
-    const params = inferRenderParams(entry, regs.bg3CharAddr);
+    const params = inferRenderParams(entry, regs.bg3CharAddr, bgRows);
     const bpt = bytesPerTile(params.bpp);
     const totalTiles = Math.floor(entry.sizeBytes / bpt);
     const isSprite = params.layer === 'Sprite';
@@ -295,10 +329,12 @@ export function renderGfxFiles(
   }
 
   // --- Animated-slot blocks --------------------------------------------------
-  // Each is 4 tiles (0x80 bytes at 4bpp). Rendered at BG1 palette row 0
-  // since these tiles are referenced by BG1 cells.
-  const animPalette = getPalette(0, 4);
+  // Each is 4 tiles (0x80 bytes at 4bpp). The universal collectibles (coins/
+  // !-blocks/star) preview with the fixed universal-object palette; per-tileset
+  // terrain bands use the BG1 row (animSlotPaletteRow).
   for (const entry of animManifest) {
+    const animRow = animSlotPaletteRow(entry.vramByteOffset, bgRows.bg1);
+    const animPalette = getPalette(animRow, 4);
     const tileCount = Math.floor(entry.sizeBytes / TILE_BYTES_4BPP);
     const rendered = renderTileGrid(
       vram,
@@ -315,9 +351,9 @@ export function renderGfxFiles(
       label: `Animated · ${entry.label}`,
       sublabel:
         `VRAM ${hex(entry.vramByteOffset)} (word ${hex(wordAddr)}) · ` +
-        `${tileCount} tiles · 4bpp pal 0 · init_tileset_animation`,
+        `${tileCount} tiles · 4bpp pal ${animRow} · init_tileset_animation`,
       bpp: 4,
-      paletteRow: 0,
+      paletteRow: animRow,
       vramByteOffset: entry.vramByteOffset,
       tileCount,
       rgba: rendered.rgba,
@@ -327,4 +363,404 @@ export function renderGfxFiles(
   }
 
   return { blocks };
+}
+
+/**
+ * Where a gfx file sits in the scene's asset composition (graphicsassets.md §12)
+ * — the "usage" the exporter groups PNGs by (category folder) and names them
+ * after. Derived purely from cart data: the chunk-list `dpSlot` (indirect
+ * per-tileset entries) plus the fixed-file VRAM atlas for literals.
+ *
+ *   - `bg1-tileset` — the 3 BG1 char files (DP $10-$12). These ARE the object/
+ *     terrain tiles: every std/ext object's pixels come from here (§4).
+ *   - `bg2` / `bg3` — the 2 BG2 (DP $13-$14) / 2 BG3 (DP $15-$16) char files.
+ *   - `sprites` — `tier:'spriteset'` = one of the 6 per-level spriteset files
+ *     (DP $17-$1C, `slot` 0-5); `tier:'global'` = an always-loaded common sheet
+ *     (files $72/$19 at VRAM $8000/$F000).
+ *   - `hud` — the fixed HUD / font / status sheets ($12/$76/$4F).
+ *   - `other` — anything the classifier can't place (shouldn't occur for stock
+ *     scenes; kept so a modded layout still exports somewhere).
+ */
+export interface GfxRole {
+  category: 'bg1-tileset' | 'bg2' | 'bg3' | 'sprites' | 'hud' | 'other';
+  /** Sprite tier (sprites only). */
+  tier?: 'global' | 'spriteset';
+  /** File index within its group: bg1 0..2, bg2 0..1, bg3 0..1, spriteset 0..5.
+   *  Undefined for literal global/hud sheets (not a per-tileset slot). */
+  slot?: number;
+}
+
+/** VRAM byte offsets of the two always-loaded global sprite sheets ($72/$19). */
+const GLOBAL_SPRITE_VRAM = new Set([0x8000, 0xf000]);
+/** VRAM byte offsets of the fixed HUD / font / status sheets ($12/$76/$4F). */
+const HUD_VRAM = new Set([0x2400, 0x2a00, 0xc000]);
+
+/**
+ * Classify a chunk-list entry into its asset-composition role. Indirect entries
+ * carry an unambiguous `dpSlot` (which per-tileset table they came from);
+ * literals are placed by their fixed VRAM destination + inferred layer.
+ */
+function classifyGfxRole(entry: GfxFileEntry, layer: string): GfxRole {
+  if (entry.dpSlot !== undefined) {
+    const s = entry.dpSlot;
+    if (s <= 2) return { category: 'bg1-tileset', slot: s };
+    if (s <= 4) return { category: 'bg2', slot: s - 3 };
+    if (s <= 6) return { category: 'bg3', slot: s - 5 };
+    return { category: 'sprites', tier: 'spriteset', slot: s - 7 };
+  }
+  if (GLOBAL_SPRITE_VRAM.has(entry.vramByteOffset)) return { category: 'sprites', tier: 'global' };
+  if (HUD_VRAM.has(entry.vramByteOffset)) return { category: 'hud' };
+  if (layer === 'Sprite') return { category: 'sprites', tier: 'global' };
+  if (layer === 'BG3') return { category: 'bg3' };
+  if (layer === 'BG1') return { category: 'bg1-tileset' };
+  return { category: 'other' };
+}
+
+/** Per-tile palette fidelity for a BG2/BG3 file, carried on the export entry (and
+ *  copied into the gfx manifest) so import decodes each tile against its OWN
+ *  palette row — see gfx-png.ts. A global swatch can't disambiguate the rows (they
+ *  share colours at different positions); decode must be per-tile. Used for both
+ *  BG3 (2bpp, 4-colour rows) and BG2 (4bpp, 16-colour rows). */
+export interface PerTilePalette {
+  /** Per file-tile palette index (0..subPalettes.length-1); 0 = the layer's
+   *  primary row, used for tiles the tilemap never references. */
+  tileSub: number[];
+  /** The palette rows the tiles use, as RGB ints (0xRRGGBB) — 4 colours each for
+   *  2bpp BG3, 16 for 4bpp BG2; index 0 = the transparent key. The layer's loaded
+   *  block comes first (BG3 rows 0-3, BG2 rows 6-7), then any extra rows the
+   *  tilemap references. */
+  subPalettes: number[][];
+  /** This level runs a per-frame palette animation that recolours THIS layer's
+   *  rows (header field 11) — the exported colours are one frame of a cycle.
+   *  Editing tile indices stays byte-safe; only the displayed colours animate. */
+  paletteAnimated: boolean;
+}
+
+export interface GfxPngEntry {
+  fileId: number;
+  format: 'lz2' | 'lz16';
+  bpp: 2 | 4;
+  /** Asset-composition role — the category folder + slot the exporter names by. */
+  role: GfxRole;
+  /** Decompressed byte length — for lz2 truncation + layout on import. */
+  sizeBytes: number;
+  /** lz16 tile-rows (`sizeBytes / 512`); undefined for lz2. */
+  rowCount?: number;
+  /** SNES address of the blob (for a `GFX_<addr>.png` filename). */
+  addr: number;
+  /** Index 0 was rendered transparent (sprite + BG2/BG3 gfx) — import needs this
+   *  to treat transparent pixels as unchanged only where the base was index 0. */
+  index0Transparent: boolean;
+  /** Present for BG2/BG3 files: per-tile palette fidelity (the swatch is a
+   *  reference grid; import decodes per-tile via this, not the swatch). */
+  perTilePalette?: PerTilePalette;
+  png: Uint8Array;
+  /** Present when `opts.format === 'aseprite'`: the file's tiles as an indexed
+   *  Aseprite tileset (sheet-grid tilemap). The single render palette row colours
+   *  every tile (BG2/BG3 per-tile fidelity stays PNG-only). */
+  aseprite?: Uint8Array;
+}
+
+/** SC-size → tilemap dimensions (cells), matching render-bg-layers. */
+function bgTilemapDims(scSize: number): { cols: number; rows: number } {
+  switch (scSize & 3) {
+    case 0: return { cols: 32, rows: 32 };
+    case 1: return { cols: 64, rows: 32 };
+    case 2: return { cols: 32, rows: 64 };
+    default: return { cols: 64, rows: 64 };
+  }
+}
+
+/** Which 32×32 screen block a cell falls in (standard SNES tilemap layout). */
+function bgScreenIndex(d: { cols: number; rows: number }, row: number, col: number): number {
+  if (d.cols === 64 && d.rows === 32) return col >>> 5;
+  if (d.cols === 32 && d.rows === 64) return row >>> 5;
+  if (d.cols === 64 && d.rows === 64) return ((row >>> 5) << 1) | (col >>> 5);
+  return 0;
+}
+
+/** Animation-palette modes (header field 11) verified NOT to recolour a given BG
+ *  layer's palette rows, from the Bank01 `DATA_animation_palette_ptr` handlers'
+ *  CGRAM destinations. Any OTHER non-zero mode is conservatively assumed to
+ *  (possibly) recolour it — so we never claim "static" for an animated palette.
+ *   - BG3 (CGRAM 0-15): mode 1→row4, modes 3/4→row7 miss it.
+ *   - BG2 (CGRAM 96-127 = rows 6/7): mode 1→row4 and the BG3-region modes
+ *     {2,5,9,13,15,19} miss it; modes 3/4 DO cycle row 7. */
+const NON_BG_ANIM_MODES: Record<'BG2' | 'BG3', Set<number>> = {
+  BG3: new Set([1, 3, 4]),
+  BG2: new Set([1, 2, 5, 9, 13, 15, 19])
+};
+const bgPaletteAnimated = (layer: 'BG2' | 'BG3', mode: number): boolean =>
+  mode !== 0 && !NON_BG_ANIM_MODES[layer].has(mode);
+
+/** Re-throw the programmer-error classes (a missing import → `ReferenceError`, a
+ *  bad property access → `TypeError`) so a bug surfaces loudly instead of being
+ *  swallowed by a defensive `catch`; returns for genuine runtime/data errors so a
+ *  caller can fall back. (A missing-import `ReferenceError` once silently degraded
+ *  BG2 fidelity to "all base row" — this keeps that loud.) */
+function rethrowIfBug(e: unknown): void {
+  if (e instanceof ReferenceError || e instanceof TypeError) throw e;
+}
+
+/** Per-tile palette context for one BG layer (computed once per export). */
+interface PerTilePaletteCtx {
+  /** VRAM byte address of a char tile → index into subPalettes (its dominant row). */
+  subByVramByte: Map<number, number>;
+  /** Exposed rows as RGBA (index 0 alpha 0 = transparent) for rendering. */
+  subPalettesRgba: Uint8Array[];
+  /** Same rows as RGB ints, for the manifest + per-tile import decode. */
+  subPalettesRgb: number[][];
+  /** Tile stride in VRAM bytes (16 for 2bpp, 32 for 4bpp); the export keys lookups
+   *  by `vramByteOffset + t * tileBytes`. */
+  tileBytes: number;
+  paletteAnimated: boolean;
+}
+
+interface BgLayerConfig {
+  name: 'BG2' | 'BG3';
+  bpp: 2 | 4;
+  /** Rows always exposed first (the layer's loaded block, so index 0 = primary
+   *  row): BG3 = [0,1,2,3] (CGRAM 0-15), BG2 = [6,7] (CGRAM 96-127). */
+  baseRows: number[];
+}
+
+/**
+ * Resolve, per char tile, which CGRAM palette row a BG2/BG3 layer draws it with
+ * (the dominant `palRow` across the tilemap cells using it), plus those rows'
+ * colours from the already-loaded CGRAM. This lets the export colour each tile in
+ * its real row (not all in the base row) and the import decode each tile against
+ * its own row. Snapshot of the static palette load — `paletteAnimated` flags
+ * levels whose colours then cycle.
+ */
+function computePerTilePalette(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  header: RenderHeader,
+  cgram: Uint8Array,
+  cfg: BgLayerConfig
+): PerTilePaletteCtx {
+  const levelMode = header.levelMode ?? 0;
+  const regs = loadSceneRegs(rom, symbols, levelMode);
+  const colorsPerRow = cfg.bpp === 4 ? 16 : 4;
+  const tileBytes = cfg.bpp === 4 ? 32 : 16;
+  const scratch = new Uint8Array(0x10000);
+
+  // Layer-specific tilemap source + "is this a real tile layer here?" gate.
+  let tilemapAddr: number, charAddr: number, scSize: number, tileSize: number;
+  let bytesWritten = 0;
+  let isTileLayer = false;
+  if (cfg.name === 'BG3') {
+    let load: { bytesWritten: number; emptyFilled: boolean; bg3Disabled: boolean } | null = null;
+    // Tolerate a malformed tilemap (fall back to no per-tile data) but re-throw a
+    // programmer bug (a missing import → ReferenceError, etc.) so it surfaces
+    // instead of silently degrading to "all base row".
+    try { load = loadBg3Tilemap(rom, symbols, header.bg3Tileset, scratch); } catch (e) { rethrowIfBug(e); load = null; }
+    bytesWritten = load?.bytesWritten ?? 0;
+    isTileLayer = !!load && !load.bg3Disabled && !load.emptyFilled &&
+      (regs.bgmodeMode === 0 || regs.bgmodeMode === 1);
+    tilemapAddr = regs.bg3TilemapAddr; charAddr = regs.bg3CharAddr;
+    scSize = regs.bg3ScSize; tileSize = regs.bg3TileSize;
+  } else {
+    try { bytesWritten = loadBg2Tilemap(rom, symbols, header.bg2Tileset, scratch); } catch (e) { rethrowIfBug(e); bytesWritten = 0; }
+    isTileLayer = bytesWritten > 0 && regs.bgmodeMode !== 7 && levelMode !== 0x0a;
+    tilemapAddr = regs.bg2TilemapAddr; charAddr = regs.bg2CharAddr;
+    scSize = regs.bg2ScSize; tileSize = regs.bg2TileSize;
+  }
+
+  // Walk the tilemap → per char tile, count the palette rows that draw it.
+  const counts = new Map<number, Map<number, number>>(); // vramByte → row → count
+  const usedRows = new Set<number>();
+  if (isTileLayer) {
+    const dims = bgTilemapDims(scSize);
+    const screensLoaded = Math.floor(bytesWritten / 0x800);
+    // In 16×16 BG-tile mode each cell draws FOUR char tiles (base + {0,1,16,17}),
+    // all sharing the cell's palette row. Assign the row to all four — recording
+    // only `base` leaves +1 (the next sheet column) / +16 / +17 on the base row
+    // (the "every other column wrong" bug). 8×8 mode = base only.
+    const subTileOffsets = tileSize === 16 ? [0, 1, 16, 17] : [0];
+    for (let row = 0; row < dims.rows; row++) {
+      for (let col = 0; col < dims.cols; col++) {
+        const screenIdx = bgScreenIndex(dims, row, col);
+        if (screenIdx >= screensLoaded) continue;
+        const off = tilemapAddr + screenIdx * 0x800 + ((row & 0x1f) * 32 + (col & 0x1f)) * 2;
+        if (off + 2 > scratch.length) continue;
+        const entry = scratch[off]! | (scratch[off + 1]! << 8);
+        const baseTile = entry & 0x3ff;
+        if (baseTile === 0) continue; // skip blank filler cells
+        const palRow = (entry >>> 10) & 0x07;
+        usedRows.add(palRow);
+        for (const so of subTileOffsets) {
+          const charTile = (baseTile + so) & 0x3ff; // 10-bit, matches renderBgLayer
+          const vramByte = (charAddr + charTile * tileBytes) & 0xffff;
+          const m = counts.get(vramByte) ?? new Map<number, number>();
+          m.set(palRow, (m.get(palRow) ?? 0) + 1);
+          counts.set(vramByte, m);
+        }
+      }
+    }
+  }
+
+  // Exposed rows = the layer's loaded block first (index 0 = primary row), then
+  // any extra rows the tilemap references.
+  const extra = [...usedRows].filter((r) => !cfg.baseRows.includes(r)).sort((a, b) => a - b);
+  const exposeRows = [...cfg.baseRows, ...extra];
+  const rowIndex = new Map(exposeRows.map((r, i) => [r, i]));
+
+  // Build each exposed row from CGRAM (index 0 transparent — BG2/BG3 hide it).
+  const subPalettesRgba: Uint8Array[] = [];
+  const subPalettesRgb: number[][] = [];
+  for (const r of exposeRows) {
+    const p = buildPaletteRow(cgram, r, true, 'expand', colorsPerRow);
+    const rgba = new Uint8Array(colorsPerRow * 4);
+    const rgb: number[] = [];
+    for (let i = 0; i < colorsPerRow; i++) {
+      const v = p[i]!;
+      rgba[i * 4] = v & 0xff;
+      rgba[i * 4 + 1] = (v >> 8) & 0xff;
+      rgba[i * 4 + 2] = (v >> 16) & 0xff;
+      rgba[i * 4 + 3] = (v >>> 24) & 0xff;
+      rgb.push((rgba[i * 4]! << 16) | (rgba[i * 4 + 1]! << 8) | rgba[i * 4 + 2]!);
+    }
+    subPalettesRgba.push(rgba);
+    subPalettesRgb.push(rgb);
+  }
+
+  // Dominant row per referenced tile → its index into subPalettes.
+  const subByVramByte = new Map<number, number>();
+  for (const [vb, m] of counts) {
+    let bestRow = cfg.baseRows[0]!;
+    let bestN = -1;
+    for (const [r, n] of m) if (n > bestN) { bestRow = r; bestN = n; }
+    subByVramByte.set(vb, rowIndex.get(bestRow) ?? 0);
+  }
+
+  return {
+    subByVramByte,
+    subPalettesRgba,
+    subPalettesRgb,
+    tileBytes,
+    paletteAnimated: bgPaletteAnimated(cfg.name, header.animationPalette ?? 0)
+  };
+}
+
+/**
+ * Render every chunk-list gfx file used by `header`'s scene to a PNG — the tiles
+ * coloured by the level's real palette (index 0 transparent for sprites) plus a
+ * self-describing swatch (see `gfx-png.ts`). Deduped by (format, fileId) so a
+ * file loaded into multiple slots exports once. Animated tiles are skipped (they
+ * aren't single saveGfxEdit-able blobs). The companion import is
+ * `imageToGfx(decodePng(png), layout)` → `saveGfxEdit`.
+ */
+export function exportLevelGfxPngs(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  header: RenderHeader,
+  opts: { spritePaletteRow?: number; gfxOverride?: ReadonlyMap<string, Uint8Array>; format?: 'png' | 'aseprite' } = {}
+): GfxPngEntry[] {
+  const spritePaletteRow = Math.max(0, Math.min(7, opts.spritePaletteRow ?? 0));
+  const vram = new Uint8Array(0x10000);
+  const cgram = new Uint8Array(512);
+  const gfxManifest: GfxFileEntry[] = [];
+  loadLevelGfx(rom, symbols, header, vram, gfxManifest, opts.gfxOverride);
+  loadLevelPalettes(rom, symbols, header, cgram);
+  const regs = loadSceneRegs(rom, symbols, header.levelMode ?? 0);
+  const bgRows = bgPaletteBaseRows(rom, symbols, header.levelMode ?? 0);
+  // When exporting Aseprite, build each file's tiles as an indexed tileset coloured
+  // in its single render row (round-trip-safe; BG2/BG3 per-tile colour is PNG-only).
+  const makeAse = opts.format === 'aseprite'
+    ? (tileData: Uint8Array, bpp: 2 | 4, row: number, t0: boolean): Uint8Array =>
+        gfxFileAseprite({ cgram, bpp, tileData, paletteRowPerTile: () => row, index0Transparent: t0 })
+    : null;
+  const lz2Table = symbols.pc('DATA_lz2_compressed_gfx_ptrs');
+  const lz16Table = symbols.pc('DATA_lz16_compressed_gfx_ptrs');
+
+  const out: GfxPngEntry[] = [];
+  const seen = new Set<string>();
+  // Per-tile-palette contexts, computed once per layer and reused across its files.
+  let bg3Ctx: PerTilePaletteCtx | null = null;
+  let bg2Ctx: PerTilePaletteCtx | null = null;
+  for (const entry of gfxManifest) {
+    const key = `${entry.format}/${entry.fileId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const params = inferRenderParams(entry, regs.bg3CharAddr, bgRows);
+    const isSprite = params.layer === 'Sprite';
+    const tileData = vram.subarray(entry.vramByteOffset, entry.vramByteOffset + entry.sizeBytes);
+    const rowCount = entry.format === 'lz16' ? entry.sizeBytes / 512 : undefined; // 16 tiles × 32B
+    const addr = u24le(rom, (entry.format === 'lz16' ? lz16Table : lz2Table) + entry.fileId * 3);
+    const baseLayout = entry.format === 'lz16' ? lz16Layout(rowCount!) : lz2Layout(entry.sizeBytes, params.bpp);
+
+    // BG2/BG3 → per-tile palette fidelity: colour each tile in the palette row its
+    // tilemap cells use (not all in the layer's base row), with a reference swatch
+    // of the exposed rows. Import decodes per-tile (a global swatch can't
+    // disambiguate rows that share colours). BG3 = 2bpp/4-colour, BG2 = 4bpp/16.
+    const perTile =
+      params.layer === 'BG3'
+        ? (bg3Ctx ??= computePerTilePalette(rom, symbols, header, cgram, {
+            name: 'BG3', bpp: 2, baseRows: [bgRows.bg3, bgRows.bg3 + 1, bgRows.bg3 + 2, bgRows.bg3 + 3]
+          }))
+        : params.layer === 'BG2'
+          ? (bg2Ctx ??= computePerTilePalette(rom, symbols, header, cgram, {
+              name: 'BG2', bpp: 4, baseRows: [bgRows.bg2, bgRows.bg2 + 1]
+            }))
+          : null;
+
+    if (perTile) {
+      const cpr = colorsPerRow(params.bpp);
+      const tileCount = Math.ceil(entry.sizeBytes / perTile.tileBytes);
+      const tileSub: number[] = [];
+      for (let t = 0; t < tileCount; t++) {
+        const vramByte = (entry.vramByteOffset + t * perTile.tileBytes) & 0xffff;
+        tileSub.push(perTile.subByVramByte.get(vramByte) ?? 0);
+      }
+      const swatch = new Uint8Array(perTile.subPalettesRgba.length * cpr * 4);
+      perTile.subPalettesRgba.forEach((sp, i) => swatch.set(sp, i * cpr * 4));
+      const layout: GfxImageLayout = { ...baseLayout, swatchColors: perTile.subPalettesRgba.length * cpr };
+      const png = encodePng(
+        gfxToImage(tileData, layout, swatch, {
+          tilePaletteRgba: (t) => perTile.subPalettesRgba[tileSub[t] ?? 0]!
+        })
+      );
+      out.push({
+        fileId: entry.fileId,
+        format: entry.format,
+        bpp: params.bpp,
+        role: classifyGfxRole(entry, params.layer),
+        sizeBytes: entry.sizeBytes,
+        rowCount,
+        addr,
+        index0Transparent: true,
+        perTilePalette: { tileSub, subPalettes: perTile.subPalettesRgb, paletteAnimated: perTile.paletteAnimated },
+        png: new Uint8Array(png),
+        aseprite: makeAse ? makeAse(tileData, params.bpp, params.paletteRow, true) : undefined
+      });
+      continue;
+    }
+
+    const paletteRow = isSprite ? 8 + spritePaletteRow : params.paletteRow;
+    const pal32 = buildPaletteRow(cgram, paletteRow, isSprite, 'expand', colorsPerRow(params.bpp));
+    const palRgba = new Uint8Array(pal32.length * 4);
+    for (let i = 0; i < pal32.length; i++) {
+      const v = pal32[i]!;
+      palRgba[i * 4] = v & 0xff;
+      palRgba[i * 4 + 1] = (v >> 8) & 0xff;
+      palRgba[i * 4 + 2] = (v >> 16) & 0xff;
+      palRgba[i * 4 + 3] = (v >> 24) & 0xff;
+    }
+    const png = encodePng(gfxToImage(tileData, baseLayout, palRgba));
+    out.push({
+      fileId: entry.fileId,
+      format: entry.format,
+      bpp: params.bpp,
+      role: classifyGfxRole(entry, params.layer),
+      sizeBytes: entry.sizeBytes,
+      rowCount,
+      addr,
+      index0Transparent: isSprite,
+      png: new Uint8Array(png),
+      aseprite: makeAse ? makeAse(tileData, params.bpp, paletteRow, isSprite) : undefined
+    });
+  }
+  return out;
 }

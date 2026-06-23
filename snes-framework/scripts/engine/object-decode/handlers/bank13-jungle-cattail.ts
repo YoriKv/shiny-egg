@@ -48,7 +48,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, readBuf16 } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ const jungleCattailRandomStamp: PerCellHandler = (state) => {
   // First row of a column: roll a fresh sub-table index into $A1.
   // `prng & $001E` → even byte offset 0..30 → one of 16 sub-tables.
   if (row === 0) {
-    state.zpA1 = prngNext(state) & 0x001E;
+    state.zpA1 = prngNext(state, RNG_SITE.jungleCattail) & 0x001E;
   }
 
   const subTableIdx = (state.zpA1 & 0x001E) >>> 1; // 0..15

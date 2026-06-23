@@ -73,7 +73,8 @@ export function useSubLevelBFS(rootLevelRecordId: number | null, refreshToken = 
           sourceLevelRecordId: edge.sourceLevelRecordId,
           destX: edge.destX,
           destY: edge.destY,
-          sourceScreenIndex: edge.sourceScreenIndex
+          sourceScreenIndex: edge.sourceScreenIndex,
+          entranceType: edge.entranceType
         })
         incomingBuild.set(edge.destLevelRecordId, list)
         edgesBuild.push(edge)

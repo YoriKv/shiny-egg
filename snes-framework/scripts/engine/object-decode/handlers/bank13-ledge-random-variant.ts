@@ -69,7 +69,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell } from './_shared.ts';
 
 // Random-body shared tables (Bank13.asm:10539-10546).
@@ -214,7 +214,7 @@ const initLedgeRandomVariant: InitHandler = (state) => {
   // PRNG roll, narrowed to a 2-bit set index in [0..3]. Writes both
   // bytes of $15/$16 in the asm via REP #$20 STA $15 — we only carry
   // the low byte.
-  const setIdx = prngNext(state) & 0x03;
+  const setIdx = prngNext(state, RNG_SITE.initLedgeRandomVariant) & 0x03;
   state.zp15 = setIdx;
 
   // $A1 = ($15 ^ 3) << 1 — the "mirror column" word offset. Used by

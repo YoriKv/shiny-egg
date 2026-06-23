@@ -170,9 +170,16 @@ function remapTileToTemplate(
   // this is the first match.
   const matchIdx = DATA_remap_proposed_match.indexOf(proposed);
   if (matchIdx < 0) return proposed;
-  // Asm: TYA / LSR / AND #$000E / TAY — collapses Y to a byte offset
-  // into an 8-entry word table (drops the upper duplicate-half bit).
-  const idx = matchIdx & 7;
+  // Asm: TYA / LSR / AND #$000E / TAY, then `LDA DATA_13DFB4,y` on a `dw`
+  // (word) table. Y starts as the byte offset of the match (= 2*matchIdx);
+  // LSR halves it to matchIdx, AND #$000E clears bit 0, and using the result
+  // as a BYTE offset into a word table halves it again — so the word index is
+  // `(matchIdx & 0x0E) >> 1` == `matchIdx >> 1`. This pairs ADJACENT proposed
+  // entries (0/1, 2/3, …) onto one pointer-table slot, NOT the two 8-entry
+  // halves (0/8, 1/9). The wall base tiles land at matchIdx {4,5,6,7,12..15},
+  // so the earlier `matchIdx & 7` picked the wrong neighbour-set + remap table
+  // (e.g. 0x790F → slot 4 instead of 2) and produced wrong overlap seams.
+  const idx = matchIdx >> 1;
 
   const neighbourSet = DATA_remap_neighbour_set_per_idx[idx]!;
   const neighbourIdx = neighbourSet.indexOf(state.zp12 & 0xffff);

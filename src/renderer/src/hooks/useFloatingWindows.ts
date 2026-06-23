@@ -21,6 +21,7 @@ export interface WindowDef {
     | 'finder'
     | 'patches'
     | 'banks'
+    | 'graphics'
     | 'paint'
     | 'exits'
 }
@@ -149,6 +150,17 @@ const INITIAL_WINDOWS: WindowDef[] = [
     z: 7,
     open: false,
     kind: 'banks'
+  },
+  {
+    id: 'graphics',
+    title: 'Graphics',
+    // PNG export/import for external editing — closed by default; reopen from
+    // the toolbar.
+    pos: { x: 760, y: 120 },
+    width: 320,
+    z: 8,
+    open: false,
+    kind: 'graphics'
   },
   // Paint Surface window — hidden from the UI for now (kept for later). Body is
   // panels/PaintPanel.tsx, rendered by App.tsx's w.kind === 'paint' branch. The

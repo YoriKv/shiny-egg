@@ -11,11 +11,10 @@
 //
 // Run: node snes-framework/scripts/engine/entity-thumbnails.test.ts
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { loadDevCart, FRAMEWORK_ROOT } from './dev-cart.ts';
 import { loadLevel, isWorld6RecordDeep } from '../level.ts';
 import { createEntityThumbnailer } from './entity-thumbnails.ts';
+import { CEL_B_NUMS } from './sprite-render-facts.ts';
 import { hex0x } from '../hex.ts';
 
 let failures = 0;
@@ -31,26 +30,12 @@ try { cart = loadDevCart(FRAMEWORK_ROOT); } catch (e) {
 }
 const { rom, symbols } = cart;
 
-const meta = JSON.parse(
-  fs.readFileSync(
-    path.join(FRAMEWORK_ROOT, '..', 'src', 'renderer', 'src', 'data', 'obj-metadata.json'),
-    'utf8'
-  )
-) as { sprites: Record<string, { cel?: 'A' | 'B' }> };
-const celB = new Set(
-  Object.entries(meta.sprites).filter(([, i]) => i.cel === 'B').map(([k]) => parseInt(k, 16))
-);
-const celA = new Set(
-  Object.entries(meta.sprites).filter(([, i]) => i.cel === 'A').map(([k]) => parseInt(k, 16))
-);
-
-// Donor: 1-1 (record 0x00) — a plain, backed level.
+// Donor: 1-1 (record 0x00) — a plain, backed level. The cel-format gate is engine-owned now
+// (sprite-render-facts.ts), so the thumbnailer takes no gate args.
 const donor = loadLevel({ workRoot: FRAMEWORK_ROOT, levelRecordId: 0x00 });
 const thumbnailer = createEntityThumbnailer({
   rom, symbols, workRoot: FRAMEWORK_ROOT, donor,
-  isWorld6: isWorld6RecordDeep(FRAMEWORK_ROOT, 0x00),
-  celRenderableNums: celB,
-  formatANums: celA
+  isWorld6: isWorld6RecordDeep(FRAMEWORK_ROOT, 0x00)
 });
 
 function opaquePixels(rgba: Uint8Array): number {
@@ -79,7 +64,7 @@ assert(
 );
 
 // Sprite side: first cel-B sprite that resolves in this level's gfx config.
-const someB = [...celB].find((n) => thumbnailer.spriteThumb(n) !== null);
+const someB = [...CEL_B_NUMS].find((n) => thumbnailer.spriteThumb(n) !== null);
 assert(someB !== undefined, 'some cel-B sprite renders a thumbnail');
 if (someB !== undefined) {
   const img = thumbnailer.spriteThumb(someB)!;

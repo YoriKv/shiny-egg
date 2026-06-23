@@ -83,7 +83,7 @@ namespace YI_LevelDataPtrsAndEntranceData
 ;-------------------------------------------------------------------------
 DATA_17F3E7:
 DATA_level_entrance_indexes:
-	; editor-owned span (Shiny Egg ROM importer / world-map remap); see snes-framework/scripts/world-map.ts
+	; host-owned span (ROM importer / world-map remap); see scripts/world-map.ts
 	;@editable:world-map-entrance-indexes begin
 	dw $0000,$0004,$0008,$000C,$0010,$0014,$0018,$001C
 	dw $0020,$0000,$00D8,$00DC,$0024,$0028,$002C,$0030
@@ -113,7 +113,7 @@ DATA_level_entrance_indexes:
 ;-------------------------------------------------------------------------
 DATA_17F471:
 DATA_map_level_entrances:
-	; editor-owned span (Shiny Egg world-map editor); see snes-framework/scripts/asm/entrance-table.ts
+	; host-owned span (world-map remap); see scripts/asm/entrance-table.ts
 	;@editable:world-map-entrances begin
 	db $00,$07,$77,!Define_YI_LevelID_WatchOutBelow
 	db $01,$07,$7A,!Define_YI_LevelID_TheCaveOfChompRock
@@ -183,7 +183,7 @@ DATA_map_level_entrances:
 ;-------------------------------------------------------------------------
 DATA_17F551:
 DATA_level_midway_entrance_indexes:
-	; editor-owned span (Shiny Egg ROM importer / world-map remap); see snes-framework/scripts/world-map.ts
+	; host-owned span (ROM importer / world-map remap); see scripts/world-map.ts
 	;@editable:world-map-midway-entrance-indexes begin
 	dw $0000,$0004,$000C,$0014,$001C,$0020,$0024,$0028
 	dw $0000,$0000,$0000,$0000,$0038,$003C,$0044,$004C
@@ -211,7 +211,7 @@ DATA_level_midway_entrance_indexes:
 ;-------------------------------------------------------------------------
 DATA_17F5DB:
 DATA_map_level_midway_entrances:
-	; editor-owned span (Shiny Egg world-map editor); see snes-framework/scripts/asm/entrance-table.ts
+	; host-owned span (world-map remap); see scripts/asm/entrance-table.ts
 	;@editable:world-map-midway-entrances begin
 	dw $7800,$0076,$8201,$007B,$093B,$0049,$0000,$0000
 	dw $753C,$0068,$F703,$0078,$EC6E,$0068,$0E04,$005B
@@ -329,7 +329,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_35_obj,DATA_level_35_spr    ; $35 6-Extra "Castles - Masterpiece Set" (map slot $44)
 	dl DATA_level_36_obj,DATA_level_36_spr    ; $36 sub-room of 1-1 "Make Eggs, Throw Eggs"
 	dl DATA_level_37_obj,DATA_level_37_spr    ; $37 sub-room of 1-3 "The Cave Of Chomp Rock"
-	dl DATA_level_38_obj,DATA_level_38_spr    ; $38 intro-cutscene level (played by map slot $0A via gm38; editor skip-parses it)
+	dl DATA_level_38_obj,DATA_level_38_spr    ; $38 intro-cutscene level (played by map slot $0A via gm38)
 	dl DATA_level_39_obj,DATA_level_39_spr    ; $39 Welcome To Yoshi’s Island (played by map slot $0B -- the Bank04 hardcoded boot)
 	dl DATA_level_3A_obj,DATA_level_3A_spr    ; $3A sub-room of 1-1 "Make Eggs, Throw Eggs"
 	dl DATA_level_3B_obj,DATA_level_3B_spr    ; $3B sub-room of 1-2 "Watch Out Below!"

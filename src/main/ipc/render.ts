@@ -33,8 +33,9 @@ import {
 
 import { renderCollisionLayer, renderCollisionPatch } from 'snes-framework/render-collision'
 import { resolveCellGrid, diffCellGrids } from 'snes-framework/cell-grid'
-import { loadSceneRegs } from 'snes-framework/scene-regs'
+import { loadSceneRegs, bgLayerBpp } from 'snes-framework/scene-regs'
 import { loadSpritesetFileIds, type GfxFileEntry } from 'snes-framework/load-graphics'
+import { bestStockSpriteset } from 'snes-framework/sprite-tile-base'
 import { hex0x } from 'snes-framework/hex'
 import { loadLevel } from 'snes-framework/level'
 import { frameworkWorkRoot, overlayRoot } from '../framework-paths'
@@ -52,6 +53,7 @@ import type {
   PickerThumbnails,
   PickerThumbnailsRequest,
   FitSurfaceRequest,
+  FitSpritesetResult,
   FitTileset,
   LevelRenderRequest,
   LevelTileUsage,
@@ -63,9 +65,9 @@ import type {
   SpriteLayerResponse
 } from '../../shared/ipc-types'
 import { fitHeightProfile, fitMetadata } from 'snes-framework/surface-fit'
-import type { LevelObject, PaletteEdit } from 'snes-framework/types'
+import type { LevelObject } from 'snes-framework/types'
 import { loadRomAndSymbols } from '../render/rom-cache'
-import { isPaletteBuildStale } from '../resources'
+import { gfxLiveEdits, gfxLiveRevision } from '../gfx-live-cache'
 import {
   resolveLevel,
   decodeForRequest,
@@ -84,7 +86,7 @@ import {
   buildLevelCgram,
   buildLevelVramCgram,
   changerSpriteSig,
-  getEntityValidity,
+  getEntityCatalog,
   getPickerThumbnails,
   logMap16Diagnostics,
   PATCH_CELL_THRESHOLD,
@@ -149,17 +151,20 @@ export function registerRenderIpc(): void {
       } else if (region !== 'all') {
         const levelMode = header.levelMode ?? 0
         const regs = loadSceneRegs(rom, symbols, levelMode)
+        // bpp follows the scene's BG mode (2bpp in BG Mode 0 / level mode $0A),
+        // NOT a per-layer constant — see bgLayerBpp. Hardcoding 4 here rendered
+        // $6B's BG1/BG2 tile tabs jumbled (the same bug the canvas had).
         if (region === 'bg1') {
           vramByteOffset = regs.bg1CharAddr
-          bpp = 4
+          bpp = bgLayerBpp(regs.bgmodeMode, 'bg1')
           defaultTileCount = 512
         } else if (region === 'bg2') {
           vramByteOffset = regs.bg2CharAddr
-          bpp = 4
+          bpp = bgLayerBpp(regs.bgmodeMode, 'bg2')
           defaultTileCount = 512
         } else if (region === 'bg3') {
           vramByteOffset = regs.bg3CharAddr
-          bpp = 2
+          bpp = bgLayerBpp(regs.bgmodeMode, 'bg3')
           defaultTileCount = 1024
         } else if (region === 'sprite') {
           vramByteOffset = 0x6000
@@ -192,38 +197,20 @@ export function registerRenderIpc(): void {
     }
   )
 
-  // Palette-colour editing (§B10): CGRAM + per-entry provenance (the blob word
-  // that backs each swatch) + the overlay's current edits. CGRAM is patched with
-  // the pending edits via provenance, so the panel's swatches reflect unbuilt
-  // edits live (the in-level layers still need a rebuild — asm edits).
+  // Palette-colour editing (§B10): PRISTINE base CGRAM + per-entry provenance (the
+  // blob word that backs each swatch). The panel overlays its live colour draft for
+  // the swatches; the canvas previews the same draft via `paletteOverride` (both are
+  // BASE ⊕ draft — see `resourcePaletteToBase`), so palette edits (incl. resets)
+  // show live without a rebuild. Test Level / Launch bake them into the .sfc.
   ipcMain.handle(
     'render:editablePalette',
     async (_event, req: LevelRenderRequest): Promise<DecodedPalette | null> => {
       const ctx = loadLevelContext(req)
       if (!ctx) return null
       const { rom, symbols, level } = ctx
-      // BASE CGRAM + provenance only — the panel applies the live draft on top
-      // (and the canvas previews it via paletteOverride). The saved overlay is a
-      // build-time concern, not a render-time one.
+      // No draft passed: returns the PRISTINE base CGRAM + provenance; the panel
+      // applies the live draft on top (the saved overlay is a build-time concern).
       return buildLevelCgram(rom, symbols, level, req.levelRecordId, frameworkWorkRoot())
-    }
-  )
-
-  // Whether the editable-palette panel is showing out-of-date colours: a colour
-  // the built ROM baked in (vs base) that the live edit `draft` no longer covers,
-  // so the swatch (read from the built ROM) is wrong until a rebuild. Compared
-  // against the draft, not the saved overlay, so a saved-but-unbuilt edit the
-  // draft previews correctly does NOT warn — only the reset-but-unbuilt case
-  // does. Global (the palette blob is shared). Returns false with no built ROM.
-  ipcMain.handle(
-    'render:paletteBuildStale',
-    async (_event, draft: PaletteEdit[]): Promise<boolean> => {
-      try {
-        const { rom, symbols } = loadRomAndSymbols()
-        return isPaletteBuildStale(rom, symbols, draft ?? [])
-      } catch {
-        return false
-      }
     }
   )
 
@@ -253,7 +240,7 @@ export function registerRenderIpc(): void {
       const { rom, symbols, level } = ctx
       return buildLevelVramCgram(
         rom, symbols, level, req.levelRecordId, frameworkWorkRoot(),
-        { animate: false, paletteEdits: req.paletteOverride }
+        { animate: false, paletteEdits: req.paletteOverride, gfxOverride: gfxLiveEdits(), gfxRevision: gfxLiveRevision() }
       ).manifest
     }
   )
@@ -269,7 +256,7 @@ export function registerRenderIpc(): void {
       // resolved gfx/palette headers composeBgLayers needs.
       const { vram, cgram, gfxHeader, palHeader } = buildLevelVramCgram(
         rom, symbols, level, req.levelRecordId, frameworkWorkRoot(),
-        { animate: true, paletteEdits: req.paletteOverride }
+        { animate: true, paletteEdits: req.paletteOverride, gfxOverride: gfxLiveEdits(), gfxRevision: gfxLiveRevision() }
       )
 
       // BG2/BG3 tilemap load + render + backdrop + the approximate-color-math
@@ -286,7 +273,7 @@ export function registerRenderIpc(): void {
         vram,
         cgram
       })
-      const { bg2, bg3, bg2Layer, bg3Layer, regs } = composed
+      const { bg2, bg3, bg2Front, bg3Front, bg2Layer, bg3Layer, regs } = composed
       const backdrop: BgLayersResult['backdrop'] =
         composed.backdrop.kind === 'solid'
           ? { kind: 'solid', css: cssFromBgr15(composed.backdrop.color15) }
@@ -300,6 +287,8 @@ export function registerRenderIpc(): void {
       return {
         bg2,
         bg3,
+        bg2Front,
+        bg3Front,
         backdrop,
         levelMode,
         bg2Layer,
@@ -324,7 +313,7 @@ export function registerRenderIpc(): void {
       const h = level.header
       // Per-tileset render context (VRAM/CGRAM/Map16 tables/char base/bands) —
       // cached across object edits (only the decoded buffer below changes).
-      const c = getBg1Context(rom, symbols, level, levelRecordId, req.paletteOverride, frameworkWorkRoot())
+      const c = getBg1Context(rom, symbols, level, levelRecordId, req.paletteOverride, frameworkWorkRoot(), gfxLiveEdits(), gfxLiveRevision())
 
       // Run the object decoder to get the Map16 ID buffer + page map (cached;
       // the collision handler reuses this same decode for one edit).
@@ -342,7 +331,7 @@ export function registerRenderIpc(): void {
         vram: c.vram, cgram: c.cgram, map16Tables: c.map16Tables,
         levelDataBuffer: decoded.state.levelDataBuffer,
         screenPageMap: decoded.state.screenPageMap,
-        bg1CharAddr: c.bg1CharAddr, bands: c.bands, bandAxis: c.bandAxis
+        bg1CharAddr: c.bg1CharAddr, bg1Bpp: c.bg1Bpp, bands: c.bands, bandAxis: c.bandAxis
       }
       const newGrid = resolveCellGrid(decoded.state.levelDataBuffer, decoded.state.screenPageMap)
       const token = decodeInputKey(level)
@@ -381,7 +370,7 @@ export function registerRenderIpc(): void {
       // CGRAM 8..15); the sprite layer does NOT animate tile VRAM.
       const { vram, cgram, manifest: gfxManifest, gfxHeader, palHeader } = buildLevelVramCgram(
         rom, symbols, level, req.levelRecordId, frameworkWorkRoot(),
-        { animate: false, paletteEdits: req.paletteOverride }
+        { animate: false, paletteEdits: req.paletteOverride, gfxOverride: gfxLiveEdits(), gfxRevision: gfxLiveRevision() }
       )
 
       // Resolve every renderable sprite once, then build the content-signature
@@ -394,9 +383,8 @@ export function registerRenderIpc(): void {
         vram,
         cgram,
         manifest: gfxManifest,
-        celRenderableNums: req.celRenderableNums ? new Set(req.celRenderableNums) : undefined,
-        formatANums: req.formatANums ? new Set(req.formatANums) : undefined,
         levelSpritePaletteId: palHeader.spritePalette
+        // (cel-format gate / settled palette / rest frame are engine-owned now — sprite-render-facts.ts)
       })
       const cellGrid = buildSpriteCellGrid(model)
       const bounds = [...model.boundsByNum.values()]
@@ -548,6 +536,17 @@ export function registerRenderIpc(): void {
     fitMetadata().tilesets.map((t) => ({ tileset: t.tileset, name: t.name }))
   )
 
+  // "Fit sprite tileset to sprites": pick the stock spriteset (header[7]) that
+  // best covers the given placed sprites' gfx files. Authoritative (reads the
+  // cart sprite-gfx-file table), so it's complete where obj-metadata isn't.
+  ipcMain.handle(
+    'render:fitSpriteset',
+    async (_e, spriteNums: number[]): Promise<FitSpritesetResult> => {
+      const { rom, symbols } = loadRomAndSymbols()
+      return bestStockSpriteset(rom, symbols, spriteNums.map((num) => ({ num })))
+    }
+  )
+
   ipcMain.handle(
     'render:objectInfluence',
     async (_event, req: ObjectInfluenceRequest): Promise<DecodedObjectInfluence | null> => {
@@ -577,19 +576,25 @@ export function registerRenderIpc(): void {
     }
   )
 
-  // Picker render-validity: per std/ext-object verdicts (probe-decoded alone
-  // under this level's header — engine entity-render-validity.ts) plus the
-  // level's 6 variable spriteset file ids for the renderer-local sprite check.
-  // Override-aware so HeaderPanel edits are honoured; the verdict matrix is
-  // cached per gfx-header tuple in render-core (~16 keys ever).
+  // Picker render-validity — the unified picker-catalog pass: per std/ext-object
+  // verdicts (probe-decoded alone under this level's header — engine
+  // entity-render-validity.ts) plus the level's 6 variable spriteset file ids
+  // for the renderer-local sprite check. Returns the verdicts NOW and, off the
+  // critical path, warms the picker thumbnail caches from the SAME decodes (so
+  // each object decodes once, not once here + once on picker open). Fires on
+  // every level load via Canvas's useEntityRenderValidity, so the picker's first
+  // open is a thumbnail cache hit. `spriteNums` (the full sprite catalog) lets
+  // the warm cover the sprite tab too; absent ⇒ objects only. Override-aware so
+  // HeaderPanel edits are honoured; the verdict matrix is cached per gfx-header
+  // tuple in render-core (~16 keys ever).
   ipcMain.handle(
     'render:entityRenderValidity',
     async (_event, req: EntityValidityRequest): Promise<EntityRenderValidity | null> => {
       const ctx = loadLevelContext(req)
       if (!ctx) return null
       const { rom, symbols, level } = ctx
-      const verdicts = getEntityValidity(
-        rom, symbols, level, req.levelRecordId, frameworkWorkRoot(), req.candidates
+      const verdicts = getEntityCatalog(
+        rom, symbols, level, req.levelRecordId, frameworkWorkRoot(), req.candidates, req.spriteNums ?? []
       )
       const spritesetFiles = loadSpritesetFileIds(rom, symbols, level.header[7] ?? 0)
         .map((f) => hex0x(f, 2))

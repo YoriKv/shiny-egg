@@ -49,7 +49,7 @@ const regs = loadSceneRegs(rom, symbols, h[9]);
 // VRAM ranges each Map16 sub-tile reads against what's actually present.
 const vram = new Uint8Array(0x10000);
 const gfxManifest: GfxFileEntry[] = [];
-loadLevelGfx(rom, symbols, { bg1Tileset: h[1], bg2Tileset: h[3], bg3Tileset: h[5], spriteTileset: h[7], isWorld6 }, vram, gfxManifest);
+loadLevelGfx(rom, symbols, { bg1Tileset: h[1], bg2Tileset: h[3], bg3Tileset: h[5], spriteTileset: h[7], isWorld6, levelMode: h[9] }, vram, gfxManifest);
 loadTileAnimation(rom, symbols, { animationTileset: h[10], bg1Tileset: h[1], levelMode: h[9] }, vram);
 const coverage = makeVramCoverage(gfxManifest, vram);
 

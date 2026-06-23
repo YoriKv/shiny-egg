@@ -20,7 +20,7 @@ import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { TT } from '../template-slots.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ const SPIKE_PIT_BOTTOM_CAP_TILE = 0x3D4B;
 // ─────────────────────────────────────────────────────────────────────
 
 const spikePitBody: PerCellHandler = (state) => {
-  const idx = prngNext(state) & 0x03;
+  const idx = prngNext(state, RNG_SITE.spikePitBody) & 0x03;
   stampCell(state, DATA_spike_pit_body_tiles[idx]!);
 };
 

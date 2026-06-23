@@ -63,10 +63,10 @@ const BLOCK_DISPLAY_SCALE = 2
 
 const hex4 = (n: number): string => hex0x(n, 4)
 
-/** Build the render header from the live level — used by the Files tab.
- *  (`isWorld6` is resolved main-side; Files renders the non-dark tileset for
- *  world-6 levels, a pre-existing limitation.) */
-function headerFromLevel(level: LevelData | null): RenderHeaderRequest | null {
+/** Build the render header from the live level — used by the Files tab + the
+ *  Graphics panel's export. (`isWorld6` is resolved main-side; Files renders the
+ *  non-dark tileset for world-6 levels, a pre-existing limitation.) */
+export function headerFromLevel(level: LevelData | null): RenderHeaderRequest | null {
   if (!level || level.empty || level.special) return null
   const h = level.header
   return {
@@ -82,7 +82,8 @@ function headerFromLevel(level: LevelData | null): RenderHeaderRequest | null {
     yoshiColor: 0,
     isWorld6: false,
     levelMode: h[9] ?? 0,
-    animationTileset: h[10] ?? 0
+    animationTileset: h[10] ?? 0,
+    animationPalette: h[11] ?? 0
   }
 }
 

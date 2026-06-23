@@ -55,7 +55,7 @@ import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerRun } from '../walker.ts';
 import { TT } from '../template-slots.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell } from './_shared.ts';
 import { bgFloorRandom } from './bank13-floor.ts';
 
@@ -167,7 +167,7 @@ const floorNoDecoTopStamp: PerCellHandler = (state) => {
   // Index the JS *word* array by the entry number = byteOffset >> 1. Indexing
   // by the raw byte offset read OOB for $88 (idx 8-14 into an 8-entry array) →
   // undefined → an unstamped cell: that was the "$88 top rows missing" bug.
-  const prngBits = (prngNext(state) & 0x03) << 1;
+  const prngBits = (prngNext(state, RNG_SITE.floorNoDecoTopBody) & 0x03) << 1;
   const orientBit = state.zp15 & 0x08;
   const byteOffset = orientBit | prngBits;
   stampCell(state, DATA_ledge_no_grass_random_tiles[byteOffset >> 1]!);

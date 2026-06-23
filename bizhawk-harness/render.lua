@@ -76,8 +76,13 @@ handlers.DUMP_VRAM  = function() dumpDomain("VRAM",  0x10000) end  -- 64 KB
 handlers.DUMP_CGRAM = function() dumpDomain("CGRAM", 0x0200) end   -- 512 B
 handlers.DUMP_OAM   = function() dumpDomain("OAM",   0x0220) end   -- 544 B
 
--- LOAD_LEVEL <id-hex> [WARP <dest> <x> <y> <ent>]
+-- LOAD_LEVEL <id-hex> [WARP <dest> <x> <y> <ent>]... [INV <id-hex>...]
 --   id-hex is 1-2 hex digits (00..FF) — the cart translevel ID.
+--
+--   Trailing INV <id-hex>... (optional, after any WARPs): the egg-trail
+--   inventory preset — a list of NorSpr sprite IDs to seed onto Yoshi's back
+--   before the load (see writeEggSnapshot / INV_COUNT_ADDR above). Consumes the
+--   rest of the line. Omit it for a vanilla, empty-handed boot.
 --   Direct WRAM stomp method (ported from yi-shiny's
 --   trace-harness/scenarios/load-level/trace.lua, Mesen → BizHawk):
 --     $7E:021A = level ID                (CurrentLevelFromMapLo, u16)
@@ -135,6 +140,32 @@ local LOAD_SETTLE_FRAMES  = 30     -- match Mesen scenario's TITLE_STABLE_TICKS
 local LOAD_TIMEOUT_FRAMES = 600
 local LOAD_STABLE_TICKS   = 4
 
+-- Egg-trail inventory injection ("Test Level" item presets). The cart's
+-- between-level egg-inventory snapshot at $7E:5D98 (count = items*2 bytes) +
+-- $7E:5D9A (6 words, each a NorSpr sprite ID) is consumed by the level loader's
+-- CODE_restore_egg_inventory (reached from CODE_04DC28 on BOTH the world-map
+-- entry path and the warp re-entry path), which re-spawns each saved sprite ID
+-- onto Yoshi's back via CODE_03BEB9 — the same routine the game's own
+-- FullEggSpawner ($0AB) uses to top Yoshi up to 6 eggs. So writing this
+-- snapshot just before a gm$0C load makes Yoshi enter the level already
+-- carrying those items. restore consumes (zeroes) the snapshot, so we re-stamp
+-- before every gm$0C transition; the trail caps at 6 (CODE_03BEB9 drops the
+-- oldest past $0E). Sprite IDs come from the editor (green egg $25 / key $27).
+local INV_COUNT_ADDR = 0x5D98   -- $7E:5D98 between-level egg-inventory byte count
+local INV_TABLE_ADDR = 0x5D9A   -- $7E:5D9A first of 6 sprite-ID words
+local INV_MAX_ITEMS  = 6
+
+-- Stamp the between-level egg-inventory snapshot from a list of sprite IDs
+-- (Lua 1-based; empty list = no items). Always writes all 6 table words so a
+-- shorter list zeroes the unused slots, and clamps to the 6-item trail cap.
+local function writeEggSnapshot(ids)
+  local n = math.min(#ids, INV_MAX_ITEMS)
+  memory.write_u16_le(INV_COUNT_ADDR, n * 2, "WRAM")
+  for k = 0, INV_MAX_ITEMS - 1 do
+    memory.write_u16_le(INV_TABLE_ADDR + k * 2, (k < n) and ids[k + 1] or 0, "WRAM")
+  end
+end
+
 -- Frame-advance loop that returns once gm hits $0F and stays there for
 -- LOAD_STABLE_TICKS frames, or times out. Used after both the initial
 -- world-map load and any subsequent warp re-entry.
@@ -170,9 +201,26 @@ local function loadLevel(arg)
     sendFramed("ERR bad level id: " .. tostring(arg))
     return
   end
+  -- Tokens after the level id are zero or more "WARP <dest> <x> <y> <ent>"
+  -- groups, optionally followed by a single trailing "INV <id> <id> ..." group
+  -- (the egg-trail inventory preset, hex sprite IDs) which consumes the rest.
   local warps = {}
+  local invIds = {}
   local i = 2
   while tokens[i] do
+    if tokens[i] == "INV" then
+      i = i + 1
+      while tokens[i] do
+        local sid = tonumber(tokens[i], 16)
+        if not sid then
+          sendFramed("ERR bad INV sprite id at token " .. i .. ": " .. tostring(tokens[i]))
+          return
+        end
+        invIds[#invIds + 1] = sid
+        i = i + 1
+      end
+      break
+    end
     if tokens[i] ~= "WARP" then
       sendFramed("ERR unknown token at " .. i .. ": " .. tostring(tokens[i]))
       return
@@ -265,6 +313,11 @@ local function loadLevel(arg)
   memory.write_u8(LOAD_LEVEL_SLOT_ADDR + 1, 0x00,       "WRAM")
   memory.write_u8(LOAD_TYPE_ADDR,           0x00,       "WRAM")
   memory.write_u8(LOAD_TYPE_ADDR + 1,       0x00,       "WRAM")
+  -- Seed Yoshi's egg-trail inventory right before the load consumes it (the
+  -- world-map entry path runs CODE_restore_egg_inventory). For a no-warp boot
+  -- this is the final room, so the items land here; with warps the snapshot is
+  -- re-stamped before each hop (the last hop is the room the user tests).
+  writeEggSnapshot(invIds)
   memory.write_u8(LOAD_GAMEMODE_ADDR,       LOAD_GM0C,  "WRAM")
 
   local loaded, frames = waitForLevelLoaded(LOAD_TIMEOUT_FRAMES)
@@ -295,6 +348,9 @@ local function loadLevel(arg)
     memory.write_u8(LOAD_TYPE_ADDR + 1,             0x00,   "WRAM")
     memory.write_u8(LOAD_SCREENEXIT_IDX_ADDR,       0x00,   "WRAM")
     memory.write_u8(LOAD_SCREENEXIT_IDX_ADDR + 1,   0x00,   "WRAM")
+    -- Re-stamp before each warp hop's load (restore zeroes the snapshot each
+    -- time it consumes it), so the final sub-room is the one Yoshi enters armed.
+    writeEggSnapshot(invIds)
     memory.write_u8(LOAD_GAMEMODE_ADDR,             LOAD_GM0C, "WRAM")
     emu.limitframerate(false)
     local warpOk, wFrames = waitForLevelLoaded(LOAD_TIMEOUT_FRAMES)
@@ -486,6 +542,18 @@ end
 
 -- Short timeout so a missed reply doesn't stall emulation forever.
 comm.socketServerSetTimeout(2000)
+
+-- Start every fresh EmuHawk session at NORMAL speed. client.speedmode /
+-- emu.limitframerate / SetSoundOn mutate BizHawk's GLOBAL (config.ini-persisted)
+-- speed state, not per-script state — so a prior Test Level's load-turbo
+-- (setLoadTurbo) could otherwise leak a fast/unthrottled speed into the next cold
+-- "Launch", which is meant to play at normal speed from the start. This runs once
+-- at harness load (after the ROM + its config are applied), so it wins. Test Level
+-- still re-applies turbo for its brief level-load settle and restores after, so
+-- loads stay fast. pcall-guarded: a build missing an API degrades, never errors.
+pcall(client.speedmode, 100)
+pcall(emu.limitframerate, true)
+pcall(client.SetSoundOn, true)
 
 log("harness loaded, awaiting socket")
 

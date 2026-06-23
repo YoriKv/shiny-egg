@@ -1,8 +1,8 @@
 # snes-framework
 
-A specialized fork of [Yoshifanatic's SNES ROM Framework v1.4.0](https://github.com/Yoshifanatic/SNES-ROM-Framework) carrying his YI disassembly (Yoshi's Island, SMW2). Trimmed to only what YI needs and wrapped in a Node-managed build system so it can serve as the foundation for the **shiny-egg** level editor — while keeping the build byte-identical to the original cart at every step.
+A specialized fork of [Yoshifanatic's SNES ROM Framework v1.4.0](https://github.com/Yoshifanatic/SNES-ROM-Framework) carrying his YI disassembly (Yoshi's Island, SMW2). Trimmed to only what YI needs and wrapped in a Node-managed build system, while keeping the build byte-identical to the original cart at every step.
 
-It does double duty: a documented, navigable YI source (inline comments, descriptive labels, cross-references), and the asm + build pipeline the editor extracts from and rebuilds.
+It does double duty: a documented, navigable YI source (inline comments, descriptive labels, cross-references), and the asm + build pipeline a host application extracts from and rebuilds.
 
 Source of truth: the `.asm` files in `global/` and `yi/`. Extracted game assets and built ROMs are generated, not committed.
 
@@ -28,20 +28,20 @@ Source of truth: the `.asm` files in `global/` and `yi/`. Extracted game assets 
 | `leveldataengine.md` | Bank12/13: object dispatch, Map16 walker, page-table cart location |
 | `levelloader.md` | Bank17/0F: gamemode chain, level-load pipeline, world-map dispatcher |
 | `spritestateengine.md` | Bank03: 9-state sprite dispatcher, per-sprite pointer tables |
-| `renderingpipeline.md` | How a level's BG/sprite layers are assembled (the model the editor's static render follows) |
+| `renderingpipeline.md` | How a level's BG/sprite layers are assembled |
 | `bg23rendering.md` | BG2/BG3 reconstruction: per-LevelMode PPU config, parallax scroll math, HDMA/SuperFX layer effects |
 | `family-*.md` (23) | Per-sprite-family deep-dives covering every regular sprite |
 | `sprite-neighbor-dependencies.md` | Designer-facing inventory of sprites whose behaviour depends on neighbouring placed level data |
 | `lz16-model.md` | LZ16 decompressor algorithm reference |
 | `smwc-memory-map.tsv` | 1427-entry extraction of SMW Central's YI memory map (canonical third-party cart-byte cross-reference) |
 
-(The per-level object/sprite instance index that backs the editor's debug
-finder is no longer a committed doc — it's regenerated at extract time into
-`editor-data/yi/instance-index.json`; see `scripts/instance-index.ts`.)
+(The per-level object/sprite instance index is no longer a committed doc —
+it's regenerated at extract time into `editor-data/yi/instance-index.json`;
+see `scripts/instance-index.ts`.)
 
 ## Usage
 
-This package isn't built standalone — the shiny-egg **editor** drives extraction and builds through it (`extract.ts` / `build.ts` are library modules invoked over IPC, not CLI scripts). From the editor: **Workshop → ROM → Extract** populates `assets/yi/` from the reference cart, then **Build** / **Test Level** runs the asar pipeline into `build/`. V1.0 builds byte-identical to the reference cart.
+This package isn't built standalone — a host application drives extraction and builds through it (`extract.ts` / `build.ts` are library modules invoked over IPC, not CLI scripts): extraction populates `assets/yi/` from the reference cart, then the asar pipeline runs into `build/`. V1.0 builds byte-identical to the reference cart.
 
 Prereqs: Node 24 (`nvm use` — pinned via `.nvmrc`), `pnpm install` at the repo root, and a headerless reference cart dropped at `reference/` (see below).
 
@@ -163,8 +163,8 @@ Both USA versions build successfully end-to-end:
 ├── reference/               User-supplied cart dumps — gitignored, never committed
 └── scripts/                 Node-side TypeScript (Node 24 strips types)
     ├── cli.ts                argv dispatcher for `pnpm xref` / `pnpm closure`
-    ├── extract.ts            native bytes-slicing extractor (editor-invoked)
-    ├── build.ts              the multi-phase asar build orchestrator (editor-invoked)
+    ├── extract.ts            native bytes-slicing extractor (host-invoked)
+    ├── build.ts              the multi-phase asar build orchestrator (host-invoked)
     ├── asar.ts               asar.exe wrapper
     ├── rom-versions.ts       ROM version metadata
     ├── state.ts              .extraction-state.json read/write
@@ -173,8 +173,8 @@ Both USA versions build successfully end-to-end:
     ├── closure.ts            subroutine closure extractor (routine + transitive callees, annotated)
     └── mem-symbols.ts        !RAM/!EXRAM define → address resolution for the xref index
 
-    (scripts/ also holds the editor's level-data + static-render code — engine/,
-    level.ts, strings.ts, etc. — which serve the editor, not this standalone
+    (scripts/ also holds the host application's level-data + static-render code
+    — engine/, level.ts, strings.ts, etc. — which serve the host, not this
     framework build, and aren't covered here.)
 ```
 

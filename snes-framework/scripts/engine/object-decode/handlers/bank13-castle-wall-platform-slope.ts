@@ -322,22 +322,21 @@ const stampCastleWallPlatformSlope: PerCellHandler = (state) => {
   if (cur === SENTINEL_NoStamp_A) return;
   if (cur === SENTINEL_NoStamp_B) return;
 
+  // Zone-tile path: cart `LDA DATA_13BA98,Y` reads at the BYTE offset Y (so the
+  // word index is Y/2). `yIdx` is that byte offset (0 col-0, 2 col-edge), so the
+  // word index is `yIdx >>> 1` — the same byte→word conversion the default-tiles
+  // path below uses (`altY >>> 1`). (An earlier port indexed `zone_tiles[yIdx]`
+  // directly, treating the byte offset as a word index: harmless for col-0
+  // (yIdx 0), but col-edge picked the wrong entry, and $00D2+col-edge ran off the
+  // 3-entry table → no stamp, leaving the under-tile — record $0C cell (24,122).)
   if (cur === SENTINEL_Corner_A) {
-    // BEQ zone_path (Y unchanged)
-    stampCell(state, DATA_castle_wall_platform_slope_zone_tiles[yIdx]!);
+    // BEQ zone_path (Y unchanged) → word index yIdx/2.
+    stampCell(state, DATA_castle_wall_platform_slope_zone_tiles[yIdx >>> 1]!);
     return;
   }
   if (cur === SENTINEL_Corner_B) {
-    // INY INY then BRA zone_path → Y += 2
-    const y2 = (yIdx + 2) & 0xff;
-    // The zone table only has 3 entries; if yIdx was 2 (entered via
-    // col != 0 branch), Y becomes 4 which reads $13BA9C — past the
-    // 3-entry table into DATA_castle_wall_platform_slope_sub_handlers (sub-handlers). The trace never
-    // hits this combination (Corner_B with col != 0 simultaneous on
-    // row 0), so we clamp to the populated 3 entries.
-    if (y2 < DATA_castle_wall_platform_slope_zone_tiles.length) {
-      stampCell(state, DATA_castle_wall_platform_slope_zone_tiles[y2]!);
-    }
+    // INY INY (Y += 2) then read → word index (yIdx+2)/2.
+    stampCell(state, DATA_castle_wall_platform_slope_zone_tiles[(yIdx + 2) >>> 1]!);
     return;
   }
 

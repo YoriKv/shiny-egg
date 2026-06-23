@@ -1,6 +1,6 @@
 // Reusable asm marker contract — the `;@editable:<id> begin` / `;@editable:<id>
 // end` comment pair that bounds a curated, editor-owned span inside a framework
-// `.asm` file (plan step 5). Boundaries are matched by marker, not byte offset,
+// `.asm` file. Boundaries are matched by marker, not byte offset,
 // so they're robust to line shifts elsewhere in the file.
 //
 // Editing strategy (see text-literals.ts): tools edit only the contents of the

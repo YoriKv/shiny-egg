@@ -1,4 +1,4 @@
-// String-table editor backend (plan step 5) — parse/serialize the level-name
+// String-table editor backend — parse/serialize the level-name
 // strings in a `;@editable` region of `yi/SuperFX/Banks/Bank51.asm`. Built on
 // the reusable asm primitives in ./asm so future text tools (message box, item
 // names, …) reuse the same marker + literal + font-table machinery.
@@ -7,6 +7,12 @@
 // — we replace only the contents of the `"..."` literals the user edited. So
 // control bytes ($FF,$00 / $FE,$10,$00 / $FD), the pointer table, comments,
 // label aliases, indentation, and the garbage sentinel all survive byte-for-byte.
+//
+// Newline insertion is intentionally NOT supported: level-name layout is fixed at
+// 2 lines (a 3rd needs layout asm), the char-budget counter ignores control bytes
+// (so a new $FF/$FE record would under-count cost), and message text is a sequence
+// of quoted-literal segments — not visual rows. Multi-line editing, if ever needed,
+// must be a structured control-record edit, not a text edit.
 
 import { findRegion, spliceRegion } from './asm/markers.ts'
 import { findQuotedLiterals, stripComment, applyEdits, type TextEdit } from './asm/text-literals.ts'

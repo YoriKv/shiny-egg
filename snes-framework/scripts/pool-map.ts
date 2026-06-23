@@ -416,8 +416,7 @@ export function buildPoolMap(
 //
 // asm patches place their custom routines with a deterministic bump allocator
 // (`%patchcode` in the generated Custom hook) instead of asar `freecode`, which
-// on this cart can't be confined to a safe region (see
-// research/plan-custom-patches.md). We carve a fixed slice off the END of
+// on this cart can't be confined to a safe region. We carve a fixed slice off the END of
 // FreeRegion51 and reserve it: migration's first-fit allocator never reaches it
 // (its capacity is shrunk to match), and patch routines `org` into it.
 //

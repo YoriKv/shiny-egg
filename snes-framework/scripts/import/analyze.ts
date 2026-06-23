@@ -2,8 +2,7 @@
 // import report + apply payload. Pure framework-side: takes two cart buffers,
 // returns a serializable RomAnalysis (the renderer's report) plus the decoded
 // per-record items the app layer applies through saveLevelResource. No project /
-// overlay knowledge here (that's src/main/rom-import.ts). See plan-rom-import.md
-// §6-7.
+// overlay knowledge here (that's src/main/rom-import.ts).
 
 import * as crypto from 'node:crypto';
 import { u24le } from '../engine/rom-read.ts';

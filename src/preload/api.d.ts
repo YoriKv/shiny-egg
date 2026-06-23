@@ -34,6 +34,7 @@ import type {
   Bg1LayerResponse,
   BgLayersResult,
   BizhawkWarp,
+  TestInventory,
   CartIdentification,
   CaptureAtResult,
   CollisionLayerResponse,
@@ -45,11 +46,13 @@ import type {
   EntityRenderValidity,
   EntityValidityRequest,
   FindInstanceKind,
+  FitSpritesetResult,
   FitSurfaceRequest,
   FitTileset,
   FrameworkExtractArgs,
   LevelRenderRequest,
   LocateBizhawkResult,
+  LocateAsepriteResult,
   ObjectInfluenceRequest,
   ObjectInstance,
   OverlayDriftReport,
@@ -76,16 +79,35 @@ import type {
   RemovalPreviewResult,
   RemovedLevelEntry,
   RemoveLevelsResult,
+  BgRegionExportArgs,
+  BgRegionExportResult,
+  BgRegionImportResult,
+  RegionImportLogEntry,
+  ExportGfxOptions,
+  GfxExportTrack,
+  ExportGfxResult,
+  GfxEditEntry,
+  GfxFileRole,
+  ImportGraphicsResult,
+  Map16BlockPreview,
+  Map16SubTileEdit,
   RenderGfxFilesArgs,
+  RenderHeaderRequest,
   RenderImage,
   RenderMap16Args,
   RenderVramArgs,
+  GbaImportApplyResult,
+  GbaImportApplySelection,
+  GbaImportReport,
+  ResetGfxEditResult,
   ResetLevelResult,
   RestoreLevelsResult,
   RomImportApplyResult,
   RomImportReport,
   RomImportSelection,
+  SaveGfxEditResult,
   SetExitDestResult,
+  SetExitEntranceResult,
   Settings,
   SpriteLayerResponse,
   SpriteProperty,
@@ -156,6 +178,7 @@ export type {
   Bg1LayerResponse,
   BgLayersResult,
   BizhawkWarp,
+  TestInventory,
   CartIdentification,
   CaptureAtResult,
   CollisionLayerResponse,
@@ -168,6 +191,7 @@ export type {
   EntityValidityCandidate,
   EntityValidityRequest,
   FindInstanceKind,
+  FitSpritesetResult,
   FitSurfaceRequest,
   FitTileset,
   FrameworkExtractArgs,
@@ -175,6 +199,7 @@ export type {
   LevelRenderRequest,
   LevelTileUsage,
   LocateBizhawkResult,
+  LocateAsepriteResult,
   PaintCorner,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -206,21 +231,43 @@ export type {
   RemovalPreviewResult,
   RemovedLevelEntry,
   RemoveLevelsResult,
+  BgRegionLayer,
+  BgRegionRect,
+  BgRegionFormat,
+  BgRegionExportArgs,
+  BgRegionExportResult,
+  BgRegionImportResult,
+  RegionImportLogEntry,
+  ExportGfxOptions,
+  GfxExportTrack,
+  ExportGfxResult,
+  GfxEditEntry,
+  GfxFileRole,
+  ImportGraphicsResult,
+  Map16BlockPreview,
+  Map16SubTileEdit,
   RenderGfxFilesArgs,
   RenderHeaderRequest,
   RenderImage,
   RenderMap16Args,
   RenderVramArgs,
   RenderVramRegion,
+  ResetGfxEditResult,
   ResetLevelResult,
   RestoreLevelsResult,
+  GbaImportApplyResult,
+  GbaImportApplySelection,
+  GbaImportReport,
+  GbaImportSublevel,
   RomImportApplyResult,
   RomImportLevel,
   RomImportNames,
   RomImportPalette,
   RomImportReport,
   RomImportSelection,
+  SaveGfxEditResult,
   SetExitDestResult,
+  SetExitEntranceResult,
   Settings,
   SpriteLayerResponse,
   SpriteProperty,
@@ -290,10 +337,15 @@ export interface BizHawkAPI {
    * destination as if Yoshi had taken a warp from the prior level.
    * Use for sub-rooms reachable only via a chain of warps from the
    * root world-map slot.
+   *
+   * Pass `inventory` ({ eggs, keys }, sum ≤ 6) to seed Yoshi's egg trail
+   * before the load — main maps the counts to sprite IDs and the harness
+   * writes them into the cart's between-level inventory snapshot. Default: empty.
    */
   loadLevel: (
     translevelId: number,
-    warps?: ReadonlyArray<BizhawkWarp>
+    warps?: ReadonlyArray<BizhawkWarp>,
+    inventory?: TestInventory
   ) => Promise<string>
   /**
    * Read `len` bytes from BizHawk memory `domain` ("WRAM" / "CARTRAM" /
@@ -349,12 +401,6 @@ export interface RenderAPI {
   /** Palette-colour editing: CGRAM (overlay-patched) + per-entry blob
    *  provenance + the project's current palette edits. Null for empty/special. */
   editablePalette: (req: LevelRenderRequest) => Promise<DecodedPalette | null>
-  /** True when the built ROM has a baked-in palette colour the live `draft` no
-   *  longer covers — so the panel's swatch (read from the built ROM) is out of
-   *  date and a rebuild is needed. Compared against the draft so a saved-but-
-   *  unbuilt edit (previewed correctly) doesn't warn. Drives the panel's
-   *  "rebuild needed" warning. */
-  paletteBuildStale: (draft: PaletteEdit[]) => Promise<boolean>
   decodeLevelLayout: (req: LevelRenderRequest) => Promise<DecodedLevelLayout | null>
   /** Paint tool — forward-fit a painted height curve to std objects. The corners
    *  are interpolated into slope lines, decomposed into a representable staircase,
@@ -363,6 +409,9 @@ export interface RenderAPI {
   fitSurface: (req: FitSurfaceRequest) => Promise<LevelObject[]>
   /** Paintable tilesets (those with fit-metadata) for the paint panel's selector. */
   fitTilesets: () => Promise<FitTileset[]>
+  /** Pick the stock sprite tileset (header[7]) that best covers the given placed
+   *  sprites' graphics. `spriteNums` are the level's sprite ids. */
+  fitSpriteset: (spriteNums: number[]) => Promise<FitSpritesetResult>
   /** The level's distinct Map16 blocks (usage count, VRAM-coverage health,
    *  palette rows) + a composite thumbnail — the Tiles "Used" view. Pass
    *  `override` so it tracks live edits. Null for empty/special slots. */
@@ -442,6 +491,84 @@ export interface EditorAPI {
   /** Reset a level to base: delete its overlay `.bin`(s). The renderer reloads
    *  the level afterwards (and rebuilds when `removed`). */
   resetLevel: (levelRecordId: number) => Promise<ResetLevelResult>
+  /** Save an edited graphics blob: re-encode the decompressed `tiles` → overlay
+   *  blob (the build's reinsert pipeline places it). `rowCount` (lz16 tile-rows)
+   *  is required for lz16. The renderer marks the build dirty on success. */
+  saveGfxEdit: (
+    format: 'lz2' | 'lz16',
+    fileId: number,
+    tiles: Uint8Array,
+    rowCount?: number
+  ) => Promise<SaveGfxEditResult>
+  /** Discard a saved graphics edit: delete its overlay blob so the next build
+   *  reads base. `removed` reports whether one existed (→ rebuild). */
+  resetGfxEdit: (format: 'lz2' | 'lz16', fileId: number) => Promise<ResetGfxEditResult>
+  /** Every graphics file the active project has overlay-edited (compressed blobs
+   *  + raw animation CHR) — the "Changed graphics" list in the Graphics panel. */
+  listGfxEdits: () => Promise<GfxEditEntry[]>
+  /** What a changed graphics file maps back to — its role(s) across the cart
+   *  (BG1/BG2/sprite/title screen…); the expandable detail for the list. */
+  gfxFileRole: (file: string) => Promise<GfxFileRole>
+  /** Reset one overlay-edited graphics file (a `listGfxEdits` `file` path) back to
+   *  vanilla. The renderer marks the build dirty when `removed`. */
+  resetGfxEditFile: (file: string) => Promise<ResetGfxEditResult>
+  /** Export the current level's gfx files to a chosen folder as PNGs + manifest
+   *  (folder picked via a native dialog). Writes the faithful tile sheets, the
+   *  metasprite "meta" view (sprites), the metatile "meta" view (Map16 object
+   *  blocks), and view-only object previews — see `ExportGfxOptions`. `canceled`
+   *  if dismissed. */
+  exportGfxPngs: (
+    header: RenderHeaderRequest | null, // null ⇒ no level loaded; only the screens track exports
+    opts?: ExportGfxOptions
+  ) => Promise<ExportGfxResult>
+  /** Export a BG layer region (BG1 = the selected level area; BG2/BG3 = the whole
+   *  rendered tilemap) to a PNG + sidecar in a chosen folder. `canceled` if
+   *  dismissed. */
+  exportBgRegion: (
+    header: RenderHeaderRequest,
+    args: BgRegionExportArgs
+  ) => Promise<BgRegionExportResult>
+  /** Import edited BG region(s) from a chosen folder (slice → saveGfxEdit; only
+   *  changed files are saved). The renderer marks the build dirty when
+   *  `applied > 0`. Also remembers the folder (listRegionExports). */
+  importBgRegion: () => Promise<BgRegionImportResult>
+  /** Resolved Aseprite executable path (saved → common install locations), or null
+   *  when not located. */
+  getAsepriteExe: () => Promise<string | null>
+  /** Pick the Aseprite executable and persist it to settings. */
+  locateAseprite: () => Promise<LocateAsepriteResult>
+  /** Open `dir/file` in Aseprite (the "Auto-Open Exports" toggle). Returns false
+   *  if Aseprite isn't located or the file is missing. */
+  openInAseprite: (dir: string, file: string) => Promise<boolean>
+  /** Folders this project has exported region(s) to (most-recent first) — the
+   *  Region tab lists them with per-folder import / remove. */
+  listRegionExports: () => Promise<string[]>
+  /** Forget a tracked export folder (does not delete files). Returns the new list. */
+  removeRegionExport: (dir: string) => Promise<string[]>
+  /** Reveal a tracked export folder in the OS file manager. */
+  openRegionFolder: (dir: string) => Promise<void>
+  /** Import a specific tracked folder (no dialog) — same slice + log as importBgRegion. */
+  importRegionFolder: (dir: string) => Promise<BgRegionImportResult>
+  /** Unified import (dialog): auto-detect the all-graphics manifest AND/OR BG-region
+   *  files in a chosen folder, import both, merge into one log. */
+  importGraphics: () => Promise<ImportGraphicsResult>
+  /** Unified import of a specific tracked folder (no dialog). */
+  importGraphicsFolder: (dir: string) => Promise<ImportGraphicsResult>
+  /** Structured Map16 block editor. Load a block's 4 sub-tiles (overlay edit or
+   *  vanilla base; null if not an editable block); save/reset them (post-build
+   *  byte patch — renderer marks the build dirty); list edited ids; render a 16×16
+   *  live preview from a set of sub-tiles. */
+  loadMap16Block: (map16Id: number) => Promise<Map16SubTileEdit[] | null>
+  saveMap16Block: (
+    map16Id: number,
+    subtiles: Map16SubTileEdit[]
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  resetMap16Block: (map16Id: number) => Promise<{ ok: true; removed: boolean } | { ok: false; error: string }>
+  listMap16BlockEdits: () => Promise<number[]>
+  renderMap16Block: (
+    header: RenderHeaderRequest,
+    subtiles: Map16SubTileEdit[]
+  ) => Promise<Map16BlockPreview | null>
   /** Dry-run impact of removing vanilla levels (validated set, world-map
    *  slots, freed bytes, stranded incoming warps) — drives the confirm dialog. */
   removeLevelsPreview: (recordIds: number[]) => Promise<RemovalPreviewResult>
@@ -477,6 +604,15 @@ export interface EditorAPI {
     destX: number,
     destY: number
   ) => Promise<SetExitDestResult>
+  /** Cross-level warp-exit entrance-type edit (incoming-marker Entrance dropdown):
+   *  set the warp exit on `screenIndex` in `sourceLevelRecordId` to apply
+   *  `entranceType` on arrival and write that level's overlay (auto-save). The
+   *  renderer marks the build dirty and keeps a reversible undo entry. */
+  setExitEntrance: (
+    sourceLevelRecordId: number,
+    screenIndex: number,
+    entranceType: number
+  ) => Promise<SetExitEntranceResult>
 }
 
 export interface ShinyEggAPI {
@@ -506,10 +642,11 @@ export interface ShinyEggAPI {
   debug: DebugAPI
   patches: PatchesAPI
   importRom: ImportRomAPI
+  importGba: ImportGbaAPI
 }
 
 /** Import data from a modified/built third-party ROM into the active project as
- *  overlays (plan-rom-import.md). Two-step: analyse (a picked `.sfc` diffed
+ *  overlays. Two-step: analyse (a picked `.sfc` diffed
  *  against the extracted V1.0 base → report) then apply the selected records.
  *  Applied edits overwrite the project's overlay; the caller marks the build
  *  dirty. */
@@ -520,6 +657,20 @@ export interface ImportRomAPI {
   analyze: () => Promise<RomImportReport | null>
   /** Apply the selected changed records into the active project's overlay. */
   apply: (selection: RomImportSelection) => Promise<RomImportApplyResult>
+}
+
+/** Import levels from the GBA version (Super Mario Advance 3). Two-step: analyse
+ *  (pick an SMA3 (U) `.gba` cart → its importable sublevels) then apply
+ *  (overwrite chosen SNES records with chosen GBA sublevels). SMA3 is a port of
+ *  YI, so the conversion is near-1:1 (camera sprites + a few custom objects are
+ *  dropped). Applied edits overwrite the project's overlay; the caller marks the
+ *  build dirty. */
+export interface ImportGbaAPI {
+  /** Open a file picker, choose an SMA3 (U) GBA cart, and enumerate its
+   *  importable sublevels. Returns null when the dialog is cancelled. */
+  analyze: () => Promise<GbaImportReport | null>
+  /** Overwrite the selected SNES records with their chosen GBA sublevels. */
+  apply: (selection: GbaImportApplySelection) => Promise<GbaImportApplyResult>
 }
 
 /** Debug-only helpers (not part of the normal editing flow). */

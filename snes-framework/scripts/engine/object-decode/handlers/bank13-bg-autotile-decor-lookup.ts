@@ -317,7 +317,23 @@ const bgAutotileDecorLookupStamp: PerCellHandler = (state) => {
   // The earlier `return` here was wrong — it left the original tile in
   // place, so sand was never removed.
   const selfIdx = state.zp12 & 0xFF;
-  if (selfIdx >= DATA_decor_lookup_self_tiles.length) return;
+  if (selfIdx >= DATA_decor_lookup_self_tiles.length) {
+    // Cart out-of-bounds read. DATA_decor_lookup_self_tiles is exactly 190
+    // entries; `CODE_stamp_graffiti_rail` ($13:B924) immediately follows it. So
+    // for a low byte >= 190 the cart's `LDA DATA_decor_lookup_self_tiles,y` reads
+    // that routine's OPCODE BYTES as a "slot address", then `TAY ; LDA $0000,y`
+    // derefs it through the $0000-1FFF WRAM mirror. The only index that occurs in
+    // the shipped catalog is $BF — a diag-end cap ($00BF) sitting under a $4F
+    // cell, records $3D/$8A. There the slot bytes are $15A5 (the encoding of
+    // `LDA.b $15`), which derefs ambient-sprite RAM $15A5 (= AmbSpr_XAccelCeil
+    // base $15A0 + 5) — uninitialised at object-decode time, holding $00C9 (a
+    // diag-wall connector) in every observed case. That WRAM value is NOT
+    // statically derivable, so the OOB indices that actually occur are pinned to
+    // their observed deref result. (See DATA_decor_lookup_self_oob.)
+    const oob = DATA_decor_lookup_self_oob[selfIdx];
+    if (oob !== undefined) stampCell(state, oob);
+    return;
+  }
   const selfSlot = DATA_decor_lookup_self_tiles[selfIdx]!;
   if (selfSlot === 0) {
     stampCell(state, 0x0000); // cart `BEQ CODE_13B187` stores A=$0000
@@ -325,6 +341,18 @@ const bgAutotileDecorLookupStamp: PerCellHandler = (state) => {
   }
   const selfTile = state.templateAt(selfSlot);
   stampCell(state, selfTile);
+};
+
+/** Out-of-bounds self-lookup results (low byte >= 190). The cart reads past
+ *  the 190-entry self-table into `CODE_stamp_graffiti_rail`'s bytes and derefs
+ *  the result through the WRAM mirror; the deref target is non-template RAM
+ *  whose decode-time value isn't statically modellable. Only idx $BF occurs in
+ *  the shipped catalog (records $3D/$8A): slot $15A5 → ambient-sprite RAM
+ *  $15A5 = $00C9. Pinned to the observed value; gated by the sweep. A new level
+ *  that hit a different OOB index (or left a different value in $15A5) would
+ *  need its own entry — `sweep-levels` / the warp comparator would flag it. */
+const DATA_decor_lookup_self_oob: Record<number, number> = {
+  0xBF: 0x00C9,
 };
 
 // ─────────────────────────────────────────────────────────────────────

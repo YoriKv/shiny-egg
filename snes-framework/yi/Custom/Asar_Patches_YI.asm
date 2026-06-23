@@ -9,9 +9,9 @@
 
 ;---------------------------------------------------------------------------
 
-; shiny-egg: patches DISABLED so the build is byte-exact against the
-; original cart. The editor's BizHawk integration drives level loads
-; entirely from the Lua harness (writes CurrentGameMode + level slot to
+; Patches DISABLED so the build is byte-exact against the original
+; cart. A host application's debugger integration drives level loads
+; entirely from a Lua harness (writes CurrentGameMode + level slot to
 ; WRAM directly), so no in-cart hook is needed.
 ;
 ; To enable hack-style asar patches, uncomment the line below and add

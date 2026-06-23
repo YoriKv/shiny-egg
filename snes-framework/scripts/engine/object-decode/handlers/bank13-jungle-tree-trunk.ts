@@ -37,7 +37,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import {
   getMap16Above,
   getMap16Left,
@@ -160,7 +160,7 @@ export const jungleTreeTrunkWithBranchesStamp: PerCellHandler = (state) => {
   }
 
   // CODE_13970D — main random body. Roll one PRNG bit.
-  const roll = prngNext(state) & 0x01;
+  const roll = prngNext(state, RNG_SITE.jungleTrunkBranches) & 0x01;
 
   // CODE_139725 — "is this the LAST row?" branch. Cart does
   // `LDA $2C ; INC ; CMP $2E ; BEQ → LAST handler`.
@@ -282,7 +282,7 @@ export const jungleTreeTrunkWithLeavesStamp: PerCellHandler = (state) => {
   if (rowPlus1 === (state.zp2E & 0xff)) return;
 
   // PRNG roll. Cart pre-loads REP #$30 then `JSL prng ; AND #$0007`.
-  const roll = prngNext(state) & 0x07;
+  const roll = prngNext(state, RNG_SITE.jungleTrunkLeaves) & 0x07;
   if (roll >= 0x06) {
     // CODE_13979F — fall through to SEP #$30 / RTL. No overlay this cell.
     return;
@@ -340,7 +340,7 @@ export const jungleTreeTrunkWithLeavesStamp: PerCellHandler = (state) => {
 // Merge: object IDs 0x30, 0x31 share this handler.
 const initJungleTreeTrunk: InitHandler = (state) => {
   // Seed $A1: 0 (no leaf-tint) or $000B (leaf-tint bias).
-  state.zpA1 = (prngNext(state) & 0x02) !== 0 ? 0x000B : 0x0000;
+  state.zpA1 = (prngNext(state, RNG_SITE.jungleTrunkInit) & 0x02) !== 0 ? 0x000B : 0x0000;
 
   // Bit-0 of $15 picks between branches and leaves stamp handler.
   const handler = (state.zp15 & 0x01) === 0

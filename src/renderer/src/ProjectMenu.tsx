@@ -4,6 +4,7 @@ import { useDropdown } from './hooks/useDropdown'
 import { DiscardChangesModal } from './DiscardChangesModal'
 import { HelpDialog } from './HelpDialog'
 import { ImportRomDialog } from './ImportRomDialog'
+import { ImportGbaDialog } from './ImportGbaDialog'
 import { AboutBody, LEVEL_EDITOR_HELP } from './app-help'
 import { useEditSession } from './edit-session/EditSession'
 
@@ -42,6 +43,7 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
   const { open, setOpen, containerRef } = useDropdown()
   const [view, setView] = useState<'list' | 'info'>('list')
   const [importOpen, setImportOpen] = useState(false)
+  const [importGbaOpen, setImportGbaOpen] = useState(false)
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [info, setInfo] = useState<ProjectInfo | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -334,6 +336,17 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
                 >
                   Import from ROM…
                 </button>
+                <button
+                  type="button"
+                  className="se-menuitem"
+                  onClick={() => {
+                    setOpen(false)
+                    setImportGbaOpen(true)
+                  }}
+                  disabled={busy || !current}
+                >
+                  Import from GBA…
+                </button>
               </section>
 
               <section className="se-pop__section se-projmenu__menu se-projmenu__menu--divided">
@@ -376,7 +389,7 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
                 {info ? (
                   <p className="se-pop__status">
                     <span className="se-pop__status-main">{info.name}</span>
-                    <span className="se-pop__status-meta">
+                    <span className="se-meta se-pop__status-meta">
                       created {formatTimestamp(info.createdAt)} · modified{' '}
                       {formatTimestamp(info.modifiedAt)}
                       {info.romVersion ? ` · ${info.romVersion}` : ''}
@@ -411,7 +424,7 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
               <section className="se-pop__section">
                 <h3 className="se-pop__h">Rename</h3>
                 <input
-                  className="se-projmenu__input"
+                  className="se-input se-projmenu__input"
                   value={renameValue}
                   spellCheck={false}
                   autoComplete="off"
@@ -507,6 +520,13 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
         projectName={current?.name ?? null}
         onClose={() => setImportOpen(false)}
         onImported={onImported}
+      />
+
+      <ImportGbaDialog
+        open={importGbaOpen}
+        projectName={current?.name ?? null}
+        onClose={() => setImportGbaOpen(false)}
+        onImported={() => onImported()}
       />
     </div>
   )

@@ -21,7 +21,10 @@
 // **Sub-tile rendering** is the same shape as `renderMap16Gallery` in
 // `render-gallery.ts`: decode each Map16 cell to 4 sub-tile descriptors
 // (TL, TR, BL, BR), each with a tile index + palette row + flips; blit
-// each 8×8 4bpp tile from VRAM into a 16×16 cell region of the output.
+// each 8×8 tile from VRAM into a 16×16 cell region of the output. The tile
+// colour depth is NOT fixed — it follows the scene's BG mode (`bg1Bpp`): 4bpp
+// in BG Mode 1/2 (the 218 standard levels), 2bpp in BG Mode 0 (level mode $0A /
+// level $6B). Decoding 2bpp as 4bpp scrambles every tile — see `bg1Bpp` below.
 //
 // **Incremental re-render** (`renderBg1Patch`, research/plan-incremental-
 // render.md Tier 2): the full path and the patch path BOTH drive one shared
@@ -29,7 +32,7 @@
 // byte-identical to a fresh full render. Patch renders only the cells a diff
 // flagged; full renders all of them.
 
-import { decode4bppTile } from './tile.ts';
+import { decode4bppTile, decode2bppTile } from './tile.ts';
 import { buildPaletteRow } from './color.ts';
 import { decodeMap16, type Map16SubTile, type Map16Tables } from './map16.ts';
 import { SCREEN_PAGE_UNALLOCATED, LRU_PAGE_MASK, resolveCellMap16 } from './cell-grid.ts';
@@ -41,7 +44,10 @@ export type { Bg1RenderResult, LayerCellPatch };
 
 const CELL_PX = 16;
 const TILE_PX = 8;
+/** 4bpp = 32 bytes/tile (BG Mode 1/2 — the common case); 2bpp = 16 bytes/tile
+ *  (BG Mode 0, level mode $0A only — see RenderBg1Args.bg1Bpp). */
 const TILE_BYTES_4BPP = 32;
+const TILE_BYTES_2BPP = 16;
 const SCREENS_WIDE = 16;
 const SCREENS_TALL = 8;
 const CELLS_PER_SCREEN_EDGE = 16;
@@ -92,13 +98,23 @@ interface RenderBg1Args {
   /** Axis the `bands` cells index along: 'x' (columns, default — horizontal
    *  levels) or 'y' (rows — vertically-scrolling levels like 0x2B). */
   bandAxis?: 'x' | 'y';
+  /** BG1 colour depth. `4` (default) = BG Mode 1/2 (the 218 standard levels);
+   *  `2` = BG Mode 0 (level mode $0A / level $6B), where BG1 tiles are 2bpp
+   *  (16 bytes each) and the sub-tile's 3-bit palette field selects a 4-colour
+   *  group (CGRAM `[g*4 .. g*4+3]`) instead of a 16-colour row. Decoding 2bpp
+   *  data as 4bpp scrambles every tile — derive this from the scene's BGMODE
+   *  (`loadSceneRegs(...).bgmodeMode === 0 ? 2 : 4`). Mirrors the cart's
+   *  Mode-0 BG1 (and GoldenEgg's `Header[9]==10 ? 2bpp`). */
+  bg1Bpp?: 2 | 4;
 }
 
-/** Build the 8 BG palette rows (4bpp, 16 colors each) from a CGRAM buffer. */
-function buildPalettes(cgram: Uint8Array): Uint32Array[] {
+/** Build the 8 BG palette rows from a CGRAM buffer. `colorsPerRow` is 16 for
+ *  4bpp (CGRAM[row*16..]) or 4 for 2bpp (CGRAM[row*4..], the 4-colour groups a
+ *  BG-Mode-0 tile's palette field selects). */
+function buildPalettes(cgram: Uint8Array, colorsPerRow: number): Uint32Array[] {
   const out: Uint32Array[] = [];
   for (let r = 0; r < 8; r++) {
-    out.push(buildPaletteRow(cgram, r, /*transparent0=*/ false, 'expand', 16));
+    out.push(buildPaletteRow(cgram, r, /*transparent0=*/ false, 'expand', colorsPerRow));
   }
   return out;
 }
@@ -108,9 +124,11 @@ function buildPalettes(cgram: Uint8Array): Uint32Array[] {
 // allocation (~130k per full-level render — pure GC churn).
 const tileIndicesScratch = new Uint8Array(64);
 
-/** Blit a 4bpp 8×8 tile into the RGBA output at (dx, dy). Skips palette
- *  index 0 (treated as transparent — leaves alpha=0 in the output). */
-function blit4bppTileTransparent0(
+/** Blit an 8×8 tile into the RGBA output at (dx, dy), decoding via `decode`
+ *  (`decode4bppTile` or `decode2bppTile` — both write 64 palette indices). Skips
+ *  palette index 0 (treated as transparent — leaves alpha=0 in the output). */
+function blitTileTransparent0(
+  decode: typeof decode4bppTile,
   vram: Uint8Array,
   tileByteOff: number,
   palette: Uint32Array,
@@ -122,7 +140,7 @@ function blit4bppTileTransparent0(
   dy: number
 ): void {
   const indices = tileIndicesScratch;
-  decode4bppTile(vram, tileByteOff, hflip, vflip, indices, 0);
+  decode(vram, tileByteOff, hflip, vflip, indices, 0);
   for (let row = 0; row < TILE_PX; row++) {
     const dstRow = (dy + row) * outStride + dx;
     const srcRow = row * TILE_PX;
@@ -157,9 +175,17 @@ type Bg1CellRenderer = (
 function makeBg1CellRenderer(args: RenderBg1Args): Bg1CellRenderer {
   const { vram, cgram, map16Tables, levelDataBuffer, screenPageMap, bg1CharAddr } = args;
 
-  // Pre-build the 8 BG palette rows (4bpp = 16 colors per row).
-  // Sub-tile descriptors carry a 3-bit `ppp` field selecting which row.
-  const palettes = buildPalettes(cgram);
+  // BG1 colour depth: 4bpp (BG Mode 1/2, default) or 2bpp (BG Mode 0, level
+  // mode $0A). Drives tile stride (32 vs 16 bytes), the tile decoder, and the
+  // palette group size (16- vs 4-colour rows).
+  const bpp = args.bg1Bpp ?? 4;
+  const tileBytes = bpp === 4 ? TILE_BYTES_4BPP : TILE_BYTES_2BPP;
+  const decodeTile = bpp === 4 ? decode4bppTile : decode2bppTile;
+  const colorsPerRow = bpp === 4 ? 16 : 4;
+
+  // Pre-build the 8 BG palette rows. Sub-tile descriptors carry a 3-bit `ppp`
+  // field selecting which row/group.
+  const palettes = buildPalettes(cgram, colorsPerRow);
 
   // Per-region BG1 overrides (Graphic/Palette Changer sprites). Build each
   // band's palette rows once and a cell→band lookup; cells pick their
@@ -167,7 +193,7 @@ function makeBg1CellRenderer(args: RenderBg1Args): Bg1CellRenderer {
   const bands = args.bands;
   const bandAxis = args.bandAxis ?? 'x';
   const bandPalettes: Uint32Array[][] | null =
-    bands && bands.length ? bands.map((b) => buildPalettes(b.cgram)) : null;
+    bands && bands.length ? bands.map((b) => buildPalettes(b.cgram, colorsPerRow)) : null;
   let cellToBand: Int16Array | null = null;
   if (bands && bands.length) {
     const lookupLen = (bandAxis === 'y' ? SCREENS_TALL : SCREENS_WIDE) * CELLS_PER_SCREEN_EDGE;
@@ -219,12 +245,14 @@ function makeBg1CellRenderer(args: RenderBg1Args): Bg1CellRenderer {
     }
     for (let s = 0; s < 4; s++) {
       const st = subTiles[s];
-      // VRAM byte offset = bg1CharAddr + tileIdx*32, wrapping at the 64KB VRAM
-      // boundary (real PPU wraps too). Without the base every cell reads the
-      // wrong tile region — see the bg1CharAddr comment in RenderBg1Args above.
-      const tileByteOff = (bg1CharAddr + st.tileIndex * TILE_BYTES_4BPP) & 0xffff;
-      if (tileByteOff + TILE_BYTES_4BPP > cellVram.length) continue;
-      blit4bppTileTransparent0(
+      // VRAM byte offset = bg1CharAddr + tileIdx*tileBytes (32 for 4bpp, 16 for
+      // 2bpp), wrapping at the 64KB VRAM boundary (real PPU wraps too). Without
+      // the base every cell reads the wrong tile region — see the bg1CharAddr
+      // comment in RenderBg1Args above.
+      const tileByteOff = (bg1CharAddr + st.tileIndex * tileBytes) & 0xffff;
+      if (tileByteOff + tileBytes > cellVram.length) continue;
+      blitTileTransparent0(
+        decodeTile,
         cellVram,
         tileByteOff,
         cellPalettes[st.paletteRow],

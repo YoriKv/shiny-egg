@@ -9,7 +9,6 @@ import type {
   SpriteLayerResponse
 } from '../../../preload/api'
 import { buildBgLayerBitmaps, type BgLayerBitmaps } from '../canvas/draw/bg-layers'
-import { celRenderableSpriteNums, formatARenderableSpriteNums } from '../data/obj-metadata'
 
 /** Stable empty override so "no palette edits" keys identically across renders
  *  (a new array would force-full bg1 on every render). */
@@ -151,7 +150,11 @@ export function useLevelRenderLayers(
    *  the render deps did (same level, same draft), so on a change we force a FULL
    *  re-fetch of every layer — dropping the patch tokens, since a token patch
    *  would diff to zero cells and keep the pre-build pixels. */
-  refreshNonce = 0
+  refreshNonce = 0,
+  /** App-wide canvas background colour (`#rrggbb`). Used for the opaque wipe of
+   *  the bg1 backing canvas on a level switch, so that transient matches the
+   *  surrounding canvas background (`.se-canvas`) instead of always being black. */
+  canvasBackground = '#000000'
 ): LevelRenderLayers {
   // bg1 + collision backing canvases (created lazily, reused across edits).
   const bg1CanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -254,19 +257,20 @@ export function useLevelRenderLayers(
     return { canvas, ctx: ctxRef.current! }
   }
 
-  /** Wipe a backing canvas in place (if it exists): opaque black, or transparent
-   *  clear. Used to drop the previous level's pixels the instant the record
-   *  changes, before the new full render arrives. */
+  /** Wipe a backing canvas in place (if it exists): an opaque fill with the
+   *  app's canvas background colour, or a transparent clear. Used to drop the
+   *  previous level's pixels the instant the record changes, before the new full
+   *  render arrives. */
   const blankCanvas = (
     ref: RefObject<HTMLCanvasElement | null>,
     ctxRef: RefObject<CanvasRenderingContext2D | null>,
-    mode: 'black' | 'clear'
+    mode: 'fill' | 'clear'
   ): void => {
     const canvas = ref.current
     const ctx = ctxRef.current
     if (!canvas || !ctx) return
-    if (mode === 'black') {
-      ctx.fillStyle = '#000'
+    if (mode === 'fill') {
+      ctx.fillStyle = canvasBackground
       ctx.fillRect(0, 0, canvas.width, canvas.height)
     } else {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -276,10 +280,12 @@ export function useLevelRenderLayers(
   // On a level-RECORD change, blank the bg1 + sprite backing canvases at once so
   // the previous level's rendered tiles/sprites don't linger under the new
   // level's outlines during the new full render's IPC round-trip (the
-  // "disjointed info" flash). bg1 → opaque black: it sits over BG2/BG3/backdrop,
-  // so black also hides those (likewise stale until their re-fetch lands).
+  // "disjointed info" flash). bg1 → opaque fill with the canvas background
+  // colour: it sits over BG2/BG3/backdrop, so the fill also hides those
+  // (likewise stale until their re-fetch lands) and matches the surrounding
+  // canvas background instead of a hardcoded black.
   // sprite → transparent: it's an overlay drawn ABOVE the object outlines, so a
-  // black fill would paint over them. Invalidate the patch tokens too — a patch
+  // fill would paint over them. Invalidate the patch tokens too — a patch
   // can't diff across levels, and the wiped canvas no longer matches its old
   // token, so the pending fetch must repaint FULL. Declared before the per-layer
   // fetch effects so the token reset + wipe land before they read the token.
@@ -288,7 +294,7 @@ export function useLevelRenderLayers(
     const recordId = level?.recordId ?? null
     if (recordId === prevRecordRef.current) return
     prevRecordRef.current = recordId
-    blankCanvas(bg1CanvasRef, bg1CtxRef, 'black')
+    blankCanvas(bg1CanvasRef, bg1CtxRef, 'fill')
     bg1TokenRef.current = null
     blankCanvas(spriteCanvasRef, spriteCtxRef, 'clear')
     spriteTokenRef.current = null
@@ -373,9 +379,7 @@ export function useLevelRenderLayers(
       levelRecordId: lvl.recordId,
       override: lvl,
       baseToken,
-      paletteOverride,
-      celRenderableNums: celRenderableSpriteNums(),
-      formatANums: formatARenderableSpriteNums()
+      paletteOverride
     })
     if (!mountedRef.current || spriteGenRef.current !== myGen) return
     if (!res) {

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import type { RefObject } from 'react'
+import type { TestInventory } from '../../../preload/api'
 import { gates, type Blocker } from '../lib/level-blockers'
 import { getAllLevels, getLevel } from '../data/levels'
 import { findWarpChain } from '../lib/warp-graph'
@@ -32,6 +33,8 @@ export interface EmulatorActionsParams {
   selectedLevelRecordId: number | null
   rootLevelRecordId: number | null
   testSpawn: { levelRecordId: number; x: number; y: number } | null
+  /** Items to seed into Yoshi's egg trail on Test Level boot (toolbar dropdown). */
+  testInventory: TestInventory
   appendLog: (line: string) => void
 }
 
@@ -59,6 +62,7 @@ export function useEmulatorActions({
   selectedLevelRecordId,
   rootLevelRecordId,
   testSpawn,
+  testInventory,
   appendLog
 }: EmulatorActionsParams): EmulatorActionsApi {
   const [emuBusy, setEmuBusy] = useState<boolean>(false)
@@ -158,9 +162,27 @@ export function useEmulatorActions({
         // (2)/(3) Non-catalog room. Boot a valid parent — the root if it's a
         // catalog level, else the first catalog level (any bootable level works:
         // the warp records carry absolute dest ids) — then warp in.
+        //
+        // The parent MUST be a normal, gm$0C-loadable level. The "Intro" group —
+        // translevel $0A (record $38, the gm38 intro cutscene) and $0B (Welcome) —
+        // is NOT a playable level: its data is cutscene/intro data, so booting it
+        // via gm$0C hangs (the loader never reaches gm$0F; the level-name overlay
+        // shows a placeholder string and the load wedges). Since getAllLevels()
+        // lists the Intro group first (WORLD_ORDER = ["Intro", "World 1", …]), the
+        // old `find(translevelId != null)` picked the cutscene and FROZE Test Level
+        // for every orphan room. Skip the Intro group on both the root and the
+        // fallback so the parent is always a real World level (→ translevel $00).
+        const isBootableParent = (tlId: number | null | undefined): boolean => {
+          if (tlId == null) return false
+          const e = getAllLevels().find((l) => l.translevelId === tlId)
+          return e != null && e.world !== 'Intro'
+        }
+        const rootTranslevelId =
+          rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId : null
         const parentTranslevelId =
-          (rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId : null) ??
-          getAllLevels().find((l) => l.translevelId != null)?.translevelId ??
+          (isBootableParent(rootTranslevelId) ? rootTranslevelId : null) ??
+          getAllLevels().find((l) => l.translevelId != null && l.world !== 'Intro')
+            ?.translevelId ??
           null
         if (parentTranslevelId == null) {
           append('Test Level: no bootable catalog level to launch from — extract a cart first')
@@ -215,8 +237,15 @@ export function useEmulatorActions({
           `Test Level: spawn override → warp into 0x${hex(selectedLevelRecordId)} at cell ${testSpawn.x},${testSpawn.y}…`
         )
       }
+      const { eggs, keys } = testInventory
+      if (eggs + keys > 0) {
+        const parts: string[] = []
+        if (eggs > 0) parts.push(`${eggs} egg${eggs > 1 ? 's' : ''}`)
+        if (keys > 0) parts.push(`${keys} key${keys > 1 ? 's' : ''}`)
+        append(`Test Level: inventory → ${parts.join(' + ')}`)
+      }
       try {
-        const reply = await window.shinyEgg.bizhawk.loadLevel(bootTranslevelId, warps)
+        const reply = await window.shinyEgg.bizhawk.loadLevel(bootTranslevelId, warps, testInventory)
         // Reply is the OK / TIMEOUT / ERR status line. Split-tolerant in case
         // a future reply appends detail lines.
         const lines = reply.split('\n')
@@ -226,7 +255,14 @@ export function useEmulatorActions({
         append(`Test Level: loadLevel failed — ${(err as Error).message}`)
       }
     },
-    [selectedLevelRecordId, rootLevelRecordId, saveAndBuildIfNeeded, blockers, testSpawn]
+    [
+      selectedLevelRecordId,
+      rootLevelRecordId,
+      saveAndBuildIfNeeded,
+      blockers,
+      testSpawn,
+      testInventory
+    ]
   )
 
   // Launch (cold boot): flush edits into the ROM first (save + build if

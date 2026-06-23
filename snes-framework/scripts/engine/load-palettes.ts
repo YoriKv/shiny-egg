@@ -115,6 +115,45 @@ const LEVEL_MODE_0A = 0x0a;
  *  starts. Hardcoded in the cart as `LDX #$00D8` (`$00:BBA9`). */
 const LEVEL_MODE_0A_START_OFFSET = 0xd8;
 
+/** The CGRAM palette ROW each BG layer's colours load into, read from
+ *  `scene_palette_layout`'s fixed CGRAM destinations. BG1/BG2 are 4bpp (row =
+ *  colorIdx >> 4); BG3 is 2bpp (row = colorIdx >> 2). Stock normal program:
+ *  BG1 → row 4, BG2 → row 6, BG3 → row 0 (row 0 holds the backdrop + BG3).
+ *
+ *  This is what a *paletteless gfx-file preview* needs to colour a BG sheet with
+ *  ITS OWN palette — the per-tile layer renderer (`render-bg-layers`/`render-bg1`)
+ *  doesn't, because it reads the 3-bit palette row from each tilemap / Map16 cell.
+ *  Defaults (4/6/0) cover mode-$0A, whose tail program doesn't reload the BG rows. */
+export interface BgPaletteRows {
+  bg1: number;
+  bg2: number;
+  bg3: number;
+}
+
+export function bgPaletteBaseRows(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  levelMode?: number
+): BgPaletteRows {
+  const PC = symbols.pc('DATA_scene_palette_layout');
+  const start = levelMode === LEVEL_MODE_0A ? LEVEL_MODE_0A_START_OFFSET : 0;
+  let bg1 = -1, bg2 = -1, bg3 = -1;
+  let prog = PC + start;
+  for (let guard = 0; guard < 10_000; guard++) {
+    const sourceWord = u16le(rom, prog);
+    if (sourceWord === PROGRAM_END) break;
+    if (sourceWord & 0x8000) {
+      const slotIdx = (sourceWord & 0x7fff) >>> 1; // 1=$12 BG1, 2=$14 BG2, 3=$16 BG3
+      const cgramByte = rom[prog + 2]!;
+      if (slotIdx === 1 && bg1 < 0) bg1 = cgramByte >>> 4;
+      else if (slotIdx === 2 && bg2 < 0) bg2 = cgramByte >>> 4;
+      else if (slotIdx === 3 && bg3 < 0) bg3 = cgramByte >>> 2;
+    }
+    prog += 4;
+  }
+  return { bg1: bg1 < 0 ? 4 : bg1, bg2: bg2 < 0 ? 6 : bg2, bg3: bg3 < 0 ? 0 : bg3 };
+}
+
 /**
  * Run the cart's palette interpreter for an in-level scene and write the
  * resulting 512-byte CGRAM payload into `cgram`. Cgram is modified in-place
@@ -153,18 +192,15 @@ export function loadLevelPalettes(
     provenance.fill(-1);
   }
 
-  // Resolve all required label addresses up-front so missing-symbol errors
-  // fail fast and obviously rather than mid-interpreter.
-  const SCENE_PALETTE_LAYOUT_PC = symbols.pc('DATA_scene_palette_layout');
+  // Resolve the palette-pointer tables up-front so missing-symbol errors fail
+  // fast and obviously rather than mid-interpreter. (The scene-layout program +
+  // blob bases are resolved inside `runPaletteProgram`.)
   const BG1_PALETTE_PTRS_PC = symbols.pc('DATA_bg1_palette_ptrs');
   const BG1_DARK_PALETTE_PTRS_PC = symbols.pc('DATA_bg1_dark_world_palette_ptrs');
   const BG2_PALETTE_PTRS_PC = symbols.pc('DATA_bg2_palette_ptrs');
   const BG3_PALETTE_PTRS_PC = symbols.pc('DATA_bg3_palette_ptrs');
   const SPRITE_PALETTE_PTRS_PC = symbols.pc('DATA_sprite_palette_ptrs');
   const YOSHI_PALETTE_PTRS_PC = symbols.pc('DATA_yoshi_palette_ptrs');
-  // Palette blob base — 8 KB of BGR-15 colors at SNES $5F:A000.
-  // Walked via 16-bit byte-offsets stored in DP $10..$1C.
-  const PALETTE_BLOB_PC = symbols.pc('DATA_master_palette_rom_blob');
 
   // --- Step 1: resolve the 7 indirect-pointer slots (DP $10..$1C) -------
   // Each slot is a 16-bit byte-offset into the palette blob.
@@ -198,16 +234,71 @@ export function loadLevelPalettes(
     // present so 16-bit indexing past $1C doesn't read uninitialised memory.
   }
 
-  // --- Step 2: run the interpreter, starting at offset 0 (normal) or
-  // $D8 (mode-$0A). The cart's `load_levelmode_0A_palettes` ($00:BB90)
-  // does `LDX #$00D8 ; JMP CODE_load_palettes` — re-entering the same
-  // interpreter at a different walk position. The program at $D8+ is a
-  // small tail-segment (yoshi + sprite + some backdrop fixups).
-  const startOffset = isLevelMode0A ? LEVEL_MODE_0A_START_OFFSET : 0;
+  // --- Step 2: run the interpreter, starting at offset 0 (normal) or $D8
+  // (mode-$0A — the cart's `load_levelmode_0A_palettes` re-enters at $D8). ---
+  runPaletteProgram(
+    rom, symbols, slots, isLevelMode0A ? LEVEL_MODE_0A_START_OFFSET : 0, cgram, provenance
+  );
+}
+
+/** A non-level palette program for `loadScenePalettes` — a system screen's
+ *  palette load (the cart's `CODE_load_*_palettes` → `CODE_load_palettes` at a
+ *  hardcoded X, with DP $10..$1C palette-pointer slots set directly). */
+export interface ScenePalette {
+  /** Byte offset into `scene_palette_layout` where this program starts. */
+  startOffset: number;
+  /** DP $10..$1C palette-pointer slots (byte-offsets into the master palette
+   *  blob), index 0 = $10. Indirect source words resolve against these; slots
+   *  the program never reads can be 0. */
+  slots: readonly number[];
+}
+
+/**
+ * Load a non-level scene's palette into `cgram` via the shared palette
+ * interpreter (engine twin of the cart's `CODE_load_*_palettes`). Sets the DP
+ * $10..$1C palette-pointer slots directly, then walks from `scene.startOffset`.
+ */
+export function loadScenePalettes(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  scene: ScenePalette,
+  cgram: Uint8Array,
+  provenance?: Int32Array
+): void {
+  if (cgram.length < CGRAM_BYTES) {
+    throw new RangeError(`loadScenePalettes: cgram is ${cgram.length} bytes, need ${CGRAM_BYTES}`);
+  }
+  if (provenance) {
+    if (provenance.length < 256) throw new RangeError(`loadScenePalettes: provenance is ${provenance.length}, need 256`);
+    provenance.fill(-1);
+  }
+  const slots = new Uint16Array(8);
+  for (let i = 0; i < scene.slots.length && i < slots.length; i++) slots[i] = scene.slots[i]! & 0xffff;
+  runPaletteProgram(rom, symbols, slots, scene.startOffset, cgram, provenance);
+}
+
+/**
+ * Shared `scene_palette_layout` interpreter — walks 4-byte entries from
+ * `startOffset`, transferring BGR-15 colours from the master palette blob into
+ * `cgram` (indirect source words resolve through `slots`). Used by both
+ * `loadLevelPalettes` (header-derived slots, offset 0/$D8) and
+ * `loadScenePalettes` (slots set directly, screen-specific offset).
+ */
+function runPaletteProgram(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  slots: Uint16Array,
+  startOffset: number,
+  cgram: Uint8Array,
+  provenance?: Int32Array
+): void {
+  const SCENE_PALETTE_LAYOUT_PC = symbols.pc('DATA_scene_palette_layout');
+  // Palette blob base — BGR-15 colours, walked via 16-bit byte-offsets.
+  const PALETTE_BLOB_PC = symbols.pc('DATA_master_palette_rom_blob');
   let prog = SCENE_PALETTE_LAYOUT_PC + startOffset;
 
-  // Hard cap: the in-level program is ~18 entries (72 bytes). Three orders of
-  // magnitude past that is firmly malformed input — bail rather than loop.
+  // Hard cap: a program is ~18 entries (72 bytes). Three orders of magnitude
+  // past that is firmly malformed input — bail rather than loop.
   for (let guard = 0; guard < 10_000; guard++) {
     const sourceWord = u16le(rom, prog);
     if (sourceWord === PROGRAM_END) return;
@@ -222,16 +313,16 @@ export function loadLevelPalettes(
       const slotIdx = dpY >>> 1;
       if (slotIdx > 7 || (dpY & 1) !== 0) {
         throw new Error(
-          `loadLevelPalettes: indirect source $${sourceWord.toString(16)} at prog offset ${prog - SCENE_PALETTE_LAYOUT_PC} selects unexpected DP byte (dpY=$${dpY.toString(16)})`
+          `runPaletteProgram: indirect source $${sourceWord.toString(16)} at prog offset ${prog - SCENE_PALETTE_LAYOUT_PC} selects unexpected DP byte (dpY=$${dpY.toString(16)})`
         );
       }
-      sourceOff = slots[slotIdx];
+      sourceOff = slots[slotIdx]!;
     } else {
       sourceOff = sourceWord;
     }
 
-    const cgramByte = rom[prog + 2]; // byte 2: CGRAM color index
-    const sizeByte = rom[prog + 3];  // byte 3: size (high nibble rows, low nibble colors/row)
+    const cgramByte = rom[prog + 2]!; // byte 2: CGRAM color index
+    const sizeByte = rom[prog + 3]!;  // byte 3: size (high nibble rows, low nibble colors/row)
     const colorsPerRow = sizeByte & 0x0f;
     const rows = (sizeByte >>> 4) & 0x0f;
     let destByte = (cgramByte << 1) & 0xffff;
@@ -247,18 +338,18 @@ export function loadLevelPalettes(
         const srcPC = PALETTE_BLOB_PC + srcByte;
         if (srcPC + 2 > rom.length) {
           throw new RangeError(
-            `loadLevelPalettes: source $${srcByte.toString(16)} past palette blob end (prog ${prog - SCENE_PALETTE_LAYOUT_PC})`
+            `runPaletteProgram: source $${srcByte.toString(16)} past palette blob end (prog ${prog - SCENE_PALETTE_LAYOUT_PC})`
           );
         }
         if (d + 2 > CGRAM_BYTES) {
-          // Wrap or out-of-range; the cart's CGRAM is exactly 512 bytes and
-          // a well-formed program never writes past that.
+          // The cart's CGRAM is exactly 512 bytes; a well-formed program never
+          // writes past that.
           throw new RangeError(
-            `loadLevelPalettes: dest $${d.toString(16)} past CGRAM end (prog ${prog - SCENE_PALETTE_LAYOUT_PC})`
+            `runPaletteProgram: dest $${d.toString(16)} past CGRAM end (prog ${prog - SCENE_PALETTE_LAYOUT_PC})`
           );
         }
-        cgram[d + 0] = rom[srcPC + 0];
-        cgram[d + 1] = rom[srcPC + 1];
+        cgram[d + 0] = rom[srcPC + 0]!;
+        cgram[d + 1] = rom[srcPC + 1]!;
         if (provenance) provenance[d >>> 1] = srcByte; // CGRAM colour idx → blob byte-offset
         srcByte = (srcByte + 2) & 0xffff;
         d += 2;
@@ -270,6 +361,6 @@ export function loadLevelPalettes(
   }
 
   throw new Error(
-    `loadLevelPalettes: interpreter exceeded guard (no $FFFF terminator within 10k entries)`
+    `runPaletteProgram: interpreter exceeded guard (no $FFFF terminator within 10k entries)`
   );
 }

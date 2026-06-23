@@ -7,7 +7,7 @@
 // shipped-cart gate (snes-framework/scripts/engine/validity-report.ts) judge
 // identically — the same sharing pattern as lib/sprite-neighbor-deps.
 //
-// Direction caveat (accepted in the plan): static-fallback metadata values are
+// Direction caveat (accepted): static-fallback metadata values are
 // an over-approximation, so the check can be slightly too strict for those
 // sprites — never too loose.
 

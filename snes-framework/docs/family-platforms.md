@@ -279,13 +279,13 @@ cluster vsync.
 ### 2.4 $03D Large Two-Platform Seesaw
 
 The cinema-scale double-decker seesaw. Init at Bank04:6602 has a
-**first-spawn-only** guard via `$0CB2` (the global "BG3 sprite
-exists" flag):
+**first-spawn-only** guard via `$0CB2` (the global "a BG3 platform is
+already active" flag, shared across all big BG3 platforms -- §8.1):
 
 ```
 init_large_seesaw:
     LDA $0CB2 : BEQ proceed
-    JML CODE_03A31E   ; another seesaw exists -- despawn this one
+    JML CODE_03A31E   ; a BG3 platform already exists -- despawn this one
 proceed:
     INC $0CB2
     LDA #$0078 / #$FF88 (by $0073)  ; X offset for left/right entry
@@ -295,10 +295,14 @@ proceed:
     STA $701900 = $1000   ; initial Y-deflection (the seesaw rests level)
 ```
 
-Note: the level can only host one large seesaw, and the `$0073`
-spawn-index byte (= which world-entry got this sprite) toggles the
-$0078 / $FF88 offset so the seesaw spawns either left or right of
-the screen-entry point.
+Note: only one large seesaw can be alive at once (the `$0CB2` mutex),
+and `$0073` -- the global **horizontal scroll-direction** flag (0 =
+scrolling right, 2 = scrolling left; set by `CODE_04FD28`, see §8.8)
+-- toggles the `$0078` / `$FF88` offset so the seesaw nudges its X
+toward the edge Yoshi scrolled in from. This is why the seesaw is
+placed in pairs: whichever copy crosses the leading edge first claims
+the slot and self-positions; the other despawns. Full mechanism in
+§8.8.
 
 Main dispatches:
 1. `CODE_04B2B3` -- BG3 region clip/redraw.
@@ -757,20 +761,27 @@ chosen by Yoshi's input (arrow keys etc.).
 ### 5.1 $051 Large Wheel
 
 A big rideable wagon-wheel platform on BG3 (one of the few BG3-
-displayed sprites that's also rideable). Init at Bank04:4782 is
-unusual -- it saves `$0073` (the level's spawn-table entry index)
-across the BG3 register, to preserve the parent's working register:
+displayed sprites that's also rideable). Init at Bank04:4782 saves
+`$0073` (the horizontal scroll-direction flag, §8.8) around the BG3
+register call so the value isn't clobbered:
 
 ```
 init_large_wheel:
-    LDA $0073 : STA $00         ; stash $0073
-    JSL CODE_02813E             ; BG3 register
+    LDA $0073 : STA $00         ; stash $0073 (scroll dir)
+    JSL CODE_02813E             ; BG3 register: claims $0CB2 mutex (§8.1) AND
+                                ;   nudges X by DATA_028129[$0073] = ±$0028 (§8.8)
     LDA $00 : STA $0073         ; restore $0073
-    LDA $70E2,x : SBC #$0008 : STA $70E2,x  ; X -= 8
+    LDA $70E2,x : SBC #$0008 : STA $70E2,x  ; further X -= 8
     LDA !RAM_YI_Global_MainScreenLayers
     STA $701900,x               ; cache main-screen-layer mask
     RTL
 ```
+
+Like the seesaw, the wheel is placed in pairs and self-positions from
+the scroll direction; the `$0CB2` mutex keeps only one alive. See §8.8
+for the full paired-platform mechanism. Both the singleton guard and
+the left/right offset happen inside `CODE_02813E` here (§8.1) rather
+than inline.
 
 The wheel uses **PPU Mode-7 multiplication** (`Mode7MatrixParameterA/B`,
 `PPUMultiplicationProductMid`) for Yoshi-vs-rim collision math --
@@ -1319,9 +1330,9 @@ CODE_02813E:
                                 ; ok: INC $0CB2 : RTS
     STZ !RAM_YI_Level_LevelHeaderBG3TilesetLo
     PHB : PHK : PLB             ; DBR = my bank
-    LDY $0073                   ; spawn-table entry index
+    LDY $0073                   ; scroll direction (0 right, 2 left) -- see §8.8
     LDA $70E2,x
-    ADC DATA_028129,y           ; adjust X by per-entry offset
+    ADC DATA_028129,y           ; DATA_028129 {$0028,$FFD8}: nudge X toward entry edge
     STA $70E2,x
     ORA #$0008 : STA $7E42
     LDA #$0104 : STA $0CB8      ; lock BG3 mode
@@ -1510,6 +1521,69 @@ sprite-ID. Most other sprite families lean on SuperFX for OAM
 template registers only; this family also uses it for live physics
 (`FXCODE_0B860A` / `FXCODE_099C0D` / `FXCODE_0AE864`).
 
+### 8.8 `$0073` / `$0075` -- camera scroll-direction flags (the left/right-entry logic)
+
+`$0073` is **not** per-sprite state and **not** a "spawn-table entry
+index" -- it's a global byte that the per-frame camera-commit routine
+`CODE_04FD28` (Bank04:14860) rewrites every frame by comparing the new
+camera position against the previous frame's:
+
+```
+CODE_04FDD8:
+    LDY #$00
+    CMP Layer1XPosLo        ; new camera X vs. last frame's
+    BPL +                   ; new >= old -> scrolling RIGHT (or still)
+    LDY #$02                ; new <  old -> scrolling LEFT
++   STY $73                 ; $0073 = 0 (right) | 2 (left)
+    STA Layer1XPosLo        ; commit camera X
+    ...
+CODE_04FDFB:                ; identical for vertical:
+    ...
+    STY $75                 ; $0075 = 0 (down)  | 2 (up)
+```
+
+So **`$0073` = horizontal scroll direction (0 right, 2 left)** and
+**`$0075` = vertical scroll direction (0 down, 2 up)**. Two consumers
+read them, both keyed to "which screen edge is the *leading* edge":
+
+1. **The new-sprite spawn probe** `CODE_check_newspr_xoffset`
+   (Bank03:2040) -- `LDX $0073` / `LDX $0075` index `DATA_03958E`
+   `{$0120, $FFD0}` (X-edge) and `DATA_039592` `{$0110, $FFE0}`
+   (Y-edge) so the chip-side hit-test probes the leading edge: new
+   offscreen-list sprites are pulled in from the right edge when
+   scrolling right, the left edge when scrolling left.
+2. **The BG3 platform Inits** nudge their own X toward that edge: the
+   seesaw `$03D` adds `#$0078 / #$FF88` inline (`±$0078`), the wheel
+   `$051` / board `$050` / plank `$039` add `DATA_028129 {$0028,$FFD8}`
+   (`±$0028`) inside `CODE_02813E` (§8.1). Both index that pair by
+   `$0073`. The bulk level-load spawn `CODE_check_newspr_screen`
+   (Bank03:1992) forces `STZ $0073` (= the right/forward case) before
+   its scan.
+
+These BG3-platform Inits run **synchronously inside the spawn scan**
+(`CODE_init_special_sprite`, Bank03:2294, dispatches them via the
+`DATA_special_sprite_inits` table), so `$0073` still holds the live
+scroll direction when they read it.
+
+**Why `$03D` / `$051` come in pairs.** This is the emergent behaviour,
+not an explicit pairing -- the two copies never reference each other.
+A designer places two copies of the platform; the engine then:
+
+- **Singleton via `$0CB2`** (§8.1) -- the first copy to cross the
+  leading edge claims the BG3 slot; the second copy, when it later
+  scrolls into the spawn window, finds `$0CB2 != 0` and immediately
+  despawns itself (`JML CODE_03A31E`). When the active copy scrolls
+  off-screen it releases the slot (`STZ $0CB2`, e.g. Bank04:6904) so a
+  later re-approach can re-spawn.
+- **Self-positioning via `$0073`** -- the surviving copy offsets its X
+  toward the edge it scrolled in from.
+
+The net effect: regardless of which side Yoshi approaches from, the
+copy anchored for that approach wins the mutex and self-aligns, and
+the redundant copy silently suppresses itself -- "the other one is
+screen-limited and doesn't show up." No sprite ever reads the other's
+slot or position.
+
 ---
 
 ## 9. Yoshi-mount mechanics
@@ -1591,6 +1665,11 @@ above me."
   `CODE_02813E` work).
 - `docs/leveldataengine.md` -- how each platform's sprite-list
   entry gets a slot.
+- `yi/Banks/Bank04.asm:14860` (`CODE_04FD28`, camera-commit) sets the
+  `$0073` / `$0075` scroll-direction flags; `yi/Banks/Bank03.asm:1992`
+  (`CODE_check_newspr_screen`) + `:2040` (`CODE_check_newspr_xoffset`)
+  consume them when probing for new offscreen sprites. See §8.8 for
+  the paired-platform behaviour these drive.
 - `yi/Banks/Bank02.asm` -- `$039` rotating plank (lines 1564-1747),
   `$03D` reuses helpers from here.
 - `yi/Banks/Bank04.asm` -- the bulk of the family (lines 967-9594).

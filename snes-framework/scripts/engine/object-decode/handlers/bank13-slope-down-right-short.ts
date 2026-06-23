@@ -28,8 +28,8 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupKeepSlope } from '../walker.ts';
-import { prngNext } from '../prng.ts';
-import { stampCell, signed8, shiftOriginNibble } from './_shared.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
+import { stampCell, signed8, shiftOriginNibble, jungleFloorRandomFillBiased } from './_shared.ts';
 import { slopeFixRightEdge } from './bank13-slopes-misc.ts';
 
 // DATA_13F917..DATA_13F937 (Bank13.asm:14675-14688) — 5 distinct
@@ -49,19 +49,6 @@ const SLOPE_DOWN_RIGHT_SHORT_RECORDS: readonly (readonly number[])[] = [
 //      DATA_13F937,DATA_13F937,DATA_13F92F,DATA_13F917
 // 8 variants → 5 records with 3 mirror reuses.
 const SLOPE_DOWN_RIGHT_SHORT_VARIANT_TO_RECORD = [0, 1, 2, 3, 4, 4, 3, 0] as const;
-
-// DATA_jungle_floor_fill_tiles (Bank13.asm:14359) — re-listed here so this
-// file is self-contained. 10 distinct $79xx + 6 weighted $79E0.
-const DATA_jungle_floor_fill_tiles = [
-  0x79BB, 0x79BC, 0x79BD, 0x79BE, 0x79BF, 0x79C0, 0x79C1, 0x79C2,
-  0x79C3, 0x79C4, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0,
-] as const;
-
-function jungleFloorRandomFillBiased(state: DecodeState, bias: number): void {
-  let pick = (prngNext(state) & 0x0F) + bias;
-  if (pick > 0x0F) pick = 0x0F;
-  stampCell(state, DATA_jungle_floor_fill_tiles[pick]!);
-}
 
 const stampSlopeDownRightShort: PerCellHandler = (state) => {
   const row = signed8(state.zp2C);
@@ -83,7 +70,7 @@ const stampSlopeDownRightShort: PerCellHandler = (state) => {
   // column-pair when the walker resets), giving each column-pair its own
   // silhouette variant.
   if (row === 0) {
-    state.zpA1 = (prngNext(state) & 0x07) << 1;
+    state.zpA1 = (prngNext(state, RNG_SITE.slopeDownRightShort) & 0x07) << 1;
   }
 
   const variant = (state.zpA1 >>> 1) & 0x07;

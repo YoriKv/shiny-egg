@@ -32,7 +32,7 @@ import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { getMap16Left } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, setProbeToCurrent, readBuf16 } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ const jungleStoneStamp: PerCellHandler = (state) => {
 
   if (col === 0) {
     // Row 1+, col 0: random base in $90DA / $90DC / $90DE / $90E0.
-    const variant = prngNext(state) & 0x06;
+    const variant = prngNext(state, RNG_SITE.jungleStoneBody) & 0x06;
     stampCell(state, (JUNGLE_STONE_BODY_BASE + variant) & 0xffff);
     return;
   }

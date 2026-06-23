@@ -27,7 +27,7 @@ import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { getMap16Below } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import {
   stampCell,
   writeBuf16,
@@ -271,7 +271,7 @@ const jungleFloorStamp: PerCellHandler = (state) => {
   let y: 0 | 2 | 4; // row << 1
   if (row === 0) {
     y = 0;
-    state.zpA1 = prngNext(state) & 0x0003;
+    state.zpA1 = prngNext(state, RNG_SITE.jungleFloorTopSeed) & 0x0003;
   } else if (row === 1) {
     y = 2;
   } else {

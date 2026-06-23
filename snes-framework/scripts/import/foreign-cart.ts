@@ -2,7 +2,7 @@
 // top-level anchors. This is the import counterpart to extract.ts's per-level
 // loop: it walks the same pointer table and reuses the same stream-end walkers,
 // but returns the raw stream bytes in memory (no scratch tree) using the
-// foreign cart's OWN header-bit-widths + property table. See plan-rom-import.md §6.
+// foreign cart's OWN header-bit-widths + property table.
 
 import { snesToPC } from '../engine/symbol-map.ts';
 import { findObjStreamEndPC, findSprStreamEndPC } from '../extract.ts';

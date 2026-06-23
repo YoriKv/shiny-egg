@@ -637,6 +637,49 @@ uninitialised high byte at DP `$01`. The visible result in V1.0 was the
 on the first frame, scrolling its colour palette unintentionally. The
 inline comment in the framework asm (CODE_00BA7A) preserves this note.
 
+### 5.6 Per-frame animated palette (animation_palette)
+
+`load_palettes` (§5.1-5.2) runs ONCE at level load. A second, per-frame path
+re-cycles selected CGRAM rows every gameplay frame. `LevelHeaderAnimationPalette`
+(header field 11) indexes `DATA_animation_palette_ptr` (`$01:C454`, 21 entries
+`$00..$14`) → one of the `anim_pal_*` routines (`$01:C47E`..`C968`), dispatched
+by `main_gamemode_0F` (the in-level loop) every frame. `$00`
+(`anim_pal_00_noop`) is an RTS; `$13` and `$14` share `CODE_01C968`.
+
+**Mechanism.** Each routine advances its own cycle counters (`$0B73`/`$0B75`/
+`$0B77`/`$0B79` phase, `$7974` global animation frame, and for `anim_pal_02` the
+player-X velocity), selects a palette row, and copies it into the live CGRAM
+mirror `$70:2000` (DMA'd to PPU each NMI, §5.4) plus the fade mirror `$70:2D6C`
+via `copy_anim_palette_row` (`$01:C9CF`): `$0E` bytes from `[$00]` (a `$5F:addr`
+source pointer) → CGRAM byte-offset X. CGRAM colour N = byte `2N`, so e.g.
+`anim_pal_01`'s X=`$86` writes BG1 palette row 4 (colour 67) for 13 colours.
+
+**Phase-0 = entry palette.** At level entry the phase counters and `$7974` are 0
+(bulk WRAM clear), so each routine's table index resolves to 0 — the level's
+resting palette. The animation diverges from there as the counters advance;
+some routines also gate their first write on an interval/velocity counter, so
+the literal frame-0 write may lag the resting row by a frame.
+
+**Routine shapes** (header value → behaviour):
+
+- **Single-row writers** — one `copy_anim_palette_row`. e.g. `$01` colours
+  67-79; `$03` colours 112-127; `$08` colours 83-86; `$09` writes one word to
+  colours 1 and 9; `$0F` colours 5-7.
+- **Header-conditional** — `$0D` picks its source row by `BG3Palette` bit 0;
+  `anim_pal_05`'s `CODE_01C644` prefix runs only for `(BG1Tileset & 7) == 0`;
+  `CODE_01C85D` (`$0E`, `$13`) selects both source and CGRAM dest by `BG2Palette`
+  bit 0; `CODE_01C84E` (`$0E`, `$11`) uses `CODE_01C702` when `BG1Tileset == 8`
+  else `CODE_01C611`.
+- **Composites** — call several of the above (`$06`/`$07`/`$12`/`$13`).
+
+**Source data** lives in bank `$5F` (= PC `$1F0000 + addr`, the SuperFX-mapped
+region that also holds the master palette blob at `$5F:A000`), reached through
+the index-0 entries of the Bank01 pointer tables (`DATA_01C47F`, `DATA_01C574`,
+`DATA_01C634`, …). A few routines (`$0B`/`$0C`/`$11`/`$12`) also re-arm an HDMA
+channel or toggle `MainScreenLayers`/`SubScreenLayers`/`ColorMathSelectAndEnable`
+as part of their cycle — screen-register effects layered on top of the CGRAM
+write, not part of the palette copy itself.
+
 ---
 
 ## 6. Graphics loader (LoadGraphics + LZ dispatch)
@@ -795,7 +838,7 @@ Cross-check: `$3F:A000` (LoROM) → `($3F << 15) | ($A000 & $7FFF)` =
 The Y=0 (in-level) walk of `scene_gfx_layout` decompresses a fixed set
 of chunks into fixed VRAM byte regions. For the OBJ/sprite layer this
 nails down *which compressed file a given sprite's tiles come from* —
-the dependency an editor must re-check whenever a level's SpriteTileset
+the dependency that must be re-resolved whenever a level's SpriteTileset
 (header field 7) changes.
 
 Parsing the in-level scene (entries are 3 bytes, or 5 for LZ16: a

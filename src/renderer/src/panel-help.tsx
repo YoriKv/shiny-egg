@@ -17,7 +17,7 @@ export const PANEL_HELP: PanelHelp = {
     <>
       <p>
         The current level&rsquo;s tileset. <b>Map16 Blocks</b> shows every 16&times;16
-        block the level can stamp; <b>Files</b> shows the raw 8&times;8 graphics tiles
+        block the level uses; <b>Files</b> shows the raw 8&times;8 graphics tiles
         loaded into VRAM.
       </p>
       <p>
@@ -34,13 +34,17 @@ export const PANEL_HELP: PanelHelp = {
   palette: (
     <>
       <p>
-        The current level&rsquo;s color palette (CGRAM). Click a swatch to select
-        it, then use the color picker to edit it. Only swatches the level
-        actually uses are editable.
+        The current level&rsquo;s colour palette (CGRAM). Click a swatch to select
+        it, then drag the colour picker to edit it.
       </p>
       <p>
-        Edits preview live on the canvas. They&rsquo;re part of the normal
-        save/undo flow &mdash; nothing is written to the ROM until you Save.
+        Rows the level&rsquo;s tiles don&rsquo;t use are dimmed as a hint &mdash;
+        you can still edit them. Selecting an object on the canvas highlights the
+        palette rows it draws with.
+      </p>
+      <p>
+        Edits preview live on the canvas and ride the normal save / undo flow
+        &mdash; nothing is written to the ROM until you Save.
       </p>
     </>
   ),
@@ -48,8 +52,9 @@ export const PANEL_HELP: PanelHelp = {
     <>
       <p>
         Properties of the current selection &mdash; an object, sprite, screen
-        exit, or the player spawn. The fields shown depend on what&rsquo;s
-        selected; editing one mutates that entity on the loaded level.
+        exit, incoming-warp marker, or the player spawn. The fields shown depend
+        on what&rsquo;s selected; editing one mutates that entity on the loaded
+        level. A multi-selection shows a summary instead, with a per-type count.
       </p>
       <p>
         Click an item in the canvas to select it. Clicking again at the same spot
@@ -76,12 +81,14 @@ export const PANEL_HELP: PanelHelp = {
   strings: (
     <>
       <p>
-        Edit the game&rsquo;s level-name and message text. Each entry maps to a
-        string in the ROM&rsquo;s text tables.
+        Edit the game&rsquo;s text, one table per tab: <b>Level&nbsp;Names</b>,{' '}
+        <b>Message&nbsp;Text</b> (the intro / message-box bodies), and{' '}
+        <b>Message&nbsp;Pointers</b> (which message body each message id shows).
       </p>
       <p>
-        Text shares a fixed byte budget &mdash; the panel tracks characters used
-        and flags entries that go over or use unsupported characters.
+        Each text table shares a fixed byte budget &mdash; the panel tracks
+        characters used and flags entries that go over or use unsupported
+        characters.
       </p>
       <p>
         These edits don&rsquo;t render live: a save marks the build dirty, so
@@ -92,12 +99,20 @@ export const PANEL_HELP: PanelHelp = {
   picker: (
     <>
       <p>
-        Pick an object or sprite to place. Search by name or id, click an entry
-        to arm it, then click the canvas to drop it.
+        Place objects, sprites, and screen exits. Switch tabs (<b>Objects</b> /{' '}
+        <b>Sprites</b> / <b>Exit&nbsp;/&nbsp;Special</b>), search by name or id, click
+        an entry to arm it, then click the canvas to drop it (<b>Esc</b> to stop).
       </p>
       <p>
-        Standard objects, extended objects, and sprites are all listed; the id
-        column shows which kind each entry is.
+        <b>Shift-click</b> an entry instead to find everywhere that object or sprite
+        is used &mdash; it opens the Object Finder for that id.
+      </p>
+      <p>
+        Each row previews how the entry looks in this level. Filters narrow the
+        list: <b>in level tileset</b> hides entries whose graphics aren&rsquo;t
+        loaded here, and <b>used here</b> shows only what&rsquo;s already placed.
+        Badges flag entries that won&rsquo;t render right (<i>no gfx</i>) or need
+        surrounding setup.
       </p>
     </>
   ),
@@ -112,6 +127,9 @@ export const PANEL_HELP: PanelHelp = {
         Results come from the base-cart index merged with your <i>saved</i>{' '}
         overlay edits &mdash; unsaved in-canvas changes aren&rsquo;t reflected
         yet.
+      </p>
+      <p>
+        Tip: <b>Shift-click</b> an entry in the Place panel to search for it here.
       </p>
     </>
   ),
@@ -177,6 +195,68 @@ export const PANEL_HELP: PanelHelp = {
         build-layout changes, so they don&rsquo;t render live: a toggle marks the
         build dirty and Test&nbsp;Level / Launch rebuilds first. The open level&rsquo;s
         size reflects your live unsaved edits.
+      </p>
+    </>
+  ),
+  'world-map': (
+    <>
+      <p>
+        Edit the world map&rsquo;s entrance data. Drill in from <b>Worlds</b> to a
+        world&rsquo;s levels, then to one level&rsquo;s details &mdash; where Yoshi
+        spawns and the midway / checkpoint re-entry points.
+      </p>
+      <p>
+        Each spawn / checkpoint has a <b>jump</b> button that loads that level and
+        centres the camera on the cell. The spawn cell previews live on the canvas
+        marker when its level is loaded.
+      </p>
+      <p>
+        The rest of the world-map data has no live preview &mdash; edits save and
+        undo here, but take effect only after a rebuild (Test&nbsp;Level / Launch).
+      </p>
+    </>
+  ),
+  graphics: (
+    <>
+      <p>
+        Edit the game&rsquo;s graphics in an external editor. <b>Export</b> writes
+        graphics to a folder, you edit them, and <b>Import</b> reads the whole folder
+        back and saves only what changed. The dropdown picks what to export; Import
+        auto-detects everything in the folder you choose.
+      </p>
+      <p>
+        <b>What to export:</b> a <b>BG1&nbsp;area</b> (use <b>Select&nbsp;area</b> and
+        shift-drag a rectangle on the canvas to choose the region), the whole{' '}
+        <b>BG2</b> or <b>BG3</b> background, or the <b>Screens</b> (the system / title /
+        overworld graphics).
+      </p>
+      <p>
+        <b>Format:</b> <b>PNG</b> opens in any image editor and includes a swatch column
+        of the exact colours to paint from. <b>Aseprite&nbsp;(tilemap)</b> writes a
+        configured &ldquo;.aseprite&rdquo; file with the indexed palette built in (no
+        Aseprite install needed to produce it). <b>Locate Aseprite</b> lets the panel
+        open exports for you, and <b>Auto-Open Exports</b> opens each one as you export
+        it.
+      </p>
+      <p>
+        <b>Palette rows.</b> Each background tile uses a single colour row. If you paint
+        a pixel with a colour that isn&rsquo;t in that tile&rsquo;s own row, the import
+        reports it and snaps the pixel to colour&nbsp;0 (the transparent / backdrop
+        entry) &mdash; stick to the tile&rsquo;s row.
+      </p>
+      <p>
+        Below the controls: the folders you&rsquo;ve exported to (click to open,
+        re-import, or remove); the graphics this project has changed (each shows what it
+        maps back to, with a reset to vanilla); and the last import&rsquo;s log.
+      </p>
+      <p>
+        Edits to the loaded level&rsquo;s graphics preview live on the canvas; a rebuild
+        (Test&nbsp;Level / Launch) bakes everything into the ROM.
+      </p>
+      <p>
+        The <b>Map16 Blocks</b> tab is a separate editor for the 16&times;16 object
+        blocks &mdash; which 8&times;8 tile, palette row, and flip each quadrant uses
+        &mdash; without leaving the editor.
       </p>
     </>
   )

@@ -57,6 +57,11 @@ Loading a level walks through nine stages. Stages 1-6 are the **upstream**
      - JSL load_level_gfx (Bank00 $00:.....) -- loads BG1/BG2/BG3/sprite gfx
        per the header's tileset indices into VRAM slots $F0-$FC.
      - JSL load_level_palettes -- writes the per-level CGRAM payload.
+       (LevelMode 9 and $0A take neither of the two loads above: mode 9
+       substitutes `load_levelmode_09_settings`, mode $0A substitutes
+       `load_levelmode_0A_gfx` + `load_levelmode_0A_palettes`. The level-data
+       pointer load + `unpack_level_header` that precede them are mode-agnostic,
+       so the object/sprite decode is identical across every mode.)
      - load BG2/BG3 tilemaps (skipped for LevelMode 9 = Raphael, 10 = autoscroll).
        BG2 and BG3 are pre-rendered tilemap incbins (decorative parallax
        layers). The interactive **BG1 foreground** is built differently --
@@ -523,13 +528,10 @@ read `!RAM_YI_Level_LevelHeaderLevelModeLo` ($7E:0146).
   map-slot (translevel) `$38` = 5-Extra, whose record is `$2C`; the
   `!Define_YI_LevelID_*` values are map slots, not records. Record `$38`'s
   streams are real but minimal (66-byte backdrop + empty sprites; the
-  cutscene engine drives the actors); editor tooling skip-parses it
-  (`SPECIAL_LEVELS` in scripts/level.ts).
-- **220 of 222 `Ptrs:` entries are backed by per-level `.bin`s** in the
-  current extract; only the `$DA`/`$DB` sentinel rows are not. (An older
-  note here claimed 95 empty `.bin`s -- that predates the current extract
-  and is obsolete.) Enumerate levels via the level map (`levelMapEntry`),
-  not by walking the pointer table or the `!Define_YI_LevelID_*` set.
+  cutscene engine drives the actors).
+- **The `$DA`/`$DB` `Ptrs:` rows are sentinels, not real levels** -- they
+  hold garbage bytes. Enumerate levels via the entrance tables, not by
+  walking the pointer table or the `!Define_YI_LevelID_*` set.
 - **Records $19 (3-8 "Naval Piranha's Castle") and $CB (a sub-room)** have
   their sprite-data pointers biased by `-2` (`dl DATA_*,DATA_*-$02`). This is a
   vestigial header-layout anomaly preserved from the original cart and
@@ -546,6 +548,6 @@ read `!RAM_YI_Level_LevelHeaderLevelModeLo` ($7E:0146).
   numerically only for 1-1..1-7 and diverge from slot $07 on (1-8's tile
   plays record $9B). The per-row glosses in the DATATABLE Ptrs block and
   the per-define glosses in LevelIDs.asm are now derived from the cart
-  entrance tables (editor-data/yi/level-map.json) and state both ids
+  entrance tables (the level map) and state both ids
   explicitly; older revisions glossed records with slot names. See the
   LevelIDs.asm header ID-SPACE WARNING ("two ID spaces — never conflate").

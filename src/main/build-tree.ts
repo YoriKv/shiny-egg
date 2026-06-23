@@ -1,4 +1,4 @@
-// Build-tree merge (plan step 3). When a project's overlay contains asm edits,
+// Build-tree merge. When a project's overlay contains asm edits,
 // asar can't shadow them via include paths (asm is read from cwd, not the
 // `assets/yi` include search) — so we materialize a merged tree (pristine base
 // ⊕ overlay) and run asar against that. Data-only overlays keep the cheaper
@@ -22,6 +22,13 @@ import { dirname, join } from 'node:path'
 import { buildRom, type BuildResult } from 'snes-framework/build'
 import { readExtractionState } from 'snes-framework/state'
 import {
+  applyGfxLayout,
+  computeGfxGrowth,
+  planGfxLayout,
+  readArenaFill,
+  relocateGfxBlobs
+} from 'snes-framework/gfx-reinsert'
+import {
   asarBinPath,
   buildTreeRoot,
   frameworkWorkRoot,
@@ -31,6 +38,7 @@ import {
 import {
   activeBoundaryMoves,
   activeDecoupled,
+  activeFreeRegions,
   activeNewSlots,
   activePatchPoolGeometry,
   activeRelocations,
@@ -44,6 +52,7 @@ import {
   getPatchPoolBytes,
   hasEnabledAsmPatches
 } from './patches'
+import { applyMap16Edits } from './map16-edits'
 import { PATCH_POOL_DEFAULT_BYTES, type PatchPoolGeometry } from 'snes-framework/pool-map'
 import type { LayoutViolation } from 'snes-framework/relocate'
 
@@ -202,8 +211,7 @@ const POOL_HEX = (n: number): string => '$' + n.toString(16).toUpperCase().padSt
  *  Custom routines/data are placed by the `%patchcode`/`%patchdata` bump allocator
  *  over a reserved slice of FreeRegion51's tail — NOT asar `freecode`, which on
  *  this cart can't be confined to a safe region (it first-fits past the low free
- *  tails into bank $12's live $FF sentinels and the migration banks; see
- *  research/plan-custom-patches.md). The slice is `$FF`-reserved by Bank51's
+ *  tails into bank $12's live $FF sentinels and the migration banks). The slice is `$FF`-reserved by Bank51's
  *  carved `%FREE_BYTES` (pool-map/relocate); the macros `org` over that `$FF` in
  *  the LoROM $23 view (CPU-executable — the same view asar's own freecode uses). */
 function generateAsarPatchesAsm(
@@ -388,8 +396,18 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
   // asm from cwd — so it forces the build-tree path too.
   const asmPatches = hasEnabledAsmPatches(id)
 
+  // Graphics reinsert: edited blobs grow/shrink the gfx arena. A shrink (or no
+  // change) rides the data-only include path; a growth needs the gfx arena's
+  // `%FREE_BYTES` boundary moved — an asm edit, so it forces the build-tree path.
+  const base = frameworkWorkRoot()
+  const gfxGrowth = computeGfxGrowth(join(base, 'assets', 'yi'), join(overlayRoot(id), 'assets', 'yi'))
+  const gfxPlan = planGfxLayout(gfxGrowth.growth, readArenaFill(join(base, 'yi')))
+  // Growth (boundary move) or overflow (relocation) both edit bank asm → force
+  // the build-tree path. A shrink/no-op rides the data-only include path.
+  const gfxNeedsTree = gfxPlan.mode === 'boundary-move' || gfxPlan.mode === 'overflow'
+
   let result: BuildResult
-  if (overlayHasAsm(id) || layoutEdits > 0 || asmPatches) {
+  if (overlayHasAsm(id) || layoutEdits > 0 || asmPatches || gfxNeedsTree) {
     onProgress?.(
       layoutEdits > 0
         ? `Materializing build-tree (${moves.length} boundary move(s), ` +
@@ -411,6 +429,14 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
     // (checkActivePoolBudgets) normally catches this first with the same carve.
     if (plan && plan.violations.length > 0) {
       throw new Error(layoutViolationMessage(plan.violations))
+    }
+    // Graphics layout: a growth moves the arena boundary; an overflow spills the
+    // edited blobs into the free regions (after the level-data layout above, so
+    // the region appends stack on top of it). A shrink needs neither.
+    if (gfxPlan.mode === 'boundary-move') {
+      applyGfxLayout(join(base, 'yi'), join(buildTreeRoot(id), 'yi'), gfxPlan)
+    } else if (gfxPlan.mode === 'overflow') {
+      relocateGfxBlobs(join(buildTreeRoot(id), 'yi'), gfxGrowth.blobs, activeFreeRegions())
     }
     const asmCount = applyEnabledAsmPatches(buildTreeRoot(id), id)
     if (asmCount > 0) onProgress?.(`Assembling ${asmCount} asm patch(es) into the ROM…`)
@@ -443,6 +469,16 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
         (report.warnings.length ? `; ${report.warnings.length} warning(s)` : '')
     )
     for (const w of report.warnings) onProgress?.(`  ⚠ ${w}`)
+  }
+
+  // Post-build: apply the project's Map16 block-definition edits (size-neutral
+  // 8-byte byte patches to the $4C region). No-op + byte-exact when none.
+  const map16Report = applyMap16Edits(id, result)
+  if (map16Report) {
+    onProgress?.(
+      `Applied ${map16Report.applied} Map16 block edit(s): ${map16Report.bytesWritten} byte(s)` +
+        (map16Report.skipped.length ? `; ${map16Report.skipped.length} skipped` : '')
+    )
   }
   return result
 }

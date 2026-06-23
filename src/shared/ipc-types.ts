@@ -51,6 +51,21 @@ export interface Settings {
    *  button. Until this is set (or, in dev, the `../bizhawk/EmuHawk.exe`
    *  fallback exists) the toolbar shows Locate instead of Launch / Test Level. */
   bizhawkPath?: string
+  /** Absolute path to the Aseprite executable, saved via the Graphics panel's
+   *  "Locate Aseprite" button (for opening exported `.aseprite` projects). */
+  asepritePath?: string
+  /** Canvas background colour (the area behind/around the level), as a `#rrggbb`
+   *  hex. App-wide, set via the toolbar swatch; absent ⇒ black. */
+  canvasBackgroundColor?: string
+}
+
+/** Result of the `aseprite:locate` file picker (same shape as the BizHawk one):
+ *  `ok`+`path` on success; `ok:false` no `error` = cancelled; `ok:false`+`error`
+ *  = the pick was rejected. */
+export interface LocateAsepriteResult {
+  ok: boolean
+  path?: string
+  error?: string
 }
 
 /** Result of the `bizhawk:locate` file picker. `ok` + `path` on success;
@@ -72,6 +87,19 @@ export interface BizhawkWarp {
   destX: number
   destY: number
   entranceType: number
+}
+
+/** Items to pre-load into Yoshi's egg-trail inventory when Test Level boots a
+ *  level. The trail caps at 6 items (eggs + keys share the slots), so
+ *  `eggs + keys` must be ≤ 6; `{ eggs: 0, keys: 0 }` is empty (a vanilla boot).
+ *  The supervisor maps the counts to concrete NorSpr sprite IDs (green egg /
+ *  carryable key) and the Lua harness seeds them via the between-level
+ *  egg-inventory snapshot the level loader restores on entry. */
+export interface TestInventory {
+  /** Green eggs trailing Yoshi (0..6). */
+  eggs: number
+  /** Carryable keys on the trail (0..6). `eggs + keys` ≤ 6. */
+  keys: number
 }
 
 /** `bizhawk.captureAt` result — a PNG screenshot of the emulator frame plus the
@@ -208,6 +236,11 @@ export interface RenderHeaderRequest {
   /** header[9] LevelMode. Read by some animation handlers (e.g. handler $06
    *  switches VRAM target on mode $0A boss arena). Optional; defaults to 0. */
   levelMode?: number
+  /** header[11] LevelHeaderAnimationPalette. Indexes `DATA_animation_palette_ptr`
+   *  (the per-frame palette-cycle handler). Used by the BG3 gfx export to flag
+   *  when BG3's palette colours are animated (so the exported colours are one
+   *  frame of a cycle). Optional; defaults to 0 (no per-frame palette animation). */
+  animationPalette?: number
 }
 
 export interface RenderMap16Args {
@@ -369,8 +402,16 @@ export type SpriteLayerResponse =
   | { mode: 'patch'; token: LayerStateToken; bounds: SpriteCelBounds[]; patch: LayerCellPatch }
 
 export interface BgLayersResult {
+  /** BG2/BG3 BACKGROUND planes (priority-0 tiles), drawn behind BG1. */
   bg2: RenderImage
   bg3: RenderImage
+  /** BG2/BG3 FOREGROUND planes (priority-1 tiles) drawn ABOVE BG1 (source-over),
+   *  or `null` when the layer has no foreground tiles (the common case → no
+   *  buffer shipped). The cart's per-tile priority bit puts these tiles in front
+   *  of BG1 (e.g. 1-1's foreground flowers). Required-but-nullable: always
+   *  present in the contract so the canvas + gates can't silently drop it. */
+  bg2Front: RenderImage | null
+  bg3Front: RenderImage | null
   /** Per-level backdrop. Solid form = CSS hex (CGRAM[0], header < $10).
    *  Gradient form = 1×2048 RGBA strip tiled horizontally (header >= $10,
    *  the cart's 24-stop atmospheric gradient). */
@@ -412,17 +453,8 @@ export interface LevelRenderRequest {
    *  returns a sparse PATCH; absent / unknown / a context change ⇒ a FULL render.
    *  Other handlers ignore it. */
   baseToken?: LayerStateToken
-  /** `render:spriteLayer` only — sprite nums that render a **Format-B** cel
-   *  (multi-tile `special_chr`). Derived from the prebaked `obj-metadata` `cel`
-   *  field (`cel === 'B'`), a ground-truth per-sprite classification replacing the
-   *  old unreliable `category` gate. Absent ⇒ no gate. Other handlers ignore it. */
-  celRenderableNums?: number[]
-  /** `render:spriteLayer` only — sprite nums that render a **Format-A** single
-   *  tile (`object_data`; items like red coin / eggs / key). Derived from
-   *  `obj-metadata` `cel === 'A'`. The engine renders these AND forces the
-   *  Format-A path for them (resolves the ~few sprites that carry both a
-   *  `special_chr` and an `object_data`, e.g. the Key). Other handlers ignore it. */
-  formatANums?: number[]
+  // (The sprite cel-format gate, settled palette row (SP4) and rest frame (SP3) are asm-fixed
+  //  facts the engine now owns directly — sprite-render-facts.ts — so they're no longer sent.)
 }
 
 // ── Entity render-validity (picker filter) ──────────────────────────────────
@@ -443,12 +475,17 @@ export interface EntityValidityCandidate {
   h: number
 }
 
-/** `render:entityRenderValidity` request. `override` mirrors
- *  `LevelRenderRequest` (live header edits are honoured). */
+/** `render:entityRenderValidity` request (the unified picker-catalog pass).
+ *  `override` mirrors `LevelRenderRequest` (live header edits are honoured).
+ *  `candidates` are the std/ext objects to verdict. `spriteNums`, when present,
+ *  is the full sprite catalog: the handler warms the picker's object AND sprite
+ *  thumbnail caches from the same decodes it ran for the verdicts (so the picker
+ *  opens warm). Omit it for a verdicts-only run. */
 export interface EntityValidityRequest {
   levelRecordId: number
   override?: LevelData
   candidates: EntityValidityCandidate[]
+  spriteNums?: number[]
 }
 
 /** `render:entityRenderValidity` result. `objects`/`extended` are keyed by hex
@@ -467,16 +504,14 @@ export interface EntityRenderValidity {
 
 /** `render:pickerThumbnails` request — per-catalog-entry bitmaps under this
  *  level's header (§B5 picker thumbnails). One tab per call: pass `candidates`
- *  for the objects tab, or `spriteNums` (+ the cel-gate num sets, the same
- *  convention as `render:spriteLayer`) for the sprites tab. `override` mirrors
- *  LevelRenderRequest. */
+ *  for the objects tab, or `spriteNums` for the sprites tab. `override` mirrors
+ *  LevelRenderRequest. (The cel-format gate / settled palette / rest frame are
+ *  engine-owned asm-fixed facts now — sprite-render-facts.ts — not sent.) */
 export interface PickerThumbnailsRequest {
   levelRecordId: number
   override?: LevelData
   candidates?: EntityValidityCandidate[]
   spriteNums?: number[]
-  celRenderableNums?: number[]
-  formatANums?: number[]
 }
 
 /** `render:pickerThumbnails` result — hex-id-keyed bitmaps; an ABSENT key
@@ -493,6 +528,20 @@ export interface PickerThumbnails {
 export interface FitTileset {
   tileset: number
   name: string
+}
+
+/** Result of "fit the sprite tileset to a level's sprites" (`render:fitSpriteset`):
+ *  the best-covering stock spriteset id for `header[7]`, plus coverage. */
+export interface FitSpritesetResult {
+  /** Chosen stock spriteset id (0x00..0x7F) — set as header field 7. */
+  spriteTileset: number
+  /** Placed-sprite instances whose gfx file the chosen spriteset loads. */
+  servedInstances: number
+  /** Placed-sprite instances that need a variable gfx file at all. */
+  gatedInstances: number
+  /** Required gfx file ids the chosen spriteset still can't load (non-empty ⇒
+   *  some sprites will render wrong: >6 distinct files, or no stock set fits). */
+  missingFiles: number[]
 }
 
 /** A painted height corner: a target surface row at a cell-corner column. */
@@ -542,6 +591,174 @@ export type ResetLevelResult =
  *  drag, plan §A8 #8.5). On success the source level's overlay `.bin`(s) were
  *  rewritten (auto-saved) → the built ROM is stale and needs a rebuild. */
 export type SetExitDestResult = { ok: true } | { ok: false; error: string }
+
+/** Result of a cross-level warp-exit ENTRANCE-type edit (the incoming-marker's
+ *  Entrance dropdown). Same auto-save semantics as `SetExitDestResult` — on
+ *  success the source level's overlay was rewritten and the built ROM is stale. */
+export type SetExitEntranceResult = { ok: true } | { ok: false; error: string }
+
+/** Result of saving an edited graphics blob (re-encode + overlay write). `file`
+ *  is the overlay path written (relative to `assets/yi`). On success the built
+ *  ROM is stale and needs a rebuild (gfx edits don't render live). */
+export type SaveGfxEditResult =
+  | { ok: true; file: string }
+  | { ok: false; error: string }
+
+/** Result of discarding a saved graphics edit. `removed` is true when an overlay
+ *  blob actually existed (→ the built ROM is now stale). */
+export type ResetGfxEditResult = { ok: boolean; removed?: boolean; error?: string }
+
+/** One overlay-edited graphics file in the active project (the "Changed graphics"
+ *  list / per-file reset). `file` is the overlay path relative to `assets/yi` —
+ *  the reset target. */
+export interface GfxEditEntry {
+  file: string
+  /** Human label (e.g. "Gfx file 0x38 (LZ2)" or an animation-CHR description). */
+  label: string
+  /** A compressed gfx blob vs the shared raw animation CHR. */
+  kind: 'compressed' | 'raw-chr'
+  bytes: number
+}
+
+/** What a graphics file maps back to — the role(s) it's loaded as across the cart
+ *  (e.g. "BG1 tileset", "Sprite sheet", "Title screen — logo"). The expandable
+ *  detail for the "Changed graphics" list. Empty when it can't be classified. */
+export interface GfxFileRole {
+  roles: string[]
+}
+
+/** A Map16 sub-tile descriptor — one 8×8 quadrant of a Map16 block (the structured
+ *  Map16 editor's unit). Structurally the engine `Map16SubTile`. */
+export interface Map16SubTileEdit {
+  /** 10-bit tile index into BG1 VRAM (relative to the BG1 char base). */
+  tileIndex: number
+  /** BG palette row 0..7. */
+  paletteRow: number
+  hflip: boolean
+  vflip: boolean
+  priority: boolean
+}
+
+/** Result of rendering a Map16 block to a 16×16 bitmap (the editor's live preview). */
+export interface Map16BlockPreview {
+  rgba: Uint8Array
+  width: number
+  height: number
+}
+
+/** Options for exporting graphics PNGs (the Graphics panel). All optional. */
+/** Which sub-track(s) of the graphics export to write. `metasprites` includes the
+ *  GSU glyphs; `screens` covers system screens + world-map / level icons + title
+ *  logo/island/scenery. */
+export type GfxExportTrack = 'metasprites' | 'screens'
+
+export interface ExportGfxOptions {
+  /** Limit the export to these tracks. */
+  tracks?: GfxExportTrack[]
+  /** `aseprite` writes the assembled screens / metasprites as indexed Aseprite
+   *  projects instead of PNGs. The title island's Aseprite export is a COMBINED
+   *  tilemap: one file edits pixels, placement, AND added tiles together (assumes
+   *  Manual tileset mode — see gfx-png-import.ts). Default `png`. */
+  format?: 'png' | 'aseprite'
+  /** Sprite id → friendly name; NAMES the metasprite PNGs (does not limit them). */
+  spriteNames?: Record<number, string>
+}
+
+/** Result of exporting the current level's graphics to PNGs (the Graphics panel).
+ *  `canceled` when the folder dialog was dismissed. */
+export type ExportGfxResult =
+  | { ok: true; count: number; dir: string }
+  | { ok: false; error: string }
+  | { canceled: true }
+
+// ── BG region export/import (src/main/bg-region-io.ts) ──────────────────────
+
+/** Which BG layer a region export targets. */
+export type BgRegionLayer = 1 | 2 | 3
+
+/** Export file format for a region. `png` = the flat sheet (pixels). `aseprite` = the
+ *  **8×8-CHR pixel** tilemap project (the foundational pixel unit — one Aseprite tile =
+ *  one 8×8 CHR, so the cart's CHR sharing is visible; all layers). `aseprite-layout` =
+ *  the **16×16-WORD placement** tilemap for BG2/BG3 only (rearrange which tile goes where;
+ *  8×8 placement is impossible in 16×16 tile mode — see research/graphics-editing). BG1
+ *  has no static tilemap placement (that's the level editor), so it rejects
+ *  `aseprite-layout`. */
+export type BgRegionFormat = 'png' | 'aseprite' | 'aseprite-layout'
+
+/** A rectangle of BG1 level cells (16×16 px each), in absolute level coords.
+ *  Ignored for BG2/BG3 (the whole tilemap is exported). */
+export interface BgRegionRect {
+  col0: number
+  row0: number
+  cols: number
+  rows: number
+}
+
+/** Renderer → main args for a region export (header is passed separately). */
+export interface BgRegionExportArgs {
+  layer: BgRegionLayer
+  /** Required for BG1 (the selected level rectangle); ignored for BG2/BG3. */
+  rect?: BgRegionRect
+  /** The loaded level — its decode backs the BG1 positioned grid + its header
+   *  colours every layer. */
+  level: LevelData
+  /** Output format. Defaults to `png`; `aseprite` = 8×8 pixel tilemap; `aseprite-layout`
+   *  = 16×16-word placement (BG2/BG3 only). */
+  format?: BgRegionFormat
+}
+
+export type BgRegionExportResult =
+  | { ok: true; file: string; cells: number; dir: string }
+  | { ok: false; error: string }
+  | { canceled: true }
+
+/** Per-region detail line for the import log. */
+export interface RegionImportLogEntry {
+  file: string
+  layer: BgRegionLayer
+  source: 'png' | 'aseprite'
+  /** Tile edits sliced from this region. */
+  tiles: number
+  /** Opaque pixels whose colour was in no slot of their cell's palette row. */
+  mismatches: number
+  conflicts: number
+}
+
+export type BgRegionImportResult =
+  | {
+      ok: true
+      dir: string
+      applied: number
+      /** Tilemap WORDS rewritten by the index-based placement diff (BG2/BG3 cells whose
+       *  Aseprite tile-index / flip changed — `diffBgRegionPlacement`, NOT a pixel compare).
+       *  Counted apart from `applied` so a placement-only import still marks the build dirty. */
+      repositioned: number
+      conflicts: number
+      regions: number
+      mismatches: number
+      /** Palette colours written back to the master palette blob. */
+      paletteChanged: number
+      perRegion: RegionImportLogEntry[]
+      log: string[]
+      errors: string[]
+    }
+  | { ok: false; error: string }
+  | { canceled: true }
+
+/** Result of the unified "import this folder" — auto-detects the all-graphics PNG
+ *  manifest AND any BG-region files, runs both, and merges into one log. */
+export type ImportGraphicsResult =
+  | {
+      ok: true
+      dir: string
+      /** Files (gfx + palette) changed — drives the build-dirty mark. */
+      changed: number
+      /** Pre-formatted log + error lines for display (gfx counts + region log). */
+      log: string[]
+      errors: string[]
+    }
+  | { ok: false; error: string }
+  | { canceled: true }
 
 // ── Vanilla-level removal (src/main/level-removal.ts) ───────────────────────
 
@@ -646,7 +863,7 @@ export interface SpritePropertiesRequest {
 // ── Custom patches (post-build binary patch layer) ──────────────────────────
 
 /** A patch in the active project's local set — toggled on/off per project.
- *  Lightweight: no chunk bytes (see research/plan-custom-patches.md). */
+ *  Lightweight: no chunk bytes. */
 export interface PatchSummary {
   id: string
   name: string
@@ -748,7 +965,6 @@ export interface PatchAuthoringPaths {
 // Renderer-facing report for the "import from a third-party ROM" feature. Wraps
 // the framework's RomAnalysis (anchors + per-record diff) with app-side context:
 // friendly level names + whether the active project already overlays each level.
-// See research/plan-rom-import.md.
 
 /** One changed record in the import report: the framework diff plus app context. */
 export interface RomImportLevel extends ForeignLevelDiff {
@@ -897,5 +1113,59 @@ export type RomImportApplyResult =
       messages: { applied: boolean; changed: number; blanked: number; error?: string }
       /** World-map entrance/midway/index apply outcome (when selected). */
       worldMap: { applied: boolean; entrances: number; midway: number; indexRemaps: number; error?: string }
+    }
+  | { ok: false; error: string }
+
+// ── GBA cart import (Super Mario Advance 3 → SNES YI) ───────────────────────
+// Import a sublevel out of an SMA3 (U) GBA cart and overwrite a SNES record in
+// the active project. SMA3 is a port of YI, so the level-data formats are nearly
+// identical (engine: snes-framework/gba-import); the app orchestrator is
+// src/main/gba-import.ts.
+
+/** One importable sublevel found in the GBA cart (analyse view). */
+export interface GbaImportSublevel {
+  /** GBA sublevel id (also the default SNES record id, since the id spaces
+   *  align for ported content). */
+  sublevelId: number
+  objects: number
+  sprites: number
+  exits: number
+  /** GBA camera sprites dropped (no SNES equivalent). */
+  spritesDropped: number
+  /** Advynia custom objects dropped. */
+  objectsDropped: number
+  /** Distinct warning kinds for this sublevel (e.g. `camera-sprite-dropped`). */
+  warnings: string[]
+}
+
+/** Result of analysing a picked GBA cart. */
+export type GbaImportReport =
+  | {
+      ok: true
+      /** Absolute path of the analysed cart (echoed into the apply selection). */
+      filePath: string
+      /** GBA internal title + game code + whole-ROM CRC32 (hex string). */
+      title: string
+      gameCode: string
+      crc32: string
+      sublevels: GbaImportSublevel[]
+    }
+  | { ok: false; error: string }
+
+/** Selection to apply: each pair overwrites a SNES record with a GBA sublevel. */
+export interface GbaImportApplySelection {
+  /** GBA cart path (must match the analysed cart). */
+  filePath: string
+  items: Array<{ sublevelId: number; targetRecordId: number }>
+}
+
+/** Result of applying a GBA import to the active project's overlay. */
+export type GbaImportApplyResult =
+  | {
+      ok: true
+      /** Sublevels written, with their human-readable conversion warnings. */
+      applied: Array<{ sublevelId: number; targetRecordId: number; warnings: string[] }>
+      /** Targets that failed to write, with why. */
+      failed: Array<{ targetRecordId: number; error: string }>
     }
   | { ok: false; error: string }

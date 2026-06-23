@@ -25,16 +25,19 @@ import {
   makeScreenIndex,
   objectVisualBox,
   screenCol,
+  screenOf,
   screenRow,
   snapCellDelta
 } from './canvas/geometry'
 import { MAX_LEVEL_SPRITES, clampCell, clampGroupMove, clampObjectMove, clampObjectResize, clampSpriteMove } from './canvas/limits'
 import { formatLevelId, getLevel } from './data/levels'
+import { hex0x } from './lib/hex'
 import type { IncomingExit, LayerVisibility, Selection } from './types'
 import { useObjectInfluence } from './hooks/useObjectInfluence'
 import { useNeighborDependencies } from './hooks/useNeighborDependencies'
 import { useBehaviorProbes } from './hooks/useBehaviorProbes'
 import { useEntityRenderValidity } from './hooks/useEntityRenderValidity'
+import { useGeneratorThumbnails } from './hooks/useGeneratorThumbnails'
 import {
   hitResizeHandle,
   extentFromHandle,
@@ -45,6 +48,7 @@ import { objectSizeMode } from './data/object-record'
 import { useObjectPropertyTable } from './hooks/useObjectPropertyTable'
 import { ContextMenu, type ContextMenuItem } from './ContextMenu'
 import { ReorderSlider } from './ReorderSlider'
+import { Minimap } from './Minimap'
 
 import {
   applyShiftClick,
@@ -111,6 +115,9 @@ export interface CanvasProps {
    *  when navigating away (back/forward history); Canvas writes it on every view
    *  change. A ref so it never re-renders App. */
   cameraRef: RefObject<View>
+  /** Live viewport pixel size, mirrored here (like cameraRef) so App-level paste
+   *  can keep an off-screen target on-screen. */
+  viewportRef: RefObject<{ w: number; h: number }>
   /** Back/forward camera restore: set the view to a stored snapshot for
    *  `levelRecordId`. Highest-priority view source on load (overrides spawn/fit);
    *  `nonce` re-fires a repeat restore to the same view. */
@@ -119,6 +126,11 @@ export interface CanvasProps {
    *  armed entity at the clicked cell (via onPlaceAt) instead of selecting. */
   placing: boolean
   onPlaceAt: (cellX: number, cellY: number) => void
+  /** Region-pick mode (Graphics panel "Region" tab → BG1): a shift-drag marquee
+   *  commits the dragged cell rectangle via `onRegionPicked` instead of selecting
+   *  entities. */
+  regionPickMode?: boolean
+  onRegionPicked?: (rect: { col0: number; row0: number; cols: number; rows: number }) => void
   /** Erase tool active → a press starts a sweep that deletes every object /
    *  sprite the cursor touches. Gated by the same outline visibility as
    *  selection: objects need `bg1Outlines`, sprites need `spriteOutlines` (only
@@ -162,6 +174,9 @@ export interface CanvasProps {
    *  the freshly-built ROM (asm/palette edits only reach the pixels via a rebuild,
    *  and nothing else in the render deps changes). See hooks/useLevelRenderLayers. */
   renderRefresh: number
+  /** App-wide canvas background colour (`#rrggbb`) — also used for the level-
+   *  switch wipe so that transient matches the surrounding background. */
+  canvasBackground: string
 }
 
 /** Mouse movement (px) past which a press becomes a drag, not a click. */
@@ -194,9 +209,12 @@ export function Canvas({
   poolLabel,
   focusRequest,
   cameraRef,
+  viewportRef,
   cameraRequest,
   placing,
   onPlaceAt,
+  regionPickMode,
+  onRegionPicked,
   eraseTool,
   spawnTool,
   paintTool,
@@ -208,7 +226,8 @@ export function Canvas({
   onSetTestSpawn,
   onClearTestSpawn,
   paletteOverride,
-  renderRefresh
+  renderRefresh,
+  canvasBackground
 }: CanvasProps): JSX.Element {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -261,7 +280,7 @@ export function Canvas({
     bgLayers,
     collisionCanvas,
     renderVersion
-  } = useLevelRenderLayers(renderLevel, paletteOverride, renderRefresh)
+  } = useLevelRenderLayers(renderLevel, paletteOverride, renderRefresh, canvasBackground)
   const [loadError, setLoadError] = useState<string | null>(null)
   // Hover preview — objects show a chartreuse box; cel-backed sprites a
   // size-matched chartreuse box, marker/flag sprites a chartreuse ring.
@@ -438,6 +457,13 @@ export function Canvas({
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(
     null
   )
+  // Mirrors for the mouseup commit handler (attached via addEventListener with refs).
+  const marqueeRef = useRef(marquee)
+  marqueeRef.current = marquee
+  const regionPickRef = useRef(regionPickMode)
+  regionPickRef.current = regionPickMode
+  const onRegionPickedRef = useRef(onRegionPicked)
+  onRegionPickedRef.current = onRegionPicked
   // Live multi-select move overlay: the group's uid sets + the current shared
   // cell delta. Drives the draw effect to shadow every member at its pending
   // position; `null` outside a moveGroup drag. The commit re-derives the delta in
@@ -468,6 +494,9 @@ export function Canvas({
   // entities). Header-keyed + main-side cached, so it refetches only on a
   // level/header change — not per edit commit.
   const renderValidity = useEntityRenderValidity(level)
+  // Cached enemy thumbnails for the generator badges (purple square + spawned-enemy
+  // icon). Header-keyed + main-side cached (same thumbnail LRU as the picker).
+  const generatorThumbs = useGeneratorThumbnails(level)
   // Right-click context menu — anchored at viewport coords, acting on the hit
   // object/sprite/exit. `null` when closed.
   const [ctxMenu, setCtxMenu] = useState<{
@@ -517,6 +546,17 @@ export function Canvas({
   sizeRef.current = size
   const incomingRef = useRef(incoming)
   incomingRef.current = incoming
+
+  // Minimap click/drag → centre the main camera on the picked level world-pixel,
+  // preserving the current zoom. (focusViewFor works in cells and resets zoom to
+  // a default; the minimap wants raw pixels and the user's current zoom kept.)
+  const navigateToWorldPixel = useCallback((worldX: number, worldY: number): void => {
+    setView((v) => ({
+      zoom: v.zoom,
+      panX: sizeRef.current.w / 2 - worldX * v.zoom,
+      panY: sizeRef.current.h / 2 - worldY * v.zoom
+    }))
+  }, [])
   const spriteBoundsRef = useRef(spriteBounds)
   spriteBoundsRef.current = spriteBounds
   const moveOverlayRef = useRef(moveOverlay)
@@ -710,19 +750,21 @@ export function Canvas({
     if (!el) return
     const update = (): void => {
       const r = el.getBoundingClientRect()
-      setSize({ w: Math.round(r.width), h: Math.round(r.height) })
+      const next = { w: Math.round(r.width), h: Math.round(r.height) }
+      viewportRef.current = next // mirror for App-level paste (see useLevelKeyboardShortcuts)
+      setSize(next)
     }
     update()
     const ro = new ResizeObserver(update)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [viewportRef])
 
   // Render loop: redraws on view/level/size change.
   useEffect(() => {
     drawScene(canvasRef.current, {
       size, view, level, layers, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
-      spriteBounds, neighborStatus, behaviorProbes, renderValidity, influence, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
+      spriteBounds, neighborStatus, behaviorProbes, generatorThumbs, renderValidity, influence, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
       incoming, testSpawn, spawnOverride: spawnDragOverlay ?? spawnOverride, paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
       exitDrag, incomingOverlay, marquee, paintDrag
     })
@@ -746,6 +788,7 @@ export function Canvas({
     influence,
     neighborStatus,
     behaviorProbes,
+    generatorThumbs,
     renderValidity,
     exitDrag,
     incomingOverlay,
@@ -1403,6 +1446,20 @@ export function Canvas({
       // the next hit in the stack (multi-select is object/sprite only, so the
       // base drops any single exit/incoming/spawn first).
       if (d && d.kind === 'marquee') {
+        // Region pick (Graphics "Region" tab → BG1): commit the dragged cell
+        // rectangle instead of unioning entities.
+        if (regionPickRef.current && d.moved) {
+          const m = marqueeRef.current
+          if (m && onRegionPickedRef.current) {
+            const a = clampCell(Math.floor(Math.min(m.x0, m.x1) / CELL_PX), Math.floor(Math.min(m.y0, m.y1) / CELL_PX))
+            const b = clampCell(Math.floor(Math.max(m.x0, m.x1) / CELL_PX), Math.floor(Math.max(m.y0, m.y1) / CELL_PX))
+            onRegionPickedRef.current({ col0: a.x, row0: a.y, cols: b.x - a.x + 1, rows: b.y - a.y + 1 })
+          }
+          cycleRef.current = null
+          lastClickRef.current = null
+          endDrag()
+          return
+        }
         if (wrap) {
           const rect = wrap.getBoundingClientRect()
           const base = selectionRef.current.filter(
@@ -1725,7 +1782,7 @@ export function Canvas({
     const h = Math.round(Math.abs(marquee.y1 - marquee.y0) / CELL_PX)
     coordsText = `x ${end.x}  ·  y ${end.y}  ·  w ${w}  ·  h ${h}`
   } else if (cursorCell) {
-    coordsText = `x ${cursorCell.x}  ·  y ${cursorCell.y}`
+    coordsText = `x ${cursorCell.x}  ·  y ${cursorCell.y}  ·  screen ${hex0x(screenOf(cursorCell.x, cursorCell.y))}`
   }
 
   return (
@@ -1758,6 +1815,13 @@ export function Canvas({
       }}
     >
       <canvas ref={canvasRef} className="se-canvas__el" />
+      <Minimap
+        bg1Canvas={bg1Canvas}
+        renderVersion={renderVersion}
+        view={view}
+        viewportSize={size}
+        onNavigate={navigateToWorldPixel}
+      />
       {ctxMenu && (
         <ContextMenu
           x={ctxMenu.x}

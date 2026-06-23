@@ -41,7 +41,7 @@ function baseName(p: string): string {
 }
 
 /**
- * The "import from a modified ROM" window (plan-rom-import.md). A modal wizard:
+ * The "import from a modified ROM" window. A modal wizard:
  * pick a `.sfc` → analyse (diff vs the extracted V1.0 base) → review the
  * re-identified memory locations + the per-level change set (with overwrite
  * warnings) → apply the selected records into the project overlay.
@@ -245,7 +245,7 @@ export function ImportRomDialog({
                 against your extracted base, and imports the changed levels into{' '}
                 <strong>{projectName ?? 'your project'}</strong> as editable overlays.
               </p>
-              <p className="se-import__hint">
+              <p className="se-meta se-import__hint">
                 Imports level object/sprite/exit placements, world-map spawns &amp; level
                 progression, master-palette colours, level-name strings, and message-box text.
                 Graphics, Map16, and custom code are not yet imported.
@@ -366,7 +366,7 @@ function ReportView({
     <>
       <p className="se-import__file">
         <strong>{baseName(report.foreignPath)}</strong>
-        <span className="se-import__md5">md5 {report.foreignMd5}</span>
+        <span className="se-meta-xs se-import__md5">md5 {report.foreignMd5}</span>
       </p>
 
       {!report.baseDerived && (
@@ -607,7 +607,7 @@ function ReportView({
         </>
       )}
 
-      {phase === 'applying' && <p className="se-import__hint">Applying…</p>}
+      {phase === 'applying' && <p className="se-meta se-import__hint">Applying…</p>}
 
       {phase === 'done' && applyResult && (
         <div className="se-import__result">
@@ -722,7 +722,7 @@ function ReportView({
                 applyResult.names.applied ||
                 applyResult.messages.applied ||
                 applyResult.worldMap.applied) && (
-                <p className="se-import__hint">
+                <p className="se-meta se-import__hint">
                   Rebuild (Test Level / Launch) to see the changes in-game.
                 </p>
               )}
@@ -788,7 +788,7 @@ function InventoryTable({ inventory }: { inventory: RomImportInventory }): JSX.E
         ))}
       </div>
       {notImportedBytes > 0 && (
-        <p className="se-import__hint">
+        <p className="se-meta se-import__hint">
           “Not imported” regions (graphics, Map16, collision, custom code …) have no editable
           import path yet — they are detected and listed so nothing is silently dropped.
         </p>
@@ -808,7 +808,7 @@ function AnchorsTable({ report }: { report: Extract<RomImportReport, { ok: true 
         {report.anchors.map((a) => (
           <div key={a.key} className="se-import__anchorrow">
             <span className="se-import__anchorname">{a.label}</span>
-            <span className={`se-import__method se-import__method--${a.method}`}>{a.method}</span>
+            <span className={`se-meta-xs se-import__method se-import__method--${a.method}`}>{a.method}</span>
             <span className="se-import__addr">{a.pc === null ? '—' : `0x${a.pc.toString(16).toUpperCase()}`}</span>
             <span className="se-import__conf">{a.pc === null ? '' : `${Math.round(a.confidence * 100)}%`}</span>
           </div>

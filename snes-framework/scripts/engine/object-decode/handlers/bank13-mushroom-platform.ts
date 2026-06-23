@@ -26,24 +26,26 @@
 //   3. End-cap branch ($A1 odd, last row, CODE_13F42B):
 //        tile = ($8D2E + ((($2C & 3) EOR 2)))    — 4-cycle pattern
 //
-//      The asm here contains a subtle SIZE-MISMATCH BUG. Two `CPY.b`
-//      operands are encoded with explicit 8-bit width hints even
-//      though X/Y are 16-bit (REP #$30 active). asar emits the 2-byte
-//      `CPY.b #imm` form (1-byte operand) but the CPU reads 2-byte
-//      operands per the X flag, mis-decoding the following `STA $0990`
-//      / `STA $04B0` into the high byte of the CPY immediate plus a
-//      stray `BCC` opcode. Effectively the executed sequence is:
+//      The asm here contains a SIZE-MISMATCH BUG that turns into a
+//      CONDITIONAL +4. Two `CPY.b` operands are encoded with explicit
+//      8-bit width hints even though X/Y are 16-bit (REP #$30 active),
+//      so asar emits the 1-byte-operand form `c0 90` / `c0 94`, but the
+//      CPU reads 2-byte operands — eating the following `STA $0990` /
+//      `STA $04B0` opcodes as operand + branch bytes. The built-ROM
+//      bytes `c0 90 8d 90 09 c0 94 8d b0 04 18 69 04 00` execute as:
 //
-//          CPY #$8D90   ; carry-set state depends on Y vs $8D90
-//          BCC +9       ; taken because Y == $12 == $0000 < $8D90
-//                       ; → skips the `CLC ; ADC #$0004` epilogue
+//          CPY #$8D90 ; BCC store ; CPY #$8D94 ; BCS store ; CLC ; ADC #$0004
 //
-//      Since the inputs to CPY (Y = $12 = current cell's pre-stamp
-//      tile, always $0000 in practice) always satisfy the BCC, the
-//      `+ $0004` adjustment AND the disassembled "STA $0990" /
-//      "STA $04B0" writes never execute. The stamp value is simply
-//      `($2C & 3) ^ 2 + $8D2E`. Verified against the spec trace cell
-//      19: $2C=9, ($9 & 3) ^ 2 = 3, $8D2E + 3 = $8D31. ✓
+//      where `store` is the shared `LDX $1D ; STA buffer,x` epilogue.
+//      Y = $12 = the tile ALREADY under this cell. So the `+ $0004`
+//      executes IFF $8D90 <= $12 < $8D94 — i.e. when the end-cap stacks
+//      directly on a mushroom-platform body tile ($8D90..$8D93); a
+//      "stack-on-self" blend. Outside that window (the common case, e.g.
+//      $12 == $0000 over empty terrain) BOTH branches skip to `store`
+//      and the cap is the plain `($2C & 3) ^ 2 + $8D2E`. (An earlier note
+//      wrongly read $12 as "always $0000" and concluded +4 never fires —
+//      it fires for the rec_2e endcaps that sit on $8D9x bodies.) Verified
+//      against built-ROM bytes + the rec_2e capture ($8D2E→$8D32 etc.).
 //
 //   4. End-of-cell bookkeeping (CODE_13F44D): on the very last cell of
 //      a column ($2C+1 == $2E) advance $A1 — INC, then wrap back to 0
@@ -58,7 +60,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -134,10 +136,26 @@ const mushroomPlatformStamp: PerCellHandler = (state) => {
 
       let tile: number;
       if (rowPlus1 === rowExt) {
-        // End-cap branch (CODE_13F42B). Asm bytes form a size-mismatch
-        // BCC that always skips the trailing `+ $0004`, so the effective
-        // stamp is simply ($2C & 3) ^ 2 + $8D2E. See file-header notes.
-        tile = ((((row & 0x0003) ^ 0x0002) + ENDCAP_BASE_8D2E) & 0xffff);
+        // End-cap branch (CODE_13F42B): base = (($2C & 3) ^ 2) + $8D2E, then a
+        // conditional +4 when this cell STACKS on a mushroom-platform body tile.
+        // The cart source reads `LDY $12 ; CPY.b #$90 ; STA $0990 ; CPY.b #$94 ;
+        // STA $04B0 ; CLC ; ADC #$0004`, but X/Y are 16-bit (REP #$30) so the
+        // 1-byte CPY.b operands desync the instruction stream. The BUILT-ROM
+        // bytes are `c0 90 8d 90 09 c0 94 8d b0 04 18 69 04 00`, which the CPU
+        // executes as:
+        //     CPY #$8D90 ; BCC store ; CPY #$8D94 ; BCS store ; CLC ; ADC #$0004
+        // i.e. the `STA $0990/$04B0` opcodes are eaten as CPY operands + branch
+        // bytes. Net effect: +4 IFF $8D90 <= $12 < $8D94 (Y = $12 = the tile
+        // already under this cell). This is a stack-on-self blend — an earlier
+        // note here wrongly concluded "+4 never applies"; that's why applying it
+        // unconditionally regressed the ~68 endcaps whose $12 is outside the
+        // window. rec_2e's 9 endcaps sit on $8D9x bodies, so they take the +4.
+        let endcap = ((((row & 0x0003) ^ 0x0002) + ENDCAP_BASE_8D2E) & 0xffff);
+        const under = state.zp12 & 0xffff;
+        if (under >= 0x8D90 && under < 0x8D94) {
+          endcap = (endcap + 0x0004) & 0xffff;
+        }
+        tile = endcap;
       } else if (rowPlus1 === 0x0002) {
         // Single-tile fill on row 1.
         tile = FILL_TILE_8D29;
@@ -184,7 +202,7 @@ const mushroomPlatformStamp: PerCellHandler = (state) => {
 function initMushroomPlatform(state: DecodeState): void {
   state.zpA1 = 0;
   // PRNG → AND #3. If non-zero, EOR with 3 (maps 1↔2, 3↔0 via XOR).
-  const r = prngNext(state) & 0x0003;
+  const r = prngNext(state, RNG_SITE.initMushroomPlatform) & 0x0003;
   const mapped = r === 0 ? 0 : (r ^ 0x0003);
   // ASL ASL ASL — multiply by 8 to get the table-record byte stride.
   state.zp15 = (mapped << 3) & 0xff;

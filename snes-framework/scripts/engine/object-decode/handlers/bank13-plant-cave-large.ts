@@ -22,8 +22,14 @@
 //
 //     $2C in 0..1            → X=0 → body_pick     (DATA_13D80D / DATA_13D81D)
 //     $2C >= 2, $2C+1 == $2E → X=2 → col_c         (DATA_13D83D)
-//     $2C >= 2, $2C+1 odd    → X=4 → col_b         (DATA_13D835)
-//     $2C >= 2, $2C+1 even   → X=6 → col_a         (DATA_13D82D)
+//     $2C >= 2, $2C+1 odd    → X=4 → col_b / col_a (see below)
+//     $2C >= 2, $2C+1 even   → X=6 → col_a / col_b (see below)
+//
+//   CAUTION: the two pointer tables order col_a/col_b OPPOSITELY. The even-$2E
+//   set (DATA_13D84D) is [body, col_c, col_b, col_a]; the odd-$2E set
+//   (DATA_13D845) is [body, col_c, col_a, col_b]. So X=4/X=6 map to col_b/col_a
+//   for even $2E but col_a/col_b for odd $2E. The stamp() switch below mirrors
+//   this per-branch — do not "simplify" the two branches into one.
 //
 //   For $2E even (the common case — row extent multiple of 2), the
 //   DATA_13D84D table is selected (counter-intuitively the asm names
@@ -58,7 +64,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -164,12 +170,20 @@ const stampPlantCaveLarge: PerCellHandler = (state) => {
       case 3: pick = colPick(state, 1, DATA_13D82D); break;
     }
   } else {
-    // DATA_13D845 dispatch (Bank13.asm:10548).
+    // DATA_13D845 dispatch (Bank13.asm:10758). NB: this odd-$2E set orders its
+    // column sub-handlers [body, col_c, col_a, col_b] — col_a BEFORE col_b — the
+    // OPPOSITE of the even-$2E DATA_13D84D set above ([body, col_c, col_b,
+    // col_a]). idx 2/3 select X=4/6 (= "(row+1) odd / even"), so in THIS set
+    // idx2 (row+1 odd) → col_a and idx3 (row+1 even) → col_b. The even branch's
+    // mapping is genuinely mirror-imaged, not a typo: verified against the cart
+    // pointer tables (`closure CODE_stamp_floor_4wide`). Caught by the rec_43/
+    // rec_81 $7700↔$7733 two-row swap — an odd-height plant-cave exercises this
+    // set, which the even-height ($2E=$10) spec test never did.
     switch (idx) {
       case 0: pick = bodyPick(state, DATA_13D80D); break;
-      case 1: pick = colPick(state, 2, DATA_13D83D); break;
-      case 2: pick = colPick(state, 2, DATA_13D835); break;
-      case 3: pick = colPick(state, 2, DATA_13D82D); break;
+      case 1: pick = colPick(state, 2, DATA_13D83D); break; // col2_c
+      case 2: pick = colPick(state, 2, DATA_13D82D); break; // col2_a (X=4, row+1 odd)
+      case 3: pick = colPick(state, 2, DATA_13D835); break; // col2_b (X=6, row+1 even)
     }
   }
 
@@ -201,7 +215,7 @@ function initPlantCaveLarge(state: DecodeState): void {
   // PRNG-derived variant index in $15, mirror in $A1.
   //   $15 = prng & 3
   //   $A1 = ($15 XOR 3) << 1     (a byte index into a 4-word table)
-  const roll = prngNext(state) & 0x0003;
+  const roll = prngNext(state, RNG_SITE.initPlantCaveLarge) & 0x0003;
   state.zp15 = roll;
   state.zpA1 = ((roll ^ 0x0003) << 1) & 0xff;
 

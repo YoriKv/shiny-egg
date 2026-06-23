@@ -36,6 +36,96 @@ function chunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([len, typeBuf, data, cc]);
 }
 
+/**
+ * Decode a PNG buffer to RGBA8888. Handles 8-bit grayscale / RGB / RGBA and
+ * indexed (palette, 1/2/4/8-bit) — the colour types external editors export —
+ * with all five filter types. Errors on 16-bit depth and interlacing (rare from
+ * paint tools). Enough to round-trip our own exports and standard editor saves.
+ */
+export function decodePng(buf: Buffer): ImageData {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < 8; i++) if (buf[i] !== sig[i]) throw new Error('decodePng: not a PNG');
+  let w = 0, h = 0, depth = 0, colorType = 0;
+  const idat: Buffer[] = [];
+  let plte: Buffer | null = null;
+  let trns: Buffer | null = null;
+  let p = 8;
+  while (p < buf.length) {
+    const len = buf.readUInt32BE(p);
+    const type = buf.toString('ascii', p + 4, p + 8);
+    const data = buf.subarray(p + 8, p + 8 + len);
+    if (type === 'IHDR') {
+      w = data.readUInt32BE(0);
+      h = data.readUInt32BE(4);
+      depth = data[8]!;
+      colorType = data[9]!;
+      if (data[12] !== 0) throw new Error('decodePng: interlaced PNG unsupported');
+    } else if (type === 'PLTE') plte = Buffer.from(data);
+    else if (type === 'tRNS') trns = Buffer.from(data);
+    else if (type === 'IDAT') idat.push(Buffer.from(data));
+    else if (type === 'IEND') break;
+    p += 12 + len;
+  }
+  const channels = colorType === 2 ? 3 : colorType === 4 ? 2 : colorType === 6 ? 4 : 1;
+  if (depth === 16) throw new Error('decodePng: 16-bit depth unsupported');
+  if (colorType !== 3 && depth !== 8) throw new Error(`decodePng: depth ${depth} unsupported for colour type ${colorType}`);
+
+  const bitsPerPixel = channels * depth;
+  const bpp = Math.max(1, bitsPerPixel >> 3); // filter byte-distance
+  const stride = Math.ceil((w * bitsPerPixel) / 8);
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+
+  // Unfilter scanlines in place into `recon`.
+  const recon = Buffer.alloc(h * stride);
+  const paeth = (a: number, b: number, c: number): number => {
+    const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c);
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+  };
+  for (let y = 0; y < h; y++) {
+    const ft = raw[y * (stride + 1)]!;
+    const fi = y * (stride + 1) + 1;
+    const ri = y * stride;
+    for (let x = 0; x < stride; x++) {
+      const f = raw[fi + x]!;
+      const a = x >= bpp ? recon[ri + x - bpp]! : 0;
+      const b = y > 0 ? recon[ri - stride + x]! : 0;
+      const c = x >= bpp && y > 0 ? recon[ri - stride + x - bpp]! : 0;
+      let v: number;
+      if (ft === 0) v = f;
+      else if (ft === 1) v = f + a;
+      else if (ft === 2) v = f + b;
+      else if (ft === 3) v = f + ((a + b) >> 1);
+      else if (ft === 4) v = f + paeth(a, b, c);
+      else throw new Error(`decodePng: bad filter ${ft}`);
+      recon[ri + x] = v & 0xff;
+    }
+  }
+
+  const rgba = new Uint8Array(w * h * 4);
+  const put = (i: number, r: number, g: number, b: number, al: number): void => {
+    rgba[i] = r; rgba[i + 1] = g; rgba[i + 2] = b; rgba[i + 3] = al;
+  };
+  for (let y = 0; y < h; y++) {
+    const ri = y * stride;
+    for (let x = 0; x < w; x++) {
+      const di = (y * w + x) * 4;
+      if (colorType === 3) {
+        // indexed: unpack `depth`-bit sample, look up PLTE (+ tRNS alpha).
+        const bitPos = x * depth;
+        const byte = recon[ri + (bitPos >> 3)]!;
+        const shift = 8 - depth - (bitPos & 7);
+        const v = (byte >> shift) & ((1 << depth) - 1);
+        const pi = v * 3;
+        put(di, plte![pi]!, plte![pi + 1]!, plte![pi + 2]!, trns && v < trns.length ? trns[v]! : 255);
+      } else if (colorType === 2) put(di, recon[ri + x * 3]!, recon[ri + x * 3 + 1]!, recon[ri + x * 3 + 2]!, 255);
+      else if (colorType === 6) put(di, recon[ri + x * 4]!, recon[ri + x * 4 + 1]!, recon[ri + x * 4 + 2]!, recon[ri + x * 4 + 3]!);
+      else if (colorType === 4) { const g = recon[ri + x * 2]!; put(di, g, g, g, recon[ri + x * 2 + 1]!); }
+      else { const g = recon[ri + x]!; put(di, g, g, g, 255); } // grayscale
+    }
+  }
+  return { rgba, width: w, height: h };
+}
+
 /** Encode an RGBA image as a PNG buffer. */
 export function encodePng(img: ImageData): Buffer {
   const { width: w, height: h, rgba } = img;

@@ -113,10 +113,17 @@ const VARIANT_B: TreecapVariant = {
   topRowTiles:        DATA_treecap_tiles_b,
   stemTile:           0x3DB3,
   defaultLastRowTile: 0x3DAD,
-  neighbourMatchA:    0x001A1A,
-  neighbourStampA:    0x001A1E,
-  neighbourMatchB:    0x001A52,
-  neighbourStampB:    0x001A56,
+  // Cart CODE_treecap_stamp_b (Bank13.asm:10531): `LDY $1A1A ; CMP $1A1E ; BEQ`
+  // then `LDY $1A52 ; CMP $1A56 ; BEQ` — the CMP operand is the MATCH, the LDY
+  // operand is the STAMP. Variant B's slot offsets are the mirror of variant A:
+  // match is the +$08/+$06 slot, stamp the +$04/+$02 slot (A has them the other
+  // way round). Earlier this pair was transposed, so a treecap base sitting on a
+  // log ($1A1E surface tile, e.g. 2-3 obj idx 120) missed the graft and stamped
+  // the on-ground default $3DAD instead of the on-log overlay $1A1A.
+  neighbourMatchA:    0x001A1E,
+  neighbourStampA:    0x001A1A,
+  neighbourMatchB:    0x001A56,
+  neighbourStampB:    0x001A52,
 };
 
 // ─────────────────────────────────────────────────────────────────────

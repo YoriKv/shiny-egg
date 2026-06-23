@@ -1,4 +1,4 @@
-// Public surface of the ROM-import engine (plan-rom-import.md). Pure
+// Public surface of the ROM-import engine. Pure
 // framework-side ROM analysis: given a foreign cart + the base V1.0 cart, it
 // re-anchors the top-level tables, decodes the foreign level streams, and diffs
 // them against base. The app layer (src/main/rom-import.ts) wraps this into the

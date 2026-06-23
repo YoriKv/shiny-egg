@@ -43,13 +43,12 @@
 // contiguous $0E-tile run: $8D54-$8D61, +$0E, +$1C, +$2A). The cart's PRNG
 // is HV-counter noise our static LFSR cannot reproduce.
 //
-// The trace harness deterministically observed $A1 = $001C across ALL six
-// spec runs (e.g. AD col0row0 = $8D54 + $1C = $8D70). To match the spec
-// cells byte-for-byte we replicate that observed offset (CRYSTAL_A1_OFFSET).
-// At true static-decode time the live game would randomise among the 4
-// colours; this is the brief's PRNG caveat (cosmetic colour pick differs
-// from a live run). Set CRYSTAL_A1_OFFSET = 0 for the raw base-colour
-// variant if a deterministic non-trace default is preferred later.
+// The $A1 colour offset is PRNG-picked from DATA_128FA5 = {0,$0E,$1C,$2A} by
+// `prng & 6` (init, once per object). We roll it faithfully via prngNext: under
+// per-site replay (RNG_SITE.crystalClusterInit) it reproduces a captured run's
+// colour exactly; otherwise the LFSR picks a valid colour (cosmetic — same $8Dxx
+// page, so never a structural diff). (Earlier this was hard-coded to the single
+// trace-observed value $1C, which under-modelled the per-object randomisation.)
 //
 // Verified per-cell (offset $1C applied) against ext-A[DEF]/B[0-2] spec.json
 // mapid+buf_addr timelines: AD col0->8D70/8D72/8D74 col1->8D71/8D73/8D75;
@@ -59,13 +58,14 @@ import type { DecodeState, PerCellHandler } from '../state.ts';
 import { registerExtObjectHandler } from './index.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { stampCell } from './_shared.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 
 const CRYSTAL_CLUSTER_BASE_ID = 0xad;
 
-// $A1 PRNG-selected variation offset. The cart picks one of
-// DATA_128FA5 = {0,$0E,$1C,$2A}; every trace deterministically observed $1C.
-// See header — modeled as the observed value to match the spec cells.
-const CRYSTAL_A1_OFFSET = 0x001c;
+// DATA_128FA5 — the $A1 colour-offset pool, PRNG-picked by `prng & 6` (byte
+// offset into these 4 words). Each offset shifts the whole cluster to one of 4
+// contiguous $8Dxx colour variants.
+const A1_POOL: readonly number[] = [0x0000, 0x000e, 0x001c, 0x002a];
 
 // DATA_128FAD — row extent ($2E) per variant (extID order from 0xAD).
 const ROW_EXTENT: readonly number[] = [0x0003, 0x0003, 0x0002, 0x0002, 0x0002, 0x0002];
@@ -99,8 +99,8 @@ function crystalClusterFamily(state: DecodeState): void {
   const extId = state.zp15 & 0xff;
   const variant = extId - CRYSTAL_CLUSTER_BASE_ID;
   if (variant < 0 || variant >= TILE_TABLES.length) return; // not ours
-  // $A1 PRNG colour offset — modeled as the trace-observed value (see header).
-  state.zpA1 = CRYSTAL_A1_OFFSET;
+  // $A1 PRNG colour offset — `JSL prng ; AND #6 ; TAY ; LDA DATA_128FA5,y`.
+  state.zpA1 = A1_POOL[(prngNext(state, RNG_SITE.crystalClusterInit) & 0x06) >>> 1]!;
   // Col extent is the constant $0002 (`LDA #$0002 : STA $2A`).
   state.zp2A = 0x0002;
   // Re-encode $15 = variant*2 (cart `... SBC #$AD : ASL : STA $15`).

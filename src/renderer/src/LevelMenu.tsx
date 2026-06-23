@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type JSX } from 'react'
+import type { RemovedLevelEntry } from '../../preload/api'
 import { formatLevelId, getLevel, useLevelsCatalog } from './data/levels'
 import { useDropdown } from './hooks/useDropdown'
 
@@ -23,21 +24,43 @@ function parseRecordId(raw: string): number | null {
 export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element {
   const { open, setOpen, containerRef } = useDropdown()
   const [gotoText, setGotoText] = useState('')
-  const [gotoError, setGotoError] = useState(false)
+  // null = no error; a string is the message shown under the field (bad id, or a
+  // refused removed record).
+  const [gotoError, setGotoError] = useState<string | null>(null)
   const selectedRef = useRef<HTMLButtonElement>(null)
   const catalog = useLevelsCatalog()
 
   // Jump to any data record by id — including rooms not in the catalog or
   // reachable as sub-rooms. loadLevel reports empty/unbacked records, so we
-  // don't pre-validate against the catalog here.
-  const submitGoto = (e: FormEvent): void => {
+  // don't pre-validate against the catalog here. The one exception is REMOVED
+  // levels (see below): the catalog list already hides them, and this field
+  // would otherwise be a back door to a level whose data the next build drops.
+  const submitGoto = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
     const id = parseRecordId(gotoText)
     if (id === null) {
-      setGotoError(true)
+      setGotoError('Enter a record id between 0x00 and 0xFF.')
       return
     }
-    setGotoError(false)
+    // Removed levels are flagged for build-time reclaim: their Ptrs row is
+    // repointed and their bytes deleted at the next build, so opening one and
+    // editing it would be silently discarded. Refuse it here (the field bypasses
+    // the catalog filter that hides them from the list below).
+    let removed: RemovedLevelEntry[] = []
+    try {
+      removed = await window.shinyEgg.editor.removedLevels()
+    } catch {
+      /* lookup failed — fall through and allow the jump rather than block it */
+    }
+    const hit = removed.find((r) => r.recordId === id)
+    if (hit) {
+      setGotoError(
+        `${formatLevelId(id)}${hit.name ? ` — ${hit.name}` : ''} was removed. ` +
+          'Restore it in Level Banks to open it.'
+      )
+      return
+    }
+    setGotoError(null)
     setGotoText('')
     onSelect(id)
     setOpen(false)
@@ -49,7 +72,7 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
   useEffect(() => {
     if (!open) {
       setGotoText('')
-      setGotoError(false)
+      setGotoError(null)
       return
     }
     selectedRef.current?.scrollIntoView({ block: 'nearest' })
@@ -87,23 +110,26 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
 
       {open && (
         <div className="se-levelmenu__pop">
-          <form className="se-levelmenu__goto" onSubmit={submitGoto}>
-            <span className="se-levelmenu__gotolabel">Go to room</span>
-            <span className="se-levelmenu__gotoprefix">0x</span>
-            <input
-              className={`se-levelmenu__gotoinput${gotoError ? ' is-error' : ''}`}
-              value={gotoText}
-              onChange={(e) => {
-                setGotoText(e.target.value)
-                setGotoError(false)
-              }}
-              placeholder="ID"
-              maxLength={4}
-              spellCheck={false}
-              autoComplete="off"
-              title="Open any data record by id (0x00–0xFF), including rooms not listed below"
-            />
-          </form>
+          <div className="se-levelmenu__gotowrap">
+            <form className="se-levelmenu__goto" onSubmit={(e) => void submitGoto(e)}>
+              <span className="se-levelmenu__gotolabel">Go to room</span>
+              <span className="se-levelmenu__gotoprefix">0x</span>
+              <input
+                className={`se-input se-levelmenu__gotoinput${gotoError ? ' is-error' : ''}`}
+                value={gotoText}
+                onChange={(e) => {
+                  setGotoText(e.target.value)
+                  setGotoError(null)
+                }}
+                placeholder="ID"
+                maxLength={4}
+                spellCheck={false}
+                autoComplete="off"
+                title="Open any data record by id (0x00–0xFF), including rooms not listed below"
+              />
+            </form>
+            {gotoError && <div className="se-levelmenu__gotoerror">{gotoError}</div>}
+          </div>
           {catalog.groups.map((group) => (
             <div className="se-levelmenu__group" key={group.label}>
               <div className="se-levelmenu__grouphead">{group.label}</div>

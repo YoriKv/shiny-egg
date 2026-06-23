@@ -68,6 +68,7 @@ import { registerExtObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { stampCell } from './_shared.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 
 // A per-cell tile-table entry is either a literal Map16 ID (cart's last-row
 // stamp, or a non-last-row entry whose deref yields a fixed $8Dxx ID), or a
@@ -103,6 +104,27 @@ const TABLE_C173: CellEntry[][] = [
   [lit(0x8D19), lit(0x8D1A), lit(0x8D1B)],    // row 2 (last)
 ];
 
+// DATA_12C189[X=$0000] -> $C131 (B6 / prngBit=0 variant).
+//   dw $19DE,$1A4A,$1A52,$19E8,->$8D08,->$8D09,$8D0A,$8D0B,$8D0C
+const TABLE_C131: CellEntry[][] = [
+  [slot(0x19DE), slot(0x1A4A), slot(0x1A52)], // row 0
+  [slot(0x19E8), lit(0x8D08), lit(0x8D09)],   // row 1
+  [lit(0x8D0A), lit(0x8D0B), lit(0x8D0C)],    // row 2 (last)
+];
+
+// DATA_12C189[X=$0004] -> $C15D (B7 / prngBit=0 variant).
+//   dw $1A2C,$1A3A,$19F2,->$8D0D,->$8D0E,$19FC,$8D0F,$8D10,$8D11
+const TABLE_C15D: CellEntry[][] = [
+  [slot(0x1A2C), slot(0x1A3A), slot(0x19F2)], // row 0
+  [lit(0x8D0D), lit(0x8D0E), slot(0x19FC)],   // row 1
+  [lit(0x8D0F), lit(0x8D10), lit(0x8D11)],    // row 2 (last)
+];
+
+// DATA_12C189 pointer table — sub-table by ($15 >> 1) where the init encodes
+// $15 = (((extID & 1) << 1) + prngBit) << 1. So index 0/1/2/3 =
+// B6-bit0 / B6-bit1 / B7-bit0 / B7-bit1.
+const MUSHROOM_BIG_TABLES: readonly CellEntry[][][] = [TABLE_C131, TABLE_C147, TABLE_C15D, TABLE_C173];
+
 // ── per-cell stamper (ports CODE_12C191 $12:C191) ────────────────────────
 function stampFromTable(state: DecodeState, table: CellEntry[][]): void {
   const col = state.zp28 & 0xff;
@@ -119,37 +141,33 @@ function stampFromTable(state: DecodeState, table: CellEntry[][]): void {
   }
 }
 
-// B6 path: spec-observed variant -> sub-table $C147.
-const perCellB6: PerCellHandler = (state) => {
-  stampFromTable(state, TABLE_C147);
-};
-
-// B7 path: spec-observed variant -> sub-table $C173.
-const perCellB7: PerCellHandler = (state) => {
-  stampFromTable(state, TABLE_C173);
+// Per-cell stamper: $15 (set by the init to the encoded sub-table index)
+// selects one of the four sub-tables; the grid index is (row*3 + col).
+const mushroomBigStamp: PerCellHandler = (state) => {
+  const table = MUSHROOM_BIG_TABLES[(state.zp15 >> 1) & 0x03]!;
+  stampFromTable(state, table);
 };
 
 // ── init (ports CODE_extobj_handler_mushroom_big_pair $12:9011) ──────────
 //
-// We branch the dispatch on the original ext ID (state.zp15 carries the ext
-// ID when our handler is entered). The cart re-encodes $15 into the sub-table
-// index via the prng bit before the walker runs; we pick the sub-table
-// directly per ID using the spec-observed prngBit=1 variant (see header).
-// Extents are set exactly as the cart does ($2A = $2E = 3) so the walker
-// geometry — and thus the per-cell (col,row) counters — matches.
-function initB6(state: DecodeState): void {
+// state.zp15 carries the ext ID on entry. The cart re-encodes it into the
+// sub-table index via `prng & 1` ($12:901E) before the walker runs:
+//   LDA #3 ; STA $2A ; STA $2E
+//   JSL prng ; AND #1 ; STA $00
+//   LDA $15 ; AND #1 ; ASL ; ADC $00 ; ASL ; STA $15
+//   → $15 = (((extID & 1) << 1) + prngBit) << 1, selecting one of FOUR
+//   sub-tables (B6/B7 × prngBit). All four are now ported (TABLE_C131/_C147/
+//   _C15D/_C173), so the roll is tagged for per-site replay. Extents $2A=$2E=3
+//   match the cart so the walker geometry (col,row counters) lines up.
+function initMushroomBigPair(state: DecodeState): void {
   state.zp2A = 0x0003;
   state.zp2E = 0x0003;
-  walkerSetupTrampoline(state, perCellB6);
-}
-
-function initB7(state: DecodeState): void {
-  state.zp2A = 0x0003;
-  state.zp2E = 0x0003;
-  walkerSetupTrampoline(state, perCellB7);
+  const prngBit = prngNext(state, RNG_SITE.mushroomBigPairInit) & 0x0001;
+  state.zp15 = ((((state.zp15 & 0x0001) << 1) + prngBit) << 1) & 0xffff;
+  walkerSetupTrampoline(state, mushroomBigStamp);
 }
 
 export function installExtMushroomBigPairHandlers(): void {
-  registerExtObjectHandler(0xB6, initB6);
-  registerExtObjectHandler(0xB7, initB7);
+  registerExtObjectHandler(0xB6, initMushroomBigPair);
+  registerExtObjectHandler(0xB7, initMushroomBigPair);
 }

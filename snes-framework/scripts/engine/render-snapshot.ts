@@ -23,12 +23,13 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
 import { type SymbolMap } from './symbol-map.ts';
 import { loadDevCart, FRAMEWORK_ROOT } from './dev-cart.ts';
-import { loadLevel, loadLevelMapPublic } from '../level.ts';
-import { renderLevelLayers } from './render-level-layers.ts';
-import type { LevelData } from '../types.ts';
+import { loadLevel } from '../level.ts';
+// Hashing + backed-level enumeration are shared with the committed Vitest
+// regression test (render-parity.vitest.test.ts) — one source of truth so the
+// goldens and this ad-hoc tool can never disagree on what a layer hashes to.
+import { renderLevelHashes, backedLevelIds, buildGolden, GOLDEN_PATH } from './render-parity.ts';
 import { hex } from '../hex.ts';
 import { hexN, parseHexId } from './cli-util.ts';
 
@@ -46,31 +47,6 @@ function loadRomAndSymbols(): { rom: Uint8Array; symbols: SymbolMap } {
   }
 }
 
-function sha(...parts: Array<ArrayLike<number>>): string {
-  const hash = crypto.createHash('sha256');
-  for (const p of parts) hash.update(Buffer.from(p as Uint8Array));
-  return hash.digest('hex').slice(0, 16);
-}
-
-/** Render a level's high-signal outputs and return a hash per output. Returns
- *  null for empty / special / short-header slots (nothing to render). */
-function renderLevelHashes(
-  rom: Uint8Array,
-  symbols: SymbolMap,
-  level: LevelData
-): Record<string, string> | null {
-  const r = renderLevelLayers(rom, symbols, FRAMEWORK_ROOT, level);
-  if (!r) return null;
-  return {
-    decode: sha(r.decode.levelDataBuffer, r.decode.screenPageMap),
-    bg1: sha(r.bg1.rgba),
-    bg2: sha(r.bg2.rgba),
-    bg3: sha(r.bg3.rgba),
-    sprite: r.sprite ? sha(r.sprite.rgba) : 'none',
-    collision: sha(r.collision.rgba)
-  };
-}
-
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
 function parseId(s: string): number {
@@ -85,23 +61,34 @@ const idHexOf = (n: number) => hexN(n);
 
 const [, , mode, idArg] = process.argv;
 const all = process.argv.includes('--all');
-if (mode !== 'snapshot' && mode !== 'check') {
+if (mode !== 'snapshot' && mode !== 'check' && mode !== 'golden') {
   console.error('Usage: render-snapshot.ts <snapshot|check> <levelRecordId | --all>');
+  console.error('       render-snapshot.ts golden   (rewrite the committed render-parity golden)');
   console.error('  e.g. render-snapshot.ts snapshot 0x10');
   console.error('       render-snapshot.ts check --all');
   process.exit(2);
 }
-if (!all && (!idArg || idArg.startsWith('--'))) {
+if (mode !== 'golden' && !all && (!idArg || idArg.startsWith('--'))) {
   console.error('Missing <levelRecordId> (or pass --all).');
   process.exit(2);
 }
 
 const { rom, symbols } = loadRomAndSymbols();
 
+// `golden` mode: rewrite the committed render-parity golden from the current
+// V1.0 build. Run this ONLY when an asm/build change legitimately alters the
+// render (the render-parity Vitest test then locks in the new baseline).
+if (mode === 'golden') {
+  const golden = buildGolden(rom, symbols);
+  fs.writeFileSync(GOLDEN_PATH, JSON.stringify(golden, null, 2) + '\n');
+  console.log(`Wrote golden: ${path.relative(process.cwd(), GOLDEN_PATH)}  (${golden.levelCount} levels)`);
+  process.exit(0);
+}
+
 /** Render + hash one level's outputs, or null for empty/special/unbacked. */
 function hashesFor(id: number): Record<string, string> | null {
   const level = loadLevel({ workRoot: FRAMEWORK_ROOT, levelRecordId: id });
-  return renderLevelHashes(rom, symbols, level);
+  return renderLevelHashes(rom, symbols, level) as Record<string, string> | null;
 }
 
 function writeSnapshot(id: number, hashes: Record<string, string>): void {
@@ -129,12 +116,7 @@ function diffSnapshot(id: number, hashes: Record<string, string>, log: boolean):
 
 if (all) {
   // Every backed level (objectFile present), in id order.
-  const map = loadLevelMapPublic(FRAMEWORK_ROOT);
-  const ids = Object.entries(map.levels)
-    .filter(([, e]) => e.objectFile)
-    .map(([k]) => Number(k))
-    .filter((n) => Number.isFinite(n))
-    .sort((a, b) => a - b);
+  const ids = backedLevelIds(FRAMEWORK_ROOT);
 
   if (mode === 'snapshot') {
     let n = 0;

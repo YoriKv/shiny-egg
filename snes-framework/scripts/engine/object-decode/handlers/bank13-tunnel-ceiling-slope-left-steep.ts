@@ -39,9 +39,10 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { getMap16Below, getMap16Left, getMap16Right } from '../fetch.ts';
+import { getMap16Below } from '../fetch.ts';
 import {
   floorRandom8wayPick, readBuf16, stampCell, writeBuf16,
+  bigFloorLeftEdgeFix, bigFloorRightEdgeFix,
 } from './_shared.ts';
 import { TT } from '../template-slots.ts';
 
@@ -84,43 +85,22 @@ const DATA_tunnel_ceiling_slope_left_steep_tiles: ReadonlyArray<number> = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────
-// CODE_big_floor_left_fix / CODE_big_floor_right_fix.
+// CODE_big_floor_left_fix / CODE_big_floor_right_fix ($13:C570 / $13:C64D) —
+// the wide-floor overlap-seam fixer, shared with the right-steep sibling and
+// ported once in _shared.ts (`bigFloorLeftEdgeFix` / `bigFloorRightEdgeFix`).
+// Each probes the left/right NEIGHBOUR and, if it's a wide-floor-page tile
+// (a previously-stamped tunnel/floor), remaps that NEIGHBOUR cell in place to
+// the matching connector.
 //
-// Each probes the neighbour in its direction; if the neighbour's page
-// byte ($1100) matches `TileTpl_WideFloorPage_Anchor` ($1BE0 → $1D00),
-// the asm dereferences `DATA_floor_left_neighbour_remap,y` (left) / `DATA_floor_above_neighbour_remap,y` (right)
-// and stamps the resolved tile into the current cell.
-//
-// As in $85, the DATA_floor_left_neighbour_remap / DATA_floor_above_neighbour_remap slot pages are a parallel
-// template family not currently modelled by `state.templateAt`. The
-// observed traces show the page-byte CMP fails on every probe
-// (neighbours are uniformly $0000 = uninitialised), so the remap never
-// fires. We perform the probe (for trace fidelity) but treat the
-// CMP-match branch as a no-op.
+// This was wrongly stubbed as a no-op on the premise that neighbours are
+// always $0000 — true only for a fresh decode with no overlap. In real levels
+// a $14 tunnel often abuts this slope: record $69 cell (53,81) holds the
+// tunnel's $1D12; $86 #239's col0 left-fix remaps it (idx 13 → slot $1BFA →
+// $1D0D), the value the live cart shows. The stub left it as $1D12.
 // ─────────────────────────────────────────────────────────────────────
 
-/** Probe the left/right neighbour with full 16-bit cursor composition
- *  (preserves $1C / page byte so `getMap16_*` resolves the screen
- *  correctly when the walker's current cell sits on a non-zero page).
- *  Identical to the helper used in $85. */
-function setProbeToCurrent16(state: DecodeState): void {
-  state.zp0E = (state.zp1B | (state.zp1C << 8)) & 0xffff;
-  state.zp0F = state.zp1C & 0xff;
-}
-
-function bigFloorLeftFix(state: DecodeState): void {
-  setProbeToCurrent16(state);
-  const off = getMap16Left(state);
-  void readBuf16(state, off);
-  void state.templateAt(TT.WideFloorPage_Anchor);
-}
-
-function bigFloorRightFix(state: DecodeState): void {
-  setProbeToCurrent16(state);
-  const off = getMap16Right(state);
-  void readBuf16(state, off);
-  void state.templateAt(TT.WideFloorPage_Anchor);
-}
+const bigFloorLeftFix = bigFloorLeftEdgeFix;
+const bigFloorRightFix = bigFloorRightEdgeFix;
 
 // ─────────────────────────────────────────────────────────────────────
 // CODE_ceiling_endcap_match_below / CODE_ceiling_endcap_match_below_alt

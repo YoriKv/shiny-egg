@@ -11,10 +11,12 @@
 //      (missing) boxes at the target cell + connectors to a partner sprite.
 // Enforce deps draw both states; info-only deps draw POSITIVE connections only
 // (met, non-own-cell target — grinder↔tree, Slugger↔ChompRock, piranha↔pipe);
-// and nothing ever draws at the sprite's own cell when met (mouser-on-hole,
-// ice-snap, spawners — noise; the met state is implied by the absent red
-// badge). Deps with no resolvable target (carried Key in another record, the
-// note annotations) live only in the Properties "Neighbours" section.
+// and nothing draws at the sprite's own cell when met (mouser-on-hole, spawners
+// — noise; the met state is implied by the absent red badge), with ONE
+// exception: a met ice-snap draws a 16x16 box at the spot the frozen enemy snaps
+// to — half a tile down-and-right of its cell, centred in the ice cube. Deps
+// with no resolvable target (carried Key in another record, the note
+// annotations) live only in the Properties "Neighbours" section.
 // See lib/sprite-neighbor-deps.ts + the validation harness.
 
 import type { LevelSprite, SpriteCelBounds } from '../../../../preload/api'
@@ -119,9 +121,11 @@ export function drawNeighborIndicators(
  *    at the sprite's own cell (grinder ↔ tree trunk, Slugger ↔ Chomp Rock,
  *    piranha ↔ pipe mouth, pinwheel ↔ rail below, door ↔ same-record Key).
  *    Absence is never an error, so missing info deps draw nothing.
- *  - ANY target at the sprite's own cell draws nothing — a box/ring under the
- *    sprite is pure noise (mouser ON its hole, ice-snap, pipe spawners; the
- *    met state is implied by the absent red badge). */
+ *  - A target at the sprite's own cell draws nothing — a box/ring under the
+ *    sprite is pure noise (mouser ON its hole, pipe spawners; the met state is
+ *    implied by the absent red badge). The ice-snap is the exception: it draws a
+ *    16x16 box half a tile down-and-right of the cell — where the enemy snaps
+ *    to, centred in the ice cube. */
 export function drawNeighborSelectionOverlay(
   ctx: CanvasRenderingContext2D,
   sprite: LevelSprite,
@@ -134,6 +138,23 @@ export function drawNeighborSelectionOverlay(
     const target = r.targetCell ?? (r.targetSprite && { cx: r.targetSprite.x, cy: r.targetSprite.y })
     const ownCell = target !== undefined && target.cx === sprite.x && target.cy === sprite.y
     if (!r.dep.enforce && (r.status !== 'met' || !target)) continue
+    // ice-snap: the asm prologue CODE_02A007 offsets the sprite +8px in BOTH X
+    // and Y (`& $FFF0 | $0008` on each) before writing the position back, so a
+    // cell-aligned placement lands half a tile DOWN and to the RIGHT of its cell
+    // — centred in the 2x2 ice cube. Draw a 16x16 dashed-teal box at that snapped
+    // spot (cell origin + half a tile) to show where the frozen enemy ends up.
+    // No connector — the box already sits on the selected sprite.
+    if (r.dep.cls === 'ice-snap' && r.status === 'met' && r.targetCell) {
+      const { cx, cy } = r.targetCell
+      const inset = 1 / zoom
+      const half = CELL_PX / 2 // asm snap shifts the sprite +8px (half a 16px tile) in X and Y
+      ctx.strokeStyle = OK
+      ctx.lineWidth = 2 / zoom
+      ctx.setLineDash([4 / zoom, 3 / zoom])
+      ctx.strokeRect(cx * CELL_PX + half + inset, cy * CELL_PX + half + inset, CELL_PX - 2 * inset, CELL_PX - 2 * inset)
+      ctx.setLineDash([])
+      continue
+    }
     if (ownCell && r.status === 'met') continue
     const color = r.status === 'met' ? OK : ERROR
     const met = r.status === 'met'

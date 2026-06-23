@@ -54,25 +54,30 @@
 // ($1C5C/$1C5E = TileTpl_FloorRow0_Left/RightLo, or slots $1DB4/$1DB6), the
 // cart swaps to the indirect table DATA_12AD7D (Bank12.asm:6568):
 //   dw $0013,$0014,$1DC6,$1DC8,$0000,$0000,$000E,$000F,$0011,$0012,$1DCA,$1DCC
-// Some entries are WRAM template-slot ADDRESSES; the cart reads DATA_12AD7D[Y]
-// and dereferences it (`LDA $0000,y`) to fetch a floor-blended replacement
-// Map16 ID. That deref reads a runtime WRAM slot the static decoder doesn't
-// model, so we honor the gate but fall through to the plain DATA_12AD79[Y]
-// value when it fires. Safe for every observed cell: in BOTH captured traces
-// the existing cell is $0000 (all four CMPs miss) → normal branch → output
-// is exactly DATA_12AD79[Y]. (Static buffers start zeroed; the overlay only
-// matters when an arrow-sign is placed directly over a pre-stamped floor.)
+// The slot-address entries ($1DC6/$1DC8/$1DCA/$1DCC) are WRAM template slots the
+// decoder DOES model (`state.templateAt`), so the deref is ported: the overlay
+// pick = templateAt(DATA_12AD7D[elem]). On record $26 the arrow's bottom row
+// sits on a floor template → the gate fires → templateAt($1DC6/$1DC8) = the
+// floor-blended $6A26/$6A27 the cart produces. (The literal entries are only
+// reached on row-0 indices, where the gate never fires for shipped levels — row
+// 0 is above the floor — so their templateAt → 0 is never observed.)
 //
-// ── Side paths after the value is picked (both trace-confirmed no-ops) ────
-//  • If LevelHeaderBG1TilesetLo == 4 AND row 0: a tileset-specific remap via
-//    DATA_12AD95 (dw $0025,$0026,$0033,$0034). Neither test level uses BG1
-//    tileset 4, so this branch is skipped.
-//  • CPY #$000C : BNE store — taken (Y ∈ {$00..$06,$10..$16}, never == $0C),
-//    so the DATA_12AD9D remap (dw $000C,$000D,$008E,$008F,$0013,$0014) is
-//    skipped.
-// Both fall straight through to the plain stamp in the traces; we document
-// them rather than port remaps that are dead for our inputs and key off
-// runtime tileset state we don't model.
+// ── Side paths after the value is picked (keyed on the BG1 TILESET) ───────
+// Both `CPY` checks below test Y = LevelHeaderBG1TilesetLo (NOT the cell
+// index — an earlier porting error assumed the latter and dropped the remap):
+//  • tileset == 4 AND row 0: remap via DATA_12AD95 (dw $0025,$0026,$0033,$0034)
+//    by (pick - $000C). Record $26 DOES use BG1 tileset 4, so this IS ported.
+//    The U2 build adds a get_map16_below-gated skip (`!ROM_YI_U2` conditional);
+//    V1.0 (our build target) runs it unconditionally, which is what we model.
+//  • tileset == $0C (the jungle tileset — World 1-1 uses it): the base pick is
+//    DISCARDED and the cell is remapped through DATA_12AD9D
+//    (dw $000C,$000D,$008E,$008F,$0013,$0014) by Y2 = (row*2 + col)*2:
+//      row 0       → DATA_12AD9D[col]            = $000C / $000D
+//      row 1, $85xx underneath → DATA_12AD9D[2+col] = $008E / $008F
+//      row 1, otherwise        → DATA_12AD9D[4+col] = $0013 / $0014
+//    The row-1 gate is `($12 & $FF00) == $8500` — i.e. is the existing cell an
+//    $85xx (slope/ledge decoration) tile. This is the path that makes a $50
+//    sign blend onto jungle ground.
 //
 // Buffer offsets fall out of the walker (+2/col, +0x20/row) — handled by
 // walkerSetupTrampoline + stampCell. The trace's interleaved CODE_128874 /
@@ -108,6 +113,32 @@ const TPL_FLOOR_ROW0_RIGHT_LO = 0x1c5e; // !RAM_YI_Level_TileTpl_FloorRow0_Right
 const TPL_SLOT_1DB4 = 0x1db4;
 const TPL_SLOT_1DB6 = 0x1db6;
 
+// DATA_12AD9D ($12:AD9D) — BG1-tileset-$0C (jungle) remap table, indexed by
+// Y2 = (row*2 + col)*2 (+4 on row 1 when the cell underneath isn't $85xx).
+const DATA_12AD9D = [0x000c, 0x000d, 0x008e, 0x008f, 0x0013, 0x0014] as const;
+// BG1 tileset whose stamp goes through the DATA_12AD9D remap (cart CPY #$000C).
+const JUNGLE_BG1_TILESET = 0x0c;
+
+// DATA_12AD95 ($12:AD95) — BG1-tileset-$04 (e.g. record $26) ROW-0 remap table,
+// indexed by (pick - $000C). The cart's tileset-4 side path (CODE_12ADDE) only
+// fires on row 0 and recomputes the cell as DATA_12AD95[base_pick - $000C].
+// (V1.0 build: the path is unconditional. The U2 build inserts an extra
+// `get_map16_below`-gated skip — `!ROM_YI_U2` conditional — which we don't build.)
+const DATA_12AD95 = [0x0025, 0x0026, 0x0033, 0x0034] as const;
+
+// DATA_12AD7D ($12:AD7D) — floor-overlay INDIRECT table. When the cell being
+// stamped already holds a floor-row template tile (CODE_12ADD2 gate), the cart
+// reads DATA_12AD7D[elem] as a WRAM ADDRESS and derefs it (`LDA $0000,y`) for a
+// runtime floor-blended Map16 ID. The slot-address entries ($1DC6/$1DC8/$1DCA/
+// $1DCC) resolve through `state.templateAt`; the literal entries ($0013/$0014/
+// $000E.. and $0000) are only reachable on row-0 indices, where the overlay
+// gate doesn't fire for any shipped level (row 0 sits above the floor), so their
+// `templateAt` (→ 0 for non-slot addresses) is never observed.
+const DATA_12AD7D = [
+  0x0013, 0x0014, 0x1dc6, 0x1dc8, 0x0000, 0x0000,
+  0x000e, 0x000f, 0x0011, 0x0012, 0x1dca, 0x1dcc,
+] as const;
+
 /** True when the existing cell holds one of the four floor-row template
  *  tiles — the cart's trigger for the indirect DATA_12AD7D overlay path.
  *  Compares $12 against the runtime-populated template slots. */
@@ -131,12 +162,42 @@ function isFloorUnderneath(state: DecodeState): boolean {
 const arrowSignStamp: PerCellHandler = (state) => {
   const col = state.zp28 & 0xff;
   const row = state.zp2C & 0xff;
-  const wordIndex = ((state.zp15 & 0xff) + (col << 1) + (row << 2)) >>> 1;
-  // Overlay gate: when a floor tile sits underneath, the cart would deref
-  // DATA_12AD7D[Y] (a runtime WRAM pointer); unresolvable statically, so we
-  // proceed with the plain pick. `isFloorUnderneath` is false for both traces.
-  void isFloorUnderneath(state);
-  stampCell(state, ARROW_SIGN_TILES[wordIndex]!);
+  const tileset = state.header[1] & 0xff;
+
+  // ── Base pick ($00 in the cart) — overlay branch vs normal table ──
+  // CODE_12ADD2: when the cell already holds one of the four floor-row template
+  // tiles, the cart reads DATA_12AD7D[elem] as a WRAM address and derefs it for
+  // a runtime floor-blended ID (`state.templateAt`). Otherwise it's the plain
+  // DATA_12AD79 pick. (The earlier port modeled only the gate and always used
+  // the plain pick, which dropped the bottom-row floor blends, e.g. $6A26 on
+  // record $26.)
+  const elem = ((state.zp15 & 0xff) + (col << 1) + (row << 2)) >>> 1;
+  const pick = isFloorUnderneath(state)
+    ? state.templateAt(DATA_12AD7D[elem]!) & 0xffff
+    : ARROW_SIGN_TILES[elem]!;
+
+  // ── Tileset side paths (keyed on BG1 tileset; mutually exclusive) ──
+  // BG1 tileset $04 (e.g. record $26), ROW 0 only: remap the pick through
+  // DATA_12AD95 by (pick - $000C). (V1.0 unconditional; U2 adds a
+  // get_map16_below gate we don't build.)
+  if (tileset === 0x04 && row === 0) {
+    stampCell(state, DATA_12AD95[(pick - 0x000c) & 0xffff] ?? pick);
+    return;
+  }
+
+  // BG1 tileset $0C (jungle, e.g. World 1-1): the pick is discarded and the
+  // cell is remapped through DATA_12AD9D (cart CODE_12ADF7). Row 1 picks the
+  // floor-blended $008E/$008F when an $85xx tile sits underneath, else $0013/
+  // $0014.
+  if (tileset === JUNGLE_BG1_TILESET) {
+    let y2 = ((row << 1) | col) << 1; // (row*2 + col)*2
+    if (y2 >= 4 && (state.zp12 & 0xff00) !== 0x8500) y2 += 4;
+    stampCell(state, DATA_12AD9D[y2 >> 1]!);
+    return;
+  }
+
+  // Any other tileset: store the base pick as-is.
+  stampCell(state, pick);
 };
 
 // ─────────────────────────────────────────────────────────────────────

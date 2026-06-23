@@ -4,7 +4,7 @@
 // checkpoint table) in DATATABLE_YI_LevelDataPtrsAndEntranceData.asm; this reads
 // the same two tables straight from a built cart's bytes so the importer can diff
 // a hack's spawns / level-remaps / progression / checkpoints against base and
-// apply the changes back through saveWorldMapResource. See plan-rom-import.md §10.
+// apply the changes back through saveWorldMapResource.
 //
 // SCOPE (matches the editor's): the entrance RECORD tables only. The translevel→
 // record INDEX tables (DATA_level_entrance_indexes / …_midway_…) are NOT read —

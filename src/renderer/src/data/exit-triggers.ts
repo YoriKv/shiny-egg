@@ -63,7 +63,8 @@
 // `CODE_0EB8AE` and, standing on a tagged tile (or $79F1/$79F2), become
 // generators that emit enemies from the pipe (the neighbour-dep "Class F"
 // relationship). The tag feeds BOTH mechanics; the per-tile DATA_0AEBBC entry
-// bits are what gate the player warp.
+// bits are what gate the player warp. Canonical engine note for the $14 tag
+// (both mechanics, full encoding): snes-framework/docs/mchip.md §3.3.2.
 //
 // CAUTION: do NOT trust the codegraph's symbol names here — $F0-$F3 are labeled
 // "PipeVerticalEnterable" but are actually Moving 3D Stones (their init registers

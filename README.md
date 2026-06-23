@@ -5,17 +5,21 @@ A Yoshi's Island (SNES) level editor.
 Features:
 - Full tile and sprite editing with copy/paste, undo, and multiselect
 - Palette editing with live preview
+- Graphics editing with edit as PNG and export to Aseprite file
 - Level header editing with live preview
 - World map editor
 - Strings editor
 - Memory management (migrate levels to free space)
 - ASM and binary patches that are resistant to address drift
 - Import an existing romhack
+- Import levels from GBA
+- Integrated help and documentation for every panel and tool as well as
+  tooltips for various pieces of game data
 - Test framework that supports arbitrary spawn position for level testing
 - Hopefully more to come...
 
-This tool is still very much in alpha. There's still a lot of metadata work
-to be done, but should be very usable despite that.
+This tool is in alpha and a work in progress, but improving steadily. Check
+the changelog for the latest updates.
 
 ## Requirements
 
@@ -47,6 +51,9 @@ work this tool couldn't exist. So thank you to these folks and many more.
   & level lists.
 - **The Cutting Room Floor** - unused-content and debug documentation.
 - **Blumiere (Count Bleck) & Yoshis Fan** - sprite-set compatibility lists.
+- **[Advynia](https://github.com/KarisaAdvynia/Advynia)** (KarisaAdvynia) - the
+  GBA Yoshi's Island editor whose pointer maps and conversion code make
+  importing levels from the Game Boy Advance version possible.
 - **asar**, **BizHawk**, **Mesen**, and **Lunar Compress** - the assembler,
   emulators, and compression reference behind the build, testing, and graphics
   decoding.

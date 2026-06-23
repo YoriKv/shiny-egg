@@ -29,7 +29,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, jungleWallNeighbourClassify } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -101,12 +101,10 @@ const jungleLeftWallStamp: PerCellHandler = (state) => {
   }
 
   // Rows 3+: random body with optional neighbour-override.
-  // Cart pattern: JSL prng ; AND #$0001 ; CLC ; ADC #$909E. (Original asm
-  // omits a CLC before the ADC; the carry happens to be whatever the
-  // HV-counter math leaves behind. Our deterministic LFSR can't replicate
-  // that carry, so we treat the ADC as carry-clear — matches the spec's
-  // observed outputs for the documented seed sequence.)
-  const rand = prngNext(state) & 0x01;
+  // Cart pattern: JSL prng ; AND #$0001 ; CLC ; ADC #$909E (CLC present → carry 0).
+  // Tagged for per-site replay — aligns exactly for fully-on-screen walls; see the
+  // RNG_SITE.jungleLeftWallBody note re: off-screen rows / contaminated sub-rooms.
+  const rand = prngNext(state, RNG_SITE.jungleLeftWallBody) & 0x01;
   let stamp = (JUNGLE_WALL_BODY_BASE + rand) & 0xffff;
 
   const y = jungleWallNeighbourClassify(state);

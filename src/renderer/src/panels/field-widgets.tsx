@@ -46,7 +46,7 @@ export function NumberField({
   }
   return (
     <input
-      className="se-props__num"
+      className="se-input se-props__num"
       value={local}
       disabled={disabled}
       spellCheck={false}
@@ -76,7 +76,7 @@ export function EnumField({
   const known = options.some((o) => o.value === value)
   return (
     <select
-      className="se-props__select"
+      className="se-input se-props__select"
       value={value}
       disabled={disabled}
       onChange={(e) => onCommit(parseInt(e.target.value, 10))}
@@ -96,7 +96,9 @@ export type LevelPickerSource = { kind: 'catalog' } | { kind: 'ids'; ids: number
 /** The single shared "pick a level / sub-room" dropdown. Options come from the
  *  catalog (grouped by world) or an explicit id list; the current value is always
  *  kept selectable (as its own option) even when it isn't in the list, so an
- *  off-list id is shown + preserved. Labels via the shared `levelLabel`. */
+ *  off-list id is shown + preserved — a sub-room reachable only via a midway warp
+ *  isn't found by the root's warp-graph BFS, so the picker must never drop the
+ *  current value. Labels via the shared `levelLabel`. */
 export function LevelPicker({
   value,
   source,
@@ -114,7 +116,7 @@ export function LevelPicker({
   const inSet = source.kind === 'catalog' ? getLevel(value) !== undefined : source.ids.includes(value)
   return (
     <select
-      className="se-props__select"
+      className="se-input se-props__select"
       value={value}
       disabled={disabled}
       onChange={(e) => onCommit(parseInt(e.target.value, 10))}
@@ -177,7 +179,7 @@ export function FieldRow({
       <dd className="se-props__field" title={hint}>
         {field.kind === 'num' ? (
           <>
-            {field.hex && <span className="se-props__hexprefix">0x</span>}
+            {field.hex && <span className="se-meta se-props__hexprefix">0x</span>}
             <NumberField
               value={value}
               min={field.min}

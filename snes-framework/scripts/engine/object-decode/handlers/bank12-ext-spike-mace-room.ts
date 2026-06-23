@@ -85,11 +85,15 @@ const DATA_12AE2C = [
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────
-// DATA_12AB60 ($12:AB60). Sentinel Map16 IDs for the edge-column gate.
-// Words $3D00, $3D60; indexed by Y>>1 (Y ∈ {0, 2}).
+// DATA_12AB60 ($12:AB60). Sentinel Map16 IDs for the edge-column gate —
+// the WALL-THICK ($48) edge tiles $015A (col 0) / $015B (last col). When a
+// wall tile sits in the spike-mace's edge column, the gate rewrites it to the
+// carved-edge tile $015C. Pinned to ROM: `dw $015A,$015B` (Bank12.asm).
+// (Was wrongly transcribed as $3D00/$3D60, so the gate never fired and the
+// underlying $48 wall tile survived instead of being carved to $015C.)
 // ─────────────────────────────────────────────────────────────────────
 
-const DATA_12AB60 = [0x3D00, 0x3D60] as const;
+const DATA_12AB60 = [0x015A, 0x015B] as const;
 
 // ─────────────────────────────────────────────────────────────────────
 // CODE_12AE3C — per-cell stamper. See header for the verified algorithm.

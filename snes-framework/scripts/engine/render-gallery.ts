@@ -15,7 +15,7 @@ import { loadLevelGfx, type GfxHeader } from './load-graphics.ts';
 import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
 import { loadTileAnimation } from './load-tile-animation.ts';
 import { loadMap16Tables } from './map16.ts';
-import { loadSceneRegs } from './scene-regs.ts';
+import { loadSceneRegs, bgLayerBpp } from './scene-regs.ts';
 import type { SymbolMap } from './symbol-map.ts';
 
 const TILE_PIXELS_W = 8;
@@ -225,9 +225,10 @@ export function renderVramGrid(
  * Lays out cells in a `cellsPerRow`-wide grid starting at Map16 ID
  * `firstId` (high byte = page, low byte = within-page tile index).
  *
- * The asm uses tile-base = VRAM `$0000` for BG1 (per the standard mode the
- * level loader configures). Sub-tile tile-index is a 10-bit value (0..1023)
- * directly addressing 32-byte 4bpp tiles starting at that base.
+ * Sub-tile tile-index is a 10-bit value (0..1023) addressing tiles at
+ * `bg1CharAddr` (resolved from the level's BG mode via scene-regs). The tile
+ * stride + decoder follow that mode's BG1 colour depth — 32-byte 4bpp in BG
+ * Mode 1/2, 16-byte 2bpp in BG Mode 0 (level mode $0A) — via `bgLayerBpp`.
  */
 /**
  * Render an explicit list of Map16 IDs into a `cellsPerRow`-wide grid image.
@@ -257,12 +258,19 @@ function renderMap16CellList(
   }, vram);
   loadLevelPalettes(rom, symbols, header, cgram);
   const tables: Map16Tables = loadMap16Tables(rom, symbols);
-  const bg1CharAddr = loadSceneRegs(rom, symbols, header.levelMode ?? 0).bg1CharAddr;
+  const regs = loadSceneRegs(rom, symbols, header.levelMode ?? 0);
+  const bg1CharAddr = regs.bg1CharAddr;
+  // BG1 colour depth from the scene's BG mode (2bpp in BG Mode 0 / level mode
+  // $0A) — NOT a hardcoded 4bpp (which jumbled $6B's Map16 tiles). See bgLayerBpp.
+  const bpp = bgLayerBpp(regs.bgmodeMode, 'bg1');
+  const tileBytes = bpp === 4 ? TILE_BYTES_4BPP : TILE_BYTES_2BPP;
+  const blit = bpp === 4 ? blit4bppTile : blit2bppTile;
 
-  // Pre-build all 8 palette rows for fast per-sub-tile lookup.
+  // Pre-build all 8 palette rows/groups for fast per-sub-tile lookup (16 colours
+  // per row at 4bpp, 4 per group at 2bpp).
   const palettes: Uint32Array[] = [];
   for (let r = 0; r < 8; r++) {
-    palettes.push(buildPaletteRow(cgram, r, false));
+    palettes.push(buildPaletteRow(cgram, r, false, 'expand', bpp === 4 ? 16 : 4));
   }
 
   const cellCount = ids.length;
@@ -306,9 +314,9 @@ function renderMap16CellList(
     const cellY = row * MAP16_PIXELS;
     for (let s = 0; s < 4; s++) {
       const st = subTilesArr[s];
-      const tileByteOff = (bg1CharAddr + st.tileIndex * TILE_BYTES_4BPP) & 0xffff;
-      if (tileByteOff + TILE_BYTES_4BPP > vram.length) continue;
-      blit4bppTile(
+      const tileByteOff = (bg1CharAddr + st.tileIndex * tileBytes) & 0xffff;
+      if (tileByteOff + tileBytes > vram.length) continue;
+      blit(
         vram,
         tileByteOff,
         palettes[st.paletteRow],

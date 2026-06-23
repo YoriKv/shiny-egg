@@ -37,9 +37,9 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupKeepSlope } from '../walker.ts';
-import { prngNext } from '../prng.ts';
-import { stampCell, signed8, shiftOriginNibble } from './_shared.ts';
-import { jungleFloorRandomFillBiased, slopeFixLeftEdge } from './bank13-slopes-misc.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
+import { stampCell, signed8, shiftOriginNibble, jungleFloorRandomFillBiased } from './_shared.ts';
+import { slopeFixLeftEdge } from './bank13-slopes-misc.ts';
 
 // DATA_13F73F..DATA_13F75F — 5 distinct 4-word records for $E6.
 // Each entry is [row0, row1, row2, row3]. $0000 entries = "skip stamp".
@@ -96,7 +96,7 @@ const stampSlopeDownLeftShort: PerCellHandler = (state) => {
   // `LDA $2C / BNE` only tests row — each new column at row=0 picks a
   // fresh variant from the 8-entry ptr table.
   if (row === 0) {
-    state.zpA1 = (prngNext(state) & 0x07) << 1;
+    state.zpA1 = (prngNext(state, RNG_SITE.slopeDownLeftShort) & 0x07) << 1;
   }
   const variant = (state.zpA1 >>> 1) & 0x07;
   const recordIdx = SLOPE_DOWN_LEFT_SHORT_VARIANT_TO_RECORD[variant]!;

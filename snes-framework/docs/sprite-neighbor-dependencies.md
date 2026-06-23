@@ -52,8 +52,8 @@ the 5-bit secondary tag; low bits = shape flags), **R5 != 0 = solid/occupied**.
 | E | Screen-exit metadata (5 warps + frog-pirate swallow) | required / enabling | screen-metadata |
 | F | Tile-conditional behaviour (pipe spawners, dirt diggers, pipe centring) | enabling / cosmetic | Map16 tile / collision tag |
 
-**Grade**: *required* = absence breaks the sprite (editor error); *enabling* =
-placement adds behaviour, absence is a valid sprite (editor info annotation);
+**Grade**: *required* = absence breaks the sprite; *enabling* =
+placement adds behaviour, absence is still a valid sprite;
 *cosmetic* = alignment only.
 
 ---
@@ -167,7 +167,7 @@ Sprites that read *another placed sprite* (not a child they spawn themselves).
 | `$067` | RockRevealedHiddenWingedCloud | `$09E` ChompRock **or** `$0DC` Snowball | per-frame proximity probe `FXCODE_099011` + ID check (`Bank0F.asm:2090-2096`) | **positional** -- the rock must be able to roll into the cloud's box | **required** -- prize unreachable (10/10 shipped levels have one) |
 | `$15C` / `$15D` | Green/Red RotatingPlatformSwitch | `$15F` / `$160` platform (same colour) | writes global pair-state `$0FD5,y` (`y` = colour) on egg-hit (`Bank0D.asm:5509`) | **global by colour** -- position irrelevant | **required** -- dead switch |
 | `$15F` / `$160` | Green/Red SpikedPlatform | `$15C` / `$15D` switch (same colour) | reads global `$0FD1,y` / `$0FD5,y` | **global by colour** | **required** -- never flips |
-| `$04E` / `$131` / `$0CA` | LockedDoor / BigBossDoor | `$027` Key | door reads the top of Yoshi's egg-inventory stack `$7DF6`, checks ID == `$027` (`Bank02.asm:3811`) | carried (the player brings the key over -- a connected sub-room in every shipped case) | **required** but cross-record -- editor info only |
+| `$04E` / `$131` / `$0CA` | LockedDoor / BigBossDoor | `$027` Key | door reads the top of Yoshi's egg-inventory stack `$7DF6`, checks ID == `$027` (`Bank02.asm:3811`) | carried (the player brings the key over -- a connected sub-room in every shipped case) | **required** but cross-record -- satisfied in a connected room, informational only |
 | `$1A4` | KeyholeCork | `$027` Key | unlock path `CODE_07FE73` checks the carried sprite | carried | as the locked doors |
 | `$033` | LittleMouserExitingNest | `$02F` LittleMouserHole | by-ID nearest-sprite probe `FXCODE_098EBF` (`#$002F`) -- homes on the nearest ACTIVE nest | **same cell** -- the mouser pops out of its hole (confirmed in-game; all 22 shipped placements at distance 0) | **required** -- no nest under it; the pop-out visual breaks |
 | `$0F5` | Slugger | `$09E` ChompRock | by-ID probe `FXCODE_098EBF` (`#$009E`): bats an approaching rock back (XSpeed +/-$400); `$09E`'s own scan reciprocally excludes Slugger (`Bank0E.asm:8736`) | global | **enabling** -- the Baseball Boys duel; swings at Yoshi/eggs regardless (9/15 shipped placements co-occur) |
@@ -189,7 +189,7 @@ The neighbour is per-screen level metadata, not a placed sprite/object.
 | `$0D1` | SecretPipeEntrance | same, plus a level-event enable flag (`$7E08`) | same + the enable flag |
 | `$084` | TeleportSprite | same (invisible trigger) | same |
 | `$017` | FrogPirate | fires a screen exit from its swallow state (`CODE_0EEC2C` -> `CODE_02A4B5` -- the Prince Froggy gulp -> belly warp) | an exit row; **spatial rule unresolved** (only 1/7 shipped placements has an exit on its own/adjacent screen -- likely keyed to the player's screen at swallow time). Annotation only until traced. |
-| `$0AD` | MessageBox | level ID (`$00:021A`) + its own sub-cell X/Y bit-4 -> one of 4 message slots | the level's four message strings; sub-cell placement picks which. Position-ENCODING, not a neighbour -- not carried in the editor metadata. |
+| `$0AD` | MessageBox | level ID (`$00:021A`) + its own sub-cell X/Y bit-4 -> one of 4 message slots | the level's four message strings; sub-cell placement picks which. Position-ENCODING, not a neighbour -- not a carried dependency. |
 
 The warp destination is **not** read from the sprite's own coordinates -- it comes
 from the screen-exit row.

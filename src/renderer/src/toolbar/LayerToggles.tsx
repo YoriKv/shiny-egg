@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from 'react'
-import type { LayerVisibility } from '../types'
+import type { GridMode, LayerVisibility } from '../types'
 
 export interface LayerTogglesProps {
   layers: LayerVisibility
@@ -119,13 +119,35 @@ const EXIT_PATH = 'M3 4 L3 13 L9 13 L9 4 Z M9 8 L14 8 M12 6 L14 8 L12 10'
 // with what" without trying to depict any specific collision category.
 const COLLISION_PATH = 'M2 2 L14 2 L14 14 L2 14 Z M2 14 L14 4 M11 12 L12 12'
 
-// Grid icon — an outer box divided into a 3×3 lattice. Mirrors the canvas
-// grid overlay (per-screen lines + editable-boundary rectangle) that this
-// toggle shows/hides.
-const GRID_PATH =
-  'M2 2 L14 2 L14 14 L2 14 Z ' + // outer boundary
-  'M6 2 L6 14 M10 2 L10 14 ' +   // interior vertical lines
-  'M2 6 L14 6 M2 10 L14 10'      // interior horizontal lines
+// Grid icon — reflects the 3-state GridMode: an empty box ('off'), a coarse
+// 3×3 lattice ('screen'), or a fine 5×5 lattice ('tile'). The button's
+// is-active class (mode ≠ 'off') drives brightness; the lattice density is what
+// distinguishes the screen grid from the denser tile grid.
+function gridIcon(mode: GridMode): ReactNode {
+  const box = 'M2 2 L14 2 L14 14 L2 14 Z'
+  const coarse = ' M6 2 L6 14 M10 2 L10 14 M2 6 L14 6 M2 10 L14 10'
+  const fine =
+    ' M4.4 2 L4.4 14 M6.8 2 L6.8 14 M9.2 2 L9.2 14 M11.6 2 L11.6 14' +
+    ' M2 4.4 L14 4.4 M2 6.8 L14 6.8 M2 9.2 L14 9.2 M2 11.6 L14 11.6'
+  return (
+    <path
+      d={box + (mode === 'tile' ? fine : mode === 'screen' ? coarse : '')}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  )
+}
+
+// Tooltip for the grid button — names the action a click performs (advancing to
+// the NEXT mode), mirroring the `describe(active)` verb the boolean toggles use.
+const GRID_NEXT_ACTION: Record<GridMode, string> = {
+  off: 'Show screen grid',
+  screen: 'Show tile grid',
+  tile: 'Hide grid'
+}
 
 // Object-editing icon — a dashed-outline rectangle with a small label tab in
 // the corner. Communicates "blueprint outlines drawn over the foreground" —
@@ -199,15 +221,22 @@ export function LayerToggles({ layers, onToggle }: LayerTogglesProps): JSX.Eleme
     {
       key: 'grid',
       label: 'Background grid',
-      describe: (a) => `${a ? 'Hide' : 'Show'} background grid`,
-      render: (active) => pathIcon(GRID_PATH, false, active)
+      // 3-state cycle (off → screen → tile). Both the tooltip and the icon read
+      // layers.grid directly; the loop's boolean `active` only drives the
+      // is-active styling (true for both 'screen' and 'tile').
+      describe: () => `${GRID_NEXT_ACTION[layers.grid]} (G)`,
+      render: () => gridIcon(layers.grid)
     }
   ]
 
   return (
     <div className="se-toolbar__layers">
       {cells.map((it) => {
-        const active = layers[it.key]
+        // `active` is the on/off state for the button styling + the boolean
+        // icons. Boolean layers map straight through; the 3-state grid counts
+        // as "on" in any mode but 'off'.
+        const raw = layers[it.key]
+        const active = typeof raw === 'boolean' ? raw : raw !== 'off'
         const tip = it.describe
           ? it.describe(active)
           : `${active ? 'Hide' : 'Show'} ${it.label}${it.tag ? ` (${it.tag})` : ''}`

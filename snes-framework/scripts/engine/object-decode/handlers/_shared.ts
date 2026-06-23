@@ -31,7 +31,7 @@
 // stamped every overlapping-block cell across 20 levels.
 
 import type { DecodeState, PerCellHandler } from '../state.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { TT } from '../template-slots.ts';
 import {
   getMap16Left, getMap16Right, getMap16Above, getMap16Below,
@@ -275,9 +275,31 @@ export const DATA_floor_random_grass_8way_pool = [
  *  entry from `DATA_floor_random_grass_8way_pool` and stamps the dereferenced template-slot
  *  Map16 ID into the current walker cell. */
 export function floorRandom8wayPick(state: DecodeState): void {
-  const idx = prngNext(state) & 0x07;
+  const idx = prngNext(state, RNG_SITE.floorRandom8wayPick) & 0x07;
   const slot = DATA_floor_random_grass_8way_pool[idx]!;
   stampCell(state, state.templateAt(slot));
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Jungle floor random-fill — the row≥4 body fill shared by every slope
+// family ($E5–$EC). Cart `CODE_jungle_floor_random_fill` ($13:F654, PRNG
+// roll at $13:F658): `(prng & $0F) + bias`, clamp to $0F, stamp. Single
+// home here; slope handlers import it (it was copy-pasted into 4 files).
+// ─────────────────────────────────────────────────────────────────────
+
+/** `DATA_jungle_floor_fill_tiles` ($13:F634) — 16 entries (last 6 are the
+ *  weighted "boring" $79E0), indexed by the clamped PRNG pick. */
+export const DATA_jungle_floor_fill_tiles = [
+  0x79BB, 0x79BC, 0x79BD, 0x79BE, 0x79BF, 0x79C0, 0x79C1, 0x79C2,
+  0x79C3, 0x79C4, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0,
+] as const;
+
+/** `CODE_jungle_floor_random_fill` — `bias` enters in `$00`; PRNG-pick 0..15,
+ *  add bias, clamp to 15, stamp. PRNG site = `jungleFloorFill` ($13:F658). */
+export function jungleFloorRandomFillBiased(state: DecodeState, bias: number): void {
+  let pick = (prngNext(state, RNG_SITE.jungleFloorFill) & 0x0F) + bias;
+  if (pick > 0x0F) pick = 0x0F;
+  stampCell(state, DATA_jungle_floor_fill_tiles[pick]!);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -323,15 +345,17 @@ export const DATA_jungle_foliage_pool = [
 
 /** Cart `CODE_jungle_floor_random_body` ($13:9049, Bank13.asm:2061).
  *
- *  PRNG + $2C, AND $1E, index DATA_138FE1 as words → stamp. The asm
- *  uses `ADC $2C` with no preceding CLC, so the carry from CODE_prng
- *  (HV-counter noise) is whatever happens to be set. Our deterministic
- *  LFSR can't replicate that, so we treat the ADC as carry-clear — the
- *  variant pool is correct, individual picks won't byte-match a specific
- *  cart-snapshot trace. Cosmetic-only impact (foliage variant within
- *  the 16-entry pool). */
+ *  PRNG + $2C + 1, AND $1E, index DATA_138FE1 as words → stamp. The asm
+ *  uses `ADC $2C` with NO preceding CLC, but the carry-in is NOT noise:
+ *  every one of the six entry paths into the routine arrives via a `CMP`
+ *  where A >= operand (rows≥3 `CMP #3;BCS`, the mud-floor `CMP #2;BCC;JMP`,
+ *  the two slope `CMP #3;BCC;JMP`, the two row-2 `CMP #2;BNE;JMP`), all of
+ *  which leave carry SET — and CODE_prng's PHP/PLP preserves it across the
+ *  JSL. So the carry-in is a CONSTANT 1; the `+ 1` here is exact, not a
+ *  fudge. (DATA_138FE1 = DATA_jungle_foliage_pool, verified byte-identical;
+ *  its six $906D duplicates mean ~37% of cells render $906D regardless.) */
 export function jungleFloorRandomBody(state: DecodeState): void {
-  const idx = ((prngNext(state) + (state.zp2C & 0xff)) & 0x1e) >>> 1;
+  const idx = ((prngNext(state, RNG_SITE.jungleFloorRandomBody) + (state.zp2C & 0xff) + 1) & 0x1e) >>> 1;
   stampCell(state, DATA_jungle_foliage_pool[idx]!);
 }
 
@@ -470,35 +494,13 @@ export function scanAnchor(table: ReadonlyArray<number>, needle: number): number
   return -1;
 }
 
-/** Slim port of CODE_bg_floor_random (Bank13.asm:310).
- *
- *  Per-cell handler: probes the current cell; if it's already a bound
- *  marker (FlatFloor_RndBoundA/B) or sits in the "no-seam" range
- *  (`[FlatFloor_NoSeamCheckA, slot_1CE8)`), leaves it. Otherwise picks
- *  from the 8-entry random-grass pool and stamps.
- *
- *  This is the variant used by slope handlers ($04/$05 22°, $06-$09 45°,
- *  etc.) that fall through to `bg_floor_random` for row-N+ tiles. It
- *  skips the FlatFloor-specific CODE_bg_floor_random_seam_fix neighbour-fix pass — that
- *  pass's side effects only fire when neighbours equal `RndAdjMatch`,
- *  which doesn't occur on slope-tail cells (neighbours are either
- *  zero-initialised buffer or previously-stamped slope tiles).
- *
- *  Object $01's full handler (with neighbour fix) stays inline in
- *  `bank13-floor.ts:bgFloorRandom` — it differs by the
- *  `bgFloorRandomNeighbourFix(state)` step before the pool pick. */
-export const bgFloorRandomSlim = (state: DecodeState): void => {
-  const cur = state.zp12 & 0xffff;
-  const rndBoundA = state.templateAt(TT.FlatFloor_RndBoundA);
-  const rndBoundB = state.templateAt(TT.FlatFloor_RndBoundB);
-  const noSeamA   = state.templateAt(TT.FlatFloor_NoSeamCheckA);
-  if (cur === rndBoundA || cur === rndBoundB) return;
-  const slot1CE8Id = state.templateAt(SLOT_RND_POOL_4);
-  if (cur >= noSeamA && cur < slot1CE8Id) return;
-  const idx = prngNext(state) & 0x07;
-  const slotAddr = DATA_floor_random_grass_8way_pool[idx]!;
-  stampCell(state, state.templateAt(slotAddr));
-};
+// NOTE: there is deliberately NO "slim" bg_floor_random variant. The cart
+// installs the FULL CODE_bg_floor_random ($13:80B4) everywhere the random-grass
+// fill is used — std-01 init_floor_basic, std-87/88 init_floor_no_deco_top, the
+// 22°/45° slope row-handlers ($04-$09), and stamp_floor_3wide (rock-in-waterfall).
+// All five route through `bank13-floor.ts:bgFloorRandom`. An earlier slim port
+// that dropped the last-row branch (slope-cap / exit no-roll cases) desynced the
+// per-site PRNG replay at $13:810C — the roll cadence must match the cart exactly.
 
 // ─────────────────────────────────────────────────────────────────────
 // Wide-floor seam remap tables + the in-place remapper.
@@ -542,6 +544,36 @@ export function wideFloorNeighbourFix(
   const idx = table[cur & 0xff];
   if (idx === undefined) return; // beyond the named 46-entry table — leave as-is
   stampCell(state, state.templateAt(TT.WideFloorPage_Anchor + idx * 2));
+}
+
+/** Cart `CODE_big_floor_left_fix` / `CODE_big_floor_right_fix`
+ *  ($13:C570 / $13:C64D). DISTINCT from `wideFloorNeighbourFix`: probes the
+ *  LEFT/RIGHT *neighbour*; if its PAGE byte matches WideFloorPage_Anchor it
+ *  remaps that neighbour via the left/right table and writes the resolved tile
+ *  back INTO THE NEIGHBOUR cell (cart `STA buffer,x` with X = the probe's
+ *  offset) — NOT the current cell. The overlap-seam fixer: when a slope/tunnel
+ *  edge cell abuts a previously-stamped wide-floor tile (e.g. a $14 tunnel's
+ *  $1D-page tile), it rewrites that neighbour to the matching connector.
+ *  (Was wrongly stubbed as a no-op on the premise neighbours are always $0000 —
+ *  true only for a non-overlapping fresh decode; in real levels tunnels abut
+ *  these slopes. e.g. record $69 (53,81): left neighbour $1D12 → idx 13 → slot
+ *  $1BFA → $1D0D.) */
+function bigFloorEdgeFix(state: DecodeState, off: number, table: readonly number[]): void {
+  const neighbour = readBuf16(state, off);
+  if ((neighbour & 0xff00) !== state.templateAt(TT.WideFloorPage_Anchor)) return;
+  const idx = table[neighbour & 0xff];
+  if (idx === undefined) return;
+  writeBuf16(state, off, state.templateAt(TT.WideFloorPage_Anchor + idx * 2));
+}
+
+export function bigFloorLeftEdgeFix(state: DecodeState): void {
+  setProbeToCurrent(state);
+  bigFloorEdgeFix(state, getMap16Left(state), WIDE_FLOOR_REMAP_LEFT);
+}
+
+export function bigFloorRightEdgeFix(state: DecodeState): void {
+  setProbeToCurrent(state);
+  bigFloorEdgeFix(state, getMap16Right(state), WIDE_FLOOR_REMAP_RIGHT);
 }
 
 // ─────────────────────────────────────────────────────────────────────

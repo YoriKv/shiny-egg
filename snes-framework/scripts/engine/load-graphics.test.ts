@@ -120,5 +120,26 @@ console.log(`Loaded symbol map: ${symbols.size} labels`);
   assert(crashes === 0, `all 48 bg3Tileset values decode (${crashes} crashes)`);
 }
 
+// --- Test 5: level-mode $0A loads the special GFX layout, not the header ---
+// The cart's load_levelmode_0A_gfx ($00:B4D3) ignores the header tilesets and
+// walks scene_gfx_layout from $18A (level $6B). loadLevelGfx must produce the
+// same VRAM as that scene walk, and a DIFFERENT VRAM from the header-driven path.
+{
+  const all0: GfxHeader = { bg1Tileset: 0, bg2Tileset: 0, bg3Tileset: 0, spriteTileset: 0, isWorld6: false };
+  const headerDriven = new Uint8Array(0x10000);
+  loadLevelGfx(rom, symbols, all0, headerDriven);
+  const mode0a = new Uint8Array(0x10000);
+  loadLevelGfx(rom, symbols, { ...all0, levelMode: 0x0a }, mode0a);
+
+  let diff = 0;
+  for (let i = 0; i < mode0a.length; i++) if (mode0a[i] !== headerDriven[i]) diff++;
+  assert(diff > 0, `level-mode $0A diverges from the header-driven load (got ${diff} differing VRAM bytes)`);
+  // The mode-$0A program loads BG tiles to VRAM $E000 (file $1B) — non-empty.
+  let nonZeroE000 = 0;
+  for (let i = 0xe000; i < 0xe800; i++) if (mode0a[i] !== 0) nonZeroE000++;
+  assert(nonZeroE000 > 0, `level-mode $0A populates the BG1 char region at VRAM $E000 (${nonZeroE000} non-zero bytes)`);
+  console.log(`level-mode $0A vs header-driven: ${diff} VRAM bytes differ`);
+}
+
 console.log(`\n${failures === 0 ? '✓' : '✗'} ${failures === 0 ? 'all tests pass' : `${failures} failure(s)`}`);
 process.exit(failures === 0 ? 0 : 1);

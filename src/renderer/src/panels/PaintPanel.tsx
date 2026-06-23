@@ -49,7 +49,7 @@ export function PaintBody({
       <label className="se-paint__row">
         <span>Tileset</span>
         <select
-          className="se-props__select"
+          className="se-input se-props__select"
           value={tileset ?? ''}
           onChange={(e) => onTileset(parseInt(e.target.value, 10))}
         >
@@ -73,7 +73,7 @@ export function PaintBody({
       <label className="se-paint__row">
         <span>Fill depth</span>
         <input
-          className="se-props__num"
+          className="se-input se-props__num"
           type="number"
           min={1}
           max={64}

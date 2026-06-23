@@ -27,8 +27,8 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupKeepSlope } from '../walker.ts';
-import { prngNext } from '../prng.ts';
-import { stampCell, signed8, shiftOriginNibble } from './_shared.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
+import { stampCell, signed8, shiftOriginNibble, jungleFloorRandomFillBiased } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
 // DATA_13F7A7..DATA_13F7C7 — 5 distinct 4-word records for $E7.
@@ -51,23 +51,6 @@ const SLOPE_DOWN_LEFT_HALF_RECORDS: readonly (readonly number[])[] = [
 //   dw F7C7, F7BF, F7B7, F7AF, F7A7, F7BF, F7AF, F7A7
 const SLOPE_DOWN_LEFT_HALF_VARIANT_TO_RECORD = [4, 3, 2, 1, 0, 3, 1, 0] as const;
 
-// DATA_jungle_floor_fill_tiles (Bank13.asm:14359). 16 entries — 10
-// distinct $79xx variants + 6 weighted $79E0. Duplicated from
-// `bank13-slopes-misc.ts` to keep this file self-contained; consolidate
-// later if a third file needs it.
-const DATA_jungle_floor_fill_tiles = [
-  0x79BB, 0x79BC, 0x79BD, 0x79BE, 0x79BF, 0x79C0, 0x79C1, 0x79C2,
-  0x79C3, 0x79C4, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0,
-] as const;
-
-/** Cart `CODE_jungle_floor_random_fill` (Bank13.asm:14374). `bias`
- *  (from $00) is added to the PRNG roll and clamped to $0F so deeper
- *  rows skew toward the weighted $79E0 entries. */
-function jungleFloorRandomFillBiased(state: DecodeState, bias: number): void {
-  let pick = (prngNext(state) & 0x0F) + bias;
-  if (pick > 0x0F) pick = 0x0F;
-  stampCell(state, DATA_jungle_floor_fill_tiles[pick]!);
-}
 
 // ─────────────────────────────────────────────────────────────────────
 // $E7 — CODE_stamp_slope_down_left_half (Bank13.asm:14531)
@@ -91,7 +74,11 @@ function jungleFloorRandomFillBiased(state: DecodeState, bias: number): void {
 // cells 0/10/18/24/28 (all col-step row-0 cells) each call prng.
 // ─────────────────────────────────────────────────────────────────────
 
-const stampSlopeDownLeftHalf: PerCellHandler = (state) => {
+// Exported so the shoreline-left handler ($EB) can reuse it as its rows-0..2
+// body, exactly as the cart's `CODE_stamp_shoreline_slope_left` does
+// (`JSL CODE_stamp_slope_down_left_half`). That shared call is what makes the
+// $13F7EE variant roll fire for shoreline columns too.
+export const stampSlopeDownLeftHalf: PerCellHandler = (state) => {
   // Cart: REP #$30; LDA #$0001; STA $9B (narrow-slope signal —
   // consumed by `body_narrow` callers; cosmetic for our decoder but
   // we mirror the write for fidelity with $E6 and the shoreline reuse
@@ -99,7 +86,7 @@ const stampSlopeDownLeftHalf: PerCellHandler = (state) => {
   state.rewound = 0x0001;
   const row = signed8(state.zp2C);
   if (row === 0) {
-    state.zpA1 = (prngNext(state) & 0x07) << 1;
+    state.zpA1 = (prngNext(state, RNG_SITE.slopeDownLeftHalf) & 0x07) << 1;
   }
   if (row >= 4) {
     jungleFloorRandomFillBiased(state, (row - 4) * 2);

@@ -22,9 +22,10 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { getMap16Below, getMap16Left, getMap16Right } from '../fetch.ts';
+import { getMap16Below, getMap16Right } from '../fetch.ts';
 import {
   floorRandom8wayPick, readBuf16, stampCell, writeBuf16,
+  bigFloorLeftEdgeFix, bigFloorRightEdgeFix,
 } from './_shared.ts';
 import { TT } from '../template-slots.ts';
 
@@ -70,53 +71,27 @@ const DATA_tunnel_ceiling_slope_right_steep_tiles: ReadonlyArray<number> = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────
-// CODE_big_floor_left_fix / CODE_big_floor_right_fix.
-//
-// Each probes the neighbour in its direction; if the neighbour's page
-// byte ($1100) matches `TileTpl_WideFloorPage_Anchor` ($1BE0 → $1D00 in
-// the observed traces), the asm dereferences `DATA_floor_left_neighbour_remap,y` (left) or
-// `DATA_floor_above_neighbour_remap,y` (right) using `(neighbour & $FF) * 2` and stamps the
-// resolved tile into the current cell.
-//
-// **Minimal port**: these table reads target a parallel template family
-// not currently modelled by `state.templateAt` (the tables are RAM
-// indirections built by `init_per_tileset_template_slots`). The
-// observed traces show the page-byte CMP fails on every probe (neighbours
-// are uniformly $0000 = uninitialised), so the remap never fires for
-// the spec-test cases. Implementing the remap correctly requires porting
-// the DATA_floor_left_neighbour_remap / DATA_floor_above_neighbour_remap slot pages — out of scope for the
-// $85 init port. We perform the probe (for trace fidelity) but treat
-// the CMP-match branch as a no-op.
+// CODE_big_floor_left_fix / CODE_big_floor_right_fix ($13:C570 / $13:C64D) —
+// the wide-floor overlap-seam fixer, shared with the left-steep sibling and
+// ported once in _shared.ts (`bigFloorLeftEdgeFix` / `bigFloorRightEdgeFix`).
+// Each probes the left/right NEIGHBOUR and, if it's a wide-floor-page tile
+// (a previously-stamped tunnel/floor), remaps that NEIGHBOUR cell in place to
+// the matching connector. Previously stubbed here as a no-op on the false
+// premise that neighbours are always $0000 — true only for a fresh decode
+// with no overlap; see the left-steep sibling's header for the worked
+// record-$69 case.
 // ─────────────────────────────────────────────────────────────────────
 
-/** Probe the left/right/below neighbour. Uses the 16-bit cursor
- *  composition `($1C << 8) | $1B` for zp0E rather than the shared
- *  `setProbeToCurrent` helper — the latter discards $1C (the page-byte)
- *  which matters when the walker's current cell sits on a non-zero page.
- *  fetch.ts reads zp0E as the 16-bit composite (`zp0E & 0x0f0f`,
- *  `zp0E | 0x0f00`, …). Matches the `word1B` reconstruction pattern
- *  used in `bank13-floor-edges.ts` etc. */
+/** Probe coord ($0E/$0F) = current cursor, full 16-bit (preserves the page
+ *  byte $1C). Used by the penultimate-row decorator overwrite below; mirrors
+ *  the cart `LDA $1B ; STA $0E` under REP #$30. */
 function setProbeToCurrent16(state: DecodeState): void {
   state.zp0E = (state.zp1B | (state.zp1C << 8)) & 0xffff;
   state.zp0F = state.zp1C & 0xff;
 }
 
-function bigFloorLeftFix(state: DecodeState): void {
-  // CODE_probe_left_tile: zp0E = zp1B; get_map16_left; LDA buffer,x.
-  setProbeToCurrent16(state);
-  const off = getMap16Left(state);
-  // Probe consumed; CMP against WideFloorPage_Anchor would normally
-  // gate a remap stamp. See header comment for why we no-op the remap.
-  void readBuf16(state, off);
-  void state.templateAt(TT.WideFloorPage_Anchor);
-}
-
-function bigFloorRightFix(state: DecodeState): void {
-  setProbeToCurrent16(state);
-  const off = getMap16Right(state);
-  void readBuf16(state, off);
-  void state.templateAt(TT.WideFloorPage_Anchor);
-}
+const bigFloorLeftFix = bigFloorLeftEdgeFix;
+const bigFloorRightFix = bigFloorRightEdgeFix;
 
 // ─────────────────────────────────────────────────────────────────────
 // CODE_ceiling_endcap_match_below / CODE_ceiling_endcap_match_below_alt

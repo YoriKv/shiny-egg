@@ -276,7 +276,7 @@ function tunnelInputTileClassifier(state: DecodeState): number {
   const cur = state.zp12 & 0xffff;
   const pageByte = cur & 0xff00;
   const anchor = state.templateAt(TT.WideFloorPage_Anchor);
-  if (pageByte === (anchor & 0xff00)) {
+  if (pageByte === anchor) { // cart `CMP WideFloorPage_Anchor` is a full-word compare
     return state.zpA1 & 0xffff;
   }
   for (let i = 0; i < DATA_tunnel_input_tile_classifier.length; i++) {
@@ -475,7 +475,7 @@ export const tunnelDispatch: PerCellHandler = (state) => {
   const cur = state.zp12 & 0xffff;
   const pageByte = cur & 0xff00;
   const anchor = state.templateAt(TT.WideFloorPage_Anchor);
-  if (pageByte === (anchor & 0xff00)) {
+  if (pageByte === anchor) { // cart `CMP WideFloorPage_Anchor` is a full-word compare
     state.zpA1 = (((cur & 0xff) + 1) << 1) & 0xffff;
   }
 
@@ -490,9 +490,14 @@ export const tunnelDispatch: PerCellHandler = (state) => {
     slot = tunnelBoxSubDispatch(state);
   }
 
-  // dispatch_tail: `LDA.w $0000,y ; STA buffer,x`. Y = slot address;
-  // templateAt(slot) reads the populated Map16 ID at that WRAM slot.
-  stampCell(state, state.templateAt(slot));
+  // dispatch_tail: cart `TAY ; LDA $0000,y ; STA buffer,x` deref's the picked
+  // pointer. Most table entries are WRAM template-slot addresses ($19DA..$1FDA),
+  // read via templateAt. A few are pre-resolved RAW Map16 IDs that have no WRAM
+  // slot — the cart deref's a ROM `dw` (e.g. the vcol-top $007D singleton at
+  // $13:875E). Those are below the template-slot range, so stamp them directly;
+  // templateAt(raw) would fall out of range and yield $0000 (record $43/$53).
+  const tile = (slot >= 0x19da && slot < 0x1fda) ? state.templateAt(slot) : slot;
+  stampCell(state, tile & 0xffff);
 };
 
 // ─────────────────────────────────────────────────────────────────────

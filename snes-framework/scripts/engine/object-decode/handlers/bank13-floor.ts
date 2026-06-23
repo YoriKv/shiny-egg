@@ -19,7 +19,7 @@ import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerRun, walkerSetupTrampoline } from '../walker.ts';
 import { TT } from '../template-slots.ts';
 import { getMap16Above, getMap16Below, getMap16Left, getMap16Right } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import {
   stampCell, readBuf16, writeBuf16, setProbeToCurrent, floorRowShiftUp,
   probeLeftTile, probeRightTile, probeAboveTile,
@@ -308,7 +308,7 @@ export const bgFloorRandom: PerCellHandler = (state) => {
 
   // pick_random (CODE_138105): neighbour seam-fix, then the 8-way pool pick.
   bgFloorRandomNeighbourFix(state);
-  const idx = prngNext(state) & 0x07;
+  const idx = prngNext(state, RNG_SITE.floorRandomGrass8way) & 0x07;
   const slotAddr = DATA_floor_random_grass_8way_pool[idx];
   stampCell(state, state.templateAt(slotAddr));
 };
@@ -362,7 +362,7 @@ function initFloorBasic(state: DecodeState): void {
  *  Map16 IDs $79BB..$79C5 (11 foliage variants); else stamp the
  *  fallback $79E0 (53/64 ≈ 83% — most cells get the "boring" tile). */
 const jungleCanopyRandom: PerCellHandler = (state) => {
-  const roll = prngNext(state) & 0x3f;
+  const roll = prngNext(state, RNG_SITE.jungleCanopy) & 0x3f;
   const id = roll < 0x0b ? 0x79BB + roll : 0x79E0;
   stampCell(state, id);
 };
@@ -485,8 +485,8 @@ function bigFloorEdgeFix(
 /** Big-floor non-jungle per-cell stamp (CODE_big_floor_stamp, $13:C2AF):
  *  base PRNG pick, then the position-gated neighbour seam fix-ups. */
 const bigFloorStamp: PerCellHandler = (state) => {
-  // Base pick into the current cell (CODE_floor_random_8way_pick).
-  const idx = prngNext(state) & 0x07;
+  // Base pick into the current cell (CODE_floor_random_8way_pick, shared $13:C163).
+  const idx = prngNext(state, RNG_SITE.floorRandom8wayPick) & 0x07;
   stampCell(state, state.templateAt(DATA_floor_random_grass_8way_pool[idx]));
 
   const col = state.zp28 & 0xffff;
@@ -533,6 +533,15 @@ function initBigFloorOrCanopy(state: DecodeState): void {
 
 const COIN_TILES = [0x6000, 0x7400] as const;
 
+// Object $68/$8A per-cell stamp (cart CODE_stamp_coin, $13:C6C9). The cart gates
+// the stamp on CODE_item_memory_bit_lookup: it stamps the coin ONLY if the cell's
+// collected-items bit is CLEAR in the SRAM item-memory bitmap ($03C0/$0440/$04C0/
+// $0540, selected by the level header's ItemMemorySetting). We DELIBERATELY omit
+// that gate: the editor shows the level's DESIGN (all coins present), which also
+// equals a fresh-save load (all bits zero). Modelling the gate would make a static
+// decoder depend on save/playthrough state — wrong for an editor. (A live capture
+// reached via gameplay can therefore be missing an already-collected coin; that's
+// a capture artifact, not a decode bug — see notes-bg1-trace-rng-parity.md §7.)
 const coinObjectStamp: PerCellHandler = (state) => {
   const slot = (state.zp15 & 0x02) !== 0 ? 1 : 0;
   stampCell(state, COIN_TILES[slot]);
@@ -719,7 +728,7 @@ function wallThickAboveGrassProbe(state: DecodeState): void {
  *      row == 0  → wallHRightProbe
  *      row != 0  → wallHRightProbeRandom
  *      if row+1 == ext (bottom-right corner): wallHBelowRightProbe. */
-function wallThickNeighbourEpilogue(state: DecodeState): void {
+export function wallThickNeighbourEpilogue(state: DecodeState): void {
   const row = state.zp2C & 0xff;
   const rowExt = state.zp2E & 0xff;
   const col = state.zp28 & 0xff;

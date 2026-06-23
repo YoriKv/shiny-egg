@@ -35,7 +35,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, jungleFloorRandomBody } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ const jungleMudFloorStamp: PerCellHandler = (state) => {
   }
 
   // Top body (rows 0..1): random variant 0..3 of the row's seed.
-  const variant = prngNext(state) & 0x0003;
+  const variant = prngNext(state, RNG_SITE.jungleMudFloorTopbody) & 0x0003;
   const seed = DATA_139224[row]!;
   stampCell(state, (seed + variant) & 0xffff);
 };

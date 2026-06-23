@@ -47,7 +47,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, jungleWallNeighbourClassify } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -99,7 +99,9 @@ const jungleRightWallStamp: PerCellHandler = (state) => {
 
   // row >= 3 — random-body path.
   //   JSL CODE_prng ; AND #$0001 ; CLC ; ADC #$9062 ; STA $0A.
-  const base = (RANDOM_BODY_BASE + (prngNext(state) & 0x0001)) & 0xffff;
+  // Tagged for per-site replay — see RNG_SITE.jungleRightWallBody note (aligns for
+  // fully-on-screen walls; partial on off-screen rows / contaminated sub-rooms).
+  const base = (RANDOM_BODY_BASE + (prngNext(state, RNG_SITE.jungleRightWallBody) & 0x0001)) & 0xffff;
 
   //   JSR CODE_jungle_wall_neighbour_classify ; TYA ; BMI (Y==$FFFF) skip override.
   const y = jungleWallNeighbourClassify(state);

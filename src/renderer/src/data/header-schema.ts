@@ -20,8 +20,8 @@
 // authored name is noted; where GoldenEgg was factually wrong (several music
 // tracks, every "Standard level" mode) the authored table wins. All of this was
 // cross-checked against the 157 authored `.prm` level files (which index → which
-// real level). Sprite tileset (7) and BG scroll rate (12) have no per-value
-// names in any table, so they stay plain numeric.
+// real level). Sprite tileset (7) has no per-value names in any table, so it
+// stays plain numeric.
 
 import { HEADER_BIT_WIDTHS } from '../canvas/limits'
 import type { FieldKind } from './property-schema'
@@ -239,6 +239,30 @@ export const BG3_TILESETS: { value: number; label: string }[] = [
   { value: 0x2f, label: 'Sky, Clouds' }
 ]
 
+/** Curated labels for the BG scroll-rate field (header[12], 5-bit). Each value
+ *  selects a row of the engine's parallax-divisor tables that
+ *  `LevelHeaderBGScrollSetting` indexes (`Bank04.asm`: `DATA_04FB6E` /
+ *  `DATA_04FBAE` / `DATA_04FBEE` / `DATA_04FC2E`). The labels spell out the
+ *  per-layer horizontal/vertical scroll *divisors* — how much slower BG2 / BG3
+ *  scroll than BG1 — taken verbatim from the authored `bg_data` "scroll type"
+ *  reference table (e.g. `H/2,V/4` = BG2 scrolls at half the camera speed
+ *  horizontally, a quarter vertically). Only 0x0–0x7, 0xE, 0xF are defined in
+ *  the source; any other value stays selectable as a raw fallback. Parallax is
+ *  not simulated in the live preview, so these are informational — Test Level to
+ *  verify the on-screen feel. */
+export const SCROLL_TYPES: { value: number; label: string }[] = [
+  { value: 0x0, label: 'BG2 H/2 V/4, BG3 H/4 V/8' },
+  { value: 0x1, label: 'BG2 H/2 V/1, BG3 H/4 V/1' },
+  { value: 0x2, label: 'BG2 H/1 V/1, BG3 H/1 V/1 (locked)' },
+  { value: 0x3, label: 'BG2 H/2 V/4, BG3 H/1 V/1' },
+  { value: 0x4, label: 'BG2 H/2 V/4, BG3 none' },
+  { value: 0x5, label: 'BG2 H/2 V/4, BG3 H/4 V/4' },
+  { value: 0x6, label: 'BG2 H/2 V/4, BG3 H/1.2 V/1.2' },
+  { value: 0x7, label: 'BG2 H/2 V/4, BG3 H/2 V/4' },
+  { value: 0xe, label: 'BG2 H/2 (no vertical)' },
+  { value: 0xf, label: 'None (both layers locked)' }
+]
+
 export interface HeaderField {
   /** Index into LevelData.header (0..14). */
   index: number
@@ -299,7 +323,13 @@ export function headerFields(): HeaderField[] {
     ),
     num(10, 'Animation tileset', 'Which frame-0 tile-animation handler runs (water / clouds / lava / …).', true),
     num(11, 'Animation palette', 'Palette row used by the animated tiles.', true),
-    num(12, 'BG scroll rate', 'Parallax scroll/damping mode. No live preview (parallax is not simulated) — Test Level to verify.', false),
+    en(
+      12,
+      'BG scroll rate',
+      SCROLL_TYPES,
+      'Parallax scroll mode — sets how much slower BG2 / BG3 scroll than BG1 (the H/V divisors). No live preview (parallax is not simulated) — Test Level to verify.',
+      false
+    ),
     en(
       13,
       'Music',

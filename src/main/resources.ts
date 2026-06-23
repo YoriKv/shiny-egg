@@ -1,11 +1,11 @@
-// Editable-resource registry (plan step 4): one generic load/save dispatch over
+// Editable-resource registry: one generic load/save dispatch over
 // every editable thing — level data today, asm-backed resources (strings, …) in
 // step 5. The generic `editor:loadResource` / `editor:saveResource` IPC dispatch
 // here — a single source of truth for every editable thing (the level editor
 // loads and saves through the `kind:'level'` backend).
 
 import * as path from 'node:path'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import {
   decodeLevelStreams,
@@ -26,11 +26,16 @@ import {
 } from 'snes-framework/level-budget'
 import { computeBoundaryMoves, type BoundaryMove } from 'snes-framework/boundary-move'
 import { applyLevelDataLayout, type LayoutPlan } from 'snes-framework/relocate'
+import { gfxBlobFileForId, parseGfxPtrTable, writeGfxEdit, GFX_ARENA } from 'snes-framework/gfx-reinsert'
+import { lz2, lz16 } from 'snes-framework/decompress'
+import { setGfxLiveEdit, clearGfxLiveEdit, clearGfxLiveCache, gfxLiveEdits } from './gfx-live-cache'
+import { persistGfxLiveCache } from './gfx-live-persist'
 import {
   carvePatchPool,
   newSlotRows,
   patchPoolGeometry,
   PATCH_POOL_REGION_ID,
+  type FreeRegion,
   type PatchPoolGeometry
 } from 'snes-framework/pool-map'
 import { outputSfcName } from 'snes-framework/rom-versions'
@@ -38,18 +43,31 @@ import { readExtractionState } from 'snes-framework/state'
 import {
   applyPaletteEdits,
   readPaletteEdits,
-  diffPaletteBlob,
-  PALETTE_BLOB_BANK_FILE,
-  PALETTE_BLOB_LABEL
+  PALETTE_BLOB_BANK_FILE
 } from 'snes-framework/palette-edit'
-import type { SymbolMap } from 'snes-framework/symbol-map'
+import {
+  applyIslandTilemapEdits,
+  readIslandTilemapEdits,
+  type IslandTilemapEdit
+} from 'snes-framework/island-tilemap'
+import {
+  applyLogoTilemapEdits,
+  readLogoTilemapEdits,
+  LOGO_TILEMAP_BANK_FILE,
+  type LogoTilemapEdit
+} from 'snes-framework/logo-tilemap'
+import { type SymbolMap } from 'snes-framework/symbol-map'
 import type {
   PaletteEdit,
   PoolBudgetReport,
   PoolOverview,
   RomVersion
 } from 'snes-framework/types'
-import type { ResetLevelResult, SetExitDestResult } from '../shared/ipc-types'
+import type { GfxEditEntry, GfxFileRole, ResetGfxEditResult, ResetLevelResult, SetExitDestResult, SetExitEntranceResult } from '../shared/ipc-types'
+import { loadLevelGfx } from 'snes-framework/load-graphics'
+import { isWorld6Record } from 'snes-framework/level'
+import { loadRomAndSymbols } from './render/rom-cache'
+import type { GfxFileEntry } from 'snes-framework/types'
 import {
   levelNameSlotLabels,
   loadFontTable,
@@ -92,7 +110,7 @@ import { getPatchPoolBytes, hasEnabledAsmPatches } from './patches'
  *  pointer table. The renderer narrows on `'kind' in model` / `model.markup`. */
 type AsmRegionModel = StringTableModel | MessagePtrTableModel
 
-/** Registry of editor-owned `;@editable` asm regions (plan step 5). Each maps a
+/** Registry of editor-owned `;@editable` asm regions. Each maps a
  *  resource id to its backing file (workRoot-relative) and a parse/serialize
  *  pair built on the reusable asm primitives. Add a row to expose a new region
  *  (message-box text, item names, …) — no other wiring needed. The serialize
@@ -277,6 +295,350 @@ export async function saveLevelResource(
 }
 
 /**
+ * Save an edited graphics blob: re-encode the decompressed `tiles` and write the
+ * compressed blob into the active project's overlay (`assets/yi/Graphics/`). The
+ * build's reinsert pipeline (data-only / boundary-move / relocation) then places
+ * it; `dl LABEL` pointers re-resolve, so no repointing. `rowCount` (lz16
+ * tile-rows) is required for lz16. The renderer flags a rebuild on success
+ * (graphics edits don't render live).
+ */
+export function saveGfxEdit(
+  format: 'lz2' | 'lz16',
+  fileId: number,
+  tiles: Uint8Array,
+  rowCount?: number
+): { ok: true; file: string } | { ok: false; error: string } {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+  try {
+    const file = writeGfxEdit(
+      path.join(frameworkWorkRoot(), 'yi'),
+      path.join(overlayRoot(projectId), 'assets', 'yi'),
+      format,
+      fileId,
+      tiles,
+      rowCount
+    )
+    // Mirror into the live-edit cache so the canvas previews this without a
+    // rebuild (the gfx twin of the live palette draft — see gfx-live-cache.ts),
+    // and persist it so the preview survives a project reopen (gfx-live-persist.ts).
+    setGfxLiveEdit(format, fileId, tiles)
+    persistGfxLiveCache(projectId)
+    return { ok: true, file }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * Write raw-CHR byte edits (edited animation frames) into the active project's
+ * overlay copy of the incbin'd graphics `.bin`(s). Each write targets a `binFile`
+ * (relative to `assets/yi`, e.g. `Graphics/GFX_520000.bin`) at `offset`. Reads
+ * overlay-first so prior raw-CHR edits to the same `.bin` are preserved, applies
+ * the byte patches, and writes the overlay copy atomically.
+ *
+ * These `.bin`s are fixed-size and `incbin`'d as-is, so this needs NO layout move
+ * — the data-only build include (and the build-tree merge) pick up the overlay
+ * copy automatically, the same way `saveGfxEdit`'s compressed blobs do.
+ *
+ * ⚠ These regions are SHARED: an animation's CHR is the same bytes for every
+ * level that selects it (and some slots even share a source — the Star block
+ * reuses the !-Switch frames). The caller surfaces that to the user.
+ */
+export function saveRawChrEdit(
+  writes: { binFile: string; offset: number; bytes: Uint8Array }[]
+): { ok: true; files: string[] } | { ok: false; error: string } {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+
+  const byFile = new Map<string, { offset: number; bytes: Uint8Array }[]>()
+  for (const w of writes) {
+    const arr = byFile.get(w.binFile) ?? []
+    arr.push({ offset: w.offset, bytes: w.bytes })
+    byFile.set(w.binFile, arr)
+  }
+  const written: string[] = []
+  for (const [binFile, edits] of byFile) {
+    const baseP = path.join(frameworkWorkRoot(), 'assets', 'yi', binFile)
+    const overlayP = path.join(overlayRoot(projectId), 'assets', 'yi', binFile)
+    let buf: Buffer
+    try {
+      buf = Buffer.from(existsSync(overlayP) ? readFileSync(overlayP) : readFileSync(baseP))
+    } catch (e) {
+      return { ok: false, error: `Couldn't read ${binFile}: ${e instanceof Error ? e.message : String(e)}` }
+    }
+    for (const { offset, bytes } of edits) {
+      if (offset < 0 || offset + bytes.length > buf.length) {
+        return { ok: false, error: `${binFile}: write at ${offset}+${bytes.length} exceeds ${buf.length} bytes` }
+      }
+      buf.set(bytes, offset)
+    }
+    mkdirSync(path.dirname(overlayP), { recursive: true })
+    const tmp = overlayP + '.tmp'
+    writeFileSync(tmp, buf)
+    renameSync(tmp, overlayP)
+    written.push(path.join('assets', 'yi', binFile))
+  }
+  return { ok: true, files: written }
+}
+
+/**
+ * Discard a saved graphics edit: delete the overlay blob for `format`/`fileId`
+ * so the next build reads the base. Returns whether an overlay existed (→ the
+ * built ROM is stale, renderer flags a rebuild).
+ */
+export function resetGfxEdit(format: 'lz2' | 'lz16', fileId: number): { ok: boolean; removed?: boolean; error?: string } {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project.' }
+  const file = gfxBlobFileForId(path.join(frameworkWorkRoot(), 'yi'), format, fileId)
+  if (!file) return { ok: false, error: `${format} file ID ${fileId} is not a graphics blob.` }
+  const p = path.join(overlayRoot(projectId), 'assets', 'yi', file) // file incl. Graphics/ or Tilemaps/
+  if (!existsSync(p)) return { ok: true, removed: false }
+  rmSync(p, { force: true })
+  gfxLiveResetToBase(format, fileId)
+  return { ok: true, removed: true }
+}
+
+/** Decompress a gfx file's BASE (vanilla) tiles — the base reference for the live
+ *  preview (the gfx analogue of the palette base blob). Reads the asar-input blob
+ *  under `assets/yi/` (`Graphics/` or `Tilemaps/`, validated by `gfxBlobFileForId`). */
+function gfxBaseTiles(format: 'lz2' | 'lz16', fileId: number, sizeBytes: number): Uint8Array {
+  const file = gfxBlobFileForId(path.join(frameworkWorkRoot(), 'yi'), format, fileId)
+  if (!file) throw new Error(`no base blob for ${format} 0x${fileId.toString(16)}`)
+  const blob = new Uint8Array(readFileSync(path.join(frameworkWorkRoot(), 'assets', 'yi', file)))
+  const out = new Uint8Array(sizeBytes)
+  if (format === 'lz16') lz16(blob, 0, out, 0, sizeBytes / 512)
+  else lz2(blob, 0, out, 0)
+  return out
+}
+
+/** On a gfx reset, point the live preview at the BASE (vanilla) tiles rather than
+ *  dropping the entry: the canvas shows the reset immediately, overriding the built
+ *  ROM (which keeps the old edit until a rebuild). Falls back to a plain clear when
+ *  the file wasn't live-edited this session (no length to decode against). */
+function gfxLiveResetToBase(format: 'lz2' | 'lz16', fileId: number): void {
+  const prior = gfxLiveEdits().get(`${format}/${fileId}`)
+  if (!prior) {
+    clearGfxLiveEdit(format, fileId)
+    return
+  }
+  try {
+    setGfxLiveEdit(format, fileId, gfxBaseTiles(format, fileId, prior.length))
+  } catch {
+    clearGfxLiveEdit(format, fileId)
+  }
+}
+
+/** Reverse-map a compressed blob filename → its gfx file id (-1 if unknown) —
+ *  the inverse of `gfxBlobFileForId`, for resetting the live cache on a per-file
+ *  reset. (Same lookup `listGfxEdits` uses for its labels.) */
+function gfxFileIdForBlobName(name: string, format: 'lz2' | 'lz16'): number {
+  try {
+    const labels = parseGfxPtrTable(
+      readFileSync(path.join(frameworkWorkRoot(), 'yi', GFX_ARENA.ptrBankFile), 'utf8'),
+      format
+    )
+    return labels.indexOf(blobLabel(name))
+  } catch {
+    return -1
+  }
+}
+
+/** Ptr-table label for a compressed blob filename, for BOTH `Graphics/GFX_<addr>.<ext>`
+ *  and `Tilemaps/DATA_<addr>.<ext>` forms → `DATA_<addr>`. */
+function blobLabel(name: string): string {
+  return name.replace(/^GFX_/, 'DATA_').replace(/\.(lz2|lz16)$/, '')
+}
+
+/** Friendly labels for the raw `.bin`s the round-trip writes (animation CHR, the
+ *  title scenery atlas, and the world-map level-icon chunky banks). Unlisted `.bin`s
+ *  still track — they fall back to their filename. */
+const RAW_CHR_EDIT_LABELS: Record<string, string> = {
+  'GFX_520000.bin': 'Animation tiles — coins / !-blocks / star / water / lava / torches',
+  'GFX_568000.bin': 'Animation tiles — clouds / water cycles / backdrop strips',
+  'DATA_560000.bin': 'Title island 3D scenery (flags / mountains / castles / trees)',
+  'DATA_530000.bin': 'World-map level-select icons (bank $53)',
+  'DATA_538000.bin': 'World-map level-select icons (bank $53)'
+}
+
+/**
+ * Every graphics file the active project has overlay-edited (the "Changed
+ * graphics" list): compressed gfx blobs from saveGfxEdit (`Graphics/*.lz2|.lz16`
+ * level/screen sheets AND `Tilemaps/DATA_*.lz2|.lz16` — e.g. the title island
+ * $B1), plus every raw `.bin` from saveRawChrEdit (`Graphics/*.bin` animation CHR,
+ * `Graphics/SuperFX/*.bin` — title scenery $56, level-icon banks $53). Compressed
+ * blobs reverse-map to their gfx file id for a friendly label; raw `.bin`s use a
+ * known label or fall back to the filename. Empty when there's no project / overlay.
+ */
+export function listGfxEdits(): GfxEditEntry[] {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return []
+  const assetsRoot = path.join(overlayRoot(projectId), 'assets', 'yi')
+
+  // Reverse-map a compressed blob filename → gfx file id (cached per format).
+  const yiRoot = path.join(frameworkWorkRoot(), 'yi')
+  const labelCache: Partial<Record<'lz2' | 'lz16', string[]>> = {}
+  const fileIdForBlob = (name: string, format: 'lz2' | 'lz16'): number => {
+    let labels = labelCache[format]
+    if (!labels) {
+      try {
+        labels = parseGfxPtrTable(readFileSync(path.join(yiRoot, GFX_ARENA.ptrBankFile), 'utf8'), format)
+      } catch {
+        labels = []
+      }
+      labelCache[format] = labels
+    }
+    return labels.indexOf(blobLabel(name))
+  }
+
+  const out: GfxEditEntry[] = []
+  const scan = (dir: string, relPrefix: string): void => {
+    if (!existsSync(dir)) return
+    for (const name of readdirSync(dir)) {
+      const full = path.join(dir, name)
+      let st
+      try {
+        st = statSync(full)
+      } catch {
+        continue
+      }
+      if (!st.isFile()) continue
+      const file = `${relPrefix}${name}`
+      const m = name.match(/\.(lz2|lz16)$/)
+      if (m) {
+        const format = m[1] as 'lz2' | 'lz16'
+        const id = fileIdForBlob(name, format)
+        out.push({
+          file,
+          label: id >= 0 ? `Gfx file 0x${id.toString(16).toUpperCase()} (${format.toUpperCase()})` : `${name} (${format.toUpperCase()})`,
+          kind: 'compressed',
+          bytes: st.size
+        })
+      } else if (name.endsWith('.bin')) {
+        // Every overlay `.bin` is a raw-CHR graphics edit — labelled where known,
+        // else by filename (so nothing edited goes untracked / un-resettable).
+        out.push({ file, label: RAW_CHR_EDIT_LABELS[name] ?? name, kind: 'raw-chr', bytes: st.size })
+      }
+    }
+  }
+  scan(path.join(assetsRoot, 'Graphics'), 'Graphics/')
+  scan(path.join(assetsRoot, 'Graphics', 'SuperFX'), 'Graphics/SuperFX/')
+  scan(path.join(assetsRoot, 'Tilemaps'), 'Tilemaps/')
+  return out.sort((a, b) => a.file.localeCompare(b.file))
+}
+
+/** Screen/title graphics files NOT loaded by any LEVEL scene (so the level scan
+ *  below can't classify them) → their role. Keyed by gfx file id. */
+const SCREEN_FILE_ROLES: Record<number, string> = {
+  0x1d: 'Title screen — logo',
+  0xb1: 'Title screen — floating island',
+  0xb9: 'Boss Mode-7 background', 0xba: 'Boss Mode-7 background', 0xbb: 'Boss Mode-7 background',
+  0xbc: 'Boss Mode-7 background', 0xbd: 'Boss Mode-7 background',
+  0x74: 'World map', 0x75: 'World map'
+}
+
+/** Cart-structural index `format/fileId` → the role(s) it's loaded as — built once
+ *  by walking every distinct level tileset-combo's gfx manifest (the dpSlot fixes
+ *  the layer). Static for the cart, so cache for the session. */
+let gfxRoleCache: Map<string, Set<string>> | null = null
+function gfxRoleIndex(): Map<string, Set<string>> {
+  if (gfxRoleCache) return gfxRoleCache
+  const map = new Map<string, Set<string>>()
+  const add = (key: string, role: string): void => { (map.get(key) ?? map.set(key, new Set()).get(key)!).add(role) }
+  try {
+    const { rom, symbols } = loadRomAndSymbols()
+    const workRoot = frameworkWorkRoot()
+    const lvlMap = loadLevelMapPublic(workRoot)
+    const seen = new Set<string>()
+    for (let rec = 0; rec <= 0xdb; rec++) {
+      let base: ReturnType<typeof loadLevel>
+      try { base = loadLevel({ workRoot, levelRecordId: rec }) } catch { continue }
+      if (base.empty || base.special || base.header.length < 15) continue
+      const h = base.header
+      const combo = `${h[1]},${h[3]},${h[5]},${h[7]},${h[9]}` // bg1/bg2/bg3/sprite tileset + mode
+      if (seen.has(combo)) continue
+      seen.add(combo)
+      const header = {
+        bg1Tileset: h[1] ?? 0, bg2Tileset: h[3] ?? 0, bg3Tileset: h[5] ?? 0, spriteTileset: h[7] ?? 0,
+        bgColor: h[0] ?? 0, bg1Palette: h[2] ?? 0, bg2Palette: h[4] ?? 0, bg3Palette: h[6] ?? 0,
+        spritePalette: h[8] ?? 0, yoshiColor: 0, isWorld6: isWorld6Record(lvlMap, rec), levelMode: h[9] ?? 0
+      }
+      const manifest: GfxFileEntry[] = []
+      try { loadLevelGfx(rom, symbols, header as never, new Uint8Array(0x10000), manifest) } catch { continue }
+      for (const e of manifest) {
+        const role = e.dpSlot === undefined ? null
+          : e.dpSlot <= 2 ? 'BG1 tileset'
+            : e.dpSlot <= 4 ? 'BG2 background'
+              : e.dpSlot <= 6 ? 'BG3 background'
+                : 'Sprite sheet'
+        if (role) add(`${e.format}/${e.fileId}`, role)
+      }
+    }
+  } catch { /* leave whatever was built */ }
+  gfxRoleCache = map
+  return map
+}
+
+/**
+ * What one changed graphics `file` maps back to — the role(s) it's loaded as
+ * (e.g. "BG1 tileset", "Sprite sheet", "Title screen — logo"). Compressed blobs:
+ * the cart-wide level-gfx role index + the screen-file table; raw `.bin`s: their
+ * known descriptive label. The expandable "what is this" detail for the list.
+ */
+export function gfxFileRole(file: string): GfxFileRole {
+  const name = path.basename(file)
+  const roles = new Set<string>()
+  try {
+    const m = name.match(/\.(lz2|lz16)$/)
+    if (m) {
+      const format = m[1] as 'lz2' | 'lz16'
+      const fileId = gfxFileIdForBlobName(name, format)
+      if (fileId >= 0) {
+        for (const r of gfxRoleIndex().get(`${format}/${fileId}`) ?? []) roles.add(r)
+        const screen = SCREEN_FILE_ROLES[fileId]
+        if (screen) roles.add(screen)
+      }
+    } else if (name.endsWith('.bin')) {
+      roles.add(RAW_CHR_EDIT_LABELS[name] ?? 'Raw CHR graphics')
+    }
+  } catch { /* fall through to empty */ }
+  return { roles: [...roles] }
+}
+
+/**
+ * Reset one overlay-edited graphics file back to vanilla by deleting the overlay
+ * copy (so the next build reads the base). `file` is an `assets/yi`-relative path
+ * under `Graphics/` or `Tilemaps/` (as returned by `listGfxEdits`); validated to
+ * prevent traversal. `removed` is whether an overlay actually existed (→ built ROM stale).
+ */
+export function resetGfxEditFile(file: string): ResetGfxEditResult {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project.' }
+  const norm = file.replace(/\\/g, '/')
+  if (norm.includes('..') || !/^(Graphics|Tilemaps)\/[\w./-]+\.(lz2|lz16|bin)$/.test(norm)) {
+    return { ok: false, error: `Refusing to reset unexpected path: ${file}` }
+  }
+  const p = path.join(overlayRoot(projectId), 'assets', 'yi', norm)
+  if (!existsSync(p)) return { ok: true, removed: false }
+  rmSync(p, { force: true })
+  // Drop the live-edit preview for a compressed blob (raw `.bin` edits aren't in
+  // the gfx cache). Reverse-map name → id; fall back to a full clear if unknown.
+  const blob = path.basename(norm).match(/\.(lz2|lz16)$/)
+  if (blob) {
+    const format = blob[1] as 'lz2' | 'lz16'
+    const id = gfxFileIdForBlobName(path.basename(norm), format)
+    if (id >= 0) gfxLiveResetToBase(format, id)
+    else clearGfxLiveCache()
+    persistGfxLiveCache(projectId) // keep the on-disk preview cache in sync
+  }
+  return { ok: true, removed: true }
+}
+
+/**
  * Write RAW level stream bytes straight into the active project's overlay,
  * bypassing serialize. Used by the ROM-import path for "raw-only" levels — a
  * foreign level whose decode→serialize doesn't round-trip (a decoder gap), so we
@@ -386,6 +748,47 @@ export async function setExitDestResource(
   if (exit.destX === destX && exit.destY === destY) return { ok: true }
   const nextExits = level.exits.slice()
   nextExits[idx] = { ...exit, destX, destY }
+  const r = await saveLevelResource(sourceLevelRecordId, { ...level, exits: nextExits })
+  return r.ok ? { ok: true } : { ok: false, error: r.error }
+}
+
+/**
+ * Cross-level warp-exit entrance-type edit (the incoming-marker's Entrance
+ * dropdown — the value twin of `setExitDestResource`). Set the `entranceType`
+ * of the warp exit on `screenIndex` in `sourceLevelRecordId` and write that
+ * level's overlay `.bin`(s). Like the dest edit, the source level is typically
+ * NOT the one loaded in the editor, so this auto-saves straight to disk via the
+ * vetted `saveLevelResource` path; the renderer marks the build dirty and keeps
+ * a reversible undo entry.
+ */
+export async function setExitEntranceResource(
+  sourceLevelRecordId: number,
+  screenIndex: number,
+  entranceType: number
+): Promise<SetExitEntranceResult> {
+  let level: LevelData
+  try {
+    level = loadLevelResource(sourceLevelRecordId)
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Couldn't load level 0x${sourceLevelRecordId.toString(16)}: ${(err as Error).message}`
+    }
+  }
+  const idx = level.exits.findIndex(
+    (e) => e.variant === 'warp' && e.screenIndex === screenIndex
+  )
+  const exit = idx >= 0 ? level.exits[idx] : undefined
+  if (!exit || exit.variant !== 'warp') {
+    return {
+      ok: false,
+      error: `No warp exit on screen 0x${screenIndex.toString(16)} of level 0x${sourceLevelRecordId.toString(16)}.`
+    }
+  }
+  // No-op guard (defensive — the renderer already skips a same-value commit).
+  if (exit.entranceType === entranceType) return { ok: true }
+  const nextExits = level.exits.slice()
+  nextExits[idx] = { ...exit, entranceType }
   const r = await saveLevelResource(sourceLevelRecordId, { ...level, exits: nextExits })
   return r.ok ? { ok: true } : { ok: false, error: r.error }
 }
@@ -600,6 +1003,12 @@ export function activeBoundaryMoves(): BoundaryMove[] {
   const pm = activePoolMap()
   if (!pm) return []
   return computeBoundaryMoves(pm.map, diskSizeOf(getCurrentProjectId()))
+}
+
+/** Free regions (FreeRegion51/50) for the active rom version — where the gfx
+ *  overflow relocation spills edited blobs. Empty when no project is active. */
+export function activeFreeRegions(): FreeRegion[] {
+  return activePoolMap()?.map.freeRegions ?? []
 }
 
 /** The active project's free-space migration + de-couple + new-slot + removal
@@ -936,57 +1345,86 @@ export function loadPaletteEdits(): PaletteEdit[] {
   return readPaletteEdits(baseText, overlayText)
 }
 
-/** Splice the FULL edit set into base `Bank57.asm` → overlay (reborn from base
- *  each save, so the overlay = base + exactly these edits; empty ⇒ remove the
- *  overlay). The renderer marks the build dirty on success (asm edits don't
- *  render live in-level — same contract as string edits). */
+/** The active project overlay's island-tilemap (placement) edits vs base. */
+export function loadIslandTilemapEdits(): IslandTilemapEdit[] {
+  const projectId = getCurrentProjectId()
+  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
+  const overlayPath = projectId ? path.join(overlayRoot(projectId), PALETTE_BLOB_BANK_FILE) : null
+  const overlayText = overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : null
+  return readIslandTilemapEdits(baseText, overlayText)
+}
+
+/** Rebuild the project's `Bank57.asm` overlay = base ⊕ palette colour edits ⊕ island
+ *  tilemap edits (BOTH live in this one file, so a save of either must compose with the
+ *  other's current edits or it would clobber them). Reborn from base each save (clean
+ *  diffs, idempotent); both empty ⇒ remove the overlay. The renderer marks the build
+ *  dirty on success (asm edits don't render live — same contract as string edits). */
+async function saveBank57Overlay(
+  projectId: string,
+  paletteEdits: readonly PaletteEdit[],
+  islandEdits: readonly IslandTilemapEdit[]
+): Promise<SaveResourceResult> {
+  const dest = path.join(overlayRoot(projectId), PALETTE_BLOB_BANK_FILE)
+  if (paletteEdits.length === 0 && islandEdits.length === 0) {
+    if (existsSync(dest)) await rm(dest)
+    return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
+  }
+  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
+  // The two edit sets touch disjoint `dw` runs (DATA_master_palette_rom_blob vs
+  // DATA_5F9800), so applying them in sequence composes cleanly.
+  const text = applyIslandTilemapEdits(applyPaletteEdits(baseText, paletteEdits), islandEdits)
+  await saveOverlayFile(projectId, PALETTE_BLOB_BANK_FILE, text)
+  return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
+}
+
+/** Save the FULL palette-colour edit set, preserving any island-tilemap edits. */
 export async function savePaletteEdits(edits: PaletteEdit[]): Promise<SaveResourceResult> {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to save into.' }
   const compat = ensureProjectBaseCompatible(projectId)
   if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
-  const dest = path.join(overlayRoot(projectId), PALETTE_BLOB_BANK_FILE)
-  if (edits.length === 0) {
-    if (existsSync(dest)) await rm(dest)
-    return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
-  }
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
-  await saveOverlayFile(projectId, PALETTE_BLOB_BANK_FILE, applyPaletteEdits(baseText, edits))
-  return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
+  return saveBank57Overlay(projectId, edits, loadIslandTilemapEdits())
 }
 
-/** Whether the editable-palette panel is showing colours that are out of date —
- *  a colour the built ROM has baked in (vs base) that the live edit `draft` does
- *  NOT currently cover, so the displayed swatch (and in-game colour) is wrong and
- *  a rebuild is needed to refresh it.
- *
- *  Palette edits are asm edits (they don't render live), so saving one — or
- *  resetting back to base — only marks the build dirty; the `.sfc` keeps the
- *  previous build's colours until a rebuild. The panel reads its BASE CGRAM from
- *  that `.sfc` and overlays the draft, so the displayed colour for an offset is
- *  `draft[off] ?? builtRom[off]`.
- *
- *  A swatch is therefore stale ⇔ the draft has NO entry for an offset the built
- *  ROM changed from base. We compare against the *draft* (the live, in-memory
- *  edits the panel previews) rather than the saved overlay on purpose: a
- *  saved-but-unbuilt edit is previewed correctly by the draft, so it must NOT
- *  warn — only the reset-but-unbuilt case (built ROM carries a colour the draft
- *  no longer has) leaves a swatch showing the wrong colour. (`rom`/`symbols` come
- *  from the loaded project build.) */
-export function isPaletteBuildStale(
-  rom: Uint8Array,
-  symbols: SymbolMap,
-  draft: PaletteEdit[]
-): boolean {
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
-  const blobPc = symbols.pc(PALETTE_BLOB_LABEL)
-  const builtEdits = diffPaletteBlob(
-    baseText,
-    (off) => rom[blobPc + off] | (rom[blobPc + off + 1] << 8)
-  )
-  const covered = new Set(draft.map((e) => e.offset))
-  return builtEdits.some((e) => !covered.has(e.offset))
+/** Save the FULL island-tilemap (placement) edit set, preserving any palette edits. */
+export async function saveIslandTilemap(edits: IslandTilemapEdit[]): Promise<SaveResourceResult> {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+  return saveBank57Overlay(projectId, loadPaletteEdits(), edits)
 }
+
+/** The active project overlay's logo-tilemap (placement) edits vs base. (Bank0F.asm
+ *  holds no other overlay-edited data, so this is a standalone base ⊕ logo overlay —
+ *  unlike the island, which composes with palette edits in Bank57.asm.) */
+export function loadLogoTilemapEdits(): LogoTilemapEdit[] {
+  const projectId = getCurrentProjectId()
+  const baseText = readFileSync(path.join(frameworkWorkRoot(), LOGO_TILEMAP_BANK_FILE), 'utf8')
+  const overlayPath = projectId ? path.join(overlayRoot(projectId), LOGO_TILEMAP_BANK_FILE) : null
+  const overlayText = overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : null
+  return readLogoTilemapEdits(baseText, overlayText)
+}
+
+/** Save the FULL logo-tilemap (placement) edit set as the Bank0F overlay (base ⊕ edits,
+ *  reborn from base each save — clean diffs, idempotent; empty ⇒ remove the overlay).
+ *  Asm edits don't render live, so the caller marks the build dirty (same contract as the
+ *  island/string edits). */
+export async function saveLogoTilemap(edits: LogoTilemapEdit[]): Promise<SaveResourceResult> {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+  const dest = path.join(overlayRoot(projectId), LOGO_TILEMAP_BANK_FILE)
+  if (edits.length === 0) {
+    if (existsSync(dest)) await rm(dest)
+    return { ok: true, files: [LOGO_TILEMAP_BANK_FILE] }
+  }
+  const baseText = readFileSync(path.join(frameworkWorkRoot(), LOGO_TILEMAP_BANK_FILE), 'utf8')
+  await saveOverlayFile(projectId, LOGO_TILEMAP_BANK_FILE, applyLogoTilemapEdits(baseText, edits))
+  return { ok: true, files: [LOGO_TILEMAP_BANK_FILE] }
+}
+
 
 /** Per-level .bins for these (id, stream) pairs aren't what the build actually
  *  uses — the asm still incbin's the old shared/aliased/truncated label files, so

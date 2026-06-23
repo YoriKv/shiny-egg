@@ -70,7 +70,10 @@ const stampLavaCavePool: PerCellHandler = (state) => {
   // Column selector ∈ {0, 1, 2, 3}.
   //   col == 0           → 0 (left edge)
   //   col + 1 == col_ext → 3 (right edge)
-  //   else               → (col & 1) + 1 (1 or 2, alternating middle)
+  //   else               → ((col + 1) & 1) + 1 (1 or 2, alternating middle).
+  // The cart INCs $28 for the `== $2A` right-edge test and reuses that
+  // incremented value for the parity AND, so the phase is ($28 + 1), not $28
+  // (same idiom as bank13-stone-large.ts; was a column-parity inversion bug).
   const col = state.zp28 & 0xff;
   const colExtent = state.zp2A & 0xff;
   let selector: number;
@@ -79,7 +82,7 @@ const stampLavaCavePool: PerCellHandler = (state) => {
   } else if (((col + 1) & 0xff) === colExtent) {
     selector = 3;
   } else {
-    selector = (col & 1) + 1;
+    selector = ((col + 1) & 1) + 1;
   }
 
   const idx = (rowBase + selector) & 0x07;

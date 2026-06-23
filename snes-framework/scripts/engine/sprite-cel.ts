@@ -55,6 +55,18 @@ export interface SpriteCelTile {
    *  body at the z of the first such record reached (so the body's front/behind
    *  layering is DERIVED from the cel's OAM order) and skips the VRAM blit. */
   body?: boolean;
+  /** This record's palette row is FIXED and must survive the whole-sprite palette
+   *  override (spawn-cell parity / settled / runtime). For a sub-element the handler
+   *  draws with its own palette independent of the body's variant tint — e.g. the
+   *  Lantern Ghost's $11b flame stays pal1 (flame) while its body recolours by parity. */
+  lockPalette?: boolean;
+  /** Render this record as a normal STATIC VRAM tile even when its `tile` value would
+   *  otherwise read as a dynamic-body placeholder (tile 0 or ≥256). For a handler-drawn
+   *  sub-element that IS the loaded spriteset tile 0 (the gfx file's first tile = the
+   *  tileRow/slot base) — e.g. the Bullet Bill Blaster's cannon-muzzle, which is the
+   *  blaster's spriteset tile 0 and so collides with the tile-0 placeholder sentinel. It
+   *  only renders correctly when the sprite's gfx file is loaded (spriteset-dependent). */
+  static?: boolean;
 }
 
 /** A sprite cel = the tiles composing one animation frame. */
@@ -138,6 +150,14 @@ export interface CelRenderOpts {
    *  from VRAM (they have no static tiles); this bitmap is composited in their
    *  place at `(originX, originY)` through palette row `paletteRow`. */
   dynamicBody?: DynamicBody;
+  /** Track a per-pixel **owner map** (returned in `CelRenderResult.owner`,
+   *  `width*height`). Each painted pixel records WHO drew it — the cel record
+   *  index for a static tile, or `-2` for the dynamic body, `-1` if untouched.
+   *  Because compositing is back-to-front, the final value is the FRONTMOST
+   *  painter (the visible one). Used by the metasprite slicer
+   *  (`sprite-metasprite.ts`) to attribute each pixel to a record. No effect on
+   *  the rendered RGBA. */
+  trackOwner?: boolean;
 }
 
 /** A rigid dynamic-body bitmap ready to composite: the decoded chunky indices
@@ -165,6 +185,10 @@ export interface CelRenderResult {
    *  bitmap on a level canvas at `(spritePxX - originX, spritePxY - originY)`. */
   originX: number;
   originY: number;
+  /** Per-pixel owner map (`width*height`), present iff `opts.trackOwner`. Each
+   *  value is the cel record index that painted that pixel, `-2` for the dynamic
+   *  body, `-1` for untouched/transparent. */
+  owner?: Int32Array;
 }
 
 /**
@@ -204,6 +228,9 @@ export function renderSpriteCel(cel: SpriteCel, opts: CelRenderOpts): CelRenderR
 
   const rgba = new Uint8Array(width * height * 4);
   const out = new Uint32Array(rgba.buffer, rgba.byteOffset, rgba.length >>> 2);
+  // Per-pixel owner map (frontmost painter), only when requested (metasprite
+  // slicer). -1 = untouched/transparent, -2 = dynamic body, else cel record index.
+  const owner = opts.trackOwner ? new Int32Array(width * height).fill(-1) : null;
 
   // Build the 8 sprite palette rows once (CGRAM rows 8..15, index-0 transparent).
   const palettes: Uint32Array[] = [];
@@ -212,7 +239,7 @@ export function renderSpriteCel(cel: SpriteCel, opts: CelRenderOpts): CelRenderR
   }
 
   const indices = new Uint8Array(64);
-  const blit8 = (tile: number, hflip: boolean, vflip: boolean, palette: Uint32Array, px: number, py: number): void => {
+  const blit8 = (tile: number, hflip: boolean, vflip: boolean, palette: Uint32Array, px: number, py: number, tag: number): void => {
     const vramOff = (opts.tileBaseBytes + tile * TILE_BYTES_4BPP) & 0xffff;
     if (vramOff + TILE_BYTES_4BPP > opts.vram.length) return;
     decode4bppTile(opts.vram, vramOff, hflip, vflip, indices, 0);
@@ -225,6 +252,7 @@ export function renderSpriteCel(cel: SpriteCel, opts: CelRenderOpts): CelRenderR
         const dx = px + col;
         if (dx < 0 || dx >= width) continue;
         out[dy * width + dx] = palette[idx]!;
+        if (owner) owner[dy * width + dx] = tag;
       }
     }
   };
@@ -250,6 +278,7 @@ export function renderSpriteCel(cel: SpriteCel, opts: CelRenderOpts): CelRenderR
         const dx = bx + x;
         if (dx < 0 || dx >= width) continue;
         out[dy * width + dx] = palette[idx]!;
+        if (owner) owner[dy * width + dx] = -2; // dynamic body
       }
     }
   };
@@ -278,7 +307,7 @@ export function renderSpriteCel(cel: SpriteCel, opts: CelRenderOpts): CelRenderR
     const px = t.dx - minX;
     const py = t.dy - minY;
     if (t.size === 8) {
-      blit8(t.tile, t.hflip, t.vflip, palette, px, py);
+      blit8(t.tile, t.hflip, t.vflip, palette, px, py, i);
     } else {
       // 16×16 = 2×2 OBJ sub-tiles.
       for (let sy = 0; sy < 2; sy++) {
@@ -286,7 +315,7 @@ export function renderSpriteCel(cel: SpriteCel, opts: CelRenderOpts): CelRenderR
           const srcCol = t.hflip ? 1 - sx : sx;
           const srcRow = t.vflip ? 1 - sy : sy;
           const subTile = t.tile + srcRow * OBJ_NAME_TABLE_WIDTH + srcCol;
-          blit8(subTile, t.hflip, t.vflip, palette, px + sx * TILE_PX, py + sy * TILE_PX);
+          blit8(subTile, t.hflip, t.vflip, palette, px + sx * TILE_PX, py + sy * TILE_PX, i);
         }
       }
     }
@@ -296,5 +325,5 @@ export function renderSpriteCel(cel: SpriteCel, opts: CelRenderOpts): CelRenderR
   // (front), the only sensible z when there are no static records to order against.
   if (opts.dynamicBody && !bodyDrawn) drawBody();
 
-  return { rgba, width, height, originX, originY };
+  return { rgba, width, height, originX, originY, owner: owner ?? undefined };
 }

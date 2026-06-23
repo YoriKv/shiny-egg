@@ -148,6 +148,23 @@ export class DecodeState {
    *  HV-counter entropy which we can't reproduce offline; this gives a
    *  reproducible but uncorrelated value for cosmetic-randomness handlers. */
   prngState = 0xACE1;
+  /** Optional captured cart-PRNG output sequence (one byte per get_random_byte
+   *  call, in call order) from the `level-rng` trace. When set, `prngNext`
+   *  returns these bytes instead of the LFSR, so the decode reproduces the live
+   *  game's exact random-tile variants (the cart PRNG is stateless — only its
+   *  output sequence is replicable). Falls back to the LFSR once exhausted. */
+  prngReplay: readonly number[] | null = null;
+  /** Per-caller-site captured PRNG queues (cart caller PC → {bytes, cursor}),
+   *  the preferred replay form: it keeps each Bank13 stamper site's sequence
+   *  aligned even when other sites' call counts diverge. Built per decode from
+   *  the `prngReplayBySite` option. A tagged `prngNext(state, site)` consumes
+   *  from the matching queue; untagged calls / unmatched sites fall back to
+   *  `prngReplay` then the LFSR. */
+  prngReplayBySite: Map<number, { bytes: readonly number[]; idx: number }> | null = null;
+  /** Cursor into `prngReplay`; `prngCalls` = total `prngNext` calls this decode
+   *  (for trace-alignment diagnostics). Both reset per decode. */
+  prngReplayIdx = 0;
+  prngCalls = 0;
 
   // --- Exit list (parsed in tail of LoadLevelData) ---------------------
   readonly exits: DecodedScreenExit[] = [];
@@ -207,6 +224,10 @@ export class DecodeState {
     this.rewound = 0;
     this.oddColHandler = this.evenColHandler = this.rowHandler = null;
     this.prngState = 0xACE1;
+    this.prngReplayIdx = 0;
+    this.prngCalls = 0;
+    // NB: prngReplay / prngReplayBySite are set by the caller AFTER reset()
+    // (decodeLevel options), so they are intentionally not cleared here.
     this.exits.length = 0;
     this.currentObjectIndex = -1;
     this.provenanceTargets = null;

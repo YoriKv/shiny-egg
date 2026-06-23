@@ -24,6 +24,11 @@ type BgLayerDescriptor = BgLayersResult['bg2Layer']
 export interface BgLayerBitmaps {
   bg2: ImageBitmap
   bg3: ImageBitmap
+  /** Foreground (priority-1) planes drawn ABOVE BG1 — null when the layer has
+   *  no foreground tiles. Same dimensions as bg2/bg3 (same tilemap extent), so
+   *  they reuse bg2Width/Height + bg3Width/Height. */
+  bg2Front: ImageBitmap | null
+  bg3Front: ImageBitmap | null
   /** Either a CSS color (solid backdrop) or an ImageBitmap of the
    *  1×2048 gradient strip (the renderer tiles it horizontally). */
   backdrop:
@@ -76,6 +81,15 @@ export async function buildBgLayerBitmaps(
   const bg2 = decoded[0]
   const bg3 = decoded[1]
 
+  // Foreground planes (priority-1 tiles) — null for the ~72% of levels with none.
+  const toBitmap = async (
+    plane: { rgba: Uint8Array; width: number; height: number } | null
+  ): Promise<ImageBitmap | null> =>
+    plane && plane.width > 0 && plane.height > 0
+      ? createImageBitmap(new ImageData(new Uint8ClampedArray(plane.rgba), plane.width, plane.height))
+      : null
+  const [bg2Front, bg3Front] = await Promise.all([toBitmap(result.bg2Front), toBitmap(result.bg3Front)])
+
   let backdrop: BgLayerBitmaps['backdrop']
   if (result.backdrop.kind === 'gradient') {
     backdrop = {
@@ -91,6 +105,8 @@ export async function buildBgLayerBitmaps(
   return {
     bg2,
     bg3,
+    bg2Front,
+    bg3Front,
     backdrop,
     bg2Width: result.bg2.width,
     bg2Height: result.bg2.height,
@@ -182,6 +198,31 @@ export function drawBgOverlays(
   }
   if (which.bg2 && layers.bg2 && layers.bg2Layer.role === 'overlay') {
     drawBgLayerStrip(ctx, layers.bg2, layers.bg2Width, layers.bg2Height, layers.bg2Layer)
+  }
+  ctx.restore()
+}
+
+/**
+ * Draw the FOREGROUND (priority-1) BG2/BG3 planes — tiles the cart's per-tile
+ * priority bit places ABOVE BG1 (e.g. 1-1's foreground flowers/bushes). Canvas
+ * calls this AFTER BG1, with a normal `source-over` blend. Order: BG2 foreground
+ * then BG3 foreground on top (BG3.1 is the topmost SNES plane). Each plane is
+ * null for the ~72% of levels with no foreground tiles → no-op. A layer's
+ * foreground is visible iff the layer itself is (same `.visible`).
+ */
+export function drawBgForeground(
+  ctx: CanvasRenderingContext2D,
+  layers: BgLayerBitmaps,
+  which: { bg2: boolean; bg3: boolean }
+): void {
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
+  if (which.bg2 && layers.bg2Front && layers.bg2Layer.visible) {
+    drawBgStripAtBottom(ctx, layers.bg2Front, layers.bg2Width, layers.bg2Height, LEVEL_W, LEVEL_H)
+  }
+  if (which.bg3 && layers.bg3Front && layers.bg3Layer.visible) {
+    drawBgStripAtBottom(ctx, layers.bg3Front, layers.bg3Width, layers.bg3Height, LEVEL_W, LEVEL_H)
   }
   ctx.restore()
 }

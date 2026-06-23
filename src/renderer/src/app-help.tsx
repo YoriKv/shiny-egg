@@ -22,8 +22,8 @@ export const LEVEL_EDITOR_HELP = (
     </p>
     <p>
       <b>Multi-select:</b> shift+drag draws a selection box &mdash; every object
-      and sprite inside it is added to the current selection (shift+click toggles
-      a single entity).
+      and sprite inside it is added to the current selection (shift+click adds or
+      removes a single entity).
     </p>
     <p>
       <b>Move:</b> drag a selected entity. <b>Place:</b> open the Place panel,
@@ -102,6 +102,20 @@ export function AboutBody(): JSX.Element {
             compatibility lists.
           </li>
           <li>
+            <b>
+              <a
+                href="https://github.com/KarisaAdvynia/Advynia"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Advynia
+              </a>
+            </b>{' '}
+            (KarisaAdvynia) - the GBA Yoshi&rsquo;s Island editor whose pointer
+            maps and conversion code make importing levels from the Game&nbsp;Boy
+            Advance version possible.
+          </li>
+          <li>
             <b>asar</b>, <b>BizHawk</b>, <b>Mesen</b>, and <b>Lunar Compress</b>{' '}
             - the assembler, emulators, and compression reference behind the
             build, testing, and graphics decoding.
@@ -109,7 +123,7 @@ export function AboutBody(): JSX.Element {
         </ul>
       </div>
 
-      <p className="se-about__legal">
+      <p className="se-meta se-about__legal">
         Yoshi&rsquo;s Island is &copy; Nintendo. This is an unofficial fan-made
         tool, not affiliated with or endorsed by Nintendo.
       </p>

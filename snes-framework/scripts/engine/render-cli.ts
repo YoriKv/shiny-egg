@@ -26,8 +26,8 @@ import { encodePng, scaleAndComposite, type ImageData } from './png.ts';
 import { loadLevelGfx, type GfxFileEntry } from './load-graphics.ts';
 import { loadLevelPalettes } from './load-palettes.ts';
 import { hex } from '../hex.ts';
-import { resolveSpriteCel } from './sprite-tile-base.ts';
-import { renderSpriteCel } from './sprite-cel.ts';
+import { buildSpriteRenderModel } from './render-sprite-layer.ts';
+import type { LevelSprite } from '../types.ts';
 // smoke-mode renderers
 import { renderMap16Gallery, renderVramGrid } from './render-gallery.ts';
 import { renderBgLayer } from './render-bg-layers.ts';
@@ -76,7 +76,9 @@ function runLevel(): void {
   }
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const named: Array<[string, LayerImage | null]> = [
-    ['bg1', r.bg1], ['bg2', r.bg2], ['bg3', r.bg3], ['sprite', r.sprite], ['collision', r.collision]
+    ['bg1', r.bg1], ['bg2', r.bg2], ['bg3', r.bg3],
+    ['bg2front', r.bg2Front], ['bg3front', r.bg3Front],
+    ['sprite', r.sprite], ['collision', r.collision]
   ];
   let wrote = 0;
   for (const [name, img] of named) {
@@ -91,7 +93,7 @@ function runLevel(): void {
     wrote++;
   }
   if (!wrote) {
-    console.error(`No layers matched --layers ${layers.join(',')} (valid: bg1,bg2,bg3,sprite,collision).`);
+    console.error(`No layers matched --layers ${layers.join(',')} (valid: bg1,bg2,bg3,bg2front,bg3front,sprite,collision).`);
     process.exit(2);
   }
 }
@@ -110,7 +112,7 @@ function runSprites(): void {
   const level = loadLevel({ workRoot: FRAMEWORK_ROOT, levelRecordId: id });
   const h = level.header;
   // isWorld6 only affects BG tileset selection, not sprite VRAM, so false is fine.
-  const gfxHeader = { bg1Tileset: h[1], bg2Tileset: h[3], bg3Tileset: h[5], spriteTileset: h[7], isWorld6: false };
+  const gfxHeader = { bg1Tileset: h[1], bg2Tileset: h[3], bg3Tileset: h[5], spriteTileset: h[7], isWorld6: false, levelMode: h[9] };
   const vram = new Uint8Array(0x10000);
   const cgram = new Uint8Array(512);
   const manifest: GfxFileEntry[] = [];
@@ -131,15 +133,27 @@ function runSprites(): void {
     ids = [...new Set(level.sprites.map((s) => s.num))].sort((a, b) => a - b);
   }
 
+  // Render each id through the SAME path the editor uses (buildSpriteRenderModel):
+  // restFrame, settled palette, Format-A/B gate, dynamic body, custom renderers,
+  // HIDDEN_REVEAL and cell-parity — placed at cell (0,0) for the canonical parity-0
+  // variant (matches the picker thumbnails). A bare resolveSpriteCel would render
+  // frame 0 with NO body, which for restFrame sprites (morph bubbles, …) is the
+  // placeholder frame — the wrong, "missing"-looking image.
   const cells: SpriteCell[] = [];
   for (const sid of ids) {
-    const resolved = resolveSpriteCel(rom, symbols, gfxHeader, sid, manifest);
-    if (!resolved) {
+    const model = buildSpriteRenderModel({
+      rom, symbols, header: gfxHeader,
+      sprites: [{ index: 0, num: sid, x: 0, y: 0 } satisfies LevelSprite],
+      vram, cgram, manifest, levelSpritePaletteId: h[8]
+    });
+    const p = model.placed[0];
+    if (!p) {
       cells.push({ id: sid, res: null });
       continue;
     }
-    const res = renderSpriteCel(resolved.cel, { vram, cgram, tileBaseBytes: resolved.tileBaseBytes });
-    cells.push({ id: sid, res });
+    // PlacedSprite pixels are RGBA-as-u32; alias the same bytes for the grid blitter.
+    const rgba = new Uint8Array(p.pixels.buffer, p.pixels.byteOffset, p.pixels.byteLength);
+    cells.push({ id: sid, res: { rgba, width: p.width, height: p.height } });
   }
 
   const img = layoutSpriteGrid(cells);

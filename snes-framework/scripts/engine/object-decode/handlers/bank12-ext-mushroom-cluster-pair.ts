@@ -61,17 +61,27 @@ const ROW_OFFSETS: readonly (readonly number[])[] = [
 // Column-strip word tables DATA_12C1BA (idx0) / DATA_12C1E6 (idx1), with $C1xx
 // label refs already resolved to their `dw $8Dxx` content. Each entry is either
 // 0 (skip), a template-slot WRAM addr ($19DA..$1A5F), or a direct $8Dxx id.
+//
+// The cart's `($02),y` index runs PAST each labelled table into the contiguous
+// `dw` block that follows — the FINAL row's entries live there (4×4 idx0 needs
+// 16 words but DATA_12C1BA is only 12; 5×6 idx1 needs 30 but DATA_12C1E6 is 25).
+// Those run-on rows are UNK_12C1D2 (idx0, at DATA_12C1BA+12) and DATA_12C218
+// (idx1, at DATA_12C1E6+25) — verified by address arithmetic — and are direct
+// $8Dxx final-row ids. An earlier port truncated each table at its label and so
+// dropped the cluster's bottom row (left unwritten; record $2E).
 const STRIP_TABLES: readonly (readonly number[])[] = [
-  // DATA_12C1BA (idx 0): 12 words
+  // DATA_12C1BA (idx 0): 12 words + UNK_12C1D2 (4-word final row).
   [
     0x0000, 0x1a2c, 0x1a3a, 0x19f2, 0x0000, 0x8d0d, 0x8d0e, 0x19fc, 0x1a04, 0x1a48,
     0x8d1c, 0x8d1d,
+    0x8d00, 0x8d1e, 0x8d1f, 0x8d20, // UNK_12C1D2 — final row (indices 12..15)
   ],
-  // DATA_12C1E6 (idx 1): 25 words
+  // DATA_12C1E6 (idx 1): 25 words + DATA_12C218 (5-word final row).
   [
     0x0000, 0x19e0, 0x1a4c, 0x1a56, 0x0000, 0x0000, 0x19ea, 0x8d12, 0x8d13, 0x0000,
     0x0000, 0x8d21, 0x8d22, 0x1a38, 0x1a18, 0x19de, 0x1a4a, 0x1a54, 0x8d23, 0x8d24,
     0x19e8, 0x8d08, 0x8d25, 0x8d26, 0x8d27,
+    0x8d0a, 0x8d0b, 0x8d28, 0x8d1f, 0x8d20, // DATA_12C218 — final row (indices 25..29)
   ],
 ]
 

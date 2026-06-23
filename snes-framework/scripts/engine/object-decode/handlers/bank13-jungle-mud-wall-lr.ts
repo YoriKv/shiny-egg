@@ -50,7 +50,7 @@ import {
   getMap16Left,
   getMap16Right,
 } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import {
   stampCell,
   setProbeToCurrent,
@@ -131,19 +131,18 @@ function jungleMudWallLeftBody(state: DecodeState): void {
   let aboveOff = getMap16Above(state);
   writeBuf16(state, aboveOff, 0x964D);
 
-  // One row up at sub-X +$10 → $330D.
-  // Cart pattern: `LDA $1B ; AND #$F0F0 ; SEC ; SBC #$0010 ; AND #$F0F0
-  // ; STA $00 ; LDA $1B ; AND #$0F0F ; ORA $00 ; STA $0E`. This subtracts
-  // $10 from the screen-Y nibble (one row up) while keeping sub-X/sub-Y.
-  // NOTE: the subtraction is on the FULL 16-bit $1B/$1C word; carry into
-  // the high byte ($1C, screen page) is preserved by the AND #$F0F0.
+  // Step decorations: shift the probe coord UP by 1 / 2 rows (cart `SBC
+  // #$0010` / `#$0020` on the screen-Y nibble), then take the RIGHT neighbour
+  // of that shifted coord — cart `JSL get_map16_right` (NOT above). So $330D
+  // lands at (col+1, 1up) and $9204 at (col+1, 2up). (An earlier port used
+  // getMap16Above after the shift, landing at (col, 2up)/(col, 3up) — wrong
+  // cells, over-stamping the wall's own column; record $50.)
   shiftProbeUpRows(state, 1);
-  let stepOff = getMap16Above(state);
+  let stepOff = getMap16Right(state);
   writeBuf16(state, stepOff, 0x330D);
 
-  // Two rows up at sub-X +$10 → $9204.
   shiftProbeUpRows(state, 2);
-  stepOff = getMap16Above(state);
+  stepOff = getMap16Right(state);
   writeBuf16(state, stepOff, 0x9204);
 }
 
@@ -172,12 +171,15 @@ function jungleMudWallRightBody(state: DecodeState): void {
   let aboveOff = getMap16Above(state);
   writeBuf16(state, aboveOff, 0x964E);
 
+  // Mirror of the left body: shift up 1/2 rows, take the LEFT neighbour
+  // (cart `JSL get_map16_left`), not above. $3512 at (col-1, 1up), $9205 at
+  // (col-1, 2up).
   shiftProbeUpRows(state, 1);
-  let stepOff = getMap16Above(state);
+  let stepOff = getMap16Left(state);
   writeBuf16(state, stepOff, 0x3512);
 
   shiftProbeUpRows(state, 2);
-  stepOff = getMap16Above(state);
+  stepOff = getMap16Left(state);
   writeBuf16(state, stepOff, 0x9205);
 }
 
@@ -215,7 +217,21 @@ function jungleWallRandomBody(state: DecodeState, side: 'left' | 'right'): void 
 
   // `JSL CODE_prng ; AND #$0001 ; CLC ; ADC base` — note no explicit
   // CLC dependency since AND clears carry, so this matches the cart.
-  const variant = prngNext(state) & 0x0001;
+  //
+  // This body routine is the SAME cart routine the single-edge wall objects
+  // ($22/etc.) use — CODE_jungle_{left,right}_wall_random_body, JSL-return
+  // $13:9189 (left) / $13:91DA (right). So the roll MUST be tagged with the
+  // same per-side RNG_SITE: a level's $22 single-edge walls and its $25/$26
+  // mud walls all roll at one shared cart PC and feed ONE per-site replay
+  // queue, in object-stream order. Tagging here was the missing half — the
+  // $22 handler already tagged, but the mud-wall side rolled UNTAGGED, so the
+  // capture's mud-wall rolls had no shiny home and looked like "extra" cart
+  // rolls (the rec_4c "115 phantom rolls" = its 28 $25/$26 mud walls; see
+  // research/notes-bg1-trace-rng-parity.md §7.1). Verified: with both sides
+  // tagged, the capture-vs-shiny per-site delta is 0 for every jungle-wall
+  // record (delta tracked mud-wall count exactly while this side was untagged).
+  const site = side === 'left' ? RNG_SITE.jungleLeftWallBody : RNG_SITE.jungleRightWallBody;
+  const variant = prngNext(state, site) & 0x0001;
   let tile = (base + variant) & 0xffff;
 
   // Classify the cell we're about to overwrite ($12). On hit, override.

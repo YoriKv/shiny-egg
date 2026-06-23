@@ -20,6 +20,12 @@ function getCollisionTagOfPage(): Promise<(page: number) => number | undefined> 
   return getCollisionTable().then((table) => (page: number) => table[page]?.tag)
 }
 
+// `matchSolid` deps (the grinder monkeys' grab-any-wall path) need page→side-solid:
+// the collision byte-0 AL flag. Shares the same cached table fetch as the tag lookup.
+function getIsSolidPage(): Promise<(page: number) => boolean> {
+  return getCollisionTable().then((table) => (page: number) => table[page]?.flags.al ?? false)
+}
+
 // Sprite nums placed anywhere in the warp-reachable level group: forward BFS
 // over screen-exit warps from the current record (live `level` for the edited
 // record; saved data for connected rooms via loadResource). Feeds the
@@ -104,9 +110,10 @@ export function useNeighborDependencies(
     void Promise.all([
       window.shinyEgg.render.decodeLevelLayout({ levelRecordId: level.recordId, override: level }),
       getCollisionTagOfPage(),
-      needsGroup ? carriedGroupNums(level) : Promise.resolve(undefined)
+      needsGroup ? carriedGroupNums(level) : Promise.resolve(undefined),
+      getIsSolidPage()
     ])
-      .then(([layout, collisionTagOfPage, groupNums]) => {
+      .then(([layout, collisionTagOfPage, groupNums, isSolidPage]) => {
         if (cancelled) return
         if (!layout) {
           setStatus(new Map())
@@ -118,6 +125,7 @@ export function useNeighborDependencies(
           map16At: makeMap16At(layout.levelDataBuffer, layout.screenPageMap),
           hasExitForScreen: (sc) => exitScreens.has(sc),
           collisionTagOfPage,
+          isSolidPage,
           carriedGroupNums: groupNums
         }
         const map: NeighborStatusMap = new Map()

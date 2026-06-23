@@ -1,4 +1,4 @@
-// Unit test for the ROM-import analyzer (plan-rom-import.md). Targets the
+// Unit test for the ROM-import analyzer. Targets the
 // extracted reference cart like the other engine tests; skips cleanly (exit 0)
 // when it isn't present, since it's gitignored.
 // Run: node snes-framework/scripts/import/analyze.test.ts

@@ -354,7 +354,8 @@ export function ExitsBody({
                             sourceLevelRecordId: first.sourceLevelRecordId,
                             sourceScreenIndex: first.sourceScreenIndex,
                             destX: first.destX,
-                            destY: first.destY
+                            destY: first.destY,
+                            entranceType: first.entranceType
                           })
                           onJump(n.id, first.destX, first.destY)
                         } else {

@@ -37,7 +37,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ const stampTree: PerCellHandler = (state) => {
   const row = (state.zp2C + 1) & 0xff;
   const rowExtent = state.zp2E & 0xff;
   if (row !== rowExtent) {
-    idx = prngNext(state) & 0x01;
+    idx = prngNext(state, RNG_SITE.treeSprinkle) & 0x01;
   }
   // Cart `TYA ; AND #$0003 ; ASL ; TAY` only matters as a word-index
   // into a byte-addressed asm table; our TS array is already

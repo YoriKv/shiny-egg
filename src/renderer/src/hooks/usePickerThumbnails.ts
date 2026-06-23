@@ -3,11 +3,10 @@ import type {
   EntityValidityCandidate,
   LevelData,
   PickerThumbnails,
+  PickerThumbnailsRequest,
   RenderImage
 } from '../../../preload/api'
 import {
-  celRenderableSpriteNums,
-  formatARenderableSpriteNums,
   listExtendedObjects,
   listSprites,
   listStandardObjects
@@ -27,8 +26,6 @@ let spriteNums: number[] | null = null
 function requestFor(tab: 'object' | 'sprite'): {
   candidates?: EntityValidityCandidate[]
   spriteNums?: number[]
-  celRenderableNums?: number[]
-  formatANums?: number[]
 } {
   if (tab === 'object') {
     objectCandidates ??= [
@@ -42,10 +39,40 @@ function requestFor(tab: 'object' | 'sprite'): {
     return { candidates: objectCandidates }
   }
   spriteNums ??= listSprites().map(({ id }) => id)
-  return {
-    spriteNums,
-    celRenderableNums: celRenderableSpriteNums(),
-    formatANums: formatARenderableSpriteNums()
+  return { spriteNums }
+}
+
+/** The `render:pickerThumbnails` request for a (level, tab). Its candidate/
+ *  sprite sets must match those the unified catalog warm sends (render-core's
+ *  getEntityCatalog, fed by useEntityRenderValidity's candidates()/spriteCatalog())
+ *  so this hook's fetch hits the cache that warm populated — both build the same
+ *  obj-metadata catalog in the same order. Null for a level with no thumbnails
+ *  (none loaded / empty / special). */
+export function pickerThumbnailRequest(
+  level: LevelData | null,
+  tab: 'object' | 'sprite'
+): PickerThumbnailsRequest | null {
+  if (!level || level.empty || level.special) return null
+  return { levelRecordId: level.recordId, override: level, ...requestFor(tab) }
+}
+
+// Renderer-side cache of resolved thumbnail batches that survives PickerBody
+// unmount — the Place panel is DESTROYED on close (App renders only open
+// windows), so without this every reopen re-fetched (multi-MB IPC payload) and
+// re-blitted every canvas, even though the main-side cache still held the
+// bitmaps. Keyed by level + header + tab + render epoch: bitmaps are rendered
+// from the BASE ROM, so only a rebuild / gfx edit (which bump `renderRefresh`)
+// or a header change alters them — a plain close/reopen on the same level is a
+// hit and shows instantly. Small LRU (bitmaps are MBs).
+const RENDERER_THUMB_CACHE_MAX = 6
+const rendererThumbCache = new Map<string, PickerThumbnails>()
+function rememberThumbs(key: string, data: PickerThumbnails): void {
+  rendererThumbCache.delete(key)
+  rendererThumbCache.set(key, data)
+  while (rendererThumbCache.size > RENDERER_THUMB_CACHE_MAX) {
+    const oldest = rendererThumbCache.keys().next().value
+    if (oldest === undefined) break
+    rendererThumbCache.delete(oldest)
   }
 }
 
@@ -53,41 +80,62 @@ function requestFor(tab: 'object' | 'sprite'): {
  * Fetch the active tab's picker thumbnails. Same trigger discipline as
  * useEntityRenderValidity — refetches on level identity / header change only
  * (the bitmaps depend solely on the header; the level's own entities are
- * irrelevant), plus the tab. Main caches per gfx-header tuple, so tab flips
- * and edit commits don't re-render anything.
+ * irrelevant), plus the tab and the render epoch (`renderRefresh`). Both the
+ * main-side LRU and the renderer cache above mean tab flips, edit commits, and
+ * panel reopens don't re-render or re-fetch anything.
  */
 export function usePickerThumbnails(
   level: LevelData | null,
-  tab: 'object' | 'sprite'
+  tab: 'object' | 'sprite',
+  renderRefresh: number
 ): PickerThumbnailLookup | null {
-  const [result, setResult] = useState<{ tab: string; data: PickerThumbnails } | null>(null)
   const recordId = level && !level.empty && !level.special ? level.recordId : null
   const headerKey = level ? level.header.join(',') : ''
+  const keyFor = (t: 'object' | 'sprite'): string | null =>
+    recordId !== null ? `${recordId}:${headerKey}:${t}:${renderRefresh}` : null
+  const cacheKey = keyFor(tab)
+  // A bump counter that forces a re-read of the module cache once an async fetch
+  // lands — the displayed data itself is read SYNCHRONOUSLY from the cache in the
+  // memo below, so a switch to an already-cached tab shows in the same render
+  // (no text-only flash), unlike routing it through a setState the effect runs
+  // post-paint.
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
-    if (recordId === null || !level) {
-      setResult(null)
-      return
-    }
+    if (recordId === null || !level) return
     let cancelled = false
-    // `level` deliberately not a dep — see useEntityRenderValidity.
-    void window.shinyEgg.render
-      .pickerThumbnails({ levelRecordId: recordId, override: level, ...requestFor(tab) })
-      .then((data) => {
-        if (!cancelled) setResult(data ? { tab, data } : null)
-      })
-      .catch(() => {
-        if (!cancelled) setResult(null)
-      })
+    // Fetch a tab's batch into the renderer cache if absent. The active tab is
+    // ensured first; the OTHER tab is prefetched so the first switch is also a
+    // synchronous hit (its bitmaps are already main-side warm from the catalog
+    // pass, so this is a cheap payload transfer). The cache key pins everything
+    // the bitmaps depend on (level/header/render epoch), so a present entry is
+    // reused without an IPC round-trip.
+    const ensure = (t: 'object' | 'sprite'): void => {
+      const k = keyFor(t)
+      if (k === null || rendererThumbCache.has(k)) return
+      const req = pickerThumbnailRequest(level, t)
+      if (!req) return
+      void window.shinyEgg.render
+        .pickerThumbnails(req)
+        .then((data) => {
+          if (cancelled || !data) return
+          rememberThumbs(k, data)
+          setVersion((v) => v + 1)
+        })
+        .catch(() => {})
+    }
+    ensure(tab)
+    ensure(tab === 'object' ? 'sprite' : 'object')
     return () => {
       cancelled = true
     }
+    // `level` deliberately not a dep — see useEntityRenderValidity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recordId, headerKey, tab])
+  }, [recordId, headerKey, tab, renderRefresh])
 
   return useMemo(() => {
-    if (!result || result.tab !== tab) return null
-    const { data } = result
+    const data = cacheKey !== null ? rendererThumbCache.get(cacheKey) : undefined
+    if (!data) return null
     const objects = new Map<number, RenderImage>()
     for (const [k, v] of Object.entries(data.objects)) objects.set(parseInt(k, 16), v)
     const extended = new Map<number, RenderImage>()
@@ -99,5 +147,7 @@ export function usePickerThumbnails(
         num === 0 && exnum !== undefined ? extended.get(exnum) : objects.get(num),
       spriteThumb: (num: number) => sprites.get(num)
     }
-  }, [result, tab])
+    // `version` re-reads the cache after an async fetch lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey, version])
 }

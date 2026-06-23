@@ -8,6 +8,26 @@
 // import them from '../../preload/api' as before.
 
 /**
+ * Background-grid overlay mode — a 3-state toolbar toggle, cycled by the grid
+ * button (off → screen → tile → off):
+ *   'off'    — no grid.
+ *   'screen' — faint per-screen lines (every 16 cells) + the editable-boundary
+ *              rectangle (the previous always-on behaviour).
+ *   'tile'   — adds the finer per-CELL lines underneath, with the screen lines
+ *              still emphasized on top (so the tile grid "also shows the screen
+ *              grid").
+ */
+export type GridMode = 'off' | 'screen' | 'tile'
+
+/** Cycle order for the toolbar grid button: off → screen → tile → off. */
+export const GRID_MODE_CYCLE: readonly GridMode[] = ['off', 'screen', 'tile']
+
+/** The mode the grid button advances to from `mode` (one step around the cycle). */
+export function nextGridMode(mode: GridMode): GridMode {
+  return GRID_MODE_CYCLE[(GRID_MODE_CYCLE.indexOf(mode) + 1) % GRID_MODE_CYCLE.length]!
+}
+
+/**
  * Toolbar visibility toggles. The three BG flags match the SNES PPU layers
  * the level loader populates:
  *   bg1 — the decoded BG1 (object stream); shown as "Foreground"
@@ -52,11 +72,11 @@ export interface LayerVisibility {
    *  every sprite and gates click-to-select (no outline → no hit), exactly as
    *  `bg1Outlines` does for objects. Default on. */
   spriteOutlines: boolean
-  /** The spatial-bounds overlay: faint per-screen grid lines + the brighter
-   *  editable-boundary rectangle (see canvas/draw/grid.ts). A pure editing aid
-   *  drawn over every layer; toggle it off for an unobstructed view of the
-   *  rendered level. Default on. */
-  grid: boolean
+  /** Background-grid overlay mode (a 3-state toggle — see GridMode). 'screen'
+   *  draws faint per-screen lines + the brighter editable-boundary rectangle;
+   *  'tile' adds the finer per-cell lines on top; 'off' hides it entirely. A
+   *  pure editing aid drawn over every layer. Default 'screen'. */
+  grid: GridMode
 }
 
 /**
@@ -73,6 +93,11 @@ export interface IncomingExit {
   destY: number
   /** Source room's screen index for the outgoing exit (debug / future hover). */
   sourceScreenIndex: number
+  /** Entrance/spawn state the source exit applies on arrival (the warp record's
+   *  5th byte; `ENTRANCE_TYPES`). Editable from the incoming marker's Properties
+   *  — the commit writes back to the source exit's `entranceType`, the dropdown
+   *  twin of the destX/destY drag. */
+  entranceType: number
 }
 
 /**

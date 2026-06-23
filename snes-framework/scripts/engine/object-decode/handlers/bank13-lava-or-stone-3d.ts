@@ -143,9 +143,13 @@ function pipeCapSelect(state: DecodeState, y: number): number {
     // CODE_13FC4D: $28 == 0 (first column).
     if (orient === 0x8000) {
       // CODE_13FC54: wallet group, +$A1.
-      candidate = (DATA_stone_3d_cap_tiles_wall[yIdx]! + a1) & 0xffff;
+      return (DATA_stone_3d_cap_tiles_wall[yIdx]! + a1) & 0xffff;
     }
-    return candidate;
+    // CODE_13FC5C: orient != $8000 → if $A1 == 0 keep the default candidate;
+    // else ($A1 != 0) take the alt-tiles branch (CODE_13FC60). (Was missing the
+    // alt branch, so col-0 cells with $A1=1 stamped cap+$A1 instead of cap_alt.)
+    if (a1 === 0) return candidate;
+    return DATA_stone_3d_cap_tiles_alt[yIdx]!;
   }
 
   // $28 != 0. Check end-of-column.
@@ -167,8 +171,9 @@ function pipeCapSelect(state: DecodeState, y: number): number {
       }
       return candidate;
     }
-    // No merge — INC and return (cart `INC ; BRA CODE_13FC6F`).
-    return (candidate + 1) & 0xffff;
+    // No merge — the cart's `INC` operates on A, which still holds the PROBED
+    // LEFT-NEIGHBOUR tile (not the default candidate $04). So stamp leftTile + 1.
+    return (leftTile + 1) & 0xffff;
   }
 
   // CODE_13FC44: middle column.

@@ -58,6 +58,22 @@ interface StoredObjectInfo {
    * Checked by `lib/theme-validity.ts` (hook + validity-report gate).
    */
   bg1Tilesets?: string[] | null
+  /**
+   * Animation-tileset indices (hex strings of `header[10]`) under which this
+   * object's *animated* tiles render correctly — the header[10] analogue of
+   * `bg1Tilesets`. Present only on the handful of objects that stamp tiles in
+   * the header[10]-selected animated VRAM region ($1000-$13FF): steep slopes
+   * $08/$09, animated water $35, castle lava $47, icy water $DC. The VRAM-
+   * coverage probe can't gate these — that region is filled by WHATEVER
+   * animation `header[10]` selects, so any animation reads as "covered" (a
+   * water object in a lava level probes ok yet renders lava frames). Derived
+   * from the distinct `header[10]` of every shipped level that stamps each
+   * object (correct by construction, like bg1Tilesets). ABSENT/NULL ⇒ not
+   * gated (the object's tiles don't come from the animated region — almost
+   * every object); `[...]` ⇒ valid iff the level's `header[10]` is in the set.
+   * Checked by `lib/anim-validity.ts` (hook + validity-report gate).
+   */
+  animTilesets?: string[] | null
   defaultWidth: number
   defaultHeight: number
   exitTrigger?: boolean
@@ -153,6 +169,12 @@ export interface SpriteNeighborDep {
    *  asm page-family tests that two ids can't mask-express, e.g. the grinder
    *  monkeys' tree-trunk pages `0x99`/`0x9A` (`SBC #$0099 / LSR / BEQ`). */
   pageLiterals?: string[]
+  /** Match any **side-solid** Map16 page (the page's collision byte-0 `AL` flag,
+   *  `raw0 & 0x02`). OR'd with the other matchers. Mirrors asm side probes that
+   *  test the solidity result rather than a specific page — e.g. the grinder
+   *  monkeys grab any solid wall beside them (`CODE_02ADC1`'s `R7 & $0002`), not
+   *  just the tree-trunk pages. Resolved via `ctx.isSolidPage`. */
+  matchSolid?: boolean
   /** Human-readable gloss of the `collisionTag` / `tileLiterals` matcher
    *  (sibling `note`, ignored at runtime). */
   collisionNote?: string
@@ -225,23 +247,13 @@ interface StoredSpriteInfo {
   //      files), and null-but-placed sprites filled from the cart's static
   //      tile-base table `DATA_sprite_gfx_file_table` (host-confirmed). ──
   /**
-   * Does the sprite supply graphics outside its level's variable spriteset
-   * (so `spritesetFiles` may understate what it needs)? True if EITHER the
-   * trace observed it rendering tiles from the dynamic SuperFX region, OR its
-   * Init/Main routine can reach `CODE_03AD74` (the dynamic-tile allocator) in
-   * the call graph — the static signal also covers non-idle states the
-   * single-frame trace didn't capture. Absent ⇒ treat as false.
-   */
-  dynamicGfx?: boolean
-  /**
    * GFX file IDs the sprite's own tiles need present in the level's *variable*
    * spriteset (header field 7 → the 6 files in `DATA_spriteset_files`). The
    * editor re-checks rendering when a level's spriteset changes: the sprite
    * still renders iff the new spriteset's 6 files ⊇ this set.
    *   `[]`   ⇒ needs no variable-spriteset file: tiles are in the always-loaded
-   *            global sheet (portable), streamed from the dynamic region
-   *            (see `dynamicGfx`), or the sprite has no graphics → renders
-   *            under any spriteset.
+   *            global sheet (portable), streamed from the dynamic SuperFX region,
+   *            or the sprite has no graphics → renders under any spriteset.
    *   `null` ⇒ the sprite never appears in a level, so nothing could be derived.
    * Trace-derived values are exact (observed). Static-fallback values are a
    * safe over-approximation: "appears in a level" ≠ "renders correctly there",
@@ -251,18 +263,9 @@ interface StoredSpriteInfo {
    * when comparing against a spriteset's numeric file IDs.
    */
   spritesetFiles?: string[] | null
-  /**
-   * How the sprite cel-renders at rest, prebaked from a per-sprite emulator
-   * **categorization trace** (`drawType` dispatch index — authoritative + level-
-   * independent): `'B'` = Format-B `special_chr` cel (enemies, bosses, …), `'A'` =
-   * Format-A single `object_data` tile (items). **Absent** = not statically cel-
-   * rendered here: dynamic/rotzoom (handled by the dynamic-body table), no visual,
-   * or a 1-1 placeholder/no-spawn awaiting per-natural-level refinement. Replaces
-   * the unreliable `category` as the cel-render + Format-A gate (see
-   * research/notes-sprite-render.md). Drives `celRenderableSpriteNums` /
-   * `formatARenderableSpriteNums`.
-   */
-  cel?: 'A' | 'B'
+  // NB: the asm-fixed render facts `cel` ('A'/'B'), `settledPaletteRow` (SP4) and `restFrame`
+  // (SP3) used to live here; they moved to the engine (snes-framework sprite-render-facts.ts)
+  // since they're determined by the cart, not editable — see that file + research notes.
   /**
    * Neighbour-dependency inventory — surrounding placed level data this sprite's
    * behaviour reads (rail tiles, keyhole tiles, a partner sprite, an exit row).
@@ -411,37 +414,6 @@ export function listSprites(): CatalogEntry<SpriteInfo>[] {
   return spritesCache
 }
 
-let celRenderableNumsCache: number[] | null = null
-let formatANumsCache: number[] | null = null
-/**
- * Sprite nums that cel-render via the **Format-B** `special_chr` OAM-cel path
- * (`render:spriteLayer` gate). Sourced from the prebaked `cel === 'B'` field —
- * a per-sprite emulator categorization (`drawType`, authoritative) that replaces
- * the old unreliable `category === 'enemy'` proxy (which mis-gated ~59 sprites:
- * bosses/items that DO draw a cel were excluded; "enemies" that draw nothing were
- * included). Memoised; static across levels. (Dynamic/rotzoom bodies are handled
- * separately by `DYNAMIC_BODY_SOURCES`; Format-A items are `formatARenderableSpriteNums`.)
- */
-export function celRenderableSpriteNums(): number[] {
-  if (!celRenderableNumsCache) {
-    celRenderableNumsCache = Object.entries(data.sprites)
-      .filter(([, info]) => info.cel === 'B')
-      .map(([k]) => Number(k))
-  }
-  return celRenderableNumsCache
-}
-
-/**
- * Sprite nums that cel-render via the **Format-A** single-`object_data`-tile path
- * (items: red coin, eggs, key, …), from the prebaked `cel === 'A'` field. The
- * engine renders these AND forces the Format-A path for them, which resolves the
- * few sprites carrying both a `special_chr` and an `object_data` (e.g. the Key).
- */
-export function formatARenderableSpriteNums(): number[] {
-  if (!formatANumsCache) {
-    formatANumsCache = Object.entries(data.sprites)
-      .filter(([, info]) => info.cel === 'A')
-      .map(([k]) => Number(k))
-  }
-  return formatANumsCache
-}
+// NB: the per-sprite render facts (cel format, settledPaletteRow SP4, restFrame SP3) moved to
+// the engine (snes-framework sprite-render-facts.ts) — asm-fixed, not editable, so they live
+// with the other engine render tables and no longer round-trip through the renderer + IPC.

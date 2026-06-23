@@ -1,8 +1,7 @@
 // Central save/dirty coordinator for the editor's disconnected tools (level
 // editor, future string editor, …). Each tool keeps its own state and
 // registers a uniform handle via `useEditDocument`; the session aggregates
-// dirty state and orchestrates save-all / discard-all. See
-// research/plan-project-storage.md §"Shared edit state across tools".
+// dirty state and orchestrates save-all / discard-all.
 
 import {
   createContext,

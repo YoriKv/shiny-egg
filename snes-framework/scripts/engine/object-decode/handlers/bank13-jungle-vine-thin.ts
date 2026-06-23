@@ -53,7 +53,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { getMap16Left, getMap16Right } from '../fetch.ts';
 import { stampCell, readBuf16, writeBuf16, setProbeToCurrent } from './_shared.ts';
 
@@ -234,7 +234,7 @@ const jungleVineThinPlusExtrasStamp: PerCellHandler = (state) => {
   if (tailLeft < 0x02) return;
 
   // 50/50 chance: PRNG bit 1.
-  const roll = prngNext(state) & 0x0002;
+  const roll = prngNext(state, RNG_SITE.jungleVineThinExtras) & 0x0002;
   if (roll === 0) return;
 
   // Set probe coords to current cell. The asm's `LDA $1B ; STA $0E`
@@ -284,7 +284,7 @@ const jungleVineThinPlusExtrasStamp: PerCellHandler = (state) => {
 const initJungleVineThin: InitHandler = (state) => {
   // Seed $A1 with PRNG bit 1 (0 or 2). The base per-cell handler uses
   // this for the middle-row L/R parity pick.
-  state.zpA1 = prngNext(state) & 0x0002;
+  state.zpA1 = prngNext(state, RNG_SITE.initJungleVineThin) & 0x0002;
 
   // Bit-1 of $15 picks between base and decorated stamp handler.
   const handler = (state.zp15 & 0x02) === 0

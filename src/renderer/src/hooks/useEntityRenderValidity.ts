@@ -9,6 +9,7 @@ import {
   getObjectInfo,
   getSprite,
   listExtendedObjects,
+  listSprites,
   listStandardObjects
 } from '../data/obj-metadata'
 import {
@@ -16,6 +17,7 @@ import {
   type SpriteValidity
 } from '../lib/sprite-render-validity'
 import { objectThemeVerdict } from '../lib/theme-validity'
+import { objectAnimVerdict } from '../lib/anim-validity'
 import { effectiveBg1Tilesets } from 'snes-framework/bg1-regions'
 
 /** Lookup view over one level's render-validity: object verdicts from the
@@ -44,6 +46,15 @@ function candidates(): EntityValidityCandidate[] {
     }))
   ]
   return candidatesCache
+}
+
+// The full sprite catalog — sent alongside the object candidates so the unified
+// catalog pass also warms the picker's sprite-tab thumbnails. Same list/order as
+// usePickerThumbnails' sprite request, so they share the thumbnail cache key.
+let spriteCatalogCache: number[] | null = null
+function spriteCatalog(): number[] {
+  spriteCatalogCache ??= listSprites().map(({ id }) => id)
+  return spriteCatalogCache
 }
 
 /**
@@ -76,6 +87,9 @@ export function useEntityRenderValidity(level: LevelData | null): EntityValidity
         : [],
     [level]
   )
+  // The level's animation tileset (header[10]) — gates the header[10]-animated
+  // objects whose tiles that animation draws (objectAnimVerdict).
+  const animTileset = level?.header[10] ?? 0
 
   useEffect(() => {
     if (recordId === null || !level) {
@@ -87,16 +101,34 @@ export function useEntityRenderValidity(level: LevelData | null): EntityValidity
     // (recordId, headerKey) yields identical verdicts — only the header feeds
     // the probe (the override's entities are replaced by the synthetic
     // one-object levels main-side).
-    void window.shinyEgg.render
-      .entityRenderValidity({ levelRecordId: recordId, override: level, candidates: candidates() })
-      .then((data) => {
-        if (!cancelled) setResult(data ? { data } : null)
-      })
-      .catch(() => {
-        if (!cancelled) setResult(null)
-      })
+    //
+    // Deferred to idle: this drives the unified picker-catalog pass main-side
+    // (~500 object decodes for the verdicts, then thumbnail warming reusing
+    // them), so keeping it off the level-load critical path avoids a load stall
+    // — the gfx-missing markers it backs fill in a beat after load. `spriteNums`
+    // lets that pass also warm the picker's sprite thumbnails. Cancelled on a
+    // level/header change before it fires.
+    const handle = window.requestIdleCallback(
+      () => {
+        void window.shinyEgg.render
+          .entityRenderValidity({
+            levelRecordId: recordId,
+            override: level,
+            candidates: candidates(),
+            spriteNums: spriteCatalog()
+          })
+          .then((data) => {
+            if (!cancelled) setResult(data ? { data } : null)
+          })
+          .catch(() => {
+            if (!cancelled) setResult(null)
+          })
+      },
+      { timeout: 2000 }
+    )
     return () => {
       cancelled = true
+      window.cancelIdleCallback(handle)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordId, headerKey])
@@ -124,14 +156,19 @@ export function useEntityRenderValidity(level: LevelData | null): EntityValidity
         // tileset (header + changer bands); theme-UNKNOWN (bg1Tilesets null —
         // never shipped, underivable) surfaces as the amber '?' verdict.
         if (probed === 'ok' || probed === 'degraded') {
-          const tv = objectThemeVerdict(getObjectInfo(num, exnum).bg1Tilesets, effectiveTs)
+          const info = getObjectInfo(num, exnum)
+          const tv = objectThemeVerdict(info.bg1Tilesets, effectiveTs)
           if (tv === 'locked') return 'invalid'
           if (tv === 'unknown') return 'unknown'
+          // Animation-tileset gate: the header[10]-animated objects ($35/$DC/…)
+          // pass coverage under ANY animation but only render right under their
+          // own — the coverage probe can't see the mismatch (anim-validity.ts).
+          if (objectAnimVerdict(info.animTilesets, animTileset) === 'locked') return 'invalid'
         }
         return probed
       },
       spriteValidity: (num: number) =>
         resolveSpriteValidity(getSprite(num).spritesetFiles, levelFiles)
     }
-  }, [result, effectiveTs])
+  }, [result, effectiveTs, animTileset])
 }

@@ -24,8 +24,26 @@ import { readExtractionState } from 'snes-framework/state'
 import { bizhawkExeName, builtArtifactDir, devBizhawkPath, frameworkWorkRoot } from './framework-paths'
 import { getCurrentProjectId } from './projects'
 import { getSettings } from './settings'
-import type { BizhawkWarp } from '../shared/ipc-types'
+import type { BizhawkWarp, TestInventory } from '../shared/ipc-types'
 import { hex } from 'snes-framework/hex'
+
+// Test Level item presets → the NorSpr sprite IDs seeded onto Yoshi's egg
+// trail. The trail caps at 6 items (eggs + keys share the slots; the cart's
+// CODE_03BEB9 drops the oldest past 6), so a key takes one of the six. Green
+// egg ($25) is the standard trailing egg the game's own FullEggSpawner uses;
+// the carryable key is $27. The Lua harness writes these into the between-level
+// inventory snapshot the level loader restores on entry (see render.lua).
+const NORSPR_GREEN_EGG = 0x25
+const NORSPR_KEY = 0x27
+function inventorySpriteIds(inv: TestInventory | undefined): number[] {
+  if (!inv) return [] // undefined — empty-handed boot
+  // Defensive clamp — the UI enforces eggs + keys ≤ 6, but a stale persisted
+  // value (or a future caller) could exceed the trail's 6-slot capacity. Eggs
+  // take priority; keys fill whatever slots remain.
+  const eggs = Math.max(0, Math.min(6, Math.trunc(inv.eggs) || 0))
+  const keys = Math.max(0, Math.min(6 - eggs, Math.trunc(inv.keys) || 0))
+  return [...Array<number>(eggs).fill(NORSPR_GREEN_EGG), ...Array<number>(keys).fill(NORSPR_KEY)]
+}
 
 /**
  * Resolve the EmuHawk.exe path: the saved location first (if it still exists),
@@ -328,9 +346,16 @@ class BizHawkSupervisor {
   // the chosen cell, so the cart's entrance loader positions Yoshi AND
   // builds the destination region before control resumes (no post-load
   // teleport — that would leave the region un-paged and Yoshi falling).
+  //
+  // `inventory` (optional): Test Level egg/key counts ({ eggs, keys }, sum ≤ 6).
+  // The supervisor maps them to NorSpr sprite IDs (inventorySpriteIds) and
+  // appends `INV <id>...` so the Lua harness seeds Yoshi's egg trail before the
+  // (final) load via the cart's between-level inventory snapshot. Defaults to
+  // empty-handed.
   async loadLevel(
     translevelId: number,
-    warps?: ReadonlyArray<BizhawkWarp>
+    warps?: ReadonlyArray<BizhawkWarp>,
+    inventory?: TestInventory
   ): Promise<string> {
     if (!Number.isInteger(translevelId) || translevelId < 0 || translevelId > 0xff) {
       throw new Error(`loadLevel: translevelId must be 0..255, got ${translevelId}`)
@@ -346,6 +371,8 @@ class BizHawkSupervisor {
       }
       cmd += ` WARP ${hex(w.destLevelRecordId)} ${hex(w.destX)} ${hex(w.destY)} ${hex(w.entranceType)}`
     }
+    const invIds = inventorySpriteIds(inventory)
+    if (invIds.length > 0) cmd += ` INV ${invIds.map((id) => hex(id)).join(' ')}`
     const buf = await this.enqueue(cmd, true)
     return buf.toString('utf8')
   }

@@ -17,10 +17,10 @@
   --line-strong:    #3a3f47;
   --line-faint:     #21252a;
 
-  --ink:            #e6e8ec;
-  --ink-2:          #9ca3ad;
-  --ink-3:          #6a7079;
-  --ink-4:          #3d424a;
+  --ink:            #f0f2f6;
+  --ink-2:          #b8bfc9;
+  --ink-3:          #8a919c;
+  --ink-4:          #5c636d;
 
   --accent:         #d4e157;
   --accent-soft:    #9caa3a;
@@ -68,6 +68,39 @@ button:disabled {
 
 h3 { margin: 0; }
 
+/* ── Shared primitives ─────────────────────────────────────────────────── */
+
+/* Form controls (text / number inputs + selects). Component classes layer on
+   bespoke sizing/padding and may override background/border — because they're
+   defined later in this file, those overrides win at equal specificity. The
+   focus ring + disabled treatment are shared by every input. */
+.se-input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg-base);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.se-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.se-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Muted secondary text — labels, metadata, hints. Add alongside a component
+   class when finer styling (compound selectors, etc.) is also needed. */
+.se-meta {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.se-meta-xs {
+  color: var(--ink-3);
+  font-size: 10px;
+}
+
 /* ── App shell ─────────────────────────────────────────────────────────── */
 
 .se {
@@ -78,6 +111,14 @@ h3 { margin: 0; }
      wrapped row was getting clipped. The toolbar carries a `min-height`
      so the single-row case still renders at the same 48px height. */
   grid-template-rows: auto 1fr;
+  /* One column pinned to the viewport width — `minmax(0, 1fr)` floors the
+     track at 0 instead of the toolbar's intrinsic min-content (~1120px), so
+     the stage/canvas never overflow past the right edge as the window narrows.
+     Without this the canvas and its right-anchored overlays (the coords
+     readout, the Reset-view button) drifted off-screen below ~1120px. The
+     window's 1000px minWidth (main process) is the practical floor below which
+     the toolbar's far-right items begin to clip. */
+  grid-template-columns: minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
 }
@@ -111,7 +152,10 @@ h3 { margin: 0; }
   align-items: center;
   gap: 8px;
   padding: 0 16px;
-  min-height: 40px;
+  /* Raised from 40px so the row-2 text buttons (Save / panel toggles) still
+     seat comfortably when a longer label wraps to two lines on a narrow
+     window — see the per-button height/padding rule below. */
+  min-height: 48px;
   border-top: 1px solid var(--line);
 }
 .se-toolbar__row-left {
@@ -125,6 +169,82 @@ h3 { margin: 0; }
   align-items: center;
   gap: 4px;
   margin-left: auto;
+}
+
+/* Panel-group menus — toolbar dropdowns that collect related panel toggles
+   behind one button (Global Panels, Graphics Panels). */
+.se-panelgroup {
+  position: relative;
+}
+/* Trigger reuses the .se-tool--reopen look but lays label + chevron out in a
+   row (chevron to the right of the text). `.se-tool` (inline-grid) is defined
+   later in this file, so the descendant selector raises specificity to keep the
+   row layout — otherwise the chevron stacks below the label. Accent tint when
+   ≥1 panel is open. */
+.se-panelgroup .se-panelgroup__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.se-panelgroup__trigger.has-open {
+  color: var(--accent);
+}
+.se-panelgroup__chevron {
+  color: var(--ink-3);
+  transition: transform 0.18s;
+}
+.se-panelgroup__trigger.is-menu-open .se-panelgroup__chevron {
+  color: var(--accent);
+  transform: rotate(180deg);
+}
+.se-panelgroup__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+  z-index: 1000;
+  animation: se-fade-in 0.14s ease-out;
+}
+.se-panelgroup__item {
+  gap: 12px;
+}
+.se-panelgroup__item.is-open {
+  color: var(--ink);
+}
+.se-panelgroup__item-state {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+/* Row-2 text buttons (Save / Reset / Launch / Test Level + the panel toggles)
+   — a larger 12px label with tighter left/right padding so the edit + emulator
+   + panel-toggle actions read more clearly. The undo/redo/back/forward buttons
+   are icon-only (bare `.se-tool`) and intentionally excluded. Scoped to the
+   secondary row on purpose: `.se-tool--reopen` is also used by the Patches
+   panel, which keeps its own sizing. */
+.se-toolbar__row--secondary .se-tool--save,
+.se-toolbar__row--secondary .se-tool--reset,
+.se-toolbar__row--secondary .se-tool--reopen,
+.se-toolbar__row--secondary .se-tool--bizhawk {
+  font-size: 12px;
+  /* Vertical padding + auto height (over the base `.se-tool` fixed 30px) so a
+     label that wraps to two lines on a narrow window grows the button instead
+     of spilling outside its background; min-height keeps single-line buttons at
+     the usual 30px, and text-align centres both wrapped lines. The row's
+     min-height (above) is raised to seat the taller two-line buttons. */
+  padding: 3px 8px;
+  height: auto;
+  min-height: 30px;
+  line-height: 1.15;
+  text-align: center;
 }
 
 /* Pair the main level + sub-level menus into a single grid cell so the
@@ -153,13 +273,31 @@ h3 { margin: 0; }
   border-radius: 3px;
   transition: color 0.12s, background-color 0.12s;
 }
+/* Hover — neutral elevated fill, shared by toolbar tools, tabs, page buttons,
+   list rows, and menu items. Defined here (early, near the toolbar) so the
+   accent "selected" states further down win when an element is both selected
+   and hovered. */
+.se-patches__pathopen:hover,
+.se-patches__move:hover:not(:disabled),
+.se-bizhawk__step:hover:not(:disabled),
+.se-tool--bizhawk:hover:not(:disabled),
+.se-tool--save:hover:not(:disabled),
+.se-tab:hover,
+.se-tiles__page-btn:hover:not(:disabled),
+.se-worldmap__jump:hover,
+.se-worldmap__rowbtn:hover,
+.se-picker__row:hover,
+.se-menuitem:hover:not(:disabled),
 .se-tool:hover {
-  color: var(--ink);
   background: var(--bg-elevated);
+  color: var(--ink);
 }
+/* Active toolbar tool — accent fill. Standalone (not in the shared accent group
+   below) and placed before .se-tool--layer.is-active so that equal-specificity
+   layer-toggle override still wins (active layer toggles stay transparent). */
 .se-tool.is-active {
-  color: var(--bg-base);
   background: var(--accent);
+  color: var(--bg-base);
 }
 .se-tool--reopen {
   width: auto;
@@ -193,7 +331,48 @@ h3 { margin: 0; }
 
 .se-bizhawk {
   display: inline-flex;
+  align-items: center;
   gap: 4px;
+}
+/* Test Level egg/key steppers — two stacked rows (eggs over keys), each a
+   horizontal − value + control. Replaces the old item-preset <select>. */
+.se-bizhawk__inv {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 2px;
+}
+.se-bizhawk__stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.se-bizhawk__stepper-label {
+  width: 30px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.se-bizhawk__step {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  /* Zero the UA button padding so the +/− glyph centers on the button's center
+     (place-items handles the rest); the U+2212 minus matches the + optically. */
+  padding: 0;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 13px;
+  line-height: 1;
+}
+.se-bizhawk__step-val {
+  min-width: 12px;
+  text-align: center;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Patches panel ──────────────────────────────────────────────────────── */
@@ -343,10 +522,6 @@ h3 { margin: 0; }
   cursor: pointer;
   font-size: 10px;
 }
-.se-patches__pathopen:hover {
-  background: var(--bg-elevated);
-  color: var(--ink);
-}
 .se-patches__help-note {
   font-size: 10px;
   font-style: italic;
@@ -364,10 +539,6 @@ h3 { margin: 0; }
   border-radius: 3px;
   font-size: 9px;
   line-height: 1;
-}
-.se-patches__move:hover:not(:disabled) {
-  color: var(--ink);
-  background: var(--bg-elevated);
 }
 .se-patches__order-hint {
   font-size: 10px;
@@ -387,10 +558,6 @@ h3 { margin: 0; }
 }
 .se-patches__poolsize input {
   width: 52px;
-}
-.se-patches__poolsize-unit {
-  font-size: 11px;
-  color: var(--ink-3);
 }
 .se-patches__poolsize-hint {
   font-size: 10px;
@@ -417,10 +584,6 @@ h3 { margin: 0; }
   font-size: 11px;
   color: var(--ink-3);
 }
-.se-tool--bizhawk:hover:not(:disabled) {
-  color: var(--ink);
-  background: var(--bg-elevated);
-}
 .se-tool--bizhawk:disabled {
   cursor: default;
   opacity: 0.45;
@@ -432,20 +595,12 @@ h3 { margin: 0; }
   font-size: 11px;
   color: var(--ink-3);
 }
-.se-tool--save:hover:not(:disabled) {
-  color: var(--ink);
-  background: var(--bg-elevated);
-}
 .se-tool--save:disabled {
   cursor: default;
   opacity: 0.45;
 }
 .se-tool--save.is-dirty {
   color: var(--accent);
-}
-.se-tool--save.is-dirty:hover {
-  color: var(--bg-base);
-  background: var(--accent);
 }
 
 /* Reset level — neutral by default, destructive (red) on hover. */
@@ -537,10 +692,6 @@ h3 { margin: 0; }
   border-radius: 3px;
   cursor: pointer;
 }
-.se-ctxmenu__item:hover:not(:disabled) {
-  background: var(--accent);
-  color: var(--bg-base);
-}
 .se-ctxmenu__item:disabled {
   opacity: 0.4;
   cursor: default;
@@ -611,6 +762,29 @@ h3 { margin: 0; }
   margin: 0 4px;
 }
 
+/* Canvas-background swatch — sits to the right of the tool buttons. The native
+ * color input is restyled into a compact square that fits the toolbar row. */
+.se-toolbar__bgcolor {
+  display: inline-flex;
+  align-items: center;
+}
+.se-toolbar__bgcolor input[type='color'] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+.se-toolbar__bgcolor input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+.se-toolbar__bgcolor input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
 .se-toolbar__layers {
   /* Fixed 5-column grid intentionally splits the toggles into two functional
      rows: row 1 = visual layers (sprites, BG1, BG2, BG3, backdrop), row 2 =
@@ -659,7 +833,9 @@ h3 { margin: 0; }
   cursor: grab;
   overflow: hidden;
   user-select: none;
-  background: #000;
+  /* App-wide canvas background (toolbar swatch → --se-canvas-bg); the canvas
+   * clears to transparent so this shows behind/around the level. */
+  background: var(--se-canvas-bg, #000);
 }
 .se-canvas.is-pickable {
   cursor: pointer;
@@ -698,7 +874,7 @@ h3 { margin: 0; }
   margin: 0;
   font-size: 11px;
   line-height: 1.4;
-  color: var(--se-muted, #9aa0a6);
+  color: var(--ink-2);
 }
 .se-paint__warn {
   margin: 0;
@@ -714,7 +890,7 @@ h3 { margin: 0; }
   font-size: 12px;
 }
 .se-paint__row > span {
-  color: var(--se-muted, #9aa0a6);
+  color: var(--ink-2);
 }
 .se-paint__row .se-props__select,
 .se-paint__row .se-props__num {
@@ -730,7 +906,7 @@ h3 { margin: 0; }
 }
 .se-paint__count {
   font-size: 11px;
-  color: var(--se-muted, #9aa0a6);
+  color: var(--ink-2);
 }
 .se-canvas__el {
   display: block;
@@ -795,6 +971,47 @@ h3 { margin: 0; }
   border-color: var(--line-strong);
 }
 
+/* Top-left minimap overlay: a half-transparent BG1 render of the whole level,
+   click/drag to pan; collapses to just its title bar. */
+.se-minimap {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(13, 11, 9, 0.45);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.se-minimap__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 18px;
+  padding: 0 5px 0 8px;
+  cursor: pointer;
+}
+.se-minimap__bar:hover .se-minimap__toggle {
+  color: var(--ink);
+}
+.se-minimap__title {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.se-minimap__toggle {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink-2);
+}
+.se-minimap__canvas {
+  display: block;
+  cursor: crosshair;
+}
+
 .se-canvas__message {
   position: absolute;
   left: 50%;
@@ -809,10 +1026,6 @@ h3 { margin: 0; }
   max-width: 460px;
   text-align: center;
   pointer-events: none;
-}
-.se-canvas__message.is-error {
-  border-color: var(--danger);
-  color: var(--danger);
 }
 
 .se-canvas__empty {
@@ -998,10 +1211,6 @@ h3 { margin: 0; }
   cursor: pointer;
   transition: color 0.12s, background-color 0.12s, border-color 0.12s;
 }
-.se-tab:hover {
-  color: var(--ink);
-  background: var(--bg-elevated);
-}
 .se-tab.is-active {
   color: var(--bg-base);
   background: var(--accent);
@@ -1023,10 +1232,6 @@ h3 { margin: 0; }
   border-radius: 3px;
   cursor: pointer;
   transition: color 0.12s, background-color 0.12s;
-}
-.se-tiles__page-btn:hover:not(:disabled) {
-  color: var(--ink);
-  background: var(--bg-elevated);
 }
 .se-tiles__page-btn:disabled {
   opacity: 0.35;
@@ -1233,18 +1438,10 @@ h3 { margin: 0; }
   cursor: default;
   opacity: 0.45;
 }
-.se-palette__reset-btn.is-danger {
-  color: var(--danger);
-  border-color: var(--danger);
-}
 /* Save — accent (primary) so it reads as the main action in the toolbar. */
 .se-palette__reset-btn.is-save:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent);
-}
-.se-palette__reset-btn.is-save:hover:not(:disabled) {
-  color: var(--bg-base);
-  background: var(--accent);
 }
 .se-palette__reset-confirm {
   display: flex;
@@ -1457,11 +1654,9 @@ h3 { margin: 0; }
   gap: 6px;
 }
 
-.se-strings__search {
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  width: 100%;
-  padding: 3px 8px;
+/* Shared base for every Strings-panel input (search / pointer-select / line /
+   markup): mono, elevated background, soft-accent focus ring. */
+.se-strings__field {
   font-family: var(--font-mono);
   font-size: 12px;
   background: var(--bg-elevated);
@@ -1469,10 +1664,16 @@ h3 { margin: 0; }
   border: 1px solid var(--line);
   border-radius: 2px;
 }
-
-.se-strings__search:focus {
+.se-strings__field:focus {
   outline: none;
   border-color: var(--accent-soft);
+}
+
+.se-strings__search {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 3px 8px;
 }
 
 .se-strings__list {
@@ -1510,17 +1711,6 @@ h3 { margin: 0; }
   flex: 0 0 auto;
   max-width: 280px;
   padding: 2px 4px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--bg-elevated);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.se-strings__ptr-select:focus {
-  outline: none;
-  border-color: var(--accent-soft);
 }
 
 .se-strings__ptr-preview {
@@ -1549,17 +1739,6 @@ h3 { margin: 0; }
   width: 100%;
   box-sizing: border-box;
   padding: 2px 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--bg-elevated);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.se-strings__line:focus {
-  outline: none;
-  border-color: var(--accent-soft);
 }
 
 .se-strings__line.is-invalid {
@@ -1571,19 +1750,8 @@ h3 { margin: 0; }
   width: 100%;
   box-sizing: border-box;
   padding: 4px 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
   line-height: 1.4;
-  background: var(--bg-elevated);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 2px;
   resize: vertical;
-}
-
-.se-strings__markup:focus {
-  outline: none;
-  border-color: var(--accent-soft);
 }
 
 /* Collapsible glyph + control-code reference above the message list. */
@@ -1730,7 +1898,7 @@ h3 { margin: 0; }
   padding: 2px 0;
   position: sticky;
   top: 0;
-  background: var(--panel-bg, var(--bg-1));
+  background: var(--bg-surface);
 }
 
 .se-worldmap__slotgroup {
@@ -1811,11 +1979,6 @@ h3 { margin: 0; }
   line-height: 1;
 }
 
-.se-worldmap__jump:hover {
-  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
-  color: var(--ink-1);
-}
-
 .se-worldmap__rowbtn {
   flex: 0 0 auto;
   height: 20px;
@@ -1829,11 +1992,6 @@ h3 { margin: 0; }
   cursor: pointer;
   font-size: 11px;
   line-height: 1;
-}
-
-.se-worldmap__rowbtn:hover {
-  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
-  color: var(--ink-1);
 }
 
 .se-worldmap__row--empty {
@@ -1870,11 +2028,6 @@ h3 { margin: 0; }
   margin-left: auto;
 }
 
-.se-worldmap__dirty {
-  font-size: 10px;
-  color: var(--ink-3);
-}
-
 /* Hierarchical nav: breadcrumb + world grid + detail headings */
 .se-worldmap__crumbs {
   display: flex;
@@ -1892,22 +2045,22 @@ h3 { margin: 0; }
   padding: 1px 3px;
   font: inherit;
   font-size: 11px;
-  color: var(--accent, var(--ink-1));
+  color: var(--accent);
   cursor: pointer;
   border-radius: 3px;
 }
 
 .se-worldmap__crumb:disabled {
-  color: var(--ink-1);
+  color: var(--ink);
   cursor: default;
 }
 
 .se-worldmap__crumb:not(:disabled):hover {
-  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+  background: var(--bg-elevated);
 }
 
 .se-worldmap__crumb.is-current {
-  color: var(--ink-1);
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -1930,7 +2083,7 @@ h3 { margin: 0; }
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
-  background: var(--panel-2, rgba(127, 127, 127, 0.06));
+  background: var(--bg-elevated);
   border: 1px solid var(--line-faint);
   border-radius: 4px;
   font: inherit;
@@ -1940,17 +2093,12 @@ h3 { margin: 0; }
 }
 
 .se-worldmap__world-btn:hover {
-  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+  background: var(--bg-elevated);
 }
 
 .se-worldmap__world-name {
   font-size: 13px;
   font-weight: 600;
-}
-
-.se-worldmap__world-count {
-  font-size: 10px;
-  color: var(--ink-3);
 }
 
 .se-worldmap__slot-link {
@@ -1970,7 +2118,7 @@ h3 { margin: 0; }
 }
 
 .se-worldmap__slot-link:hover {
-  background: var(--hover-bg, rgba(127, 127, 127, 0.12));
+  background: var(--bg-elevated);
 }
 
 .se-worldmap__detail-head {
@@ -2072,6 +2220,19 @@ h3 { margin: 0; }
   color: var(--ink-2);
   letter-spacing: 0.04em;
 }
+/* "Fit sprite tileset" action — spans the 2-col header grid, button + status. */
+.se-props__fitspriteset {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 2px 0 4px;
+}
+.se-props__fithint {
+  font-size: 10px;
+  color: var(--ink-2);
+}
 /* Collision block — the dl is a 2-col grid; spanning both columns lets the
    chips row use the panel's full width (the chips flex-wrap to whatever room
    the floating window gives them). */
@@ -2140,28 +2301,11 @@ h3 { margin: 0; }
   align-items: center;
   gap: 6px;
 }
-.se-props__fields-sep {
-  color: var(--ink-3);
-  font-size: 11px;
-}
 .se-props__num {
   width: 48px;
   padding: 2px 5px;
-  font: inherit;
   font-size: 12px;
   text-align: right;
-  color: var(--ink);
-  background: var(--bg-base);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-}
-.se-props__num:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.se-props__num:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 /* Dropdown widgets (enum / level-ref) — span the field cell rather than the
    fixed 48px the numeric input uses, since labels are long. */
@@ -2170,29 +2314,12 @@ h3 { margin: 0; }
   min-width: 0;
   max-width: 150px;
   padding: 2px 4px;
-  font: inherit;
   font-size: 11px;
-  color: var(--ink);
-  background: var(--bg-base);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-}
-.se-props__select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.se-props__select:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 .se-props__field {
   display: flex;
   align-items: center;
   gap: 3px;
-}
-.se-props__hexprefix {
-  color: var(--ink-3);
-  font-size: 11px;
 }
 
 /* ── Add-picker ──────────────────────────────────────────────────────────── */
@@ -2205,26 +2332,27 @@ h3 { margin: 0; }
 }
 .se-picker__search {
   padding: 4px 6px;
-  font: inherit;
   font-size: 12px;
-  color: var(--ink);
-  background: var(--bg-base);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-}
-.se-picker__search:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 .se-picker__list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  position: relative;
+}
+/* Windowed rows (§A/E): the sizer is the full scroll height so the scrollbar is
+ * correct; only the visible slice is mounted and absolutely positioned within it
+ * (top set inline = index × pitch). See PickerPanel's PICKER_ROW_* note. */
+.se-picker__list-sizer {
+  position: relative;
+  width: 100%;
 }
 .se-picker__row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 28px;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
@@ -2250,23 +2378,29 @@ h3 { margin: 0; }
   max-height: 22px;
   image-rendering: pixelated;
 }
-.se-picker__row:hover {
-  color: var(--ink);
+/* Hover preview: a magnified copy of the hovered row's thumbnail, portaled to
+   <body> (so it escapes the list's overflow + the window z-stack) and floated
+   left of the cursor. pointer-events:none so it never blocks the row click.
+   Chrome (1px border + 4px padding, both sides) is mirrored by PREVIEW_CHROME. */
+.se-picker__preview {
+  position: fixed;
+  z-index: 9000;
+  pointer-events: none;
+  padding: 4px;
   background: var(--bg-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
 }
-.se-picker__row.is-armed {
-  color: var(--bg-base);
-  background: var(--accent);
+.se-picker__preview canvas {
+  display: block;
+  image-rendering: pixelated;
 }
 .se-picker__row-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-}
-.se-picker__row-id {
-  font-size: 10px;
-  color: var(--ink-3);
 }
 .se-picker__row.is-armed .se-picker__row-id {
   color: var(--bg-base);
@@ -2281,10 +2415,6 @@ h3 { margin: 0; }
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 6px;
-}
-.se-picker__filter-count {
-  font-size: 10px;
-  color: var(--ink-3);
 }
 .se-picker__chip {
   padding: 1px 7px;
@@ -2490,14 +2620,22 @@ h3 { margin: 0; }
 
 /* "Go to room by id" — sticky header inside the dropdown for jumping to any
    data record, including rooms not listed in the catalog below. */
+.se-levelmenu__gotowrap {
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-surface);
+}
 .se-levelmenu__goto {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 14px 10px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-surface);
+}
+.se-levelmenu__gotoerror {
+  padding: 0 14px 10px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--danger);
 }
 .se-levelmenu__gotolabel {
   font-size: 10px;
@@ -2518,17 +2656,9 @@ h3 { margin: 0; }
   margin-left: -2px;
   padding: 0 8px;
   background: var(--bg-elevated);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--ink);
-  font: inherit;
   font-size: 12px;
   letter-spacing: 0.04em;
   transition: border-color 0.12s;
-}
-.se-levelmenu__gotoinput:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 .se-levelmenu__gotoinput.is-error {
   border-color: var(--danger);
@@ -2575,10 +2705,6 @@ h3 { margin: 0; }
 }
 .se-levelmenu__row.is-nodata:hover {
   background: transparent;
-}
-.se-levelmenu__row.is-active {
-  background: var(--accent);
-  color: var(--bg-base);
 }
 .se-levelmenu__row.is-active .se-levelmenu__rowslot,
 .se-levelmenu__row.is-active .se-levelmenu__rowid {
@@ -2691,10 +2817,6 @@ h3 { margin: 0; }
 }
 .se-sublevelmenu__row:hover {
   background: var(--bg-elevated);
-}
-.se-sublevelmenu__row.is-active {
-  background: var(--accent);
-  color: var(--bg-base);
 }
 .se-sublevelmenu__row.is-active .se-sublevelmenu__rowtag,
 .se-sublevelmenu__row.is-active .se-sublevelmenu__rowid {
@@ -2829,10 +2951,6 @@ h3 { margin: 0; }
   font-size: 13px;
   color: var(--ink);
 }
-.se-pop__status-meta {
-  font-size: 11px;
-  color: var(--ink-3);
-}
 .se-pop__empty {
   margin: 0;
   font-size: 12px;
@@ -2913,6 +3031,15 @@ h3 { margin: 0; }
   border-color: var(--accent);
   color: var(--accent);
 }
+/* Selected / armed / primary-action fill — accent. Defined after the neutral
+   hover rule near the toolbar, so it wins when an element is both selected and
+   hovered. */
+.se-tool--save.is-dirty:hover,
+.se-ctxmenu__item:hover:not(:disabled),
+.se-palette__reset-btn.is-save:hover:not(:disabled),
+.se-picker__row.is-armed,
+.se-levelmenu__row.is-active,
+.se-sublevelmenu__row.is-active,
 .se-btn.is-primary:hover:not(:disabled) {
   background: var(--accent);
   color: var(--bg-base);
@@ -3050,10 +3177,6 @@ h3 { margin: 0; }
   cursor: pointer;
   transition: background-color 0.12s, color 0.12s;
 }
-.se-menuitem:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  color: var(--ink);
-}
 .se-menuitem:disabled {
   opacity: 0.4;
   cursor: default;
@@ -3091,15 +3214,8 @@ h3 { margin: 0; }
   height: 30px;
   padding: 0 9px;
   background: var(--bg-elevated);
-  border: 1px solid var(--line-strong);
-  border-radius: 3px;
-  color: var(--ink);
-  font-family: inherit;
+  border-color: var(--line-strong);
   font-size: 12px;
-}
-.se-projmenu__input:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 .se-projmenu__hint {
   margin: 6px 0 10px;
@@ -3343,11 +3459,12 @@ h3 { margin: 0; }
   color: var(--ink);
   font-weight: 600;
 }
-.se-about__legal {
-  color: var(--ink-3);
-  font-size: 11px;
-}
 
+/* Danger affordance — red text + border. */
+.se-canvas__message.is-error,
+.se-palette__reset-btn.is-danger,
+.se-banks__act--danger:hover:not(:disabled),
+.se-graphics__item-reset:hover:not(:disabled),
 .se-btn.is-danger {
   border-color: var(--danger);
   color: var(--danger);
@@ -3381,10 +3498,6 @@ h3 { margin: 0; }
 .se-import__intro code {
   color: var(--ink);
 }
-.se-import__hint {
-  color: var(--ink-3);
-  font-size: 11px;
-}
 .se-import__error {
   margin: 8px 0;
   color: var(--danger);
@@ -3405,10 +3518,6 @@ h3 { margin: 0; }
   gap: 10px;
   margin: 0 0 8px;
   color: var(--ink);
-}
-.se-import__md5 {
-  color: var(--ink-3);
-  font-size: 10px;
 }
 .se-import__counts {
   display: flex;
@@ -3461,10 +3570,6 @@ h3 { margin: 0; }
 }
 .se-import__anchorname {
   color: var(--ink-2);
-}
-.se-import__method {
-  font-size: 10px;
-  color: var(--ink-3);
 }
 .se-import__method--vanilla-addr {
   color: var(--accent-soft);
@@ -3650,6 +3755,36 @@ h3 { margin: 0; }
   font-size: 10px;
   white-space: nowrap;
 }
+/* GBA import: per-row warning cell + overwrite-target column. */
+.se-import__rowtags {
+  display: flex;
+  justify-content: flex-end;
+}
+.se-import__rowtarget {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.se-import__rowprefix {
+  color: var(--ink-3);
+}
+.se-import__hexinput {
+  width: 32px;
+  padding: 1px 4px;
+  background: var(--bg-elevated);
+  border-color: var(--line-strong);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.se-import__rowtargetname {
+  color: var(--ink-2);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .se-import__tag {
   padding: 0 6px;
   border-radius: 8px;
@@ -3799,14 +3934,9 @@ h3 { margin: 0; }
   height: 26px;
   padding: 0 8px;
   background: var(--bg-elevated);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--ink);
-  font: inherit;
   font-size: 12px;
   letter-spacing: 0.06em;
 }
-.se-finder__input:focus { outline: none; border-color: var(--accent); }
 .se-finder__nav {
   justify-content: space-between;
 }
@@ -3875,10 +4005,6 @@ h3 { margin: 0; }
   color: var(--ink-3);
 }
 .se-banks__free.is-over { color: var(--danger); font-weight: 600; }
-.se-banks__pool-sub {
-  font-size: 11px;
-  color: var(--ink-3);
-}
 .se-banks__levels {
   list-style: none;
   margin: 2px 0 0;
@@ -3948,7 +4074,6 @@ h3 { margin: 0; }
 .se-banks__act:disabled { opacity: 0.4; cursor: default; }
 .se-banks__act.is-on { color: var(--accent); border-color: var(--accent); }
 .se-banks__act--danger { color: var(--danger); }
-.se-banks__act--danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
 .se-banks__bulk { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .se-banks__show-removed {
   display: flex;
@@ -4002,3 +4127,310 @@ h3 { margin: 0; }
   gap: 8px;
 }
 .se-banks__region-empty { font-style: italic; color: var(--ink-4); }
+
+/* Graphics panel — PNG export/import for external editing. */
+.se-map16 {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+.se-map16__desc {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: 0.8;
+}
+.se-map16__status {
+  margin: 0;
+  font-size: 11px;
+}
+.se-map16__row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.se-map16__preview {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
+}
+.se-map16__preview canvas {
+  border: 1px solid #444;
+  background: #000;
+}
+.se-map16__quads {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.se-map16__quad {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+}
+.se-map16__quad-label {
+  width: 86px;
+  opacity: 0.8;
+}
+.se-map16__quad input {
+  width: 46px;
+}
+.se-map16__quad input[type='checkbox'] {
+  width: auto;
+}
+.se-map16__changes {
+  border-top: 1px solid #3a3a3a;
+  padding-top: 6px;
+}
+.se-map16__changes-title {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.se-map16__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  padding: 4px 0 0;
+  margin: 0;
+}
+
+.se-graphics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+.se-graphics__tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #3a3a3a;
+}
+.se-graphics__tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.65;
+}
+.se-graphics__tab--active {
+  opacity: 1;
+  border-bottom-color: #6aa0ff;
+}
+.se-graphics__desc {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+.se-graphics__row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.se-graphics__region {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.se-graphics__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+/* A radio whose input is disabled (e.g. Aseprite for non-region targets) — clearly
+ *  greyed so it doesn't read as an available choice. */
+.se-graphics__radio:has(input:disabled) {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.se-graphics__radio input:disabled {
+  cursor: not-allowed;
+}
+.se-graphics__status {
+  margin: 0;
+  font-size: 10px;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+
+/* Export-target dropdown (what's exported) — matches the Properties selects. */
+.se-graphics__select {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+
+/* "Locate Aseprite" header row (above the tabs). */
+.se-graphics__aseprite {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.se-graphics__aseprite-status {
+  font-size: 10px;
+  color: var(--ink-2);
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.se-graphics__aseprite-status:hover {
+  color: var(--ink);
+}
+
+/* Region-import log: per-region change lines + colour-mismatch errors. */
+.se-graphics__log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.se-graphics__log-line {
+  margin: 0;
+  font-size: 10px;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+
+.se-graphics__log-error {
+  margin: 0;
+  font-size: 10px;
+  color: var(--danger, #e06c6c);
+  word-break: break-word;
+}
+
+/* Changed-graphics list + per-file reset. */
+.se-graphics__changes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.se-graphics__changes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.se-graphics__changes-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.se-graphics__changes-empty {
+  margin: 0;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-graphics__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.se-graphics__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.se-graphics__item:nth-child(odd) {
+  background: var(--bg-elevated);
+}
+.se-graphics__item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "Which tiles changed" expand caret + the detail row it reveals. */
+.se-graphics__item-caret {
+  flex: 0 0 auto;
+  width: 14px;
+  padding: 0;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ink-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.se-graphics__item-caret:hover {
+  color: var(--ink);
+}
+.se-graphics__detail {
+  padding: 2px 6px 4px 20px;
+  font-size: 10px;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+.se-graphics__item-label--link {
+  cursor: pointer;
+}
+.se-graphics__item-label--link:hover {
+  color: var(--accent, #6cb6ff);
+  text-decoration: underline;
+}
+.se-graphics__tag {
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--line);
+  color: var(--ink-3);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.se-graphics__item-size {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.se-graphics__item-reset {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.se-graphics__item-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

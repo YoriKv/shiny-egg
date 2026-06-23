@@ -5,7 +5,7 @@
 // cross-level warp-exit destination edit. Split out of framework.ts so each API
 // namespace maps 1:1 to an ipc/*.ts file. Registered once from main/index.
 
-import { ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type {
   EditableResource,
   LevelData,
@@ -14,6 +14,16 @@ import type {
   PoolOverview,
   SaveResourceResult
 } from 'snes-framework/types'
+import { exportGfxPngsToDir } from '../gfx-png-export'
+import { exportBgRegionToDir, importBgRegionFromDir } from '../bg-region-io'
+import { importGraphicsFolder } from '../graphics-folder-io'
+import { addRegionExportFolder, listRegionExportFolders, removeRegionExportFolder } from '../region-exports'
+import { resolveAsepriteExe, openInAseprite } from '../aseprite-app'
+import { updateSettings } from '../settings'
+import { basename, join } from 'node:path'
+import { loadMap16Block, saveMap16Block, resetMap16Block, listMap16BlockEdits } from '../map16-edits'
+import { buildMetatileContext, renderMap16Block } from 'snes-framework/object-metatile'
+import { loadRomAndSymbols } from '../render/rom-cache'
 import {
   getCurrentProjectId,
   getRelocationState,
@@ -23,12 +33,18 @@ import {
 import {
   activeLevelBudget,
   activePoolOverview,
+  listGfxEdits,
+  gfxFileRole,
   loadPaletteEdits,
   loadResource,
+  resetGfxEdit,
+  resetGfxEditFile,
   resetLevelResource,
   savePaletteEdits,
+  saveGfxEdit,
   saveResource,
-  setExitDestResource
+  setExitDestResource,
+  setExitEntranceResource
 } from '../resources'
 import { computeSpriteProperties } from '../sprite-properties'
 import {
@@ -41,16 +57,31 @@ import {
   restoreLevels
 } from '../level-removal'
 import type {
+  BgRegionExportArgs,
+  BgRegionExportResult,
+  BgRegionImportResult,
   CreatableSlot,
   CreateLevelResult,
+  ExportGfxOptions,
+  ExportGfxResult,
+  GfxEditEntry,
+  GfxFileRole,
+  ImportGraphicsResult,
+  LocateAsepriteResult,
+  Map16BlockPreview,
+  Map16SubTileEdit,
   RelocationState,
+  RenderHeaderRequest,
   RemovableVanillaLevels,
   RemovalPreviewResult,
   RemovedLevelEntry,
   RemoveLevelsResult,
+  ResetGfxEditResult,
   ResetLevelResult,
   RestoreLevelsResult,
+  SaveGfxEditResult,
   SetExitDestResult,
+  SetExitEntranceResult,
   SpriteProperty,
   SpritePropertiesRequest
 } from '../../shared/ipc-types'
@@ -141,6 +172,172 @@ export function registerEditorIpc(): void {
       resetLevelResource(levelRecordId)
   )
 
+  // Graphics editing: re-encode edited decompressed tiles → overlay blob (the
+  // build's reinsert pipeline places it; renderer marks the build dirty — gfx
+  // edits don't render live), and reset back to base.
+  ipcMain.handle(
+    'editor:saveGfxEdit',
+    async (
+      _event,
+      format: 'lz2' | 'lz16',
+      fileId: number,
+      tiles: Uint8Array,
+      rowCount?: number
+    ): Promise<SaveGfxEditResult> => saveGfxEdit(format, fileId, tiles, rowCount)
+  )
+  ipcMain.handle(
+    'editor:resetGfxEdit',
+    async (_event, format: 'lz2' | 'lz16', fileId: number): Promise<ResetGfxEditResult> =>
+      resetGfxEdit(format, fileId)
+  )
+  // Changed-graphics list + per-file reset-to-vanilla (the Graphics panel).
+  ipcMain.handle('editor:listGfxEdits', async (): Promise<GfxEditEntry[]> => listGfxEdits())
+  ipcMain.handle('editor:gfxFileRole', async (_event, file: string): Promise<GfxFileRole> => gfxFileRole(file))
+  ipcMain.handle(
+    'editor:resetGfxEditFile',
+    async (_event, file: string): Promise<ResetGfxEditResult> => resetGfxEditFile(file)
+  )
+
+  // Graphics panel: export the current level's gfx files to a chosen folder as
+  // PNGs (+ manifest), and import edited PNGs back. Folder picked via dialog.
+  ipcMain.handle(
+    'editor:exportGfxPngs',
+    async (
+      _event,
+      header: RenderHeaderRequest | null, // null ⇒ no level loaded (only the screens track runs)
+      exportOpts?: ExportGfxOptions
+    ): Promise<ExportGfxResult> => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts: Electron.OpenDialogOptions = {
+        title: 'Export graphics PNGs to folder',
+        properties: ['openDirectory', 'createDirectory']
+      }
+      const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+      if (picked.canceled || picked.filePaths.length === 0) return { canceled: true }
+      const dir = picked.filePaths[0]!
+      try {
+        const { count } = exportGfxPngsToDir(header, dir, exportOpts ?? {})
+        addRegionExportFolder(dir) // remember it for the unified exported-folders list
+        return { ok: true, count, dir }
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    }
+  )
+  // Graphics panel "Region" tab: export a BG layer region (BG1 = a selected level
+  // area; BG2/BG3 = the whole rendered tilemap) to a PNG + sidecar, and import the
+  // edited PNG back (slice → saveGfxEdit). Folder picked via dialog.
+  ipcMain.handle(
+    'editor:exportBgRegion',
+    async (_event, header: RenderHeaderRequest, args: BgRegionExportArgs): Promise<BgRegionExportResult> => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts: Electron.OpenDialogOptions = {
+        title: 'Export BG region to folder',
+        properties: ['openDirectory', 'createDirectory']
+      }
+      const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+      if (picked.canceled || picked.filePaths.length === 0) return { canceled: true }
+      const dir = picked.filePaths[0]!
+      const r = exportBgRegionToDir(header, args.level, args.layer, args.rect ?? null, dir, args.format ?? 'png')
+      if (r.ok) addRegionExportFolder(dir) // remember the folder for the Region tab's list
+      return r
+    }
+  )
+  // "Locate Aseprite" (Graphics panel header): resolved exe path (saved → common
+  // install locations), or null when not located; and a picker that persists it.
+  ipcMain.handle('aseprite:getExe', async (): Promise<string | null> => resolveAsepriteExe())
+  ipcMain.handle('aseprite:locate', async (): Promise<LocateAsepriteResult> => {
+    const win = BrowserWindow.getFocusedWindow()
+    const opts: Electron.OpenDialogOptions = { title: 'Locate Aseprite', properties: ['openFile'] }
+    if (process.platform === 'win32') opts.filters = [{ name: 'Aseprite', extensions: ['exe'] }]
+    const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false }
+    const p = picked.filePaths[0]!
+    if (!basename(p).toLowerCase().includes('aseprite')) {
+      return { ok: false, error: `Select the Aseprite executable (got ${basename(p)}).` }
+    }
+    updateSettings({ asepritePath: p })
+    return { ok: true, path: p }
+  })
+  // Open a single exported file (image) in Aseprite (the "Auto-Open Exports" toggle).
+  ipcMain.handle('aseprite:open', async (_event, dir: string, file: string): Promise<boolean> => openInAseprite(join(dir, file)))
+
+  // Folders this project has exported region(s) to — listed in the Region tab with
+  // their own import / remove buttons (region-exports.ts).
+  ipcMain.handle('editor:listRegionExports', async (): Promise<string[]> => listRegionExportFolders())
+  ipcMain.handle('editor:removeRegionExport', async (_event, dir: string): Promise<string[]> => removeRegionExportFolder(dir))
+  ipcMain.handle('editor:openRegionFolder', async (_event, dir: string): Promise<void> => { void shell.openPath(dir) })
+
+  // Unified import: auto-detect the all-graphics manifest AND/OR BG-region files in
+  // a folder, import both, merge into one log. Per-folder (no dialog) + a dialog form.
+  ipcMain.handle('editor:importGraphicsFolder', async (_event, dir: string): Promise<ImportGraphicsResult> => importGraphicsFolder(dir))
+  ipcMain.handle('editor:importGraphics', async (): Promise<ImportGraphicsResult> => {
+    const win = BrowserWindow.getFocusedWindow()
+    const opts: Electron.OpenDialogOptions = { title: 'Import edited graphics from folder', properties: ['openDirectory'] }
+    const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (picked.canceled || picked.filePaths.length === 0) return { canceled: true }
+    const dir = picked.filePaths[0]!
+    const r = await importGraphicsFolder(dir)
+    if (r.ok) addRegionExportFolder(dir)
+    return r
+  })
+  // Import a specific tracked folder (no dialog) — slices every region back + logs.
+  ipcMain.handle('editor:importRegionFolder', async (_event, dir: string): Promise<BgRegionImportResult> => importBgRegionFromDir(dir))
+  // Ad-hoc import via folder dialog (also remembers the folder).
+  ipcMain.handle('editor:importBgRegion', async (): Promise<BgRegionImportResult> => {
+    const win = BrowserWindow.getFocusedWindow()
+    const opts: Electron.OpenDialogOptions = {
+      title: 'Import edited BG region from folder',
+      properties: ['openDirectory']
+    }
+    const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (picked.canceled || picked.filePaths.length === 0) return { canceled: true }
+    const dir = picked.filePaths[0]!
+    const r = await importBgRegionFromDir(dir)
+    if (r.ok) addRegionExportFolder(dir)
+    return r
+  })
+
+  // Structured Map16 block editor (object-metatile Phase 3). Load/save a block's
+  // 4 sub-tile descriptors, render a live preview, list + reset edits. Saved edits
+  // apply as post-build byte patches to the $4C region (renderer marks dirty).
+  ipcMain.handle(
+    'editor:loadMap16Block',
+    async (_event, map16Id: number): Promise<Map16SubTileEdit[] | null> => loadMap16Block(map16Id)
+  )
+  ipcMain.handle(
+    'editor:saveMap16Block',
+    async (
+      _event,
+      map16Id: number,
+      subtiles: Map16SubTileEdit[]
+    ): Promise<{ ok: true } | { ok: false; error: string }> => saveMap16Block(map16Id, subtiles)
+  )
+  ipcMain.handle(
+    'editor:resetMap16Block',
+    async (
+      _event,
+      map16Id: number
+    ): Promise<{ ok: true; removed: boolean } | { ok: false; error: string }> => resetMap16Block(map16Id)
+  )
+  ipcMain.handle('editor:listMap16BlockEdits', async (): Promise<number[]> => listMap16BlockEdits())
+  ipcMain.handle(
+    'editor:renderMap16Block',
+    async (
+      _event,
+      header: RenderHeaderRequest,
+      subtiles: Map16SubTileEdit[]
+    ): Promise<Map16BlockPreview | null> => {
+      try {
+        const { rom, symbols } = loadRomAndSymbols()
+        const ctx = buildMetatileContext(rom, symbols, header)
+        return { rgba: renderMap16Block(ctx, subtiles), width: 16, height: 16 }
+      } catch {
+        return null
+      }
+    }
+  )
+
   // Vanilla-level removal (level-removal.ts): dry-run impact for the confirm
   // dialog, the actual removal (world-map rewire + project flag + overlay
   // cleanup; the renderer marks the build dirty), and the bulk "remove all
@@ -188,5 +385,18 @@ export function registerEditorIpc(): void {
       destY: number
     ): Promise<SetExitDestResult> =>
       setExitDestResource(sourceLevelRecordId, screenIndex, destX, destY)
+  )
+
+  // Cross-level warp-exit entrance-type edit (incoming-marker Entrance dropdown):
+  // rewrite the source level's overlay so its exit applies `entranceType`.
+  ipcMain.handle(
+    'editor:setExitEntrance',
+    async (
+      _event,
+      sourceLevelRecordId: number,
+      screenIndex: number,
+      entranceType: number
+    ): Promise<SetExitEntranceResult> =>
+      setExitEntranceResource(sourceLevelRecordId, screenIndex, entranceType)
   )
 }

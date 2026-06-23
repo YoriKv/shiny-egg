@@ -7,7 +7,6 @@ import { describe, it, expect } from 'vitest'
 import {
   parityDirection,
   parityOrbitWide,
-  parityPrize,
   paritySpawnBadge,
   parityVariantRows,
   SPRITE_PARITY_VARIANTS
@@ -58,12 +57,12 @@ describe('parityVariantRows', () => {
     expect(paritySpawnBadge(0x0e7, 11, 7)).toBeNull()
     expect(paritySpawnBadge(0x185, 10, 7)).toBeNull()
   })
-  it('parityPrize matches the panel Prize row (1up / stars / switch / stars)', () => {
-    expect(parityPrize(0x0b5, 0, 0)).toBe('1up')
-    expect(parityPrize(0x0b5, 1, 0)).toBe('stars')
-    expect(parityPrize(0x0b5, 0, 1)).toBe('switch')
-    expect(parityPrize(0x0b5, 1, 1)).toBe('stars')
-    expect(parityPrize(0x185, 0, 0)).toBeNull()
+  it('prize sprites keep their textual Prize/Reward row (the icon is now drawn from sprite-prizes.ts)', () => {
+    // No corner badge / parityPrize anymore — the Properties row stays for documentation.
+    const b5 = SPRITE_PARITY_VARIANTS[0x0b5]!.find((v) => v.label === 'Prize')
+    expect(b5?.values).toEqual(['1-UP', '5 stars', 'Red switch', '5 stars'])
+    const r161 = SPRITE_PARITY_VARIANTS[0x161]!.find((v) => v.label === 'Reward')
+    expect(r161?.values).toEqual(['Coin', 'Key', 'Flower', 'Door'])
   })
   it('parityOrbitWide: $064 wide on EVEN rows (the init Y−8 flips bit 4 before the Main reads it; in-game verified); null for sprites without the variant', () => {
     expect(parityOrbitWide(0x064, 10, 6)).toBe(true)
@@ -75,7 +74,6 @@ describe('parityVariantRows', () => {
       const key = `0x${Number(num).toString(16)}`
       for (const v of variants) {
         if (v.badge) expect(v.badge.index, key).toBeLessThan(v.values.length)
-        if (v.prizeKinds) expect(v.prizeKinds.length, key).toBe(v.values.length)
         if (v.orbitWideIndex !== undefined) expect(v.orbitWideIndex, key).toBeLessThan(v.values.length)
       }
     }

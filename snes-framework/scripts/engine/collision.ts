@@ -29,6 +29,20 @@
 //     $00..$1F   → static slope profile (indexes slope_panels_table)
 //     $80..$81   → "RAM-supplied" runtime slope (moving / boss slopes)
 //
+// **Runtime override this static table does NOT model.** The GSU collision
+// decoder `CODE_bg_unit_decode_attrs` ($0A:D0F2) keys on the tile's HIGH byte
+// (page) exactly as we do (`HIB ; UMULT #3 ; + DATA_bg_type_table`), so the
+// page-keyed read here is byte-faithful — with ONE exception: for the three
+// switchable-block tags `$0E`/`$0F`/`$10` (falling-floor 0x72, switch-block
+// 0x73, mario-block 0x8a) it OR's the AL (solid-all) bit in at runtime when the
+// live switch state `CSWITCH_1` (GSU RAM `$1E08`) is engaged. So those 3 pages
+// are solid/passable depending on a !-switch the static table can't see; this
+// decode (and the collision layer) shows their DESIGN / switch-off state. Every
+// other page — including all 48 SK slope pages, which in V1.0 are all static
+// ($00..$1F, none RAM-supplied $80/$81) — is fully runtime-independent, so the
+// editor's collision is cart-faithful by construction (page-exact table read ⊕
+// the byte-exact level-data buffer).
+//
 // **Slope profiles** (`slope_panels_table` at SNES `$0A:BD0E`, PC `$053D0E`)
 // encode the per-x-pixel Y surface position. The actual access pattern from
 // the GSU asm (`yi/SuperFX/Banks/Bank0A.asm:4376-4398`) is:

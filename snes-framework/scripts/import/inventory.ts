@@ -1,4 +1,4 @@
-// Detect-only diff inventory (plan-rom-import.md §10/P5 reporting half).
+// Detect-only diff inventory.
 // Classifies every byte that differs between a foreign cart and the base into a
 // category of cart structure — level data, graphics, tilemaps, Map16 tables,
 // palette pointers, strings, world map, code, … — so the import report shows

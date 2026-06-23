@@ -44,6 +44,26 @@ describe('resolveDep — tile targets', () => {
   it('B ice-snap: missing when the page tag does not match', () => {
     expect(resolveDep({ num: 0x1e, x: 5, y: 5 }, ice, ctx({ map16At: () => 0x0040, collisionTagOfPage: iceTag })).status).toBe('missing')
   })
+  // Grinder monkey tree dep: pages $99/$9A (trunks) OR any side-solid page
+  // (matchSolid → isSolidPage, the asm's R7&$0002 AL flag). Walls/brick/twisted-tree
+  // attach via the solid path even though their page isn't $99/$9A.
+  it('grinder matchSolid: connector to a solid wall in the row (non-$99/$9A page)', () => {
+    const grinder = dep({ cls: 'tile-read', spatial: 'row', enforce: false, rowSpan: 1, pageLiterals: ['0x99', '0x9A'], matchSolid: true })
+    // a solid brick page ($40) one cell to the right; not a trunk page
+    const r = resolveDep({ num: 0x1a7, x: 5, y: 5 }, grinder, ctx({ map16At: (cx) => (cx === 6 ? 0x4012 : 0x0000), isSolidPage: (p) => p === 0x40 }))
+    expect(r.status).toBe('met')
+    expect(r.targetCell).toEqual({ cx: 6, cy: 5 })
+  })
+  it('grinder matchSolid: still matches a trunk page $99 (page path preserved)', () => {
+    const grinder = dep({ cls: 'tile-read', spatial: 'row', enforce: false, rowSpan: 1, pageLiterals: ['0x99', '0x9A'], matchSolid: true })
+    const r = resolveDep({ num: 0x1a7, x: 5, y: 5 }, grinder, ctx({ map16At: (cx) => (cx === 4 ? 0x9900 : 0x0000), isSolidPage: () => false }))
+    expect(r.status).toBe('met')
+    expect(r.targetCell).toEqual({ cx: 4, cy: 5 })
+  })
+  it('grinder matchSolid: missing when neither a trunk nor a solid page is adjacent', () => {
+    const grinder = dep({ cls: 'tile-read', spatial: 'row', enforce: false, rowSpan: 1, pageLiterals: ['0x99', '0x9A'], matchSolid: true })
+    expect(resolveDep({ num: 0x1a7, x: 5, y: 5 }, grinder, ctx({ map16At: () => 0x0100, isSolidPage: () => false })).status).toBe('missing')
+  })
   it('A rail: matches high byte $87xx (mask 0xFF00)', () => {
     const rail = dep({ cls: 'rail-follower', spatial: 'path', tileMatch: { mask: '0xFF00', value: '0x8700' } })
     expect(resolveDep({ num: 0x185, x: 3, y: 3 }, rail, ctx({ map16At: () => 0x8742 })).status).toBe('met')

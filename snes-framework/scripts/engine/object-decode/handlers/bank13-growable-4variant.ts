@@ -77,7 +77,7 @@ import {
   getMap16Left,
   getMap16Right,
 } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, setProbeToCurrent, writeBuf16 } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -148,12 +148,22 @@ interface GrowVariant {
    *  (below for top variants, above for bottom variants — mirror of
    *  edgeBuild). */
   probeVertCorner: 'above' | 'below';
-  /** Horizontal probe direction (left for D4/D6, right for D5/D7). */
+  /** Horizontal probe direction for the EDGE build (cart edge_build's
+   *  probe_left/right_tile): left for D4/D6/D7, right for D5. */
   probeHoriz: 'left' | 'right';
+  /** Horizontal probe direction for the CORNER build — NOT always equal to
+   *  probeHoriz. The cart's corner_build flips it for the bottom variants:
+   *  D4 left / D5 right / D6 right / D7 right. (Was conflated with probeHoriz,
+   *  which wrote the corner's $79xx tile to the wrong-side neighbour.) */
+  probeHorizCorner: 'left' | 'right';
   /** For top variants only: the constant tile the seam-helper writes
    *  to the horizontal-probed neighbour when `Y < $0E` ($793D / $7950).
    *  Bottom variants set this to null (their helper uses seamB instead). */
   seamProbeTile: number | null;
+  /** Cart caller PC of this variant's body-cell PRNG roll, for per-site
+   *  replay (`bg1-render`/`level-rng` trace). Each of the four stamp
+   *  routines rolls once per body cell from a distinct PC. */
+  prngSite: number;
 }
 
 // $D4 — CODE_stamp_grow_top_left  (col-axis, probe left, $793D seam)
@@ -183,7 +193,9 @@ const VARIANT_TOP_LEFT: GrowVariant = {
   probeVert: 'above',
   probeVertCorner: 'below',
   probeHoriz: 'left',
+  probeHorizCorner: 'left', // cart grow_top_left_corner_build: probe_left_tile
   seamProbeTile: 0x793D,
+  prngSite: RNG_SITE.growTopLeft,
 };
 
 // $D5 — CODE_stamp_grow_top_right (col-axis, probe right, $7950 seam)
@@ -213,7 +225,9 @@ const VARIANT_TOP_RIGHT: GrowVariant = {
   probeVert: 'above',
   probeVertCorner: 'below',
   probeHoriz: 'right',
+  probeHorizCorner: 'right', // cart grow_top_right_corner_build: probe_right_tile
   seamProbeTile: 0x7950,
+  prngSite: RNG_SITE.growTopRight,
 };
 
 // $D6 — CODE_stamp_grow_bottom_left  (row-axis, probe left, seamB = above)
@@ -246,7 +260,9 @@ const VARIANT_BOTTOM_LEFT: GrowVariant = {
   probeVert: 'above',
   probeVertCorner: 'above',
   probeHoriz: 'left',
+  probeHorizCorner: 'right', // cart grow_bottom_left_corner_build: probe_RIGHT_tile (flips vs edge's left)
   seamProbeTile: null,
+  prngSite: RNG_SITE.growBottomLeft,
 };
 
 // $D7 — CODE_stamp_grow_bottom_right (row-axis, probe right, seamB = below)
@@ -275,8 +291,10 @@ const VARIANT_BOTTOM_RIGHT: GrowVariant = {
   cornerBuild: [0x798B, 0x798A, 0x7989],
   probeVert: 'below',
   probeVertCorner: 'below',
-  probeHoriz: 'right',
+  probeHoriz: 'left', // cart grow_bottom_right_EDGE_build: probe_left_tile (was wrongly 'right')
+  probeHorizCorner: 'right', // cart grow_bottom_right_corner_build: probe_right_tile
   seamProbeTile: null,
+  prngSite: RNG_SITE.growBottomRight,
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -316,7 +334,7 @@ function edgeBuild(state: DecodeState, v: GrowVariant): void {
 function cornerBuild(state: DecodeState, v: GrowVariant): void {
   const vertOff = probeVertOffset(state, v.probeVertCorner);
   writeBuf16(state, vertOff, v.cornerBuild[0]);
-  const horizOff = probeHorizOffset(state, v.probeHoriz);
+  const horizOff = probeHorizOffset(state, v.probeHorizCorner);
   writeBuf16(state, horizOff, v.cornerBuild[1]);
   stampCell(state, v.cornerBuild[2]);
 }
@@ -391,19 +409,22 @@ function growStamp(state: DecodeState, v: GrowVariant): void {
   }
 
   // PRNG body. Y = (prng & 7) * 2  →  Y in {0,2,4,6,8,10,12,14}.
-  let y = (prngNext(state) & 0x07) << 1;
+  let y = (prngNext(state, v.prngSite) & 0x07) << 1;
   if (y >= 0x0C) {
-    // Cart: LDA $2E ; CLC ; SBC $2C ; DEC ; BNE skip-demote. Translated:
-    //   $2E - $2C - 1 (no preceding SEC, so SBC's borrow eats one) → 0
-    //   means this IS the last cell of the strip. Otherwise demote.
-    // (No-carry SBC is `A - M - 1`. Cart sets CLC explicitly, so the
-    // expression is `$2E - $2C - 1` exactly.)
-    const lastCell = (((ext - pos - 1) & 0xff) === 0);
-    if (!lastCell) {
+    // Cart (all four variants): LDA ext ; CLC ; SBC pos ; DEC ; BNE skip.
+    //   A = (ext - pos - 1) - 1 = ext - pos - 2.  Demote (TYA ; AND #7 ; TAY)
+    //   runs ONLY when A == 0 — i.e. pos == ext-2, the single LAST BODY cell
+    //   (immediately before the corner). Every earlier body cell keeps the
+    //   high Y and its secondary (probe-neighbour) stamp.  ($2E/$2C for the
+    //   col variants D4/D5; $2A/$28 for the row variants D6/D7 — already
+    //   selected into pos/ext by axis above.)
+    //   NB: an earlier port dropped the DEC and demoted EVERY non-last cell,
+    //   flipping the Y>=8 secondary decision on most body cells and cascading
+    //   the per-site PRNG replay out of alignment (record $5A maze).
+    if (((ext - pos - 2) & 0xff) === 0) {
       // TYA ; AND #$0007 ; TAY — strips bit 3 of the byte-typed index.
-      // Since Y was `(prng&7)*2`, Y in {12,14} → byte y & 7 in {4,6}
-      // → demoted Y in {4,6}. So the demote re-targets entries 2-3 of
-      // random8tiles instead of the secondary-overflow entries 6-7.
+      // Y in {12,14} → byte y & 7 in {4,6} → demoted Y in {4,6}, re-targeting
+      // entries 2-3 of random8tiles instead of the secondary-overflow 6-7.
       y &= 0x07;
     }
   }
@@ -422,9 +443,18 @@ function growStamp(state: DecodeState, v: GrowVariant): void {
     state.zpA1 = y;
   }
 
-  // Probe horizontal neighbour and stamp secondary[y/2].
-  const horizOff = probeHorizOffset(state, v.probeHoriz);
-  writeBuf16(state, horizOff, v.secondary8tiles[y >>> 1]!);
+  // Probe the PERPENDICULAR-to-walk neighbour and stamp secondary[y/2].
+  // Col-axis (top D4/D5) walk vertically → decorate the horizontal neighbour
+  //   (cart CODE_probe_left_tile / CODE_probe_right_tile).
+  // Row-axis (bottom D6/D7) walk horizontally → decorate the vertical neighbour
+  //   (cart get_map16_above for D6 / get_map16_below for D7).
+  // The earlier port used the horizontal probe for all four, so the bottom
+  // variants' secondary tiles landed on the wrong cell, leaving the real
+  // above/below decoration cell unwritten (record $5A maze).
+  const secOff = v.axis === 'col'
+    ? probeHorizOffset(state, v.probeHoriz)
+    : probeVertOffset(state, v.probeVert);
+  writeBuf16(state, secOff, v.secondary8tiles[y >>> 1]!);
 }
 
 // ─────────────────────────────────────────────────────────────────────

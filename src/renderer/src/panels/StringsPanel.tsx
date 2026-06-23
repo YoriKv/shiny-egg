@@ -278,7 +278,7 @@ function LineInput({
   const invalid = [...local].some((ch) => !allowed.has(ch))
   return (
     <input
-      className={`se-strings__line${invalid ? ' is-invalid' : ''}`}
+      className={`se-strings__field se-strings__line${invalid ? ' is-invalid' : ''}`}
       value={local}
       spellCheck={false}
       onChange={(e) => setLocal(e.target.value)}
@@ -306,7 +306,7 @@ function MarkupInput({
   const rows = Math.min(8, Math.max(2, local.split('\n').length))
   return (
     <textarea
-      className="se-strings__markup"
+      className="se-strings__field se-strings__markup"
       value={local}
       rows={rows}
       spellCheck={false}
@@ -403,7 +403,7 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
   return (
     <div className="se-strings__panel">
       <input
-        className="se-strings__search"
+        className="se-strings__field se-strings__search"
         type="search"
         value={query}
         spellCheck={false}
@@ -522,7 +522,7 @@ function MessagePtrTableView({ editor }: { editor: MessagePtrEditorState }): JSX
   return (
     <div className="se-strings__panel">
       <input
-        className="se-strings__search"
+        className="se-strings__field se-strings__search"
         type="search"
         value={query}
         spellCheck={false}
@@ -536,7 +536,7 @@ function MessagePtrTableView({ editor }: { editor: MessagePtrEditorState }): JSX
               {idHex(i)}
             </span>
             <select
-              className="se-strings__ptr-select"
+              className="se-strings__field se-strings__ptr-select"
               value={slot}
               onChange={(e) => setSlot(i, e.target.value)}
             >

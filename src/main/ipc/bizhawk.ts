@@ -8,7 +8,12 @@ import { basename, dirname } from 'node:path'
 import { getBizHawk, resolveBizhawkExe } from '../bizhawk'
 import { bizhawkExeName, screenshotPath } from '../framework-paths'
 import { updateSettings } from '../settings'
-import type { BizhawkWarp, CaptureAtResult, LocateBizhawkResult } from '../../shared/ipc-types'
+import type {
+  BizhawkWarp,
+  CaptureAtResult,
+  LocateBizhawkResult,
+  TestInventory
+} from '../../shared/ipc-types'
 
 export function registerBizHawkIpc(): void {
   ipcMain.handle('bizhawk:ping', async (): Promise<string> => getBizHawk().ping())
@@ -30,9 +35,10 @@ export function registerBizHawkIpc(): void {
     async (
       _e,
       translevelId: number,
-      warps?: ReadonlyArray<BizhawkWarp>
+      warps?: ReadonlyArray<BizhawkWarp>,
+      inventory?: TestInventory
     ): Promise<string> => {
-      return getBizHawk().loadLevel(translevelId, warps)
+      return getBizHawk().loadLevel(translevelId, warps, inventory)
     }
   )
 

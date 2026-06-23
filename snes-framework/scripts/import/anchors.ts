@@ -1,4 +1,4 @@
-// ROM-import anchor resolution (plan-rom-import.md §5). A third-party hack has
+// ROM-import anchor resolution. A third-party hack has
 // "drifted" — level streams are repointed into expanded ROM — but the editors
 // that make YI hacks (GoldenEgg and kin) keep the TOP-LEVEL tables where the
 // engine reads them and only move the data those tables point at. Decoding is
@@ -93,7 +93,7 @@ const ANCHOR_SPECS: AnchorSpec[] = [
   }
   // The world-map entrance tables (DATA_level_entrance_indexes /
   // DATA_map_level_entrances) aren't anchored here. World-map import (the entrance
-  // + midway RECORD tables) DID land (plan-rom-import.md P6), but it reads them at
+  // + midway RECORD tables) DID land, but it reads them at
   // their vanilla bank-$17 address gated by `baseDerived` — the same in-place
   // strategy palette / level-name import uses — rather than through this ladder.
   // See src/main/rom-import.ts `analyzeWorldMap` + import/foreign-world-map.ts.

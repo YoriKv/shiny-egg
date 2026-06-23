@@ -105,7 +105,7 @@ export function registerProjectsIpc(): void {
   )
 
   // Export = build the ROM, then Save-As to a user-chosen .sfc. NOTE: until
-  // the per-project overlay/build-tree merge lands (plan step 3), this builds
+  // the per-project overlay/build-tree merge lands, this builds
   // from the base workRoot — which currently equals the project's state, since
   // edits aren't yet written to the overlay either.
   ipcMain.handle(

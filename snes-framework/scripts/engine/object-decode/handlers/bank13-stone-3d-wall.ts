@@ -77,8 +77,9 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { getMap16Left } from '../fetch.ts';
-import { stampCell, readBuf16, setProbeToCurrent } from './_shared.ts';
+import { stampCell, readBuf16, setProbeToCurrent, signed8 } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
 // Cap-tile + row-group constants (Bank13.asm:14910-14979).
@@ -184,24 +185,27 @@ function waterfallRightCap(
 // ─────────────────────────────────────────────────────────────────────
 
 const stone3dWallStamp: PerCellHandler = (state) => {
-  // Row-group selection. `EOR #$FFFF / INC` is two's-complement negate
-  // in 16-bit mode; the BCC-then-clamp logic resolves to "row 0 → 0,
-  // rows ≥ 1 → 4" because $2C=0 gives A=0 < 5 (kept) and any $2C ≥ 1
-  // gives A = $FFFF or smaller-but-still-≥5 (clamped to 4).
-  const negRow = (-(state.zp2C & 0xffff)) & 0xffff;
+  // Row-group selection. The cart reads `$2C` as a 16-bit SIGNED row offset (the
+  // walker counts negative for cells ABOVE the placement origin) and does
+  // `EOR #$FFFF ; INC` = 16-bit negate, then `CMP #5 ; BCC keep ; else 4`.
+  // The walker stores $2C in 8 bits, so use signed8() to recover the cart's
+  // 16-bit value: signed8($FD) = -3 → negate = 3 (NOT 253 → clamp-to-4). This is
+  // what makes the row-group-3 / promote branch below reachable for upper cells.
+  const negRow = (-signed8(state.zp2C)) & 0xffff;
   const yRowGroup = (negRow < 0x0005 ? negRow : 0x0004) & 0x0006;
-  let rowGroup = DATA_waterfall_rowgroups[yRowGroup >>> 1]!;
+  let rowGroup: number = DATA_waterfall_rowgroups[yRowGroup >>> 1]!;
 
-  // CMP #$0006 / BCS skip → the PRNG promote branch is only reachable
-  // when rowGroup < 6, AND $2C is odd. With the clamping above, the
-  // only rowGroup < 6 is the row-0 case (rowGroup = 0, $2C = 0), where
-  // `$2C & 1 == 0` skips the branch anyway. Kept for asm fidelity —
-  // dead in practice for object $ED, but a different init wrapping the
-  // same stamp could reach it. The PRNG result is unused outside this
-  // branch (no register state leaks), so we can elide the call.
+  // CMP #$0006 / BCS skip → the PRNG promote branch fires when rowGroup < 6 AND
+  // $2C is ODD. This IS reachable: for the waterfall column's cells ABOVE the
+  // placement origin the walker's $2C is negative (large-unsigned, e.g. $FFFD),
+  // so the `EOR #$FFFF ; INC` negate-clamp above yields negRow ∈ {2,3} → rowGroup
+  // = 3 (odd $2C). When `prng & 2` is set the cart does `INC $00 ×3`, promoting
+  // the row-group offset (3 → 6) and so bumping the waterfall cap base. The roll
+  // fires whenever the gate holds (matching the cart's JSL placement).
   if (rowGroup < 0x0006 && (state.zp2C & 0x0001) !== 0) {
-    // (Cart `JSL CODE_prng ; AND #$0002 ; BEQ skip`.) Skipped intentionally
-    // — the gate above is unreachable for object $ED.
+    if ((prngNext(state, RNG_SITE.stone3dWallPromote) & 0x0002) !== 0) {
+      rowGroup = (rowGroup + 3) & 0xffff;
+    }
   }
 
   // Parity selector for cap-tile pick. Y ∈ {0, 2}.
@@ -229,10 +233,6 @@ const stone3dWallStamp: PerCellHandler = (state) => {
   }
 
   stampCell(state, finalTile);
-  // Suppress "rowGroup unused after branch" — the PRNG path mutates it
-  // upstream in the cart; we preserve the variable in case future re-
-  // analysis wants to wire that branch live.
-  void rowGroup;
 };
 
 // ─────────────────────────────────────────────────────────────────────

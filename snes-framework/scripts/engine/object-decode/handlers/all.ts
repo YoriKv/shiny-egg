@@ -172,6 +172,7 @@ import { installExtSlopePairHandlers } from './bank12-ext-slope-pair.ts';
 import { installExtStakeSingleHandlers } from './bank12-ext-stake-single.ts';
 import { installExtSpecialCoinHandlers } from './bank12-ext-special-coin.ts';
 import { installExtGiantStubHandlers } from './bank12-ext-giant-stubs.ts';
+import { installExtFinalbossSetpieceHandlers } from './bank12-ext-finalboss-setpiece.ts';
 import { installExtDefault0009Handlers } from './bank12-ext-default-00-09.ts';
 import { installExtWorld6BoneHandlers } from './bank12-ext-world6-bone.ts';
 import { installExtDoubleTeleportHoleHandlers } from './bank12-ext-double-teleport-hole.ts';
@@ -422,6 +423,7 @@ export const HANDLER_INSTALLERS: Array<() => void> = [
   installExtStakeSingleHandlers,
   installExtSpecialCoinHandlers,
   installExtGiantStubHandlers,
+  installExtFinalbossSetpieceHandlers,
   // --- batch 2 (0x00-0x09 default + 0x1B-0x48) ---
   installExtDefault0009Handlers,
   installExtWorld6BoneHandlers,

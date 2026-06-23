@@ -52,7 +52,6 @@ function resolveBuildPaths(): { cartPath: string; symPath: string; fxSymPath: st
   }
 }
 
-
 export function loadRomAndSymbols(): RomCache {
   const paths = resolveBuildPaths()
   // Clear, actionable errors for the "no build yet / incomplete build" cases

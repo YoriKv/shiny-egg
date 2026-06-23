@@ -30,13 +30,39 @@
 // tileset switch (and proven equal to a full render by render-sprite-patch.test.ts).
 
 import { renderSpriteCel } from './sprite-cel.ts';
-import { parityCelVariantIndex, resolveSpriteCel } from './sprite-tile-base.ts';
+import { parityCelVariantIndex, resolveSpriteCel, SPRITE_RENDER_ALIAS } from './sprite-tile-base.ts';
 import { DYNAMIC_BODY_SOURCES } from './sprite-dynamic-gfx.ts';
+import { SYNTHESIZED_CELS } from './sprite-synth-cel.ts';
+import { CUSTOM_SPRITE_RENDERERS, type CustomSpriteRenderer } from './sprite-custom-render.ts';
+import { CEL_B_NUMS, FORMAT_A_NUMS, SETTLED_PALETTE_ROW, REST_FRAME } from './sprite-render-facts.ts';
+import { parityIndex, HIDDEN_REVEAL, SPRITE_PARITY_PALETTE } from './sprite-parity.ts';
 import { GRID_COLS, GRID_ROWS } from './cell-grid.ts';
 import type { GfxFileEntry, GfxHeader } from './load-graphics.ts';
 import type { SymbolMap } from './symbol-map.ts';
 import type { LevelSprite } from '../types.ts';
 import type { Bg1RenderResult, LayerCellPatch, SpriteCelBounds, SpriteLayerResult } from '../types.ts';
+
+// Sprites that render their OWN cel but only become visible under a runtime condition the editor
+// can't show — drawn at 50% opacity (like the HIDDEN_REVEAL targets) so the placement reads as
+// "conditionally here". $098 End-Transformation Block only appears while Yoshi is morphed; $059
+// Stationary Super Star only shows its star conditionally (spawns/parks the drawn star vs the
+// super-star pickup state — shared Main with $088).
+const CONDITIONAL_HALF_OPACITY: ReadonlySet<number> = new Set([0x098, 0x059]);
+
+/**
+ * Per-sprite ANCHOR shift applied at placement: the sprite's Init routine moves its world position
+ * away from the placed-cell anchor before the first frame draws, so the static render (which pins the
+ * cel/body to the cell) lands in the wrong spot without this. `{dx,dy}` is the *world* delta the Init
+ * adds (px, +y = down); we subtract it from the cel origin so the bitmap — and the hit-test bounds,
+ * which share that origin — both shift by `(dx,dy)`. DERIVE each entry from the Init's position
+ * stores, never by eyeballing.
+ *
+ *   $157 Wall Lakitu (`init_lakitu_wall` $07:C2D6): X (`$70E2`) is read-only (its bit-4 picks the
+ *   wall side); Y (`$7182`) gets `ADC #$000B` → spawns 11 px BELOW the placed cell. (`Bank07.asm:8392`.)
+ */
+const INIT_ANCHOR_OFFSET: Readonly<Partial<Record<number, { dx: number; dy: number }>>> = {
+  0x157: { dx: 0, dy: 11 }
+};
 
 const CELL_PX = 16;
 const SCREENS_WIDE = 16;
@@ -48,9 +74,12 @@ const TOTAL_HEIGHT = SCREENS_TALL * CELLS_PER_SCREEN_EDGE * CELL_PX; // 2048
 export interface RenderSpriteLayerArgs {
   rom: Uint8Array;
   symbols: SymbolMap;
-  /** Header gfx fields — only `spriteTileset` is read (for the tile-base
-   *  derivation), but the full GfxHeader is accepted for caller convenience. */
-  header: Pick<GfxHeader, 'spriteTileset'>;
+  /** Header gfx fields — `spriteTileset` (tile-base derivation) plus `levelMode`
+   *  (read by the donut-lift Map16-stamp custom renderers for the BG1 char base)
+   *  and `spritesetOverride` (a minted spriteset, threaded into the tile-base slot
+   *  lookup so it matches the VRAM `loadLevelGfx` loaded); the full GfxHeader is
+   *  accepted for caller convenience. */
+  header: Pick<GfxHeader, 'spriteTileset' | 'levelMode' | 'spritesetOverride'>;
   /** The level's sprites (`LevelData.sprites`). */
   sprites: readonly LevelSprite[];
   /** Sprite VRAM populated by `loadLevelGfx`. */
@@ -60,20 +89,13 @@ export interface RenderSpriteLayerArgs {
   /** `loadLevelGfx`'s manifest for THIS level — used to derive the OBJ name
    *  base. Optional; omit to use the static fallback base. */
   manifest?: GfxFileEntry[];
-  /** Allow-set of sprite nums that render a **Format-B** `special_chr` cel.
-   *  Built renderer-side from the prebaked `obj-metadata` `cel === 'B'` field
-   *  (a ground-truth categorization replacing the old `category` proxy). Omit to
-   *  render every resolvable sprite (no gate). */
-  celRenderableNums?: ReadonlySet<number>;
-  /** Allow-set of sprite nums that render a **Format-A** single tile (items),
-   *  from `cel === 'A'`. Rendered AND forced down the Format-A path (so sprites
-   *  carrying both a `special_chr` and an `object_data`, e.g. the Key, draw A).
-   *  Only consulted when `celRenderableNums` is supplied. */
-  formatANums?: ReadonlySet<number>;
   /** The level's sprite-palette id (`LevelHeaderSpritePaletteLo`, header field 8).
    *  Threaded to `resolveSpriteCel` for the Red Coin's level-state-dependent
    *  runtime recolour; harmless to omit. */
   levelSpritePaletteId?: number;
+  // NB: the per-sprite cel-format gate (Format-A/B), settled palette row (SP4) and rest frame
+  // (SP3) are asm-fixed render facts now OWNED by the engine — see sprite-render-facts.ts. They
+  // are read directly below, no longer threaded in from the renderer.
 }
 
 /** One sprite instance placed in the layer: its composited cel pixels (shared by
@@ -134,7 +156,7 @@ function placedHash(p: PlacedSprite): number {
  * are omitted (they fall through to the glyph tier).
  */
 export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRenderModel {
-  const { rom, symbols, header, sprites, vram, cgram, manifest, celRenderableNums, formatANums, levelSpritePaletteId } = args;
+  const { rom, symbols, header, sprites, vram, cgram, manifest, levelSpritePaletteId } = args;
   const boundsByNum = new Map<number, SpriteCelBounds>();
   const placed: PlacedSprite[] = [];
   // Cel bitmap per cache key (null = resolved-but-empty / gated out, cached so we
@@ -146,54 +168,99 @@ export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRende
 
   for (let i = 0; i < sprites.length; i++) {
     const spr = sprites[i]!;
-    const preferFormatA = formatANums?.has(spr.num) ?? false;
-    if (celRenderableNums) {
-      const renderable = celRenderableNums.has(spr.num) || preferFormatA || spr.num in DYNAMIC_BODY_SOURCES;
-      if (!renderable) continue;
+    // Hidden-until-interaction sprites (e.g. $0B5 Hidden Winged Cloud) have no cel of their
+    // own and render nothing statically. When the placed sprite isn't otherwise renderable,
+    // fall back to the asm-defined REVEALED target (chosen by spawn-cell parity) drawn at 50%
+    // opacity, so the editor shows what's hidden there rather than a blank cell.
+    const baseRenderable = CEL_B_NUMS.has(spr.num) || FORMAT_A_NUMS.has(spr.num) || spr.num in DYNAMIC_BODY_SOURCES || spr.num in SYNTHESIZED_CELS || spr.num in CUSTOM_SPRITE_RENDERERS;
+    let renderNum = spr.num;
+    let revealed = false;
+    if (!baseRenderable) {
+      const targets = HIDDEN_REVEAL[spr.num];
+      if (!targets) continue;
+      renderNum = targets[parityIndex(spr.x, spr.y)]!;
+      revealed = true;
     }
-    const parityIdx = parityCelVariantIndex(spr.num, spr.x, spr.y);
-    const celKey = parityIdx === null ? spr.num : spr.num + (parityIdx + 1) * 0x10000;
+    // Render-as alias ($034 Roger's Pot → $0DA flower pot): borrow the alias id's whole cel render
+    // (chr cel, facts, tile base, $7042). The cache key + custom-renderer lookup stay on spr.num, so
+    // no collision with the real alias sprite.
+    if (!revealed) renderNum = SPRITE_RENDER_ALIAS.get(spr.num) ?? renderNum;
+    const preferFormatA = FORMAT_A_NUMS.has(renderNum);
+    // A revealed target renders through the normal cel path (never a custom renderer).
+    const customRenderer: CustomSpriteRenderer | undefined = revealed ? undefined : CUSTOM_SPRITE_RENDERERS[spr.num];
+    const parityIdx = parityCelVariantIndex(renderNum, spr.x, spr.y);
+    // Some sprites pick their PALETTE (not a different cel) from spawn-cell parity — the shy-guy
+    // family ($01E/$133/$124/$192), stilt/fat/woozy guy, Mock-Up, Piscatory Pete (SPRITE_PARITY_
+    // PALETTE). Like cel-variant parity these vary per placed cell, so they need placement passed
+    // to the resolver AND a parity-keyed cache slot — else every instance reuses one cached colour
+    // (the $01E Shy Guy bug: it always rendered parity-0 green regardless of cell).
+    const palParityIdx = SPRITE_PARITY_PALETTE[renderNum] !== undefined ? parityIndex(spr.x, spr.y) : null;
+    const parityKeyIdx = parityIdx ?? palParityIdx;
+    // Cel cache key: revealed cels get a high bit so the 50%-opacity bitmap never collides
+    // with the same target sprite's full-opacity cel placed directly elsewhere.
+    const celKey = revealed ? renderNum + 0x800000
+      : customRenderer ? spr.num + (spr.x & 1) * 0x10000
+      : parityKeyIdx === null ? spr.num : spr.num + (parityKeyIdx + 1) * 0x10000;
     let cel = celByNum.get(celKey);
     if (cel === undefined) {
+      if (customRenderer) {
+        const rs = customRenderer({ rom, symbols, vram, cgram, cellX: spr.x, cellY: spr.y, header, manifest, levelSpritePaletteId });
+        cel = !rs || rs.width === 0 || rs.height === 0
+          ? null
+          : { pixels: new Uint32Array(rs.rgba.buffer, rs.rgba.byteOffset, rs.rgba.length >>> 2).slice(), width: rs.width, height: rs.height, originX: rs.originX, originY: rs.originY };
+        celByNum.set(celKey, cel);
+        if (!cel) continue;
+        // (fall through to the blit below)
+      } else {
       const resolved = resolveSpriteCel(
-        rom, symbols, header, spr.num, manifest, preferFormatA, levelSpritePaletteId,
-        parityIdx === null ? undefined : { x: spr.x, y: spr.y }
+        rom, symbols, header, renderNum, manifest, preferFormatA, levelSpritePaletteId,
+        parityKeyIdx !== null || revealed ? { x: spr.x, y: spr.y } : undefined,
+        SETTLED_PALETTE_ROW.get(renderNum),
+        REST_FRAME.get(renderNum)
       );
       if (!resolved) {
         cel = null;
       } else {
         const img = renderSpriteCel(resolved.cel, { vram, cgram, tileBaseBytes: resolved.tileBaseBytes, dynamicBody: resolved.dynamicBody });
-        cel = img.width === 0 || img.height === 0
-          ? null
-          : {
-              pixels: new Uint32Array(img.rgba.buffer, img.rgba.byteOffset, img.rgba.length >>> 2).slice(),
-              width: img.width,
-              height: img.height,
-              originX: img.originX,
-              originY: img.originY
-            };
+        if (img.width === 0 || img.height === 0) {
+          cel = null;
+        } else {
+          const pixels = new Uint32Array(img.rgba.buffer, img.rgba.byteOffset, img.rgba.length >>> 2).slice();
+          // Revealed (hidden-until-interaction) targets AND conditionally-visible sprites (e.g.
+          // $098, only shown when morphed) render at 50% opacity — halve each pixel's alpha byte
+          // (ARGB high byte) so the placement reads as "hidden / conditionally here".
+          if (revealed || CONDITIONAL_HALF_OPACITY.has(spr.num)) for (let p = 0; p < pixels.length; p++) pixels[p] = (pixels[p]! & 0x00ffffff) | (((pixels[p]! >>> 25) & 0x7f) << 24);
+          cel = { pixels, width: img.width, height: img.height, originX: img.originX, originY: img.originY };
+        }
       }
       celByNum.set(celKey, cel);
+      }
     }
     if (!cel) continue;
+    // Init-time anchor shift (e.g. $157 Wall Lakitu spawns +11 px down): subtract the world delta
+    // from the origin so placement AND the shared hit-test bounds move together. Keyed on spr.num
+    // (the placed sprite whose Init runs), not renderNum, so an alias/reveal target doesn't borrow it.
+    const initOff = INIT_ANCHOR_OFFSET[spr.num];
+    const originX = cel.originX - (initOff?.dx ?? 0);
+    const originY = cel.originY - (initOff?.dy ?? 0);
     const prev = boundsByNum.get(spr.num);
     if (!prev) {
-      boundsByNum.set(spr.num, { num: spr.num, originX: cel.originX, originY: cel.originY, width: cel.width, height: cel.height });
-    } else if (prev.width !== cel.width || prev.height !== cel.height || prev.originX !== cel.originX || prev.originY !== cel.originY) {
+      boundsByNum.set(spr.num, { num: spr.num, originX, originY, width: cel.width, height: cel.height });
+    } else if (prev.width !== cel.width || prev.height !== cel.height || prev.originX !== originX || prev.originY !== originY) {
       // Parity-variant cels differ per placement (e.g. the arrow sign's vertical
       // 16×24 vs horizontal 24×16 frames) but the canvas hit-test box is per num —
       // grow it to the union of every variant seen, in anchor-relative space.
-      const left = Math.max(prev.originX, cel.originX);
-      const top = Math.max(prev.originY, cel.originY);
-      const right = Math.max(prev.width - prev.originX, cel.width - cel.originX);
-      const bottom = Math.max(prev.height - prev.originY, cel.height - cel.originY);
+      const left = Math.max(prev.originX, originX);
+      const top = Math.max(prev.originY, originY);
+      const right = Math.max(prev.width - prev.originX, cel.width - originX);
+      const bottom = Math.max(prev.height - prev.originY, cel.height - originY);
       boundsByNum.set(spr.num, { num: spr.num, originX: left, originY: top, width: left + right, height: top + bottom });
     }
     placed.push({
       num: spr.num,
       drawIndex: i,
-      baseX: spr.x * CELL_PX - cel.originX,
-      baseY: spr.y * CELL_PX - cel.originY,
+      baseX: spr.x * CELL_PX - originX,
+      baseY: spr.y * CELL_PX - originY,
       width: cel.width,
       height: cel.height,
       pixels: cel.pixels

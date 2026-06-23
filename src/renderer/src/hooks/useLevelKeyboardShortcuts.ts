@@ -12,6 +12,7 @@ import type { PlacementItem, Selection } from '../types'
 import { MAX_LEVEL_SPRITES } from '../canvas/limits'
 import { objectSizeMode } from '../data/object-record'
 import { LEVEL_SCREENS_H, LEVEL_SCREENS_W, screenCol, screenRow } from '../canvas/geometry'
+import { isCellOnScreen, viewportCenterCell, type View } from '../canvas/view'
 
 export interface LevelKeyboardShortcutsParams {
   levelState: LevelState
@@ -26,11 +27,16 @@ export interface LevelKeyboardShortcutsParams {
   globalRedo: () => void
   propTable: Uint8Array | null
   clipboardRef: RefObject<{ objects: LevelObject[]; sprites: LevelSprite[] } | null>
+  /** Live camera (Canvas mirrors its view here) + viewport pixel size — paste
+   *  reads them to keep an off-screen target on-screen (drop at the viewport
+   *  centre instead). */
+  cameraRef: RefObject<View>
+  viewportRef: RefObject<{ w: number; h: number }>
 }
 
 export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void {
   const {
-    levelState, dispatchLevel, selection, primarySelection, setSelection, setPlacement, cancelPlacement, globalUndo, globalRedo, propTable, clipboardRef
+    levelState, dispatchLevel, selection, primarySelection, setSelection, setPlacement, cancelPlacement, globalUndo, globalRedo, propTable, clipboardRef, cameraRef, viewportRef
   } = p
   // Read the current level WITHOUT re-binding the listener on every edit
   // (levelState changes each commit). Handlers read levelStateRef.current; the
@@ -65,22 +71,59 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
       setSelection(sel)
     }
     // Shared by Duplicate (entities offset from the live selection) and Paste
-    // (from the clipboard): clone, offset one cell, trim sprites to the cap so
+    // (from the clipboard): clone, offset by (dx, dy), trim sprites to the cap so
     // the predicted reselect matches what the reducer actually adds.
-    const addCloned = (srcObjs: LevelObject[], srcSprs: LevelSprite[]): void => {
+    const addCloned = (
+      srcObjs: LevelObject[],
+      srcSprs: LevelSprite[],
+      dx: number,
+      dy: number
+    ): void => {
       const lvl = levelStateRef.current.level
       if (!lvl) return
       const objects = srcObjs.map((o) => ({
         ...o,
         raw: o.raw ? o.raw.slice() : o.raw,
-        x: o.x + 1,
-        y: o.y + 1
+        x: o.x + dx,
+        y: o.y + dy
       }))
       const room = Math.max(0, MAX_LEVEL_SPRITES - lvl.sprites.length)
-      const sprites = srcSprs.map((s) => ({ ...s, x: s.x + 1, y: s.y + 1 })).slice(0, room)
+      const sprites = srcSprs.map((s) => ({ ...s, x: s.x + dx, y: s.y + dy })).slice(0, room)
       if (objects.length === 0 && sprites.length === 0) return
       dispatchLevel({ type: 'addEntities', objects, sprites })
       reselectAfterAdd(objects.length, sprites.length)
+    }
+
+    // Where to drop a pasted group. Normally one cell down-right of the source
+    // (matching Duplicate). But if that target would be off-screen — checked at
+    // the group's CENTRE, so a multi-select uses the group centre and a single
+    // entity uses its own box centre — drop the group centred on the viewport
+    // instead, so a paste from a scrolled-away (or different-level) clipboard
+    // lands where it can be seen. Relative layout within the group is preserved.
+    const pasteOffset = (objs: LevelObject[], sprs: LevelSprite[]): { dx: number; dy: number } => {
+      const def = { dx: 1, dy: 1 }
+      const view = cameraRef.current
+      const vp = viewportRef.current
+      if (!view || !vp || vp.w === 0 || vp.h === 0) return def
+      // Bounding-box centre of the group (objects span x..x+w / y..y+h — min/max
+      // over both ends covers negative-growth; sprites are a 1×1 cell).
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const o of objs) {
+        minX = Math.min(minX, o.x, o.x + o.w); maxX = Math.max(maxX, o.x, o.x + o.w)
+        minY = Math.min(minY, o.y, o.y + o.h); maxY = Math.max(maxY, o.y, o.y + o.h)
+      }
+      for (const s of sprs) {
+        minX = Math.min(minX, s.x); maxX = Math.max(maxX, s.x + 1)
+        minY = Math.min(minY, s.y); maxY = Math.max(maxY, s.y + 1)
+      }
+      if (!Number.isFinite(minX)) return def
+      const cx = (minX + maxX) / 2
+      const cy = (minY + maxY) / 2
+      // On-screen at the default pasted position (centre + the 1,1 offset)?
+      if (isCellOnScreen(view, vp, cx + def.dx, cy + def.dy)) return def
+      // Off-screen → translate so the group centre lands at the viewport centre.
+      const c = viewportCenterCell(view, vp)
+      return { dx: Math.round(c.x - cx), dy: Math.round(c.y - cy) }
     }
 
     const onKey = (e: KeyboardEvent): void => {
@@ -179,7 +222,8 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
         const clip = clipboardRef.current
         if (clip && (clip.objects.length > 0 || clip.sprites.length > 0)) {
           e.preventDefault()
-          addCloned(clip.objects, clip.sprites)
+          const { dx, dy } = pasteOffset(clip.objects, clip.sprites)
+          addCloned(clip.objects, clip.sprites, dx, dy)
         }
         return
       }
@@ -214,7 +258,7 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
             const sprs = sprUids
               .map((uid) => lvl.sprites.find((s) => s.uid === uid))
               .filter((s): s is LevelSprite => !!s)
-            addCloned(objs, sprs)
+            addCloned(objs, sprs, 1, 1)
           }
           return
         }

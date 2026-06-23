@@ -609,7 +609,7 @@ The two critical calls for boss ticking are:
 | Sub-handlers per `$0D2D / $0D45 / ...`| Per-frame HDMA effects   | fuzzy (CODE_01D7CD), wavy (CODE_01D81D), sun (CODE_01D86D), cloud (CODE_01D8C6) |
 | DATA_01D916                            | Per tile-mode             | (CODE_01DA69 / CODE_01D92C / CODE_01DA98) opt_moving / opt_fuzzied / opt_unused |
 | DATA_01C0ED                            | `!RAM_YI_Level_ItemBeingUsed != 0` | dispatch the 9 player-item handlers |
-| DATA_01C454 (animation_palette_ptr)    | `!RAM_YI_Level_LevelHeaderAnimationPaletteLo != 0` | dispatch the 21 per-level palette animations |
+| DATA_01C454 (animation_palette_ptr)    | `!RAM_YI_Level_LevelHeaderAnimationPaletteLo != 0` | dispatch the 21 per-frame palette animations (mechanism in `enginecore.md` §5.6) |
 
 ---
 

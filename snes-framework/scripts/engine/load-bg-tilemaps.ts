@@ -145,6 +145,37 @@ export function loadBg2Tilemap(
   return sizeBytes;
 }
 
+/** The cart source of a BG2/BG3 tilemap, for the placement write-back: the LZ2
+ *  `fileId` (in `DATA_lz2_compressed_gfx_ptrs`) + its DECOMPRESSED tilemap-word bytes
+ *  (which load at `vramBase`, so a region's `memoryEntryOff − vramBase` is the byte
+ *  offset of that word in `bytes`). `null` ⇒ no static tilemap for this tileset. */
+export interface BgTilemapSource { format: 'lz2'; fileId: number; bytes: Uint8Array; vramBase: number }
+
+export function resolveBgTilemapSource(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  layer: 2 | 3,
+  tileset: number
+): BgTilemapSource | null {
+  const decompress = (fileId: number): Uint8Array => {
+    const srcPC = snesToPC(u24le(rom, symbols.pc('DATA_lz2_compressed_gfx_ptrs') + fileId * 3));
+    const scratch = new Uint8Array(SRAM_STAGING_BYTES);
+    const { destEnd } = lz2(rom, srcPC, scratch, 0);
+    return scratch.slice(0, destEnd);
+  };
+  if (layer === 2) {
+    const entry = lookupBg2Entry(rom, symbols, tileset);
+    if (entry.type !== 0x00 && entry.type !== 0x04) return null; // not a plain tilemap file
+    return { format: 'lz2', fileId: entry.fileIdx, bytes: decompress(entry.fileIdx), vramBase: BG2_TILEMAP_VRAM_ADDR };
+  }
+  if (tileset === 0) return null;
+  const rowOff = symbols.pc('DATA_bg3_tilemap_table') + (tileset - 1) * 3;
+  const fileId = rom[rowOff]! | (rom[rowOff + 1]! << 8);
+  const action = rom[rowOff + 2]!;
+  if (fileId === 0 || action === 0xff) return null; // no file / BG3 hidden
+  return { format: 'lz2', fileId, bytes: decompress(fileId), vramBase: BG3_TILEMAP_VRAM_ADDR };
+}
+
 /** Diagnostics + render hints from `loadBg3Tilemap`. */
 export interface Bg3LoadResult {
   /** Bytes written into VRAM at byte $6800 (0..BG3_TILEMAP_VRAM_BYTES). 0 means

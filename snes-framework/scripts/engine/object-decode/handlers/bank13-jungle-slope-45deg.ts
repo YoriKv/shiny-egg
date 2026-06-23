@@ -101,7 +101,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupKeepSlope } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import {
   stampCell,
   stampAboveTile,
@@ -151,6 +151,7 @@ interface DirConfig {
   readonly row1Alt:     number;                            // $908F / $907F
   readonly stampSide:   (state: DecodeState, id: number) => void; // stampLeftTile / stampRightTile
   readonly edgeDelta:   1 | -1;                            // INC ($28+1) for right, DEC ($28-1) for left
+  readonly prngSite:    number;                            // CODE_1393A2 (left) / CODE_13943A (right) roll PC
 }
 
 const LEFT_DOWN: DirConfig = {
@@ -162,6 +163,7 @@ const LEFT_DOWN: DirConfig = {
   row1Alt:      0x908F,
   stampSide:    stampLeftTile,
   edgeDelta:    -1, // DEC $28
+  prngSite:     RNG_SITE.jungleSlopeLeftDownBody,
 };
 
 const RIGHT_DOWN: DirConfig = {
@@ -173,6 +175,7 @@ const RIGHT_DOWN: DirConfig = {
   row1Alt:      0x907F,
   stampSide:    stampRightTile,
   edgeDelta:    +1, // INC $28
+  prngSite:     RNG_SITE.jungleSlopeRightDownBody,
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -227,7 +230,7 @@ function makeStampHandler(cfg: DirConfig): PerCellHandler {
 
     if (stamp === null) {
       // CODE_1393A2 / CODE_13943A — prng-jitter per-row base.
-      const jitter = prngNext(state) & 0x01;
+      const jitter = prngNext(state, cfg.prngSite) & 0x01;
       const rowIdx = (state.zp2C & 0xff) & 0x7f; // Y = $2C * 2; word table
       // Bank13.asm:2557-2559: LDA $2C ; ASL ; TAY ; LDA DATA_139348,y.
       // The table has 2 entries (rows 0/1 base). For row 2, the indexing

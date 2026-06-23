@@ -39,6 +39,17 @@ export function readPaletteEdits(baseText: string, overlayText: string | null): 
 }
 
 /**
+ * The pristine base blob's words as a byte-offset → BGR-15 value map (the cart's
+ * original palette, before any project overlay). The render path re-sources the
+ * live preview from these so it shows BASE ⊕ draft (independent of the built ROM),
+ * which makes a colour reset show base immediately — the palette twin of the gfx
+ * live cache's reset-to-base. `baseText` is the framework's base `Bank57.asm`.
+ */
+export function basePaletteWords(baseText: string): Map<number, number> {
+  return new Map(findDataWords(baseText, PALETTE_BLOB_LABEL).map((w) => [w.byteOffset, w.value]));
+}
+
+/**
  * Splice `edits` into the BASE blob text → edited text (format-preserving; only
  * changed words touched). Always reborn from base, so the result = base + the
  * full edit set (idempotent re-saves, clean diffs). Empty `edits` ⇒ base

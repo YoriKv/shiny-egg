@@ -964,9 +964,10 @@ to three (Init) and six to two (Main).
   egg vs needlenose-egg variants. This means a single
   level-data X coordinate is overloaded as both "where to place
   the plant" and "which variant" -- the variant flag is encoded
-  in the low byte of the X coord. Does the level editor
-  recognise this, or is the variant bit silently corrupted when
-  the user re-positions a placed Egg Plant?
+  in bit 4 of the spawn-X coord. The placement coordinate and the
+  variant selector are therefore inseparable in the level data:
+  there is no independent variant byte, so shifting the plant by
+  one column flips its variant.
 - **`$7AF8 / $74A2` flash timing in `main_giant_egg_frog`.** The
   pre-expiry flash at `CMP #$0002 BNE` only fires when the timer
   is exactly 2; it should arguably be `CMP #$0002 BCS` (>= 2)

@@ -2,9 +2,10 @@
 // Two pieces:
 //   1. SELECTION overlay — for the selected sprite, its behavior geometry from
 //      data/sprite-behavior-extents.ts: trigger zones (dashed box), patrol
-//      extents (segment with end ticks), orbits (dashed circle), and the
-//      runtime-snap ghost (crosshair at the position the init moves the sprite
-//      to, with a dotted connector from the placed cell).
+//      extents (segment with end ticks), orbits (dashed circle), reach domes
+//      (dashed upper half-circle + base line), and the runtime-snap ghost
+//      (crosshair at the position the init moves the sprite to, with a dotted
+//      connector from the placed cell).
 //   2. ALWAYS-ON cap warning — an amber "n/max" badge (bottom-left) on every
 //      sprite whose engine instance cap (data/sprite-level-caps.ts) is
 //      exceeded by the level's placed count. Warning-grade, not an error:
@@ -76,6 +77,21 @@ function drawOrbit(ctx: CanvasRenderingContext2D, ax: number, ay: number, m: Ext
   ctx.setLineDash([])
 }
 
+function drawReach(ctx: CanvasRenderingContext2D, ax: number, ay: number, m: Extract<BehaviorMark, { kind: 'reach' }>, zoom: number): void {
+  // Danger DOME: the UPPER half-circle (canvas y grows down, so the top half
+  // is π…2π) plus its flat base line through the centre — a ground attacker
+  // reaches up/out to here but not into the floor below.
+  const cx = ax + CELL_PX / 2 + m.cx
+  const cy = ay + CELL_PX / 2 + m.cy
+  dashed(ctx, zoom)
+  ctx.beginPath()
+  ctx.ellipse(cx, cy, m.r, m.r, 0, Math.PI, Math.PI * 2)
+  ctx.moveTo(cx - m.r, cy)
+  ctx.lineTo(cx + m.r, cy)
+  ctx.stroke()
+  ctx.setLineDash([])
+}
+
 function drawSnapGhost(ctx: CanvasRenderingContext2D, ax: number, ay: number, m: Extract<BehaviorMark, { kind: 'snap' }>, zoom: number): void {
   // Dotted connector from the placed anchor to the runtime anchor, then a
   // crosshair + small box marking where the sprite actually shows up in-game.
@@ -131,6 +147,7 @@ export function drawBehaviorSelectionOverlay(
       case 'zone': drawZone(ctx, ax, ay, m, zoom); break
       case 'extent': drawExtent(ctx, ax, ay, m, zoom); break
       case 'orbit': drawOrbit(ctx, ax, ay, m, zoom); break
+      case 'reach': drawReach(ctx, ax, ay, m, zoom); break
       case 'snap': drawSnapGhost(ctx, ax, ay, m, zoom); break
     }
   }

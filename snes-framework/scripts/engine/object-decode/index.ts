@@ -96,6 +96,13 @@ export interface DecodeLevelOptions {
    *  group for a multi-select drag). Off by default; arming it allocates a small
    *  Map and is otherwise free. */
   provenanceTargets?: number[];
+  /** Captured cart-PRNG output sequence (from the `level-rng` trace) to replay
+   *  in place of the LFSR, reproducing the live game's exact random-tile
+   *  variants. See state.ts `prngReplay` / prng.ts. */
+  prngReplay?: readonly number[];
+  /** Per-caller-site captured PRNG bytes (cart caller PC → byte sequence in call
+   *  order), the preferred replay form. See state.ts `prngReplayBySite`. */
+  prngReplayBySite?: Record<number, readonly number[]>;
 }
 
 export function decodeLevel(
@@ -111,6 +118,19 @@ export function decodeLevel(
   const state = new DecodeState();
   // Object stream starts immediately after the 10-byte header.
   state.reset(levelBytes.subarray(10), header);
+
+  // Replay a captured cart-PRNG sequence (level-rng trace) when provided. Set
+  // after reset() so it survives into the parse.
+  if (opts.prngReplay != null && opts.prngReplay.length > 0) {
+    state.prngReplay = opts.prngReplay;
+  }
+  if (opts.prngReplayBySite != null) {
+    const m = new Map<number, { bytes: readonly number[]; idx: number }>();
+    for (const [pc, bytes] of Object.entries(opts.prngReplayBySite)) {
+      m.set(Number(pc), { bytes, idx: 0 });
+    }
+    state.prngReplayBySite = m;
+  }
 
   // Arm the provenance recorder (object drag cell-highlight) when requested.
   if (opts.provenanceTargets != null && opts.provenanceTargets.length > 0) {

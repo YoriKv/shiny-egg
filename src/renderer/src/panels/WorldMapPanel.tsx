@@ -192,7 +192,7 @@ function SlotRefField({
   const known = groups.some((g) => g.slots.some((s) => s.translevelId === value))
   return (
     <select
-      className="se-props__select"
+      className="se-input se-props__select"
       value={value}
       onChange={(e) => onCommit(parseInt(e.target.value, 10))}
     >
@@ -372,7 +372,7 @@ export function WorldMapBody({
                 onClick={() => setNav({ view: 'world', group: label })}
               >
                 <span className="se-worldmap__world-name">{label}</span>
-                <span className="se-worldmap__world-count">
+                <span className="se-meta-xs se-worldmap__world-count">
                   {live === 0 ? 'no wired levels' : `${live} level${live === 1 ? '' : 's'}`}
                 </span>
               </button>
@@ -552,7 +552,7 @@ export function WorldMapBody({
 
       <div className="se-worldmap__footer">
         {editor.saveError && <span className="se-strings__warn">{editor.saveError}</span>}
-        {editor.dirty && <span className="se-worldmap__dirty">unsaved</span>}
+        {editor.dirty && <span className="se-meta-xs se-worldmap__dirty">unsaved</span>}
         <button
           type="button"
           className="se-btn is-primary se-worldmap__save"

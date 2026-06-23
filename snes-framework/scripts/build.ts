@@ -85,7 +85,7 @@ export function buildRom(opts: BuildOptions): BuildResult {
   try {
     // Prepend the project overlay's include paths so asar's include search finds
     // project-edited .bin files before the base copies (first match wins). Data-
-    // only fast path; asm edits will need the full build-tree merge (plan step 3).
+    // only fast path; asm edits will need the full build-tree merge.
     const overlayIncludes: string[] = [];
     if (opts.overlayRoot) {
       const overlayAssets = path.join(opts.overlayRoot, 'assets', 'yi');

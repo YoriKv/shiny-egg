@@ -53,7 +53,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { getMap16Left, getMap16Right } from '../fetch.ts';
 import { stampCell, setProbeToCurrent, readBuf16 } from './_shared.ts';
 
@@ -118,7 +118,7 @@ function topRowVariantA(state: DecodeState): number {
   if (((col + 1) & 0xff) === (state.zp2A & 0xff)) {
     return (A_TOP_LEFT_CAP + 1) & 0xffff;
   }
-  return (A_TOP_INTERIOR_BASE + (prngNext(state) & A_TOP_INTERIOR_MASK)) & 0xffff;
+  return (A_TOP_INTERIOR_BASE + (prngNext(state, RNG_SITE.jungleBlockATopInterior) & A_TOP_INTERIOR_MASK)) & 0xffff;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ function topRowVariantB(state: DecodeState): number {
   if (((col + 1) & 0xff) === (state.zp2A & 0xff)) {
     return (B_TOP_LEFT_CAP + 1) & 0xffff;
   }
-  return (B_TOP_INTERIOR_BASE + (prngNext(state) & B_TOP_INTERIOR_MASK)) & 0xffff;
+  return (B_TOP_INTERIOR_BASE + (prngNext(state, RNG_SITE.jungleBlockPatternBTop) & B_TOP_INTERIOR_MASK)) & 0xffff;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ function topRowVariantB(state: DecodeState): number {
 // We mirror that with a TS `let tile` and three branches.
 // ─────────────────────────────────────────────────────────────────────
 function midRow(state: DecodeState): number {
-  const y = prngNext(state) & 0x07;
+  const y = prngNext(state, RNG_SITE.jungleBlockPatternMid) & 0x07;
   const col = state.zp28 & 0xff;
 
   if (col === 0) {
@@ -196,7 +196,10 @@ function botRow(state: DecodeState): number {
   if (((col + 1) & 0xff) === (state.zp2A & 0xff)) {
     return (leftCap + 1) & 0xffff;
   }
-  return (intBase + (prngNext(state) & ROW_RAND_MASK)) & 0xffff;
+  // Two distinct cart JSL sites share this line: the $9200 path ($90CE) and the
+  // default path ($90B2) roll at different PCs — pick the matching per-site queue.
+  const site = onTopOf92 ? RNG_SITE.jungleBlockABot92 : RNG_SITE.jungleBlockABotDefault;
+  return (intBase + (prngNext(state, site) & ROW_RAND_MASK)) & 0xffff;
 }
 
 // ─────────────────────────────────────────────────────────────────────

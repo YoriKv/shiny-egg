@@ -39,17 +39,20 @@
 //     size) are validated: every object placed in a shipped level probes
 //     ok/no-visual under its own level's tuple (zero gate failures).
 
-import { decodeLevelFromLevelData } from './object-decode/index.ts';
 import { loadMap16Tables, decodeMap16Alloc } from './map16.ts';
 import { loadSceneRegs } from './scene-regs.ts';
 import { loadLevelGfx, type GfxHeader } from './load-graphics.ts';
 import { loadTileAnimation } from './load-tile-animation.ts';
 import { makeVramCoverage } from './vram-coverage.ts';
+import {
+  decodeSingleObject,
+  singleObjectDonorLevel,
+  type SingleObjectDecode
+} from './single-object-decode.ts';
 import type { SymbolMap } from './symbol-map.ts';
 import type {
   GfxFileEntry,
   LevelData,
-  LevelObject,
   ObjectRenderVerdict
 } from '../types.ts';
 
@@ -71,6 +74,10 @@ export interface ValidityProbeArgs {
    *  (`isWorld6RecordDeep` / render-core's `isWorld6`) so warp-reached
    *  sub-rooms inherit it. */
   isWorld6: boolean;
+  /** Shared single-object decode (the unified picker-catalog pass): when set,
+   *  `probe()` decodes through it instead of inline, so one decode per candidate
+   *  also feeds the thumbnailer. Omit for standalone use (dev tools / tests). */
+  decode?: SingleObjectDecode;
 }
 
 export interface ValidityProbe {
@@ -88,7 +95,7 @@ export interface ValidityProbe {
 /** Build a per-header-tuple validity probe: loads the tuple's gfx + tile
  *  animation into VRAM once, then `probe()` decodes candidates against it. */
 export function createValidityProbe(args: ValidityProbeArgs): ValidityProbe {
-  const { rom, symbols, workRoot, donor } = args;
+  const { rom, symbols, workRoot, donor, decode } = args;
   const h = donor.header;
   const regs = loadSceneRegs(rom, symbols, h[9] ?? 0);
   const gfxHeader: GfxHeader = {
@@ -96,7 +103,8 @@ export function createValidityProbe(args: ValidityProbeArgs): ValidityProbe {
     bg2Tileset: h[3] ?? 0,
     bg3Tileset: h[5] ?? 0,
     spriteTileset: h[7] ?? 0,
-    isWorld6: args.isWorld6
+    isWorld6: args.isWorld6,
+    levelMode: h[9] ?? 0
   };
   const vram = new Uint8Array(0x10000);
   const manifest: GfxFileEntry[] = [];
@@ -140,25 +148,11 @@ export function createValidityProbe(args: ValidityProbeArgs): ValidityProbe {
     const hit = cache.get(key);
     if (hit) return hit;
 
-    const obj: LevelObject = {
-      index: 0,
-      num: kind === 'std' ? id : 0,
-      exnum: kind === 'ext' ? id : undefined,
-      x: 24,
-      y: 64,
-      w: Math.max(1, w),
-      h: Math.max(1, h2),
-      raw: []
-    };
-    const levelData: LevelData = { ...donor, objects: [obj], sprites: [], exits: [] };
+    const decoded = decode
+      ? decode(kind, id, w, h2)
+      : decodeSingleObject(rom, symbols, workRoot, singleObjectDonorLevel(donor, kind, id, w, h2));
 
     const verdict = ((): ObjectRenderVerdict => {
-      let decoded;
-      try {
-        decoded = decodeLevelFromLevelData({ rom, symbols, workRoot, levelData });
-      } catch {
-        return 'unknown';
-      }
       if (!decoded || decoded.stats.aborted) return 'unknown';
       if (decoded.stats.unregisteredObjects > 0) return 'unknown';
 

@@ -24,7 +24,7 @@ function assert(cond: boolean, msg: string): void {
   }
 }
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shiny-egg-state-test-'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'snes-framework-state-test-'));
 const outputs = ['level-map.json', 'levels.json', 'instance-index.json'].map((f) =>
   path.join(root, 'editor-data', 'yi', f)
 );

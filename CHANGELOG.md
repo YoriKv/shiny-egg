@@ -1,6 +1,21 @@
 # Changelog
 
-## v0.3.8 - Unreleased
+## v0.4.0 - 2026-06-22
+
+- Level object/tile rendering is now a byte exact match with the base rom running in an emulator, except for 2 boss levels.
+- Place object/sprite panel is now much more responsive and quick to load.
+- Almost all sprites have an in editor render.
+- Minimap view for levels.
+- World map editing.
+- Exits map graph that shows all subrooms and their exit connections.
+- Sprite specific properties and rendering for sprites that change based on x/y odd/even position.
+- Neighbor relationship and other sprite specific hints such as showing the contents of the hidden winged clouds, platforms that attach to guides, and exits connecting to their pipes.
+- Shift click on an object in the place panel to auto-fill the find box to search for instances of it.
+- New Graphics panel: export a level's background and sprite graphics to PNG or Aseprite tilemaps, edit them in your own image editor, and import them straight back. Changes preview live on the canvas without a rebuild and persist when you reopen the project.
+- Import levels from the Game Boy Advance version (Super Mario Advance 3): the editor reads its cartridge, transcodes each sub-level into the SNES level format, and reports anything that couldn't be carried over.
+- Background layers now render correctly across more level types and scene set-ups.
+
+## v0.3.8 - 2026-06-14
 
 - Linux support: the editor now ships as a Linux AppImage (x64) alongside the Windows build. In-game testing on Linux uses BizHawk's EmuHawk.sh launcher.
 - The Add picker flags runtime-spawned sprites - projectiles, thrown children, boss parts, event actors - with a "spawn-only" badge, so it's clear which sprites the game creates on its own rather than ones you place by hand.

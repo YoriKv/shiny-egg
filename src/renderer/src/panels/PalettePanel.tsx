@@ -33,8 +33,8 @@ interface PaletteBodyProps {
   highlightRows: Set<number> | null
   /** The App-level palette colour-edit document (usePaletteEditor). */
   editor: PaletteEditorApi
-  /** Bumped on every successful build. Re-fetches the BASE CGRAM (the built ROM
-   *  changed) and re-checks the palette-stale warning. */
+  /** Bumped on every successful build (and gfx edit). Re-fetches the BASE CGRAM
+   *  (the built ROM changed) so the swatches refresh. */
   renderRefresh: number
   /** The live (in-memory edited) level, so a header edit's CGRAM is rebuilt from
    *  the override rather than the on-disk header. Null when no level is loaded. */
@@ -81,10 +81,6 @@ export function PaletteBody({
   const [status, setStatus] = useState<string>('Pick a level.')
   const [error, setError] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
-  // The built ROM's palette is out of date vs the saved overlay (a colour
-  // edit/reset saved but not yet rebuilt) — the panel's BASE CGRAM comes from
-  // that built ROM, so the swatches can lag the saved edits until a rebuild.
-  const [stale, setStale] = useState(false)
 
   const { draftMap } = editor
 
@@ -128,25 +124,8 @@ export function PaletteBody({
     }
   }, [selectedLevelRecordId])
 
-  // Re-query whether the built ROM is showing out-of-date colours, passing the
-  // live draft so a saved-but-unbuilt edit (previewed correctly by the draft)
-  // doesn't warn — only a reset-but-unbuilt swatch does. Re-runs when the draft
-  // changes (edit / reset), on a rebuild (`renderRefresh`), and on level change.
-  const draft = editor.draft
-  useEffect(() => {
-    let cancelled = false
-    void window.shinyEgg.render
-      .paletteBuildStale(draft)
-      .then((s) => {
-        if (!cancelled) setStale(s)
-      })
-      .catch(() => {
-        if (!cancelled) setStale(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [draft, renderRefresh, selectedLevelRecordId])
+  // (The "palette out of date" warning now lives at the canvas top, unified with
+  // the graphics-out-of-date warning — see App's `visualsStale` / BlockerBar.)
 
   // After a rebuild the built ROM's colours changed, so re-fetch the BASE CGRAM
   // (e.g. a reset's swatches refresh from blue back to yellow). Updates only the
@@ -325,13 +304,6 @@ export function PaletteBody({
 
   return (
     <div className="se-palette">
-      {stale && (
-        <div className="se-palette__stale-warn" title="Palette edits are asm edits — they don't render live; the built ROM keeps the previous build's colours until you rebuild.">
-          ⚠ Palette out of date — saved colour edits aren't in the built ROM yet.
-          The swatches here and the in-game colours won't refresh until you rebuild
-          (Test Level / Launch).
-        </div>
-      )}
       {selected !== null && cgram && (
         <div className="se-palette__editor">
           <input

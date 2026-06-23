@@ -16,7 +16,8 @@
 // like any other): "setup" (neighbour-deps — the designerRule as tooltip) and
 // "spawn-only" (obj-metadata `spawnedOnly`, runtime-spawned children).
 
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { createPortal } from 'react-dom'
 import { usePickerThumbnails } from '../hooks/usePickerThumbnails'
 import {
   fallbackExtendedObjectName,
@@ -28,7 +29,7 @@ import {
   listStandardObjects
 } from '../data/obj-metadata'
 import { useEntityRenderValidity, type EntityValidityView } from '../hooks/useEntityRenderValidity'
-import type { LevelData, RenderImage } from '../../../preload/api'
+import type { FindInstanceKind, LevelData, RenderImage } from '../../../preload/api'
 import type { PlacementItem } from '../types'
 import { hex } from '../lib/hex'
 
@@ -159,11 +160,85 @@ function Thumb({ img }: { img: RenderImage | undefined }): JSX.Element {
   return <span className="se-picker__thumb">{img && <canvas ref={ref} />}</span>
 }
 
+// ── Hover preview ────────────────────────────────────────────────────────────
+// A magnified copy of the hovered row's thumbnail, pinned along the Place
+// panel's LEFT edge (vertically tracking the hovered row). Reuses the same
+// full-res RenderImage the row already holds (the row Thumb just CSS-scales it
+// DOWN into a 26×22 letterbox), integer-zoomed UP here for a crisp look.
+// Portaled to <body> so it escapes the list's `overflow` clip and the floating-
+// window z-stack; `pointer-events:none` so it never intercepts the click that
+// arms the entry.
+const PREVIEW_FIT = 144 // target box (px) the bitmap is integer-zoomed to fill
+const PREVIEW_GAP = 8 // cursor-to-popup gap (px)
+const PREVIEW_CHROME = 10 // border (1) + padding (4), both sides — matches the CSS
+
+/** Largest integer zoom that fits the bitmap inside the PREVIEW_FIT box (≥1× so
+ *  bitmaps already larger than the box still show, just un-zoomed). */
+function previewScale(img: RenderImage): number {
+  return Math.max(1, Math.min(8, Math.floor(PREVIEW_FIT / Math.max(img.width, img.height))))
+}
+
+function HoverPreview({
+  img,
+  y,
+  panel
+}: {
+  img: RenderImage
+  y: number
+  /** The Place panel's viewport rect (the `.se-window` frame), measured at hover
+   *  time so it tracks drag/resize. Null only if the frame can't be found. */
+  panel: DOMRect | null
+}): JSX.Element {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    canvas.width = img.width
+    canvas.height = img.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(img.rgba), img.width, img.height), 0, 0)
+  }, [img])
+
+  const scale = previewScale(img)
+  const w = img.width * scale + PREVIEW_CHROME
+  const h = img.height * scale + PREVIEW_CHROME
+  // Pinned to the panel's LEFT edge: the popup's right edge sits PREVIEW_GAP px
+  // outside it. Flips to the panel's right edge if there's no room on the left,
+  // then clamps fully on-screen. Vertically centred on the cursor's row.
+  const panelLeft = panel?.left ?? 0
+  const panelRight = panel?.right ?? window.innerWidth
+  let left = panelLeft - PREVIEW_GAP - w
+  if (left < 4) left = panelRight + PREVIEW_GAP
+  left = Math.max(4, Math.min(left, window.innerWidth - w - 4))
+  const top = Math.max(4, Math.min(y - h / 2, window.innerHeight - h - 4))
+
+  return createPortal(
+    <div className="se-picker__preview" style={{ left, top }}>
+      <canvas ref={ref} style={{ width: img.width * scale, height: img.height * scale }} />
+    </div>,
+    document.body
+  )
+}
+
 function sameItem(a: PlacementItem, b: PlacementItem): boolean {
   if (a.kind !== b.kind) return false
   if (a.kind === 'object' && b.kind === 'object') return a.num === b.num && a.exnum === b.exnum
   if (a.kind === 'sprite' && b.kind === 'sprite') return a.num === b.num
   return a.kind === 'exit' && b.kind === 'exit'
+}
+
+/** Map a picker entry to the Object Finder's (kind, id) — std/ext object or
+ *  sprite. Null for the Screen Exit special (nothing to find). Drives shift-click
+ *  on a row: find this entity's instances instead of arming it for placement. */
+function findTargetFor(item: PlacementItem): { kind: FindInstanceKind; id: number } | null {
+  if (item.kind === 'object') {
+    return item.num === 0 && item.exnum !== undefined
+      ? { kind: 'ext', id: item.exnum }
+      : { kind: 'std', id: item.num }
+  }
+  if (item.kind === 'sprite') return { kind: 'sprite', id: item.num }
+  return null
 }
 
 // ── Render-validity badges ──────────────────────────────────────────────────
@@ -261,22 +336,50 @@ function readPrefs(): PickerPrefs {
   return DEFAULT_PREFS
 }
 
+// ── Windowed list (§A/E) ─────────────────────────────────────────────────────
+// The catalog is ~500 entries; rendering them all created hundreds of DOM rows +
+// thumbnail canvases at once (slow mount + scroll). Rows are a FIXED height, so
+// only the visible slice is mounted, absolutely positioned inside a full-height
+// sizer. `ROW_H` must match `.se-picker__row`'s CSS height; `+1` is the visual
+// gap (rows are absolutely positioned, so the gap lives in the pitch, not CSS).
+// This also makes thumbnails effectively lazy: only visible rows mount a <Thumb>,
+// so only visible bitmaps blit (the data is already cached by usePickerThumbnails).
+const PICKER_ROW_H = 28
+const PICKER_ROW_PITCH = PICKER_ROW_H + 1
+const PICKER_OVERSCAN = 6
+
 export function PickerBody({
   armed,
   level,
-  onPick
+  onPick,
+  onFind,
+  renderRefresh
 }: {
   armed: PlacementItem | null
   level: LevelData | null
   onPick: (item: PlacementItem) => void
+  /** Shift-click a row: populate + open the Object Finder for that entity instead
+   *  of arming it for placement (no-op for the Screen Exit special). */
+  onFind: (kind: FindInstanceKind, id: number) => void
+  /** Render epoch (bumps on rebuild / gfx edit) — keys the thumbnail cache so a
+   *  rebuild refreshes the bitmaps but a plain reopen reuses them. */
+  renderRefresh: number
 }): JSX.Element {
   const [tab, setTab] = useState<'object' | 'sprite' | 'special'>('object')
   const [query, setQuery] = useState('')
   const [prefs, setPrefs] = useState(readPrefs)
+  // Hover-preview target: the bitmap of the row under the cursor + the cursor's
+  // Y (the popup is pinned to the panel's left edge, so only Y tracks). Set on
+  // row mousemove (only for rows that HAVE a bitmap), cleared on leave — see
+  // HoverPreview.
+  const [preview, setPreview] = useState<{ img: RenderImage; y: number } | null>(null)
   const validity = useEntityRenderValidity(level)
-  const thumbs = usePickerThumbnails(level, tab === 'sprite' ? 'sprite' : 'object')
+  const thumbs = usePickerThumbnails(level, tab === 'sprite' ? 'sprite' : 'object', renderRefresh)
   // Focus the search box when the panel opens (it mounts on open).
   const searchRef = useRef<HTMLInputElement>(null)
+  // The picker root — used to find the enclosing `.se-window` so the hover
+  // preview can pin itself to the panel's left edge.
+  const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => searchRef.current?.focus(), [])
 
   const setPref = <K extends keyof PickerPrefs>(key: K, value: PickerPrefs[K]): void => {
@@ -329,6 +432,33 @@ export function PickerBody({
     return { filtered: kept, hidden: annotated.length - kept.length }
   }, [rows, query, validity, prefs, category, usedKeys, tab])
 
+  // Windowed list: only the visible slice of `filtered` is mounted (see the
+  // PICKER_ROW_* note). Track scroll + viewport height; reset to top when the
+  // result set changes (new search / filter / tab) so you see the top hits.
+  const listRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportH, setViewportH] = useState(0)
+  useLayoutEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const measure = (): void => setViewportH(el.clientHeight)
+    measure() // before paint, so the first render windows to the real height
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0
+    setScrollTop(0)
+  }, [tab, query, category, prefs.thisLevel, prefs.usedHere, prefs.exits])
+
+  const total = filtered.length
+  const maxScroll = Math.max(0, total * PICKER_ROW_PITCH - viewportH)
+  const clampedTop = Math.min(scrollTop, maxScroll) // survives a list shrink
+  const winStart = Math.max(0, Math.floor(clampedTop / PICKER_ROW_PITCH) - PICKER_OVERSCAN)
+  const winEnd = Math.min(total, Math.ceil((clampedTop + viewportH) / PICKER_ROW_PITCH) + PICKER_OVERSCAN)
+  const visibleRows = filtered.slice(winStart, winEnd)
+
   const chip = (
     label: string,
     active: boolean,
@@ -346,7 +476,7 @@ export function PickerBody({
   )
 
   return (
-    <div className="se-picker">
+    <div className="se-picker" ref={rootRef}>
       <div className="se-tabs">
         <button
           type="button"
@@ -372,7 +502,7 @@ export function PickerBody({
       </div>
       <input
         ref={searchRef}
-        className="se-picker__search"
+        className="se-input se-picker__search"
         placeholder="Search name / id / category…"
         value={query}
         spellCheck={false}
@@ -402,28 +532,42 @@ export function PickerBody({
           ))}
         </select>
         {prefs.thisLevel && hidden > 0 && (
-          <span className="se-picker__filter-count">{hidden} hidden</span>
+          <span className="se-meta-xs se-picker__filter-count">{hidden} hidden</span>
         )}
       </div>
       )}
-      <div className="se-picker__list">
-        {filtered.map(({ row: r, validity: rv }) => (
+      <div
+        className="se-picker__list"
+        ref={listRef}
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      >
+        <div className="se-picker__list-sizer" style={{ height: total * PICKER_ROW_PITCH }}>
+        {visibleRows.map(({ row: r, validity: rv }, i) => {
+          const img =
+            r.item.kind === 'object'
+              ? thumbs?.objectThumb(r.item.num, r.item.exnum)
+              : r.item.kind === 'sprite'
+                ? thumbs?.spriteThumb(r.item.num)
+                : undefined
+          return (
           <button
             key={r.key}
             type="button"
             className={`se-picker__row${armed && sameItem(armed, r.item) ? ' is-armed' : ''}`}
-            onClick={() => onPick(r.item)}
+            style={{ top: (winStart + i) * PICKER_ROW_PITCH }}
+            onClick={(e) => {
+              if (e.shiftKey) {
+                const t = findTargetFor(r.item)
+                if (t) onFind(t.kind, t.id)
+              } else {
+                onPick(r.item)
+              }
+            }}
+            onMouseMove={(e) => setPreview(img ? { img, y: e.clientY } : null)}
+            onMouseLeave={() => setPreview(null)}
             title={r.tip}
           >
-            <Thumb
-              img={
-                r.item.kind === 'object'
-                  ? thumbs?.objectThumb(r.item.num, r.item.exnum)
-                  : r.item.kind === 'sprite'
-                    ? thumbs?.spriteThumb(r.item.num)
-                    : undefined
-              }
-            />
+            <Thumb img={img} />
             <span className="se-picker__row-name">
               {r.label}
               {rv.badge && (
@@ -452,16 +596,25 @@ export function PickerBody({
               )}
             </span>
             <span className={`se-props__cat se-props__cat--${r.category}`}>{r.category}</span>
-            <span className="se-picker__row-id">{r.sub}</span>
+            <span className="se-meta-xs se-picker__row-id">{r.sub}</span>
           </button>
-        ))}
-        {filtered.length === 0 && <p className="se-pop__empty">No matches.</p>}
+          )
+        })}
+        </div>
+        {total === 0 && <p className="se-pop__empty">No matches.</p>}
       </div>
       <p className="se-picker__hint">
         {armed
           ? `Placing ${armed.label} — click the canvas (Esc to stop).`
           : 'Pick an entry, then click the canvas to place it.'}
       </p>
+      {preview && (
+        <HoverPreview
+          img={preview.img}
+          y={preview.y}
+          panel={rootRef.current?.closest('.se-window')?.getBoundingClientRect() ?? null}
+        />
+      )}
     </div>
   )
 }

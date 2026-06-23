@@ -158,8 +158,9 @@ for (const cls of CLASSES) {
 //   ice-snap: 16 ice-block snaps (12 shyguy + 2 bumpty + 2 flower, $26/$5D).
 //   tile-read: 3 slime + 21 icicle + 28 boo-bomb + 1 cork + 1 wall-lakitu-gen
 //      + 0 falling-rock + 68 grinders adjacent to a tree (checked row scan,
-//      pages $99/$9A; the other 80 roam — info) + 14 chomp `note` annotations
-//      = 136.
+//      pages $99/$9A; the other 80 roam — info) + 16 chomp `note` annotations
+//      (14 single $0A6 + 2 flock $0A7; the $0A8 falling body is spawn-only,
+//      0 placements) = 138.
 //   sprite-pair: 30 prior (cloud/switch/doors-with-key-in-record) + 22
 //      mouser→hole + 9 slugger-with-rock + 5 carried-Key-in-warp-group
 //      (forward BFS fallback; lvls $3C/$63/$AA/$C1×2) = 66. The 28 info
@@ -171,7 +172,7 @@ for (const cls of CLASSES) {
 const EXPECTED_MET: Record<string, number> = {
   'rail-follower': 107,
   'ice-snap': 16,
-  'tile-read': 136,
+  'tile-read': 138,
   'sprite-pair': 66,
   'screen-exit': 151,
   'tile-behavior': 77,

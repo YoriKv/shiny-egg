@@ -109,9 +109,22 @@ export function readCgramColor(cgram: Uint8Array, index: number): number {
  * Defaults to 16 for backwards compatibility with existing 4bpp callers.
  *
  * **Stride matters: a 2bpp BG3 tile with `palRow > 0` will read the wrong
- * colors if you pass `colorsPerRow = 16`.** The cart packs 2bpp palette
+ * colors if you pass `colorsPerRow = 16`.** The cart packs 2bpp BG3 palette
  * rows tightly (row N = CGRAM[N*4..N*4+3]); reading at N*16 lands you in
  * what the cart treats as a different palette row entirely.
+ *
+ * `rowStride` decouples the per-row CGRAM step from `colorsPerRow` for the
+ * (rarer) case where the cart lays palette rows out at a WIDER stride than the
+ * tile reads. It defaults to `colorsPerRow` — i.e. tightly packed, which is
+ * right for every tightly-packed caller (4bpp@16, Mode-1 2bpp BG3@4). The one
+ * place it differs is the **Mode-0 title BG palette**: it is 2bpp (4 colors per
+ * tile, `colorsPerRow = 4`) but the cart loads its sub-palettes at a 16-colour
+ * stride (`row N = CGRAM[N*16..N*16+3]`, the upper 12 colours of each 16-row
+ * unused by the 2bpp tiles). That program is byte-verified — `scene_palette_
+ * layout` @ $26 writes with `destByte += $20` (one full 16-colour CGRAM row) per
+ * palette row — and matches the live title CGRAM capture. Pass
+ * `colorsPerRow = 4, rowStride = 16` there; the N*4 default mis-reads rows 1+
+ * (the dominant logo body) as green/grey instead of the real white/cyan.
  *
  * `transparent0 = true` makes the first entry fully-transparent regardless
  * of its CGRAM color — the SNES convention for sprite and BG2/BG3 layers
@@ -122,14 +135,27 @@ export function buildPaletteRow(
   paletteRow: number,
   transparent0: boolean,
   scale: ChannelScale = 'expand',
-  colorsPerRow: number = 16
+  colorsPerRow: number = 16,
+  rowStride: number = colorsPerRow
 ): Uint32Array {
   const out = new Uint32Array(colorsPerRow);
-  const base = paletteRow * colorsPerRow;
+  const base = paletteRow * rowStride;
   for (let i = 0; i < colorsPerRow; i++) {
     const c = readCgramColor(cgram, base + i);
     const alpha = i === 0 && transparent0 ? 0 : 0xff;
     out[i] = bgr15ToImageDataU32(c, alpha, scale);
   }
   return out;
+}
+
+/**
+ * The index of an ImageData-packed color `u` in `palette[0..maxIdx)` (the inverse of
+ * a `buildPaletteRow` lookup), or `0` if not found. Used by every base-aware tile
+ * slicer (gfx sheets, BG regions, screens, metatiles) to re-plane an edited pixel:
+ * a pixel still showing its base color keeps its base index, otherwise it resolves
+ * to whichever palette entry matches.
+ */
+export function paletteIndexOf(palette: Uint32Array, u: number, maxIdx: number): number {
+  for (let i = 0; i < maxIdx; i++) if (palette[i] === u) return i;
+  return 0;
 }

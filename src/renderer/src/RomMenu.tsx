@@ -226,7 +226,7 @@ export function RomMenu({
                 <span className="se-pop__status-main">
                   {VERSION_LABELS[state.romVersion]}
                 </span>
-                <span className="se-pop__status-meta">
+                <span className="se-meta se-pop__status-meta">
                   {state.extractedFiles.toLocaleString()} files ·{' '}
                   {formatTimestamp(state.extractedAt)}
                 </span>

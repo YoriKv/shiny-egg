@@ -21,7 +21,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell, stampLeftTile, stampRightTile } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ const jungleWoodStamp: PerCellHandler = (state) => {
 
   // Random body: prng & 2, LSR → 0 or 1, + $990B → $990B or $990C.
   // See PRNG carry-flag caveat in the doc-comment above.
-  const pick = (prngNext(state) & 0x02) >>> 1;
+  const pick = (prngNext(state, RNG_SITE.jungleWoodBody) & 0x02) >>> 1;
   stampCell(state, (JUNGLE_WOOD_RAND_BASE + pick) & 0xffff);
 };
 

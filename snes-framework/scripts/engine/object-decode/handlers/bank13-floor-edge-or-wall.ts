@@ -53,7 +53,7 @@ import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerRun } from '../walker.ts';
 import { TT } from '../template-slots.ts';
 import { getMap16Above, getMap16Below } from '../fetch.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import {
   stampCell,
   readBuf16,
@@ -276,7 +276,7 @@ function floorEdgeRandomSideSeam(state: DecodeState, sideBit: number): number {
 export const floorEdgeRandomSide: PerCellHandler = (state) => {
   // Cart: JSL CODE_prng ; AND #$0003 ; STA $00
   //       LDA $15 ; AND #$0001 ; STA $0A ; ASL ; ASL ; ORA $00 ; ASL ; TAY
-  const prngVar = prngNext(state) & 0x03;
+  const prngVar = prngNext(state, RNG_SITE.floorEdgeRandomSide) & 0x03;
   const orientBit = state.zp15 & 0x01;
   const poolIdx = (orientBit << 2) | prngVar;
   // STA $00 in the cart saves the variant-pool slot address for the

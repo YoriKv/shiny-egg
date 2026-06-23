@@ -13,6 +13,7 @@ import type { DecodeState } from './state.ts';
 import type { DecodeStats } from './parser.ts';
 import { serializeLevel } from '../../serialize-level.ts';
 import { levelIdHexKey, loadLevelMapPublic, resolveLevelBinPath } from '../../level.ts';
+import { newSlotRows } from '../../pool-map.ts';
 import type { LevelData } from '../../types.ts';
 
 interface LevelMapEntry {
@@ -34,6 +35,12 @@ export interface DecodeLevelByIdOptions {
   /** Optional per-project overlay root (mirrors workRoot) — a .bin here
    *  shadows the base workRoot copy. */
   overlayRoot?: string;
+  /** Captured cart-PRNG sequence (level-rng trace) to replay for exact
+   *  random-tile replication. See decodeLevel options. */
+  prngReplay?: readonly number[];
+  /** Per-caller-site captured PRNG bytes (cart caller PC → sequence). Preferred
+   *  replay form. See decodeLevel options / state.ts `prngReplayBySite`. */
+  prngReplayBySite?: Record<number, readonly number[]>;
 }
 
 export interface DecodeLevelByIdResult {
@@ -88,7 +95,10 @@ export function decodeLevelById(
     )
   );
 
-  const { state, stats } = decodeLevel(opts.rom, opts.symbols, levelBytes);
+  const { state, stats } = decodeLevel(opts.rom, opts.symbols, levelBytes, {
+    prngReplay: opts.prngReplay,
+    prngReplayBySite: opts.prngReplayBySite
+  });
   return {
     state,
     stats,
@@ -105,6 +115,9 @@ export interface DecodeLevelFromLevelDataOptions {
    *  indices in `levelData.objects` (= their decode stream indices). One for a
    *  single drag; the whole group for a multi-select drag. */
   provenanceTargets?: number[];
+  /** Per-caller-site captured PRNG bytes (cart caller PC → sequence) to replay,
+   *  reproducing a specific live entry's random-tile variants. See decodeLevel. */
+  prngReplayBySite?: Record<number, readonly number[]>;
 }
 
 /**
@@ -120,9 +133,22 @@ export function decodeLevelFromLevelData(
 ): DecodeLevelByIdResult | null {
   if (opts.levelData.empty || opts.levelData.special) return null;
   const map = loadLevelMapPublic(opts.workRoot);
-  const entry =
+  let entry =
     map.levels[levelIdHexKey(opts.levelData.recordId)] ??
     map.levels[String(opts.levelData.recordId)];
+  // New-slot records (the `Ptrs:` sentinel rows 0xDA/0xDB) have no
+  // extract-derived map entry — they exist only as project-overlay `.bin`s until
+  // a build places them. Synthesize the conventional entry so they RENDER,
+  // mirroring resources.ts `effectiveLevelMapEntry` / loadLevel's synthesis.
+  // Load + save already do this; the render decode must too, else a new-slot
+  // level loads and edits but shows nothing on the canvas.
+  if (
+    (!entry || entry.objectFile === null) &&
+    newSlotRows(map.romVersion).some((r) => r.recordId === opts.levelData.recordId)
+  ) {
+    const hex = opts.levelData.recordId.toString(16).toUpperCase().padStart(2, '0');
+    entry = { objectFile: `DATA_level_${hex}_obj.bin`, spriteFile: `DATA_level_${hex}_spr.bin` };
+  }
   if (!entry || entry.objectFile === null) return null;
   const { objectBytes } = serializeLevel({
     level: opts.levelData,
@@ -136,7 +162,8 @@ export function decodeLevelFromLevelData(
     objectBytes.buffer, objectBytes.byteOffset, objectBytes.byteLength
   );
   const { state, stats } = decodeLevel(opts.rom, opts.symbols, bytes, {
-    provenanceTargets: opts.provenanceTargets
+    provenanceTargets: opts.provenanceTargets,
+    prngReplayBySite: opts.prngReplayBySite
   });
   return {
     state,

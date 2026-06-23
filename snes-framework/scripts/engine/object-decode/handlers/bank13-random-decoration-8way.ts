@@ -31,7 +31,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell } from './_shared.ts';
 
 // DATA_random_decoration_tiles (Bank13.asm:8301).
@@ -54,7 +54,7 @@ const DATA_random_decoration_tiles: ReadonlyArray<number> = [
 // ─────────────────────────────────────────────────────────────────────
 
 const stampRandomDecoration8way: PerCellHandler = (state) => {
-  let idx = prngNext(state) & 0x07;
+  let idx = prngNext(state, RNG_SITE.randomDeco8way) & 0x07;
   if ((state.zp15 & 0xff) === 0x8B) {
     // Asm `LDY #$0010` → y = 16 byte-index = word-index 8.
     idx = 8;

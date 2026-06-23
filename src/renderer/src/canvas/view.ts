@@ -94,3 +94,25 @@ export function clientToWorld(view: View, canvasX: number, canvasY: number): { x
     y: (canvasY - view.panY) / view.zoom
   }
 }
+
+/** The cell-grid point at the centre of the viewport. Used by paste to drop a
+ *  clipboard group on-screen when its original position is scrolled out of
+ *  view. Pure. */
+export function viewportCenterCell(view: View, sizePx: { w: number; h: number }): { x: number; y: number } {
+  const w = clientToWorld(view, sizePx.w / 2, sizePx.h / 2)
+  return { x: w.x / CELL_PX, y: w.y / CELL_PX }
+}
+
+/** Is the cell-grid point (x, y) currently within the visible viewport? Maps the
+ *  cell to its on-screen pixel (`screen = world * zoom + pan`, world = cell ×
+ *  CELL_PX) and tests the canvas rect. Pure. */
+export function isCellOnScreen(
+  view: View,
+  sizePx: { w: number; h: number },
+  x: number,
+  y: number
+): boolean {
+  const screenX = x * CELL_PX * view.zoom + view.panX
+  const screenY = y * CELL_PX * view.zoom + view.panY
+  return screenX >= 0 && screenX <= sizePx.w && screenY >= 0 && screenY <= sizePx.h
+}

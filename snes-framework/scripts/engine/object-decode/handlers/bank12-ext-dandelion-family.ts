@@ -47,7 +47,7 @@
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { stampCell } from './_shared.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { registerExtObjectHandler } from './index.ts';
 
 const FIRST_ID = 0xBA;
@@ -97,7 +97,7 @@ function initDandelionFamily(state: DecodeState): void {
   state.zp15 = (variant << 1) & 0xff;              // $15 = 2×variant
   state.zp2E = ROW_EXTENT[variant] ?? ROW_EXTENT[0]!;
   // JSL CODE_prng : AND #$0003 : BEQ + : EOR #$0003 → $A1 = 0..3.
-  const p = prngNext(state) & 0x03;
+  const p = prngNext(state, RNG_SITE.initDandelionFamily) & 0x03;
   state.zpA1 = p === 0 ? 0 : p ^ 0x03;
   // col extent ($2A) stays 1 (parser default; init never writes it).
   walkerSetupTrampoline(state, slimeMushroomPerCell);

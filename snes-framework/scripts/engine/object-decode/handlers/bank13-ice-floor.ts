@@ -19,7 +19,7 @@ import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
 import { stampCell } from './_shared.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 
 // ─────────────────────────────────────────────────────────────────────
 // DATA_ice_floor_4entries — 4-entry sparse scatter
@@ -87,7 +87,7 @@ const iceFloorStamp: PerCellHandler = (state) => {
     // already non-empty (under-tile guard) or if the PRNG picks a $0000
     // slot.
     if ((state.zp12 & 0xffff) !== 0) return;
-    const y = prngNext(state) & 0x06;
+    const y = prngNext(state, RNG_SITE.iceFloorScatter) & 0x06;
     const idx = y >>> 1;
     const tile = DATA_ice_floor_4entries[idx] ?? 0;
     if (tile === 0) return;

@@ -14,12 +14,14 @@ import type {
   EntityRenderValidity,
   EntityValidityRequest,
   FindInstanceKind,
+  FitSpritesetResult,
   FitSurfaceRequest,
   FitTileset,
   FrameworkExtractArgs,
   LevelRenderRequest,
   LevelTileUsage,
   LocateBizhawkResult,
+  LocateAsepriteResult,
   ObjectInfluenceRequest,
   ObjectInstance,
   PickerThumbnails,
@@ -41,6 +43,17 @@ import type {
   ProjectSummary,
   RenameProjectArgs,
   RenderGfxFilesArgs,
+  RenderHeaderRequest,
+  ExportGfxOptions,
+  ExportGfxResult,
+  GfxEditEntry,
+  GfxFileRole,
+  Map16BlockPreview,
+  Map16SubTileEdit,
+  ImportGraphicsResult,
+  BgRegionExportArgs,
+  BgRegionExportResult,
+  BgRegionImportResult,
   CreatableSlot,
   CreateLevelResult,
   RelocationState,
@@ -51,16 +64,23 @@ import type {
   RestoreLevelsResult,
   RenderImage,
   RenderMap16Args,
+  GbaImportApplyResult,
+  GbaImportApplySelection,
+  GbaImportReport,
   RenderVramArgs,
+  ResetGfxEditResult,
   ResetLevelResult,
   RomImportApplyResult,
   RomImportReport,
   RomImportSelection,
+  SaveGfxEditResult,
   SetExitDestResult,
+  SetExitEntranceResult,
   Settings,
   SpriteLayerResponse,
   SpriteProperty,
-  SpritePropertiesRequest
+  SpritePropertiesRequest,
+  TestInventory
 } from '../shared/ipc-types'
 import type { GfxFilesResult } from 'snes-framework/render-gfx-files'
 
@@ -154,10 +174,6 @@ const api = {
      *  slots. */
     editablePalette: (req: LevelRenderRequest): Promise<DecodedPalette | null> =>
       ipcRenderer.invoke('render:editablePalette', req),
-    /** True when the built ROM has a baked-in palette colour the live `draft` no
-     *  longer covers — drives the palette panel's "rebuild needed" warning. */
-    paletteBuildStale: (draft: PaletteEdit[]): Promise<boolean> =>
-      ipcRenderer.invoke('render:paletteBuildStale', draft),
     /** Run the object decoder on a level and return the stamped Map16
      *  buffer plus per-screen page mapping. Null for empty / special-case
      *  records (e.g. 0x38, the engine-driven intro-cutscene level). Pass
@@ -172,6 +188,9 @@ const api = {
       ipcRenderer.invoke('render:fitSurface', req),
     /** Paintable tilesets (those with fit-metadata) for the paint panel selector. */
     fitTilesets: (): Promise<FitTileset[]> => ipcRenderer.invoke('render:fitTilesets'),
+    /** Best-covering stock sprite tileset (header[7]) for the given placed sprites. */
+    fitSpriteset: (spriteNums: number[]): Promise<FitSpritesetResult> =>
+      ipcRenderer.invoke('render:fitSpriteset', spriteNums),
     /** The level's distinct Map16 blocks with usage count, VRAM coverage
      *  health (loaded / anim / miss), and palette rows, plus a composite
      *  thumbnail of those blocks — the Tiles "Used in this level" view. Pass
@@ -324,6 +343,56 @@ const api = {
       ipcRenderer.invoke('editor:setLevelDecoupled', levelRecordId, decoupled),
     resetLevel: (levelRecordId: number): Promise<ResetLevelResult> =>
       ipcRenderer.invoke('editor:resetLevel', levelRecordId),
+    saveGfxEdit: (
+      format: 'lz2' | 'lz16',
+      fileId: number,
+      tiles: Uint8Array,
+      rowCount?: number
+    ): Promise<SaveGfxEditResult> =>
+      ipcRenderer.invoke('editor:saveGfxEdit', format, fileId, tiles, rowCount),
+    resetGfxEdit: (format: 'lz2' | 'lz16', fileId: number): Promise<ResetGfxEditResult> =>
+      ipcRenderer.invoke('editor:resetGfxEdit', format, fileId),
+    listGfxEdits: (): Promise<GfxEditEntry[]> => ipcRenderer.invoke('editor:listGfxEdits'),
+    gfxFileRole: (file: string): Promise<GfxFileRole> =>
+      ipcRenderer.invoke('editor:gfxFileRole', file),
+    resetGfxEditFile: (file: string): Promise<ResetGfxEditResult> =>
+      ipcRenderer.invoke('editor:resetGfxEditFile', file),
+    exportGfxPngs: (
+      header: RenderHeaderRequest | null,
+      opts?: ExportGfxOptions
+    ): Promise<ExportGfxResult> =>
+      ipcRenderer.invoke('editor:exportGfxPngs', header, opts),
+    exportBgRegion: (
+      header: RenderHeaderRequest,
+      args: BgRegionExportArgs
+    ): Promise<BgRegionExportResult> =>
+      ipcRenderer.invoke('editor:exportBgRegion', header, args),
+    importBgRegion: (): Promise<BgRegionImportResult> => ipcRenderer.invoke('editor:importBgRegion'),
+    getAsepriteExe: (): Promise<string | null> => ipcRenderer.invoke('aseprite:getExe'),
+    locateAseprite: (): Promise<LocateAsepriteResult> => ipcRenderer.invoke('aseprite:locate'),
+    openInAseprite: (dir: string, file: string): Promise<boolean> => ipcRenderer.invoke('aseprite:open', dir, file),
+    listRegionExports: (): Promise<string[]> => ipcRenderer.invoke('editor:listRegionExports'),
+    removeRegionExport: (dir: string): Promise<string[]> => ipcRenderer.invoke('editor:removeRegionExport', dir),
+    openRegionFolder: (dir: string): Promise<void> => ipcRenderer.invoke('editor:openRegionFolder', dir),
+    importRegionFolder: (dir: string): Promise<BgRegionImportResult> =>
+      ipcRenderer.invoke('editor:importRegionFolder', dir),
+    importGraphics: (): Promise<ImportGraphicsResult> => ipcRenderer.invoke('editor:importGraphics'),
+    importGraphicsFolder: (dir: string): Promise<ImportGraphicsResult> =>
+      ipcRenderer.invoke('editor:importGraphicsFolder', dir),
+    loadMap16Block: (map16Id: number): Promise<Map16SubTileEdit[] | null> =>
+      ipcRenderer.invoke('editor:loadMap16Block', map16Id),
+    saveMap16Block: (
+      map16Id: number,
+      subtiles: Map16SubTileEdit[]
+    ): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('editor:saveMap16Block', map16Id, subtiles),
+    resetMap16Block: (map16Id: number): Promise<{ ok: true; removed: boolean } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('editor:resetMap16Block', map16Id),
+    listMap16BlockEdits: (): Promise<number[]> => ipcRenderer.invoke('editor:listMap16BlockEdits'),
+    renderMap16Block: (
+      header: RenderHeaderRequest,
+      subtiles: Map16SubTileEdit[]
+    ): Promise<Map16BlockPreview | null> => ipcRenderer.invoke('editor:renderMap16Block', header, subtiles),
     removeLevelsPreview: (recordIds: number[]): Promise<RemovalPreviewResult> =>
       ipcRenderer.invoke('editor:removeLevelsPreview', recordIds),
     removeLevels: (recordIds: number[]): Promise<RemoveLevelsResult> =>
@@ -342,7 +411,13 @@ const api = {
       destX: number,
       destY: number
     ): Promise<SetExitDestResult> =>
-      ipcRenderer.invoke('editor:setExitDest', sourceLevelRecordId, screenIndex, destX, destY)
+      ipcRenderer.invoke('editor:setExitDest', sourceLevelRecordId, screenIndex, destX, destY),
+    setExitEntrance: (
+      sourceLevelRecordId: number,
+      screenIndex: number,
+      entranceType: number
+    ): Promise<SetExitEntranceResult> =>
+      ipcRenderer.invoke('editor:setExitEntrance', sourceLevelRecordId, screenIndex, entranceType)
   },
 
   // BizHawk render harness — POC. First call boots EmuHawk against the
@@ -354,8 +429,10 @@ const api = {
     dumpCgram: (): Promise<Uint8Array> => ipcRenderer.invoke('bizhawk:dumpCgram'),
     loadLevel: (
       translevelId: number,
-      warps?: ReadonlyArray<BizhawkWarp>
-    ): Promise<string> => ipcRenderer.invoke('bizhawk:loadLevel', translevelId, warps),
+      warps?: ReadonlyArray<BizhawkWarp>,
+      inventory?: TestInventory
+    ): Promise<string> =>
+      ipcRenderer.invoke('bizhawk:loadLevel', translevelId, warps, inventory),
     readMem: (domain: string, addr: number, len: number): Promise<Uint8Array> =>
       ipcRenderer.invoke('bizhawk:readMem', domain, addr, len),
     captureAt: (
@@ -407,6 +484,14 @@ const api = {
     analyze: (): Promise<RomImportReport | null> => ipcRenderer.invoke('import:analyze'),
     apply: (selection: RomImportSelection): Promise<RomImportApplyResult> =>
       ipcRenderer.invoke('import:apply', selection)
+  },
+
+  // GBA import: pick an SMA3 (U) cart, list its sublevels, and overwrite chosen
+  // SNES records with them. Applying marks the build dirty (renderer side).
+  importGba: {
+    analyze: (): Promise<GbaImportReport | null> => ipcRenderer.invoke('gbaImport:analyze'),
+    apply: (selection: GbaImportApplySelection): Promise<GbaImportApplyResult> =>
+      ipcRenderer.invoke('gbaImport:apply', selection)
   }
 } satisfies ShinyEggAPI
 

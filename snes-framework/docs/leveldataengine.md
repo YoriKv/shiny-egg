@@ -127,11 +127,9 @@ indexes, midway entrance data, then `Ptrs:`).
 (played by world-map slot `$0A` — NOT Kamek's Revenge, whose record is
 `$2C` via map slot `$38`; the `!Define_YI_LevelID_*` values are map slots,
 a different id space than records). Its data is real but minimal (a 66-byte
-backdrop stream; the cutscene engine drives the actors), and editor tooling
-skip-parses it (`SPECIAL_LEVELS` in scripts/level.ts). 220 of the 222
-pointer-table entries are backed by per-level `.bin`s in the current
-extract — only the `$DA`/`$DB` sentinel rows are not; enumerate levels via
-the level map (`levelMapEntry`), not by walking the pointer table.
+backdrop stream; the cutscene engine drives the actors). The `$DA`/`$DB`
+pointer-table rows are sentinels (not real levels); they hold garbage bytes.
+Enumerate levels via the entrance tables, not by walking the pointer table.
 
 The **MAP16 tile system** uses a two-level page + index scheme: each ref
 is `pppppppptttttttt` (high byte = page 0x00-0xA7+, low byte = tile
@@ -198,7 +196,7 @@ tile ID from `LevelDataBuffer`, shifts the high byte to use as an
 index into `bg_type_table`, and reads the 24-bit attribute entry.
 See `docs/mchip.md` §3.3.1 + §3.3.2 for the decoder and full encoding.
 
-Two consequences for editor tooling:
+Two consequences for level-data tooling:
 
 1. **Bank13 doesn't need to "know" collision.** A handler that stamps
    tile `$0A4F` doesn't know whether page `$0A` is solid floor or

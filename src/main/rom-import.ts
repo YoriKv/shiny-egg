@@ -1,5 +1,5 @@
-// App-side orchestrator for the "import from a modified ROM" feature
-// (plan-rom-import.md). Bridges the pure framework analyzer (snes-framework/
+// App-side orchestrator for the "import from a modified ROM" feature.
+// Bridges the pure framework analyzer (snes-framework/
 // import) to the project/overlay world: it diffs a picked foreign cart against
 // the extracted V1.0 base, annotates each changed level with whether the active
 // project already overlays it (the overwrite warning), and applies the user's

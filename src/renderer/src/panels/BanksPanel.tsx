@@ -512,11 +512,11 @@ export function BanksBody({
                 <span className="se-banks__pool-id">{regionLabel(r.id)}</span>
                 <span className={`se-banks__free${r.freeBytes < 0 ? ' is-over' : ''}`}>{r.freeBytes} free</span>
               </div>
-              <div className="se-banks__pool-sub">
+              <div className="se-meta se-banks__pool-sub">
                 {r.usedBytes} / {r.capacityBytes} bytes · {r.levels.length} levels
               </div>
               {r.levels.length === 0 ? (
-                <div className="se-banks__pool-sub se-banks__region-empty">— empty —</div>
+                <div className="se-meta se-banks__pool-sub se-banks__region-empty">— empty —</div>
               ) : (
                 <ul className="se-banks__levels">
                   {r.levels.map((lv) => {
@@ -557,7 +557,7 @@ export function BanksBody({
                 {over ? `${-pool.freeBytes} over` : `${pool.freeBytes} free`}
               </span>
             </header>
-            <div className="se-banks__pool-sub">
+            <div className="se-meta se-banks__pool-sub">
               {pool.usedBytes} / {pool.limitBytes} bytes · {pool.levels.length} levels
             </div>
             <ul className="se-banks__levels">
@@ -614,7 +614,7 @@ export function BanksBody({
                   return (
                     <li className="se-banks__level is-removed" key={`rm-${r.levelRecordId}`}>
                       <LevelJump id={id} name="removed" bytes={r.bytes} onJump={onJump} />
-                      <span className="se-banks__pool-sub">freed</span>
+                      <span className="se-meta se-banks__pool-sub">freed</span>
                     </li>
                   )
                 })}

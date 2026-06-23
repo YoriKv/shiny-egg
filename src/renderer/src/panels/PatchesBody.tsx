@@ -11,8 +11,8 @@ import type {
 // the save/undo system — every action persists immediately via IPC; changes that
 // affect the built ROM call `onMutated` (→ markRomDirty). Patches apply post-build
 // in list order (top → bottom), so a later patch overwrites an earlier one where
-// they touch the same bytes — the user orders them to stack correctly. See
-// src/main/patches.ts + research/plan-custom-patches.md.
+// they touch the same bytes — the user orders them to stack correctly.
+// See src/main/patches.ts.
 
 // Display order of the prepackaged catalog's category headings. Categories not
 // listed here (incl. patches with no category) sort after these, alphabetically,
@@ -337,7 +337,7 @@ export function PatchesBody({ projectId, onMutated }: PatchesBodyProps): JSX.Ele
                   disabled={busy}
                   onChange={(e) => changePoolKB(parseFloat(e.target.value))}
                 />
-                <span className="se-patches__poolsize-unit">KB</span>
+                <span className="se-meta se-patches__poolsize-unit">KB</span>
               </div>
               <div className="se-patches__poolsize-hint">
                 Space reserved off the SuperFX free region for hand-authored asm

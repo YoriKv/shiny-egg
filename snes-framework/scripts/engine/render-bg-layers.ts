@@ -127,6 +127,13 @@ export function renderBgLayer(
     /** Optional: mutable diagnostic counter. Renderer increments per
      *  sub-tile to tally how many were rendered vs skipped. */
     diag?: BgLayerDiag;
+    /** Per-tile PRIORITY plane filter. Each tilemap entry carries a priority
+     *  bit (`0x2000`); with the BGMODE BG3-priority bit (YI's normal modes) a
+     *  priority-1 tile renders ABOVE BG1, a priority-0 tile below. `'low'`
+     *  renders only priority-0 cells (the background plane, drawn behind BG1);
+     *  `'high'` only priority-1 cells (the foreground plane, drawn above BG1).
+     *  Omit to render all cells (the single-plane default). See composeBgLayers. */
+    priority?: 'low' | 'high';
   }
 ): RenderResult {
   const declared = dimsFromScSize(opts.scSize);
@@ -187,6 +194,11 @@ export function renderBgLayer(
       if (entryOff + 2 > vram.length) continue;
       const entry = vram[entryOff] | (vram[entryOff + 1] << 8);
 
+      // Priority-plane filter: skip cells whose per-tile priority bit (0x2000)
+      // doesn't match the requested plane (background vs foreground split).
+      if (opts.priority === 'low' && (entry & 0x2000) !== 0) continue;
+      if (opts.priority === 'high' && (entry & 0x2000) === 0) continue;
+
       const baseTile = entry & 0x3ff;
       const palRow = (entry >>> 10) & 0x07;
       const hflip = (entry & 0x4000) !== 0;
@@ -240,4 +252,26 @@ export function renderBgLayer(
   }
 
   return { rgba, width, height };
+}
+
+/**
+ * True if any non-empty tilemap entry in the loaded region has its per-tile
+ * priority bit (`0x2000`) set — i.e. the layer has FOREGROUND tiles that render
+ * above BG1. `composeBgLayers` uses this to decide whether a layer needs a
+ * separate foreground plane (the common case has none → no extra render). Scans
+ * the contiguous loaded tilemap bytes; the screen-block layout is irrelevant for
+ * an any-entry test. Empty cells (tile 0) don't count — a priority-flagged blank
+ * paints nothing.
+ */
+export function tilemapHasForeground(
+  vram: Uint8Array,
+  tilemapAddr: number,
+  loadedBytes: number
+): boolean {
+  const end = Math.min(tilemapAddr + loadedBytes, vram.length - 1);
+  for (let off = tilemapAddr; off < end; off += 2) {
+    const entry = vram[off]! | (vram[off + 1]! << 8);
+    if ((entry & 0x2000) !== 0 && (entry & 0x3ff) !== 0) return true;
+  }
+  return false;
 }

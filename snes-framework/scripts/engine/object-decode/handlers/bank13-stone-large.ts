@@ -17,7 +17,9 @@
 // Shape: a 3x4-style "big rock" structure (YGN_IWA_BIG in ys_bgsc1.asm,
 // "iwa" = rock). Row/col are classified into 3x4 = 12 buckets:
 //   row class: 0 (top), 1 (middle), 2 (bottom = $2C+1 == $2E)
-//   col class: 0 (left), 1/2 (middle alternating by ($28 & 1) + 1),
+//   col class: 0 (left), 1/2 (middle alternating by (($28 + 1) & 1) + 1 —
+//              the cart INCs $28 for the `== $2A` right-edge test and reuses
+//              that incremented value for the parity AND, so the phase is $28+1),
 //              3 (right = $28+1 == $2A)
 // The base stamp is `table[rowClass*4 + colClass]` from DATA_139A9B
 // (variant 0) or DATA_139AB3 (variant 1, selected by `$15 != 0`).
@@ -41,7 +43,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, InitHandler, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import {
   getMap16Above,
   getMap16Below,
@@ -444,7 +446,9 @@ const stoneLargeStamp: PerCellHandler = (state) => {
   } else if (((col + 1) & 0xff) === colExt) {
     colClass = 3;
   } else {
-    colClass = (col & 1) + 1;
+    // Cart reuses the INC'd $28 (from the `== $2A` right-edge test) for the
+    // parity AND, so the phase is ($28 + 1), not $28.
+    colClass = (((col + 1) & 1)) + 1;
   }
 
   const idx = rowClass * 4 + colClass;
@@ -481,7 +485,7 @@ const initStoneLarge: InitHandler = (state) => {
   // Cart does a 16-bit AND #$0002 on the PRNG return value. prngNext()
   // returns the low byte; bit 1 of that is what cart reads after
   // `JSL prng ; AND #$0002`.
-  const variantBit = prngNext(state) & 0x02;
+  const variantBit = prngNext(state, RNG_SITE.initStoneLarge) & 0x02;
   state.zp15 = variantBit;
   walkerSetupTrampoline(state, stoneLargeStamp);
 };

@@ -6,9 +6,14 @@
 //
 // Every mapping here is asm-verified (init + consuming code read; see
 // research/notes-sprite-neighbor-dependencies.md Part 4's parity audit).
-// VISUAL-ONLY parity variants (Shy Guy / Stilt Guy / Woozy Guy colours,
-// Nep-Enut skin) are deliberately NOT listed — only variants that change
-// behaviour. Rotation-direction for the auto-spin family ($064/$15E/$1A0/
+// VISUAL-ONLY *colour* parity variants (the shy-guy family — Shy Guy / Stilt /
+// Woozy / Stretch / Petal Guy / Lantern Ghost — whose spawn-cell X+Y parity
+// picks an OBJ palette row) ARE now listed, under the 'Colour' label, because
+// the engine renders that palette (SPRITE_PARITY_PALETTE in
+// snes-framework/scripts/engine/sprite-parity.ts — asm-derived + v2-validated).
+// Still NOT listed: Nep-Enut's skin (a boss, parity → $78,x indirect tileset/
+// palette select, not statically rendered). Rotation-direction for the
+// auto-spin family ($064/$15E/$1A0/
 // $1A1/$101/$102/$144, plus the circling ravens $135/$136) lives in
 // canvas/draw/sprite-variant-hints.ts (it carries a calibrated
 // rate-sign→clockwise mapping); this table holds everything else, including
@@ -33,10 +38,6 @@
 
 export type ParityDirection = 'left' | 'right' | 'up' | 'down'
 
-/** What a Winged-Cloud-style prize variant yields — the draw layer maps these
- *  to glyph + colour (presentation stays in canvas/draw). */
-export type ParityPrizeKind = '1up' | 'stars' | 'switch' | 'sunflower' | 'flower' | 'coin' | 'key' | 'door'
-
 export interface SpriteParityVariant {
   axis: 'x' | 'y' | 'xy'
   /** Panel field label. 'Direction' is the shared label for the purely
@@ -55,9 +56,6 @@ export interface SpriteParityVariant {
    *  sprite is a continuous `generator` (cyan up-chevron) or spawns a one-shot
    *  `companion` (cyan "+"). Drives the on-outline badge. */
   badge?: { kind: 'generator' | 'companion'; index: number }
-  /** Prize kinds paralleling `values` (the hidden Winged Cloud) — drives the
-   *  on-outline prize badge. */
-  prizeKinds?: ParityPrizeKind[]
   /** Which values-index is the WIDE orbit (the $064 cluster) — drives the spin
    *  badge's ring size. */
   orbitWideIndex?: number
@@ -81,6 +79,10 @@ export const SPRITE_PARITY_VARIANTS: Record<number, SpriteParityVariant[]> = {
   0x13e: [{ axis: 'x', label: DIR, values: ['Starts rising', 'Starts falling'], dirs: ['up', 'down'], hint: 'Bob phase around the spawn height.' }],
   0x13f: [{ axis: 'x', label: DIR, values: ['Heads right', 'Heads left'], dirs: ['right', 'left'], hint: 'Starts a hop to the side and swims/faces this way.' }],
   0x140: [{ axis: 'x', label: DIR, values: ['Faces right', 'Faces left'], dirs: ['right', 'left'], hint: 'Facing during its vertical jumps.' }],
+  // $144 flipper: X cell parity rotates the paddle pair to send Yoshi left vs right (asm: $144
+  // Init reads $70E2&$10 → $7A36 = ±$80 → a 90° orientation). NOT a spinner (it used to be in the
+  // auto-spin cw/ccw family — corrected). The canvas renders the rotated pair via the custom offramp.
+  0x144: [{ axis: 'x', label: DIR, values: ['One-way right', 'One-way left'], dirs: ['right', 'left'], hint: 'One-way flipper orientation from the X cell parity (even = right, odd = left; asm $7A36 ±$80 → a 90° rotation).' }],
   0x152: [{ axis: 'x', label: DIR, values: ['Starts descending', 'Starts ascending'], dirs: ['down', 'up'], hint: 'Bob phase around the spawn height.' }],
   0x165: [{ axis: 'x', label: DIR, values: ['Bounces away right', 'Bounces away left'], dirs: ['right', 'left'], hint: 'Sideways drift while it bounces; the Nipper Plant it germinates into faces the same way.' }],
   0x16e: [{ axis: 'x', label: DIR, values: ['Heads right first', 'Heads left first'], dirs: ['right', 'left'], hint: 'Bob direction around the spawn column.' }],
@@ -101,10 +103,10 @@ export const SPRITE_PARITY_VARIANTS: Record<number, SpriteParityVariant[]> = {
   0x048: [{ axis: 'x', label: 'Boss intro', values: ['×-4 castle set', '×-8 castle set'], hint: 'Per-world spell colours + which boss-battle music the fight uses (the ×-4 vs ×-8 entry of the 2-per-world tables).' }],
   0x052: [{ axis: 'x', label: 'Spawning', values: ['Single balloon', 'Continuous generator'], badge: { kind: 'generator', index: 1 }, hint: 'Odd column arms the balloon generator flag.' }],
   0x05f: [{ axis: 'x', label: 'Rotate pause', values: ['Pauses 96 frames', 'Pauses 128 frames'], hint: 'Dwell between auto-rotations — boards on opposite parities tilt out of phase with each other.' }],
-  0x067: [{ axis: 'xy', label: 'Prize', values: ['5 stars', '6-leaf sunflower', 'Flower', 'Bubbled 1-UP'], prizeKinds: ['stars', 'sunflower', 'flower', '1up'], hint: 'What the cloud yields once revealed (by Chomp Rock / snowball) and popped. The sunflower variant skips the item-memory collected check.' }],
+  0x067: [{ axis: 'xy', label: 'Prize', values: ['5 stars', '6-leaf sunflower', 'Flower', 'Bubbled 1-UP'], hint: 'What the cloud yields once revealed (by Chomp Rock / snowball) and popped. The sunflower variant skips the item-memory collected check. No corner badge — the editor draws the prize as a full-tile icon above the cloud when selected (sprite-prizes.ts).' }],
   0x076: [{ axis: 'x', label: 'Detach arc', values: ['Flies up-left or down-right', 'Flies down-left or up-right'], hint: 'Which diagonal pair the launch velocity uses when it lets go of its chain (which half of the pair depends on swing phase).' }],
   0x077: [{ axis: 'x', label: 'Detach arc', values: ['Flies up-left or down-right', 'Flies down-left or up-right'], hint: 'Which diagonal pair the launch velocity uses when it lets go of its chain (which half of the pair depends on swing phase).' }],
-  0x071: [{ axis: 'x', label: 'Variant', values: ['Chaser', 'Back-facing drifter'], hint: 'Chases Yoshi vs the drift/charge/pause back-facing form.' }],
+  0x071: [{ axis: 'xy', label: 'Form', values: ['Big Boo w/ 3 Boos', 'Big Boo', 'Big Boo w/ 3 Boos', 'Boo'], hint: 'Cell parity picks the figure (init_big_boo reads position bits 4): an even column spawns the Big Boo escorted by 3 small Boos (and it chases Yoshi); an odd column spawns a lone drifter — a full-size Big Boo on even rows, a single small Boo on odd rows.' }],
   0x08b: [{ axis: 'x', label: 'Variant', values: ['Standard', 'Pre-inflated (alt palette)'], hint: 'Odd column starts in the inflated phase with the alternate palette.' }],
   0x08d: [{ axis: 'xy', label: 'Carries', values: ['Star shower (up to 5)', 'Red coin', '1-UP', '1-UP'], hint: 'What the Fly Guy drops when popped.' }],
   0x090: [{ axis: 'x', label: 'Reach', values: ['Short reach (66 px)', 'Long reach (98 px)'], hint: 'How far down it can stretch when lunging for Baby Mario.' }],
@@ -115,7 +117,7 @@ export const SPRITE_PARITY_VARIANTS: Record<number, SpriteParityVariant[]> = {
   0x0b2: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
   0x0b3: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
   0x0b4: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
-  0x0b5: [{ axis: 'xy', label: 'Prize', values: ['1-UP', '5 stars', 'Red switch', '5 stars'], prizeKinds: ['1up', 'stars', 'switch', 'stars'], hint: 'What the hidden cloud yields on pop (matches the on-outline prize badge).' }],
+  0x0b5: [{ axis: 'xy', label: 'Prize', values: ['1-UP', '5 stars', 'Red switch', '5 stars'], hint: 'What the hidden cloud yields on pop. The editor renders the parity-revealed winged-cloud sprite ($0BE/$0C1/$0CC) at 50% opacity, plus a full-tile prize icon above the cloud when selected (sprite-prizes.ts).' }],
   0x0be: [{ axis: 'x', label: 'Variant', values: ['Stationary', 'Moving'], hint: 'The moving variant drifts horizontally.' }],
   0x0df: [{ axis: 'x', label: 'Variant', values: ['Blue — fixed-direction leaps', 'Gold — homes on Yoshi'], hint: 'Blue repeats leaps in its spawn direction; gold re-aims at Yoshi every leap.' }],
   0x0e0: [{ axis: 'x', label: 'Climb steps', values: ['2 stair-steps per cycle', '5 stair-steps per cycle'], hint: 'How many rises per swim wave.' }],
@@ -134,12 +136,27 @@ export const SPRITE_PARITY_VARIANTS: Record<number, SpriteParityVariant[]> = {
   0x153: [{ axis: 'xy', label: 'Variant', values: ['Normal Goonie', 'Normal Goonie', 'Flock respawner (left edge)', 'Flock respawner (right edge)'], hint: 'Odd row makes it an invisible flock-edge respawner; column picks the screen edge.' }],
   0x156: [{ axis: 'x', label: 'Persistence', values: ['Despawns normally', 'Returns to its spawn point'], hint: 'Odd columns arm a respawn anchor: when the jack would despawn off-screen (it hops away chasing Yoshi), it instantly snaps back to its spawn point instead. Confirmed by Mesen trace (both init paths) 2026-06-11.' }],
   0x157: [{ axis: 'x', label: 'Variant', values: ['Hides in wall, peeks out to throw', 'Always out, throwing'], hint: 'In-wall peek cycle vs the permanently-exposed thrower.' }],
-  0x161: [{ axis: 'xy', label: 'Reward', values: ['Coin', 'Key', 'Flower', 'Door'], prizeKinds: ['coin', 'key', 'flower', 'door'], hint: 'What appears once every enemy in the room is defeated (item-memory guarded).' }],
+  0x161: [{ axis: 'xy', label: 'Reward', values: ['Coin', 'Key', 'Flower', 'Door'], hint: 'What appears once every enemy in the room is defeated (item-memory guarded). The reward icon draws full-tile above the sprite when selected (sprite-prizes.ts).' }],
   0x166: [{ axis: 'x', label: 'Spawning', values: ['Single Thunder Lakitu', 'Spawns a second'], badge: { kind: 'companion', index: 1 }, hint: 'Odd column spawns a pair (matches the cyan badge).' }],
   0x170: [{ axis: 'x', label: 'Variant', values: ['Drifts horizontally', 'Stationary pop-up'], hint: 'Drifting patrol vs surfacing in place.' }],
   0x19c: [{ axis: 'x', label: 'Variant', values: ['Hovers around its perch', 'Swoops off immediately'], hint: 'Hover mode bobs around the spawn point before diving; the swoop variant starts moving straight away.' }],
   0x1a7: [{ axis: 'y', label: 'Throws', values: ['Bombs (Short Fuse)', 'Needlenoses (Seedy Sally)'], hint: 'Which projectile this grinder lobs from the trees.' }],
   0x1ab: [{ axis: 'x', label: 'Pops into', values: ['Coin', 'Red POW switch'], hint: 'What the balloon releases when popped.' }],
+
+  // ── Colour (visual-only — spawn-cell X+Y parity picks an OBJ palette row) ──
+  // The shy-guy family: pixel bit 4 of X and Y (the 16px cell LSBs) index a 4-entry
+  // palette table → rows 0/1/2/4 = green/red/yellow/pink (Bank04 DATA_shy_guy_palette_indices
+  // and the per-variant equivalents). The engine renders this via SPRITE_PARITY_PALETTE;
+  // these rows surface it in the panel so a user knows colour follows placement.
+  0x01e: [{ axis: 'xy', label: 'Colour', values: ['Green', 'Red', 'Yellow', 'Pink'], hint: 'Shy Guy colour comes from the spawn cell’s X+Y parity (OBJ palette rows 0/1/2/4). Nudge it one column/row to recolour it.' }],
+  0x0f2: [{ axis: 'xy', label: 'Colour', values: ['Green', 'Red', 'Yellow', 'Pink'], hint: 'Stilt Guy colour comes from the spawn cell’s X+Y parity (OBJ palette rows 0/1/2/4).' }],
+  0x0f3: [{ axis: 'xy', label: 'Colour', values: ['Green', 'Red', 'Yellow', 'Pink'], hint: 'Woozy Guy colour comes from the spawn cell’s X+Y parity (OBJ palette rows 0/1/2/4).' }],
+  0x124: [{ axis: 'xy', label: 'Colour', values: ['Green', 'Red', 'Yellow', 'Pink'], hint: 'Stretch colour comes from the spawn cell’s X+Y parity (OBJ palette rows 0/1/2/4).' }],
+  0x192: [{ axis: 'xy', label: 'Colour', values: ['Green', 'Red', 'Yellow', 'Pink'], hint: 'Petal/Mufti Guy colour comes from the spawn cell’s X+Y parity (OBJ palette rows 0/1/2/4).' }],
+  // $133 shares the shy-guy palette MACHINE (rows 0/1/2/4 by X+Y parity) but loads the lantern-ghost
+  // spriteset palette, so those rows render orange/green/grey/brown (NOT the Shy Guy's
+  // green/red/yellow/pink). Order is parity-index [0,1,2,4] = row colours, capture-confirmed.
+  0x133: [{ axis: 'xy', label: 'Colour', values: ['Orange', 'Green', 'Grey', 'Brown'], hint: 'Lantern Ghost body colour comes from the spawn cell’s X+Y parity (OBJ palette rows 0/1/2/4) — same machine as the Shy Guy, but its spriteset palette renders those rows orange/green/grey/brown. The held lantern flame keeps its own colour.' }],
 
   // $064 also picks its orbit radius from Y parity (its spin direction from X
   // parity is the calibrated Spin row in sprite-variant-hints.ts). EVEN row =
@@ -189,15 +206,6 @@ function resolvedIndex(v: SpriteParityVariant, x: number, y: number): number {
 export function paritySpawnBadge(num: number, x: number, y: number): 'generator' | 'companion' | null {
   for (const v of SPRITE_PARITY_VARIANTS[num] ?? []) {
     if (v.badge && resolvedIndex(v, x, y) === v.badge.index) return v.badge.kind
-  }
-  return null
-}
-
-/** Resolved prize kind for a prize-variant placement (the hidden cloud), or
- *  null for sprites without one. */
-export function parityPrize(num: number, x: number, y: number): ParityPrizeKind | null {
-  for (const v of SPRITE_PARITY_VARIANTS[num] ?? []) {
-    if (v.prizeKinds) return v.prizeKinds[resolvedIndex(v, x, y)]
   }
   return null
 }

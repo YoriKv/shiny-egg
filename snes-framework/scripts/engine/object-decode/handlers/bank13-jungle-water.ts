@@ -25,7 +25,7 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import { stampCell } from './_shared.ts';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ const jungleWaterStamp: PerCellHandler = (state) => {
     // Row 0 even-column path: prng-roll a new $15 in {$00,$02,$04,$06}.
     // CODE_139A10: LDA $00 ; BNE table_pick — odd-column skips the prng.
     if (row === 0 && colParity === 0) {
-      state.zp15 = prngNext(state) & 0x0006;
+      state.zp15 = prngNext(state, RNG_SITE.jungleWaterStateRoll) & 0x0006;
     }
     // CODE_139A1D: LDX $15 ; LDA DATA_1399E9,x ; STA $02 ;
     //              LDA $2C ; ASL ; ADC $00 ; ASL ; TAY ; LDA ($02),y
@@ -153,7 +153,7 @@ const jungleWaterStamp: PerCellHandler = (state) => {
     } else if (row < 2) {
       // CODE_139A4E: prng-roll, AND #$0006, index DATA_1399F1.
       // Note: row==1 here.
-      const idx = (prngNext(state) & 0x0006) >>> 1;
+      const idx = (prngNext(state, RNG_SITE.jungleWaterTableRoll) & 0x0006) >>> 1;
       a = DATA_1399F1[idx]!;
     } else {
       // CODE_139A60: LDA #$909B (row >= 2 foliage body).

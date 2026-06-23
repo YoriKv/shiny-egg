@@ -29,12 +29,17 @@
 import { registerStdObjectHandler } from './index.ts';
 import type { DecodeState, PerCellHandler } from '../state.ts';
 import { walkerSetupKeepSlope, walkerSetupTrampoline } from '../walker.ts';
-import { prngNext } from '../prng.ts';
+import { prngNext, RNG_SITE } from '../prng.ts';
 import {
   stampCell, signed8,
   readBuf16, writeBuf16, setProbeToCurrent, shiftOriginNibble,
+  jungleFloorRandomFillBiased, probeLeftTile, probeRightTile,
 } from './_shared.ts';
 import { getMap16Left, getMap16Right } from '../fetch.ts';
+// Shoreline sub-handlers reuse the half-slope bodies for their rows-0..2, exactly
+// as the cart's CODE_stamp_shoreline_slope_left/right JSL into them.
+import { stampSlopeDownLeftHalf } from './bank13-slope-down-left-half.ts';
+import { stampSlopeDownRightHalf } from './bank13-slope-down-right-half.ts';
 
 // ───────────────────────────────────────────────────────────────────────
 // $63 — CODE_init_three_segment_row → CODE_three_segment_row
@@ -152,74 +157,82 @@ function initPole6variant(state: DecodeState): void {
 }
 
 // ───────────────────────────────────────────────────────────────────────
-// $EB / $EC — CODE_init_shoreline_slope_capped
+// $EB / $EC — CODE_init_shoreline_slope_capped / CODE_stamp_shoreline_slope_capped
 //
-// Cart (`Bank12.asm:5337`, stamp `Bank13.asm:14782`): reads `$15 & $04
-// LSR 1` to pick left (0) vs right (1) variant, shifts `$1B` left by
-// `$10`, bumps `$2E` by 1, then calls the stamp handler which JSRs into
-// `CODE_stamp_shoreline_slope_left` or `_right`.
+// Cart (init Bank12.asm:5499 → walker_setup_trampoline; stamp $13:FA0D): the
+// per-cell stamp sets $0E = $1B, then dispatches to the left ($EB) or right
+// ($EC) sub-handler by the direction bit in $15. Each sub-handler:
+//   rows 0-2 → JSL the SHARED half-slope body (stamp_slope_down_left/right_half),
+//              so the same variant roll ($13F7EE / $13F9C6) the $E7/$EA objects
+//              use fires for shoreline columns too (that shared call is why those
+//              PRNG sites' cart call-counts exceed the standalone half-slope's).
+//   rows 3+  → stamp a water tile ($79D6/$79D8 + row parity) at the current cell,
+//              then probe the WATER-side neighbour; if it's a $79xx tile,
+//              PRNG-pick ($13FA4D / $13FAC0) a sand-fill from
+//              DATA_shoreline_sandfill_tiles and overwrite it. On the last row,
+//              probe the LAND-side neighbour and stamp the slope-end cap
+//              ($79C8/$79C9) when it matches the end-column blend table.
 //
-// Per-row outputs (from traces `std-EB` and `std-EC`):
-//   row 0       cap tile (uses prng — first call picks a specific cap)
-//   row 1       body upper
-//   row 2       body lower
-//   row 3+      alternating water tiles by row parity
-//
-// We hardcode the cap to the first observed tile (skip the prng) for
-// determinism. Visually correct for the static editor preview.
+// (Was a deterministic approximation that hardcoded the cap/body and skipped the
+// PRNG — replaced with the faithful shared-body port for pixel-exact parity.)
 // ───────────────────────────────────────────────────────────────────────
 
-interface ShorelineTiles {
-  readonly cap: number;
-  readonly bodyUpper: number;
-  readonly bodyLower: number;
-  /** Tile for cells where (row & 1) === 1 (odd rows, starting at row 3). */
-  readonly waterOddRow: number;
-  /** Tile for cells where (row & 1) === 0 (even rows). */
-  readonly waterEvenRow: number;
+// DATA_shoreline_sandfill_tiles ($13:F9F9) — 4 sand-fill tiles, PRNG-picked
+// (prng & 6 → entry) to replace water-adjacent $79xx grass.
+const DATA_shoreline_sandfill_tiles = [0x79AD, 0x79AE, 0x79B5, 0x79DD] as const;
+
+// DATA_shoreline_endcol_match_tiles ($13:FA01), as high-byte categories — on the
+// slope's last row these (or a neighbour in $85A8..$85B0) extend the cap.
+const SHORELINE_ENDCOL_MATCH_HI: readonly number[] = [0x03, 0x06, 0x08, 0x0A, 0x0C, 0x10];
+
+/** Last-row cap test — cart `CODE_13FA6A` match loop + the $85A8..$85B0 gate. */
+function shorelineEndcolMatch(probeTile: number): boolean {
+  if (SHORELINE_ENDCOL_MATCH_HI.includes((probeTile >> 8) & 0xff)) return true;
+  return probeTile >= 0x85A8 && probeTile < 0x85B0;
 }
 
-const SHORELINE_LEFT: ShorelineTiles = {
-  cap: 0x85A7,
-  bodyUpper: 0x020A,
-  bodyLower: 0x030D,
-  waterOddRow: 0x79D7,
-  waterEvenRow: 0x79D6,
-};
-
-const SHORELINE_RIGHT: ShorelineTiles = {
-  cap: 0x85B6,
-  bodyUpper: 0x050B,
-  bodyLower: 0x060D,
-  waterOddRow: 0x79D9,
-  waterEvenRow: 0x79D8,
-};
-
-function stampShoreline(state: DecodeState, tiles: ShorelineTiles): void {
-  const row = signed8(state.zp2C);
-  if (row < 0) return; // negative-row growth shouldn't happen for these objects
-  let id: number;
-  if (row === 0) id = tiles.cap;
-  else if (row === 1) id = tiles.bodyUpper;
-  else if (row === 2) id = tiles.bodyLower;
-  else id = (row & 1) !== 0 ? tiles.waterOddRow : tiles.waterEvenRow;
-  stampCell(state, id);
+// $EB — CODE_stamp_shoreline_slope_left ($13:FA1B).
+function stampShorelineLeft(state: DecodeState): void {
+  if ((state.zp2C & 0xffff) < 3) { stampSlopeDownLeftHalf(state); return; }
+  stampCell(state, (0x79D6 + (state.zp2C & 1)) & 0xffff);
+  const nOff = getMap16Right(state); // water side = right
+  if ((readBuf16(state, nOff) & 0xff00) === 0x7900) {
+    const idx = prngNext(state, RNG_SITE.shorelineSlopeLeft) & 0x06;
+    writeBuf16(state, nOff, DATA_shoreline_sandfill_tiles[idx >> 1]!);
+  }
+  if (((state.zp2C + 1) & 0xffff) === (state.zp2E & 0xffff)
+      && shorelineEndcolMatch(probeLeftTile(state))) {
+    stampCell(state, 0x79C8);
+  }
 }
 
-// Merge: object IDs 0xEB, 0xEC share this handler.
+// $EC — CODE_stamp_shoreline_slope_right ($13:FA8E), mirror of left.
+function stampShorelineRight(state: DecodeState): void {
+  if ((state.zp2C & 0xffff) < 3) { stampSlopeDownRightHalf(state); return; }
+  stampCell(state, (0x79D8 + (state.zp2C & 1)) & 0xffff);
+  const nOff = getMap16Left(state); // water side = left
+  if ((readBuf16(state, nOff) & 0xff00) === 0x7900) {
+    const idx = prngNext(state, RNG_SITE.shorelineSlopeRight) & 0x06;
+    writeBuf16(state, nOff, DATA_shoreline_sandfill_tiles[idx >> 1]!);
+  }
+  if (((state.zp2C + 1) & 0xffff) === (state.zp2E & 0xffff)
+      && shorelineEndcolMatch(probeRightTile(state))) {
+    stampCell(state, 0x79C9);
+  }
+}
+
+// Objects $EB (left) and $EC (right) share this init/stamp.
 function initShorelineSlopeCapped(state: DecodeState): void {
-  // Cart: $15 & $04 LSR 1 → 0 (left, $EB) or 2 (right, $EC). The value
-  // is stored back into $15 as a sub-handler-table index; for our two-
-  // case dispatch we just read the bit directly.
+  // Cart $15 & $04 LSR 1 → 0 (left, $EB) or 1 (right, $EC).
   const isRight = ((state.zp15 & 0x04) >>> 1) !== 0;
-  // Init also shifts $1B left by $10 (one cell) and bumps $2E by 1, so
-  // the slope starts one cell up + one row taller than the placed
-  // anchor. Mirror that math here.
+  // Shift $1B left by $10 (one cell), bump $2E by 1; trampoline walker.
   shiftOriginNibble(state, -0x0010);
   state.zp2E = (state.zp2E + 1) & 0xffff;
   state.zp17 = 0;
-  const tiles = isRight ? SHORELINE_RIGHT : SHORELINE_LEFT;
-  walkerSetupTrampoline(state, (s) => stampShoreline(s, tiles));
+  walkerSetupTrampoline(state, (s) => {
+    setProbeToCurrent(s); // cart CODE_stamp_shoreline_slope_capped: $0E = $1B
+    if (isRight) stampShorelineRight(s); else stampShorelineLeft(s);
+  });
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -245,23 +258,8 @@ function initShorelineSlopeCapped(state: DecodeState): void {
 // $85xx tile tables.
 // ───────────────────────────────────────────────────────────────────────
 
-// DATA_jungle_floor_fill_tiles (Bank13.asm:14359): 16 entries — 10
-// distinct $79xx variants + 6 weighted $79E0.
-const DATA_jungle_floor_fill_tiles = [
-  0x79BB, 0x79BC, 0x79BD, 0x79BE, 0x79BF, 0x79C0, 0x79C1, 0x79C2,
-  0x79C3, 0x79C4, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0, 0x79E0,
-] as const;
-
-/** Pick from DATA_jungle_floor_fill_tiles with an optional bias added
- *  to the PRNG roll, clamped to 15. Cart `CODE_jungle_floor_random_fill`
- *  (`Bank13.asm:14363`) — `bias` comes in via `$00`, increasing for each
- *  row deeper into the slope to skew the distribution toward the
- *  weighted $79E0 entries at the end of the table. */
-export function jungleFloorRandomFillBiased(state: DecodeState, bias: number): void {
-  let pick = (prngNext(state) & 0x0F) + bias;
-  if (pick > 0x0F) pick = 0x0F;
-  stampCell(state, DATA_jungle_floor_fill_tiles[pick]!);
-}
+// jungleFloorRandomFillBiased + DATA_jungle_floor_fill_tiles now live in
+// _shared.ts (single home; was copy-pasted across 4 slope files).
 
 const jungleFloorRandomFill: PerCellHandler = (state) => {
   jungleFloorRandomFillBiased(state, 0);
@@ -339,7 +337,7 @@ const stampSlopeSteepUpLeft: PerCellHandler = (state) => {
   // cell, not just (0,0) — gives each column-pair its own silhouette
   // variant. Matches `BNE` on `$28 & 1` then `BNE` on `$2C` in the asm.
   if (row === 0 && colParity === 0) {
-    state.zpA1 = (prngNext(state) & 0x0F) << 1;
+    state.zpA1 = (prngNext(state, RNG_SITE.slopeSteepUpLeft) & 0x0F) << 1;
   }
   const variant = (state.zpA1 >>> 1) & 0x0F;
   const recordIdx = SLOPE_STEEP_UP_LEFT_VARIANT_TO_RECORD[variant]!;
@@ -455,6 +453,10 @@ function stampSlopeBodyShared(
 interface SlopeLongConfig {
   records: readonly (readonly number[])[];
   variantToRecord: readonly number[];
+  /** Cart PRNG caller PC for this slope's body variant roll ($E5 = $13F713,
+   *  $E8 = $13F8C9) — they're separate routines in the cart, so each gets its
+   *  own replay queue even though we share `makeSlopeLongStamp`. */
+  prngSite: number;
   /** Row-1 + col-0 edge-fix (`$E5`: right-edge; `$E8`: left-edge). */
   row1EdgeFix: (state: DecodeState) => void;
   /** Row-2 edge-fix (`$E5`: left-edge; `$E8`: right-edge). */
@@ -494,7 +496,7 @@ function makeSlopeLongStamp(cfg: SlopeLongConfig): PerCellHandler {
     // when the cell already holds ground ($9000..$904F) so the slope's
     // silhouette doesn't gap-out over pre-stamped terrain.
     if (row === 0 && colParity === 0) {
-      state.zpA1 = (prngNext(state) & 0x07) << 1;
+      state.zpA1 = (prngNext(state, cfg.prngSite) & 0x07) << 1;
       if (state.zpA1 === 4 || state.zpA1 === 8) {
         const cur = readBuf16(state, state.zp1D);
         if (cur >= 0x9000 && cur < 0x9050) {
@@ -513,6 +515,7 @@ function makeSlopeLongStamp(cfg: SlopeLongConfig): PerCellHandler {
 const stampSlopeDownLeftLong = makeSlopeLongStamp({
   records: SLOPE_DOWN_LEFT_LONG_RECORDS,
   variantToRecord: SLOPE_DOWN_LEFT_LONG_VARIANT_TO_RECORD,
+  prngSite: RNG_SITE.slopeDownLeftLongBody,
   row1EdgeFix: slopeFixRightEdge,
   row2EdgeFix: slopeFixLeftEdge,
   // $E5 row-2 fires when `$28 - 1 == $2A` (low byte). For positive col
@@ -524,6 +527,7 @@ const stampSlopeDownLeftLong = makeSlopeLongStamp({
 const stampSlopeDownRightLong = makeSlopeLongStamp({
   records: SLOPE_DOWN_RIGHT_LONG_RECORDS,
   variantToRecord: SLOPE_DOWN_RIGHT_LONG_VARIANT_TO_RECORD,
+  prngSite: RNG_SITE.slopeDownRightLongBody,
   row1EdgeFix: slopeFixLeftEdge,
   row2EdgeFix: slopeFixRightEdge,
   // $E8 row-2 fires when `$28 + 1 == $2A` — the natural last-col test

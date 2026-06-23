@@ -12,7 +12,7 @@ export type RomVersion =
   | 'YI_E1' | 'YI_E2'
   | 'YI_J1' | 'YI_J2' | 'YI_J3';
 
-// ── Editable resources (generic load/save registry — plan step 4) ──────────
+// ── Editable resources (generic load/save registry) ──────────
 
 /** A reference to one editable thing the editor loads/saves through the generic
  *  resource IPC. `level` is backed by a LevelData `.bin`; `asm-region` (step 5)
@@ -531,7 +531,7 @@ export interface LayerCellPatch {
  *  hidden). */
 export type ObjectRenderVerdict = 'ok' | 'degraded' | 'invalid' | 'no-visual' | 'unknown';
 
-// ── Asm string tables (string-editor model — plan step 5) ──────────────────
+// ── Asm string tables (string-editor model) ──────────────────
 // The structured model the string editor loads/saves through the generic
 // asm-region resource IPC. One `StringTableModel` per editable `;@editable`
 // region (e.g. the level-name table); the panel can show several as tabs.
@@ -778,7 +778,6 @@ export interface PaletteEdit {
 // remapped through the reference symbols → nearest asm label + delta → that
 // label's address in the just-built ROM. So an offset stays correct even after
 // asm edits shift the cart, with no label baked into the JSON to go stale.
-// See research/plan-custom-patches.md.
 
 export type PatchSource = 'builtin' | 'imported' | 'user';
 
@@ -881,12 +880,12 @@ export interface PatchApplyReport {
 
 // ── ROM import (read a modified/built cart back into overlays) ──────────────
 // Framework-side analysis shapes for the "import from a third-party ROM"
-// feature. See research/plan-rom-import.md. The app layer (src/main/rom-import,
+// feature. The app layer (src/main/rom-import,
 // src/shared/ipc-types) wraps these into the renderer-facing report (adds
 // per-level overlay-conflict flags + friendly names).
 
 /** How an anchor table's address was recovered in the foreign cart. The
- *  resolution ladder tries these in order (plan §5). */
+ *  resolution ladder tries these in order. */
 export type AnchorMethod =
   | 'vanilla-addr' // table sits at its unmodified V1.0 address (common case)
   | 'code-signature' // recovered from the engine routine that reads it

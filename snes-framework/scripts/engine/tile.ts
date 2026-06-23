@@ -5,9 +5,15 @@
 //
 // A tile is always 8×8 pixels. Bytes-per-tile depends on bit depth:
 //
-//   2bpp (BG3 / sometimes BG2):  16 bytes
-//   4bpp (BG1 / sometimes BG2):  32 bytes
-//   8bpp (Mode 7 / BG1 mode 3):  64 bytes  — not used by YI's BG layers
+//   2bpp:  16 bytes
+//   4bpp:  32 bytes
+//   8bpp:  64 bytes  — not used by YI's BG layers
+//
+// Which layer is which depth is set by the PPU BG MODE, not fixed per layer —
+// derive it from the scene's BGMODE (see scene-regs.ts `bgLayerBpp`), never
+// hardcode. In BG Mode 1 (the 218 standard levels) BG1/BG2 are 4bpp and BG3 is
+// 2bpp; in BG Mode 0 (level mode $0A / level $6B) ALL backgrounds are 2bpp —
+// so BG1 is 2bpp there, and decoding it as 4bpp scrambles every tile.
 //
 // Within a tile, bytes are organised as **interleaved bitplane pairs per
 // pixel row**:
@@ -145,5 +151,56 @@ export function decode2bppTile(
       const idx = ((bp0 & bit) ? 1 : 0) | ((bp1 & bit) ? 2 : 0);
       out[rowBase + col] = idx;
     }
+  }
+}
+
+/**
+ * Encode 64 palette indices (0..15, row-major at `idx[idxOff..idxOff+63]`) into
+ * a single 4bpp 8×8 SNES tile (32 bytes at `out[outOff..outOff+31]`). The exact
+ * inverse of `decode4bppTile` with no flip — `decode4bppTile(encode4bppTile(x)) == x`.
+ */
+export function encode4bppTile(
+  idx: Uint8Array,
+  idxOff: number,
+  out: Uint8Array,
+  outOff: number
+): void {
+  for (let row = 0; row < 8; row++) {
+    let bp0 = 0, bp1 = 0, bp2 = 0, bp3 = 0;
+    const rowBase = idxOff + row * 8;
+    for (let col = 0; col < 8; col++) {
+      const v = idx[rowBase + col]!;
+      const bit = 0x80 >> col;
+      if (v & 1) bp0 |= bit;
+      if (v & 2) bp1 |= bit;
+      if (v & 4) bp2 |= bit;
+      if (v & 8) bp3 |= bit;
+    }
+    out[outOff + row * 2 + 0] = bp0;
+    out[outOff + row * 2 + 1] = bp1;
+    out[outOff + 16 + row * 2 + 0] = bp2;
+    out[outOff + 16 + row * 2 + 1] = bp3;
+  }
+}
+
+/** Encode 64 palette indices (0..3) into a 2bpp 8×8 SNES tile (16 bytes). The
+ *  inverse of `decode2bppTile` with no flip. */
+export function encode2bppTile(
+  idx: Uint8Array,
+  idxOff: number,
+  out: Uint8Array,
+  outOff: number
+): void {
+  for (let row = 0; row < 8; row++) {
+    let bp0 = 0, bp1 = 0;
+    const rowBase = idxOff + row * 8;
+    for (let col = 0; col < 8; col++) {
+      const v = idx[rowBase + col]!;
+      const bit = 0x80 >> col;
+      if (v & 1) bp0 |= bit;
+      if (v & 2) bp1 |= bit;
+    }
+    out[outOff + row * 2 + 0] = bp0;
+    out[outOff + row * 2 + 1] = bp1;
   }
 }
