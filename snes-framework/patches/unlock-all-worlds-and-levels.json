@@ -1,0 +1,17 @@
+{
+  "id": "unlock-all-worlds-and-levels",
+  "name": "Unlock All Worlds and Levels",
+  "category": "Cheats",
+  "description": "Every time a save file is loaded, it is filled out to all items and all levels unlocked, so you can walk to any world and any level on the map. New files still play the prologue first; the world map then opens completely. Made with AI.",
+  "details": [
+    "Runs the game's own unused debug \"complete save\" fill. On the retail build the file-load path at $17:9897 (CODE_179897) is 'JMP CODE_179932', which skips the debug block; this patch overwrites those 3 bytes with 'JMP $98B4' (4C B4 98) so it jumps straight into the fill at $17:98B4 (ADDR_1798B4) instead - unconditionally for every file (no File-3 / no L+R gate). The fill grants the full pause-menu item inventory (27 entries), sets all 72 level-cleared flags ($0222..$0269 = $01), writes every world's on-map level-tile graphics for all 6 worlds x 12 tiles (DATA_world_unlock_ptr_world1..6), marks each world's boss/extra tiles ($0317/$0323/.../$0353 = $0A09), then falls through to CODE_179932 (the normal fade-to-overworld tail). One 3-byte in-place write anchored to the CODE_179897 label (drift-proof); the 16-bit operand $98B4 is bank-$17-relative into the stable debug-fill region."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1",
+  "chunks": [
+    {
+      "label": "CODE_179897",
+      "bytes": "4CB498"
+    }
+  ]
+}

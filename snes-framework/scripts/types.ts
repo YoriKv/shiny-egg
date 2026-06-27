@@ -810,8 +810,12 @@ export interface StoredPatchChunk {
    *  ("$.."/bare-hex and legacy decimal numbers are still accepted on read.) */
   offset?: string;
   label?: string;
-  labelOffset?: number;
-  /** Uppercase hex, no separators (e.g. "EAEAEAEA"). */
+  /** Byte offset added to the resolved label address, as a hex string (e.g.
+   *  "0x1F"). ("$.."/bare-hex and legacy decimal numbers are still accepted on
+   *  read.) */
+  labelOffset?: string;
+  /** Hex bytes. Written packed + uppercase ("EAEAEAEA"); on read, `$NN`/`0xNN`
+   *  byte prefixes and whitespace/comma separators ("$EA $EA") are also accepted. */
   bytes: string;
 }
 
@@ -990,4 +994,102 @@ export interface RomAnalysis {
   /** Full-cart diff inventory (absent when the pointer table didn't resolve —
    *  nothing aligns, so per-structure attribution would be noise). */
   inventory?: RomImportInventory;
+}
+
+// ── Level validation (Validation panel) ─────────────────────────────────────
+// Static playability lints — the editor-surfaced analogue of the dev CLIs
+// (sweep-levels / validity-report / validate-neighbor-deps). Produced by the
+// main-side engine `scripts/engine/validation.ts`, consumed by the renderer's
+// ValidationPanel. Catches level designs that look fine in the static editor
+// but break, glitch, or read garbage at runtime. See the panel for the catalog.
+
+export type ValidationSeverity = 'error' | 'warning' | 'info';
+
+/** One finding against one level. */
+export interface ValidationIssue {
+  /** Stable check id (e.g. 'sprite-cap', 'item-memory', 'warp-dest'). */
+  check: string;
+  /** Short check title for grouping in the UI. */
+  title: string;
+  severity: ValidationSeverity;
+  /** One-line, human-readable description of this specific finding. */
+  message: string;
+  /** Record id of the level this issue is in. */
+  levelRecordId: number;
+  /** Tile-grid cell to focus the camera on when the user clicks the issue. */
+  x?: number;
+  y?: number;
+  /** Entity to select on jump, so the user lands on the offending item. */
+  entity?: { kind: 'object' | 'sprite' | 'exit'; id?: number };
+  /** The specific sprites this issue concerns (a collision group, every
+   *  missing-gfx placement, …). Rendered as a collapsible id + position list,
+   *  each jump-able. `levelRecordId` overrides the issue's level for cross-level
+   *  findings (the sprites live in different levels). */
+  sprites?: { num: number; x: number; y: number; levelRecordId?: number }[];
+}
+
+/** Collectible tally for a level (the Advynia "Count Items" readout). */
+export interface CollectibleCounts {
+  /** Sprite 0x0FA / 0x110. */
+  flowers: number;
+  /** Sprite 0x065. */
+  redCoins: number;
+  /** Floating-coin sprite 0x1AF + coin objects 0x68 / 0x8A. */
+  coins: number;
+  /** All item-memory-tracked collectibles considered by the collision check. */
+  tracked: number;
+}
+
+/** Per-level validation result. */
+export interface LevelValidationResult {
+  levelRecordId: number;
+  /** Friendly level name, when resolvable from the catalog. */
+  name?: string;
+  issues: ValidationIssue[];
+  counts: CollectibleCounts;
+  errorCount: number;
+  warningCount: number;
+  infoCount: number;
+}
+
+/** Result of the all-levels sweep. */
+export interface AllLevelsValidationResult {
+  /** Per-level results — only levels with ≥1 issue are included. */
+  levels: LevelValidationResult[];
+  /** Cross-level findings (item-memory collisions across warp-connected levels). */
+  crossLevel: ValidationIssue[];
+  levelsChecked: number;
+  /** Totals across per-level + cross-level findings. */
+  totalErrors: number;
+  totalWarnings: number;
+  totalInfo: number;
+}
+
+/** Decode-derived signals the renderer-side check engine can't compute itself
+ *  (they come from running the object decoder main-side). A thin projection of
+ *  the engine `DecodeState` / `DecodeStats`. */
+export interface LevelDecodeSignals {
+  /** False when the level couldn't be decoded at all (the rest is meaningless). */
+  decoded: boolean;
+  /** 128-byte screen→LRU-page map (low 6 bits = page; `0x80` = unmapped).
+   *  Plain number[] for IPC transport. */
+  screenPageMap: number[];
+  /** Distinct allocated pages (cap is 63). */
+  pageCount: number;
+  /** Decode overflowed the page pool (>63) — buffer corruption. */
+  overflowed: boolean;
+  /** Decode aborted mid-stream — malformed object data. */
+  aborted: boolean;
+}
+
+/** One level's inputs for the all-levels sweep — the renderer runs the checks. */
+export interface LevelValidationInput {
+  levelRecordId: number;
+  level: LevelData;
+  signals: LevelDecodeSignals;
+  /** True when this record is entered from the world map (a value in
+   *  `translevelToRecord`). A fresh item-memory session starts here — the
+   *  bitmap is cleared on map entry, then persists across screen-exit warps —
+   *  so the cross-level item-memory check roots its sessions at these. */
+  isRoot: boolean;
 }

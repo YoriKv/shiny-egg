@@ -11,7 +11,11 @@ import type { LevelData, LevelTileUsage } from '../../../preload/api'
  */
 export function useLevelTileUsage(
   level: LevelData | null,
-  enabled: boolean
+  enabled: boolean,
+  /** Decode PRNG-seed override (the "Refresh RNG" action) — re-rolls the cosmetic
+   *  random tiles, which shifts the set of distinct Map16 blocks this view shows,
+   *  so a change re-fetches. `undefined` ⇒ the default deterministic seed. */
+  prngSeed?: number
 ): LevelTileUsage | null {
   const [usage, setUsage] = useState<LevelTileUsage | null>(null)
   useEffect(() => {
@@ -21,7 +25,7 @@ export function useLevelTileUsage(
     }
     let cancelled = false
     void window.shinyEgg.render
-      .levelTileUsage({ levelRecordId: level.recordId, override: level })
+      .levelTileUsage({ levelRecordId: level.recordId, override: level, prngSeed })
       .then((res) => {
         if (!cancelled) setUsage(res)
       })
@@ -31,6 +35,6 @@ export function useLevelTileUsage(
     return () => {
       cancelled = true
     }
-  }, [level, enabled])
+  }, [level, enabled, prngSeed])
   return usage
 }

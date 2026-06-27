@@ -24,6 +24,12 @@ import { effectiveBg1Tilesets } from 'snes-framework/bg1-regions'
  *  main-side probe, sprite verdicts computed locally (set inclusion over the
  *  level's spriteset files). */
 export interface EntityValidityView {
+  /** The record id this view's PROBE RESULT is for. During a level switch the
+   *  probe (deferred to idle) lags the loaded level, so the view briefly carries
+   *  the previous level's verdicts under the new tilesets — a consumer that must
+   *  not act on stale verdicts (e.g. the validation panel) checks
+   *  `view.levelRecordId === level.recordId` before using it. */
+  levelRecordId: number
   /** PPU mode-7 arena (levelMode 0x09) — object verdicts not applicable
    *  (objectVerdict returns null for everything; don't gate). */
   mode7: boolean
@@ -69,7 +75,9 @@ function spriteCatalog(): number[] {
  * must not filter), and for empty/special levels.
  */
 export function useEntityRenderValidity(level: LevelData | null): EntityValidityView | null {
-  const [result, setResult] = useState<{ data: EntityRenderValidity } | null>(null)
+  // `forRecordId` pins the result to the level it was probed for, so a consumer
+  // can detect when the view still reflects the previous level (mid-switch).
+  const [result, setResult] = useState<{ data: EntityRenderValidity; forRecordId: number } | null>(null)
   const recordId = level && !level.empty && !level.special ? level.recordId : null
   const headerKey = level ? level.header.join(',') : ''
   // The level's EFFECTIVE tilesets: header[1] plus every Graphic-Changer
@@ -118,7 +126,7 @@ export function useEntityRenderValidity(level: LevelData | null): EntityValidity
             spriteNums: spriteCatalog()
           })
           .then((data) => {
-            if (!cancelled) setResult(data ? { data } : null)
+            if (!cancelled) setResult(data ? { data, forRecordId: recordId } : null)
           })
           .catch(() => {
             if (!cancelled) setResult(null)
@@ -144,6 +152,7 @@ export function useEntityRenderValidity(level: LevelData | null): EntityValidity
       data.spritesetFiles.map((s) => parseInt(s, 16))
     )
     return {
+      levelRecordId: result.forRecordId,
       mode7: data.mode7,
       objectVerdict: (num: number, exnum?: number) => {
         if (data.mode7) return null

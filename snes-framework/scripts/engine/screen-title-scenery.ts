@@ -6,7 +6,7 @@ import { loadScenePalettes } from './load-palettes.ts';
 import { buildPaletteRow, paletteIndexOf } from './color.ts';
 import { encodePng } from './png.ts';
 import { type SymbolMap } from './symbol-map.ts';
-import { imageAseprite } from './gfx-aseprite.ts';
+import { imageAseprite, imagePaletteOffsets } from './gfx-aseprite.ts';
 import { TILE_PX, titleVariant } from './screen-scene.ts';
 
 // ===========================================================================
@@ -53,15 +53,20 @@ export interface TitleSceneryContext {
   symbols: SymbolMap;
   base: Uint8Array;
   palette: Uint32Array;
+  cgram: Uint8Array;
+  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source) — lets a
+   *  scenery palette-colour edit (OBJ row 7, CGRAM 240-255) round-trip to the blob. */
+  provenance: Int32Array;
 }
 
 export function buildTitleSceneryContext(rom: Uint8Array, symbols: SymbolMap): TitleSceneryContext {
   const srcPC = symbols.pc(SCENERY_SRC_SYM);
   const base = rom.slice(srcPC, srcPC + SCENERY_BYTES);
   const cgram = new Uint8Array(512);
-  loadScenePalettes(rom, symbols, titleVariant(rom, symbols).palette, cgram);
+  const provenance = new Int32Array(256); // loadScenePalettes fills it (-1 = no blob source)
+  loadScenePalettes(rom, symbols, titleVariant(rom, symbols).palette, cgram, provenance);
   const palette = buildPaletteRow(cgram, SCENERY_PALETTE_ROW, true, 'expand', SCENERY_COLORS); // index 0 transparent
-  return { rom, symbols, base, palette };
+  return { rom, symbols, base, palette, cgram, provenance };
 }
 
 export interface TitleSceneryCanvas {
@@ -118,8 +123,11 @@ export function titleSceneryPng(ctx: TitleSceneryContext, canvas: TitleSceneryCa
 /** The scenery atlas as a single-image (no-tilemap) `.aseprite`: the 256×96 indexed
  *  image in its 16-colour row 7 palette (index 0 transparent). Import flattens it back
  *  → `diffTitleScenery`, like the PNG. */
-export function titleSceneryAseprite(ctx: TitleSceneryContext, canvas: TitleSceneryCanvas): Uint8Array {
-  return imageAseprite({ rgba: canvas.rgba, width: canvas.width, height: canvas.height, palette: ctx.palette, index0Transparent: true, layerName: 'scenery' });
+export function titleSceneryAseprite(ctx: TitleSceneryContext, canvas: TitleSceneryCanvas): { bytes: Uint8Array; paletteOffsets: number[] } {
+  const bytes = imageAseprite({ rgba: canvas.rgba, width: canvas.width, height: canvas.height, palette: ctx.palette, index0Transparent: true, layerName: 'scenery' });
+  // Colour write-back map — the SAME single row 7 / 16-colour / index-0-transparent palette.
+  const paletteOffsets = imagePaletteOffsets({ provenance: ctx.provenance, rows: [SCENERY_PALETTE_ROW], index0Transparent: true, colorsPerRow: SCENERY_COLORS });
+  return { bytes, paletteOffsets };
 }
 
 /** One assembled title-scenery PNG, shaped for the manifest. */
@@ -132,6 +140,9 @@ export interface TitleSceneryPng {
   png: Uint8Array;
   /** The same atlas as a single-image `.aseprite` (built only when requested). */
   aseprite?: Uint8Array;
+  /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
+   *  editing the embedded palette writes those colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[];
 }
 
 /** Export the title island's 3D decoration art (the GSU-billboarded scenery) as an
@@ -140,13 +151,15 @@ export interface TitleSceneryPng {
 export function exportTitleScenery(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean } = {}): TitleSceneryPng {
   const ctx = buildTitleSceneryContext(rom, symbols);
   const canvas = renderTitleScenery(ctx);
+  const ase = opts.aseprite ? titleSceneryAseprite(ctx, canvas) : undefined;
   return {
     file: 'screens/title/scenery.png',
     description:
-      'title island 3D scenery (GSU-billboarded decorations: flags, mountains, castles, trees, clouds). Raw 4bpp source atlas (256×96, 1 byte/px low-nibble) from DATA_560000.bin; the GSU positions/scales/rotates each piece, so this edits the ART only.',
+      'title island 3D scenery (GSU-billboarded decorations: flags, mountains, castles, trees, clouds). Raw 4bpp source atlas (256×96, 1 byte/px low-nibble) from DATA_560000.bin; the GSU positions/scales/rotates each piece, so this edits the ART only. Editing the embedded palette writes those colours back to the master palette blob.',
     width: canvas.width,
     height: canvas.height,
     png: titleSceneryPng(ctx, canvas),
-    aseprite: opts.aseprite ? titleSceneryAseprite(ctx, canvas) : undefined
+    aseprite: ase?.bytes,
+    paletteOffsets: ase?.paletteOffsets
   };
 }

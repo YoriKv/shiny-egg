@@ -13,25 +13,27 @@
 // See research/graphics-editing/bg-region-edit.md. The engine half lives in
 // snes-framework/bg-region (bg-region.ts), pinned by bg-region.test.ts.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, type Dirent } from 'node:fs'
 import { join } from 'node:path'
 import { buildMetatileContext, type MetatileHeader } from 'snes-framework/object-metatile'
 import {
   renderBg1Region, diffBg1Region, buildBgRegionContext, renderBgRegion, diffBgRegionTiles, bgRegionPng,
-  bg1RegionAseprite, bgRegionAseprite, bgRegionPlacementAseprite, diffBgRegionPlacement,
-  type Bg1RegionCell, type BgSubCell, type MetatileTileEdit
+  bg1RegionAseprite, bgRegionAseprite, bgRegionPlacementAseprite, diffBgRegionPlacement, diffBgRegionCombined,
+  bgRegionM1te2, diffBgRegionM1te2, bg1RegionM1te2, diffBg1RegionM1te2,
+  type Bg1RegionCell, type BgSubCell, type MetatileTileEdit, type M1te2Screen
 } from 'snes-framework/bg-region'
 import { decodeAsepriteRegion, decodeAsepriteStructural } from 'snes-framework/aseprite'
-import { resolveBgTilemapSource } from 'snes-framework/load-bg-tilemaps'
+import { resolveBgTilemapSource, type BgTilemapSource } from 'snes-framework/load-bg-tilemaps'
 import { decodeLevelFromLevelData } from 'snes-framework/object-decode'
 import { decodePng, type ImageData } from 'snes-framework/png'
-import { canvasRegion, decodeGfxFile, liveTiles } from './gfx-import-utils'
+import { canvasRegion, liveTiles, addTilePatches, applyTilePatches, type FilePatchMap } from './gfx-import-utils'
 import { loadLevelPalettes } from 'snes-framework/load-palettes'
 import { type SymbolMap } from 'snes-framework/symbol-map'
 import type { GfxFileEntry, LevelData, PaletteEdit } from 'snes-framework/types'
-import type { RenderHeaderRequest, BgRegionLayer, BgRegionRect, BgRegionFormat, RegionImportLogEntry, BgRegionImportResult, BgRegionExportResult } from '../shared/ipc-types'
+import type { RenderHeaderRequest, BgRegionLayer, BgRegionRect, BgRegionFormat, RegionImportLogEntry, BgRegionImportResult, BgRegionExportResult, M1ExportFile } from '../shared/ipc-types'
 import { frameworkWorkRoot } from './framework-paths'
 import { loadRomAndSymbols } from './render/rom-cache'
+import { resourcePaletteToBase, applyPaletteEdits } from './render/render-core'
 import { saveGfxEdit, savePaletteEdits, loadPaletteEdits } from './resources'
 import { gfxLiveEdits } from './gfx-live-cache'
 
@@ -85,6 +87,27 @@ interface BgRegionSidecar {
   placement?: boolean
 }
 
+/** Sidecar for an M1TE2 `.M1` export (written as `bg{1,2,3}-region[-r{y}c{x}].m1.json`,
+ *  distinct from the PNG/Aseprite `.json` so the two never collide). Import rebuilds the
+ *  region from `header` + this screen offset and re-derives the CHR/palette write-back, so
+ *  the `.M1` itself carries no extra mapping. */
+interface M1te2Sidecar {
+  format: 'm1te2'
+  layer: BgRegionLayer // 1 (BG1 area) | 2 | 3
+  header: RenderHeaderRequest
+  bpp: 2 | 4
+  tileSize: 8 | 16
+  /** This `.M1`'s screen-block: a 32×32 tilemap screen (BG2/BG3) or a 16×16-Map16 block (BG1). */
+  screenX: number
+  screenY: number
+  /** The FULL rendered region dims (for the region-rebuild sanity check). */
+  width: number
+  height: number
+  /** BG1 only — the per-Map16-cell metadata, so import rebuilds the region (+ its 8×8 sub-tile
+   *  tileset) without re-decoding the level. Absent for BG2/BG3 (their context is the tilemap). */
+  cells?: Bg1RegionCell[]
+}
+
 /** Build the exported palette layout (used rows × stride) with each entry's CGRAM
  *  index, master-blob offset (for PaletteEdit), and exact exported colour. */
 function buildSidecarPalette(
@@ -129,6 +152,51 @@ function mergePaletteEdits(existing: PaletteEdit[], detected: PaletteEdit[]): Pa
 
 const fileBase = (layer: BgRegionLayer): string => `bg${layer}-region`
 
+/** Every `.M1` session file an export folder holds, walked up to two levels deep: the
+ *  BG-region ones at the root (`bg{1,2,3}-region[-r…].M1`, layer parsed from the name); the
+ *  World Map ones in `map/` (`overworld-*.M1`, `icons.M1`); and the system-screen ones in
+ *  `screens/title/` + `screens/storybook/`. Non-BG-region files default to layer 1 (the
+ *  BG1/slot-0 view M1TE opens to). Drives the Graphics panel's clickable "open in M1TE" list
+ *  (each path is relative to `dir`, so `openInM1te` joins it directly). Sorted; empty if the
+ *  folder is unreadable. */
+export function listM1Files(dir: string): M1ExportFile[] {
+  const out: M1ExportFile[] = []
+  const walk = (base: string, prefix: string, depth: number): void => {
+    let entries: Dirent[]
+    try { entries = readdirSync(base, { withFileTypes: true }) } catch { return }
+    for (const e of entries) {
+      const rel = prefix ? `${prefix}/${e.name}` : e.name
+      if (e.isFile()) {
+        if (!/\.M1$/i.test(e.name)) continue
+        const bg = /^bg([123])-region.*\.M1$/i.exec(e.name)
+        out.push({ file: rel, layer: bg ? (Number(bg[1]) as 1 | 2 | 3) : 1 })
+      } else if (e.isDirectory() && depth > 0) {
+        walk(join(base, e.name), rel, depth - 1)
+      }
+    }
+  }
+  walk(dir, '', 2) // the picked folder + its track subfolders (map/, screens/title/, …)
+  return out.sort((a, b) => a.file.localeCompare(b.file))
+}
+
+/**
+ * Mutate a freshly-built context's `cgram` to the canvas's LIVE-PREVIEW palette — the
+ * pristine base blob ⊕ the saved palette draft (exactly what `render-core` does for the
+ * canvas via `resourcePaletteToBase` + `applyPaletteEdits`). The engine contexts
+ * (`buildBgRegionContext` / `buildMetatileContext`) load the BUILT ROM's palette, which
+ * keeps pre-reset / pre-rebuild colours — so without this an export's colours diverge from
+ * the canvas (a palette reset still shows the old colours) and a re-import isn't idempotent.
+ * Re-loads palettes once to capture `provenance` (the blob-offset per CGRAM index), then
+ * re-sources + overlays the draft. Gfx already tracks the live cache (`gfxLiveEdits`) on both
+ * sides; this closes the palette half of "the export still shows the pre-reset visuals".
+ */
+function applyLivePreviewPalette(cgram: Uint8Array, rom: Uint8Array, symbols: SymbolMap, mh: MetatileHeader): void {
+  const provenance = new Int32Array(256)
+  loadLevelPalettes(rom, symbols, mh, cgram, provenance)
+  resourcePaletteToBase(cgram, provenance, frameworkWorkRoot())
+  applyPaletteEdits(cgram, provenance, loadPaletteEdits())
+}
+
 /** RenderHeaderRequest → the engine's MetatileHeader (= GfxHeader & PaletteHeader);
  *  the field names line up, levelMode just needs a default. */
 function toMetatileHeader(h: RenderHeaderRequest): MetatileHeader {
@@ -160,11 +228,70 @@ export function exportBgRegionToDir(
     let sidecar: BgRegionSidecar
     const base = fileBase(layer)
 
+    // M1TE2 ".M1" session — one file per screen-block (M1TE2's map is a fixed 32×32):
+    // a 32×32 tilemap screen for BG2/BG3, or a 16×16-Map16 block for BG1 (an 8×8-mode
+    // tilemap synthesized from the Map16 sub-tiles — pixel + palette editing only, no
+    // placement). Each .M1 bundles tilemap + CHR + palette; import rebuilds the region
+    // from the sidecar. (Its own dispatch — writes multiple files + a distinct `.m1.json`.)
+    if (format === 'm1te2') {
+      mkdirSync(dir, { recursive: true })
+      let screens: M1te2Screen[]
+      let bpp: 2 | 4
+      let tileSize: 8 | 16
+      let regionWidth: number
+      let regionHeight: number
+      let cells: Bg1RegionCell[] | undefined
+      let editableCount: number
+      let cropWarning: string | undefined
+      if (layer === 1) {
+        const decoded = decodeLevelFromLevelData({ rom, symbols, workRoot: frameworkWorkRoot(), levelData: level })
+        if (!decoded) return { ok: false, error: 'Level did not decode.' }
+        if (!rect || rect.cols <= 0 || rect.rows <= 0) return { ok: false, error: 'Select a region of the level first.' }
+        const ctx = buildMetatileContext(rom, symbols, mh, gfxLiveEdits())
+        applyLivePreviewPalette(ctx.cgram, rom, symbols, mh)
+        const region = renderBg1Region(ctx, decoded.state.levelDataBuffer, decoded.state.screenPageMap, rect)
+        if (region.cells.length === 0) return { ok: false, error: 'The selected BG1 area is empty (no tiles to export).' }
+        screens = bg1RegionM1te2(ctx, region) // top-left 16×16-Map16 block only
+        bpp = 4; tileSize = 8; regionWidth = region.width; regionHeight = region.height
+        cells = region.cells
+        // M1TE's map is a fixed 16×16 Map16 cells — a larger selection is cropped to the
+        // top-left block (one .M1). Report it so the user knows the rest wasn't exported.
+        const aCols = region.width / 16, aRows = region.height / 16
+        if (aCols > 16 || aRows > 16) {
+          cropWarning = `Selected area is ${aCols}×${aRows} cells; M1TE fits one 16×16 screen, so only the top-left 16×16 was exported.`
+        }
+        editableCount = region.cells.filter((c) => c.faithful && c.c < 16 && c.r < 16).length
+      } else {
+        const bgCtx = buildBgRegionContext(rom, symbols, mh, gfxLiveEdits())
+        applyLivePreviewPalette(bgCtx.cgram, rom, symbols, mh)
+        const region = renderBgRegion(bgCtx, layer)
+        if (region.width === 0 || region.subCells.length === 0) {
+          return { ok: false, error: `BG${layer} has no editable tilemap in this level.` }
+        }
+        screens = bgRegionM1te2(bgCtx, region)
+        bpp = region.bpp; tileSize = region.tileSize === 16 ? 16 : 8; regionWidth = region.width; regionHeight = region.height
+        editableCount = region.subCells.filter((s) => s.gfx).length
+      }
+      const single = screens.length === 1
+      for (const s of screens) {
+        const suffix = single ? '' : `-r${s.screenY}c${s.screenX}`
+        writeFileSync(join(dir, `${base}${suffix}.M1`), s.bytes)
+        const m1sc: M1te2Sidecar = {
+          format: 'm1te2', layer, header, bpp, tileSize,
+          screenX: s.screenX, screenY: s.screenY, width: regionWidth, height: regionHeight,
+          cells: layer === 1 ? cells : undefined
+        }
+        writeFileSync(join(dir, `${base}${suffix}.m1.json`), JSON.stringify(m1sc, null, 2))
+      }
+      return { ok: true, file: single ? `${base}.M1` : `${base}-r0c0.M1`, cells: editableCount, dir, warning: cropWarning }
+    }
+
     if (layer === 1) {
       if (format === 'aseprite-layout') return { ok: false, error: 'BG1 has no static tilemap placement — edit BG1 layout in the level editor.' }
       const decoded = decodeLevelFromLevelData({ rom, symbols, workRoot: frameworkWorkRoot(), levelData: level })
       if (!decoded) return { ok: false, error: 'Level did not decode.' }
       const ctx = buildMetatileContext(rom, symbols, mh, gfxLiveEdits())
+      applyLivePreviewPalette(ctx.cgram, rom, symbols, mh)
       if (!rect || rect.cols <= 0 || rect.rows <= 0) return { ok: false, error: 'Select a region of the level first.' }
       const region = renderBg1Region(ctx, decoded.state.levelDataBuffer, decoded.state.screenPageMap, rect)
       if (format === 'aseprite') {
@@ -182,6 +309,7 @@ export function exportBgRegionToDir(
       }
     } else {
       const bgCtx = buildBgRegionContext(rom, symbols, mh, gfxLiveEdits())
+      applyLivePreviewPalette(bgCtx.cgram, rom, symbols, mh)
       const region = renderBgRegion(bgCtx, layer)
       if (region.width === 0 || region.subCells.length === 0) {
         return { ok: false, error: `BG${layer} has no editable tilemap in this level.` }
@@ -213,16 +341,6 @@ export function exportBgRegionToDir(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
-}
-
-/** One pending file rewrite: the decoded tile blob's changed tiles, keyed by file. */
-interface FilePatch {
-  fileId: number
-  format: 'lz2' | 'lz16'
-  sizeBytes: number
-  rowCount?: number
-  tileBytes: number
-  tiles: Map<number, Uint8Array>
 }
 
 /** PNG swatch cell colour for palette entry `idx` — bgRegionPng draws used-row
@@ -281,13 +399,20 @@ function quantizeRegion(rgba: Uint8Array): void {
 export async function importBgRegionFromDir(dir: string): Promise<BgRegionImportOk | Err> {
   try {
     const { rom, symbols } = loadRomAndSymbols()
-    const sidecars = readdirSync(dir).filter((f) => /^bg[123]-region\.json$/.test(f)).sort()
-    if (sidecars.length === 0) return { ok: false, error: 'No bg-region PNGs found in that folder.' }
+    const dirFiles = readdirSync(dir)
+    const sidecars = dirFiles.filter((f) => /^bg[123]-region\.json$/.test(f)).sort()
+    const m1Sidecars = dirFiles.filter((f) => /^bg[123]-region.*\.m1\.json$/.test(f)).sort()
+    if (sidecars.length === 0 && m1Sidecars.length === 0) return { ok: false, error: 'No bg-region exports found in that folder.' }
 
     const errors: string[] = []
     const log: string[] = []
     const perRegion: RegionImportLogEntry[] = []
-    const byFile = new Map<string, FilePatch>()
+    // CHR tile-edit accumulation (shared with gfx-png-import via gfx-import-utils): edits
+    // merge per file across regions, then ONE re-encode each. `savedFileTiles` carries the
+    // cross-region merge; `manifestRef` is the (full-scene) manifest for the final apply.
+    const filePatches: FilePatchMap = new Map()
+    const savedFileTiles = new Map<string, Uint8Array>()
+    let manifestRef: GfxFileEntry[] = []
     const paletteByOffset = new Map<number, number>() // master-blob offset → BGR-15
     let conflicts = 0
     let regions = 0
@@ -309,6 +434,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
       if (sc.layer !== 1 && aseMode === 'layout' && existsSync(asePath)) {
         const mhp = toMetatileHeader(sc.header)
         const bgCtx = buildBgRegionContext(rom, symbols, mhp, gfxLiveEdits())
+        applyLivePreviewPalette(bgCtx.cgram, rom, symbols, mhp)
         const region = renderBgRegion(bgCtx, sc.layer)
         const struct = decodeAsepriteStructural(readFileSync(asePath))
         if (struct.width !== sc.width || struct.height !== sc.height) {
@@ -335,7 +461,75 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         continue // placement-only; the pixel slice below is skipped
       }
 
-      // PIXELS (8×8, all layers) or PNG: flatten/read to the region RGBA, then base-aware
+      // COMBINED (BG2/BG3 8×8 PIXEL `.aseprite`): the whole file is the source of truth.
+      // Drive both halves from the Aseprite TILE INDICES (not RGBA): (1) write every
+      // editable tileset tile's pixels to its CHR, authoritatively; (2) rewrite every 16×16
+      // tilemap WORD from its 2×2 cell group. Drops the surgical base-aware/only-changed
+      // diff. PNG can't carry indices/positions and BG1 is the Map16 model → both stay on
+      // the flatten path below. See diffBgRegionCombined.
+      if (sc.layer !== 1 && aseMode === 'pixels' && existsSync(asePath)) {
+        const mhc = toMetatileHeader(sc.header)
+        const bgCtx = buildBgRegionContext(rom, symbols, mhc, gfxLiveEdits())
+        applyLivePreviewPalette(bgCtx.cgram, rom, symbols, mhc)
+        const region = renderBgRegion(bgCtx, sc.layer)
+        const struct = decodeAsepriteStructural(readFileSync(asePath))
+        if (struct.width !== sc.width || struct.height !== sc.height) {
+          errors.push(`${scFile}: aseprite is ${struct.width}×${struct.height}, expected ${sc.width}×${sc.height} (canvas resized?)`)
+          continue
+        }
+        // Palette colour edits (recolours) are orthogonal to the index-based pixel/word
+        // write — detect + persist them to the master blob (same as the flatten path).
+        if (sc.palette && sc.palette.length) {
+          const det = detectPaletteEdits(sc.palette, (idx) => (idx < struct.palette.length ? struct.palette[idx]! : undefined))
+          for (const pe of det.edits) paletteByOffset.set(pe.offset, pe.value)
+          if (det.edits.length) log.push(`${scFile}: ${det.edits.length} palette colour${det.edits.length === 1 ? '' : 's'} changed`)
+          if (det.uneditable > 0) {
+            errors.push(`${scFile}: ${det.uneditable} recoloured palette entr${det.uneditable === 1 ? 'y is' : 'ies are'} not editable through the palette (not master-blob-sourced — e.g. a transparent/backdrop slot)`)
+          }
+        }
+        const tmAddr = sc.layer === 2 ? bgCtx.regs.bg2TilemapAddr : bgCtx.regs.bg3TilemapAddr
+        // VANILLA CHR reference (no live edits) so the import identifies WHICH view of a
+        // shared CHR was edited stably — without it, re-imports flip-flop (see diffBgRegionCombined).
+        const vanillaCtx = buildBgRegionContext(rom, symbols, mhc)
+        const src = resolveBgTilemapSource(rom, symbols, sc.layer, sc.layer === 2 ? mhc.bg2Tileset : mhc.bg3Tileset)
+        // CURRENT tilemap = a prior placement import (live overlay) ⊕ vanilla, so an
+        // already-applied move isn't re-reported (loadBg2Tilemap itself reads only vanilla).
+        const currentTilemap = src && tmAddr === src.vramBase ? (liveTiles('lz2', src.fileId) ?? src.bytes) : undefined
+        const cd = diffBgRegionCombined(bgCtx, region, struct, tmAddr, { baseVram: vanillaCtx.vram, currentTilemap })
+        conflicts += cd.conflicts
+        mismatches += cd.mismatches
+        regions++
+        // Step 1 — CHR pixel tiles (merged per file, re-encoded once after the loop).
+        addTilePatches(filePatches, cd.tileEdits, sc.bpp === 4 ? 32 : 16)
+        manifestRef = bgCtx.manifest
+        // Step 2 — tilemap WORD writes → splice the decompressed tilemap file (onto the
+        // CURRENT tilemap so successive placement imports accumulate).
+        if (cd.wordEdits.length > 0) {
+          if (!src) errors.push(`${scFile}: BG${sc.layer} has no static editable tilemap file`)
+          else if (tmAddr !== src.vramBase) errors.push(`${scFile}: BG${sc.layer} tilemap base mismatch (0x${tmAddr.toString(16)} vs 0x${src.vramBase.toString(16)})`)
+          else {
+            const bytes = (currentTilemap ?? src.bytes).slice()
+            let written = 0
+            for (const e of cd.wordEdits) if (e.fileOffset >= 0 && e.fileOffset + 1 < bytes.length) { bytes[e.fileOffset] = e.word & 0xff; bytes[e.fileOffset + 1] = (e.word >> 8) & 0xff; written++ }
+            const r = saveGfxEdit('lz2', src.fileId, bytes)
+            if (r.ok) repositioned += written
+            else errors.push(`${scFile}: ${r.error}`)
+          }
+        }
+        perRegion.push({ file: scFile, layer: sc.layer, source: 'aseprite', tiles: cd.tileEdits.length, mismatches: cd.mismatches, conflicts: cd.conflicts })
+        log.push(
+          `${scFile} (aseprite, BG${sc.layer}): ${cd.tileEdits.length} tile${cd.tileEdits.length === 1 ? '' : 's'} changed, ${cd.wordEdits.length} repositioned` +
+          (cd.mismatches ? `, ${cd.mismatches} off-palette pixel${cd.mismatches === 1 ? '' : 's'}` : '') +
+          (cd.conflicts ? `, ${cd.conflicts} shared-tile conflict${cd.conflicts === 1 ? '' : 's'}` : '') +
+          (cd.newTiles ? `, ${cd.newTiles} new tile${cd.newTiles === 1 ? '' : 's'} skipped` : '') +
+          (cd.incoherentWords ? `, ${cd.incoherentWords} word${cd.incoherentWords === 1 ? '' : 's'} not rewritable` : '')
+        )
+        if (cd.mismatches > 0) errors.push(`${scFile}: ${cd.mismatches} pixel${cd.mismatches === 1 ? '' : 's'} used a colour not in their tile's palette row (wrong palette row?)`)
+        if (cd.newTiles > 0) errors.push(`${scFile}: ${cd.newTiles} Aseprite tile${cd.newTiles === 1 ? '' : 's'} beyond the export couldn't be mapped to a CHR slot — use Manual tileset mode (Auto-mode paints append tiles); add genuinely new art via the raw sheet`)
+        continue // combined handled both pixels + positions; skip the flatten path below
+      }
+
+      // PIXELS (8×8, BG1 / PNG) or PNG: flatten/read to the region RGBA, then base-aware
       // slice each 8×8 back to its CHR (diffBg1Region / diffBgRegionTiles below).
       let edited: Uint8Array
       let source: 'png' | 'aseprite'
@@ -383,6 +577,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
       const tileBytes = sc.bpp === 4 ? 32 : 16
       if (sc.layer === 1) {
         const ctx = buildMetatileContext(rom, symbols, mh, gfxLiveEdits())
+        applyLivePreviewPalette(ctx.cgram, rom, symbols, mh)
         if (effective.size) ctx.cgram = effectiveCgram(ctx.cgram, effective)
         diff = diffBg1Region(
           ctx,
@@ -392,6 +587,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         manifest = ctx.manifest
       } else {
         const bgCtx = buildBgRegionContext(rom, symbols, mh, gfxLiveEdits())
+        applyLivePreviewPalette(bgCtx.cgram, rom, symbols, mh)
         if (effective.size) bgCtx.cgram = effectiveCgram(bgCtx.cgram, effective)
         diff = diffBgRegionTiles(
           bgCtx,
@@ -415,33 +611,124 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         errors.push(`${scFile}: ${diff.mismatches} pixel${diff.mismatches === 1 ? '' : 's'} used a colour not in their tile's palette row — clamped to index 0 (wrong palette row?)`)
       }
 
-      for (const e of diff.edits) {
-        const me = manifest.find((m) => m.format === e.format && m.fileId === e.fileId)
-        if (!me) { errors.push(`gfx file 0x${e.fileId.toString(16)}: not loaded in this level`); continue }
-        const key = `${e.format}/${e.fileId}`
-        const fp = byFile.get(key) ?? {
-          fileId: e.fileId, format: e.format, sizeBytes: me.sizeBytes,
-          rowCount: e.format === 'lz16' ? me.sizeBytes / 512 : undefined, tileBytes, tiles: new Map<number, Uint8Array>()
-        }
-        fp.tiles.set(e.fileTile, e.bytes)
-        byFile.set(key, fp)
-      }
+      addTilePatches(filePatches, diff.edits, tileBytes)
+      manifestRef = manifest
     }
 
-    let applied = 0
-    for (const [, fp] of byFile) {
+    // ── M1TE2 ".M1" session imports ─────────────────────────────────────────────
+    // Each `.m1.json` + its `.M1` carry one 32×32 screen of a BG2/BG3 layer. The .M1 is the
+    // new source of truth — diffed against the cart for CHR pixel bytes (a direct planar
+    // compare, no per-row views), tilemap WORDS, and palette colours. CHR edits join the
+    // shared per-file patch map; tilemap words accumulate per file (a layer's screens share
+    // the tilemap but write disjoint offsets) and splice once.
+    const m1WordEdits = new Map<number, { src: BgTilemapSource; words: Map<number, number> }>()
+    for (const scFile of m1Sidecars) {
       try {
-        // Patch onto the live-edited tiles if present, else the cart blob — so an
-        // import on top of unsaved-to-build gfx edits preserves them.
-        const tiles = liveTiles(fp.format, fp.fileId) ?? decodeGfxFile(rom, symbols, fp.format, fp.fileId, fp.sizeBytes, fp.rowCount)
-        for (const [fileTile, bytes] of fp.tiles) tiles.set(bytes, fileTile * fp.tileBytes)
-        const r = saveGfxEdit(fp.format, fp.fileId, tiles, fp.rowCount)
-        if (r.ok) applied++
-        else errors.push(`gfx file 0x${fp.fileId.toString(16)}: ${r.error}`)
-      } catch (err) {
-        errors.push(`gfx file 0x${fp.fileId.toString(16)}: ${err instanceof Error ? err.message : String(err)}`)
+        const sc = JSON.parse(readFileSync(join(dir, scFile), 'utf8')) as M1te2Sidecar
+        const m1Name = scFile.replace(/\.m1\.json$/, '.M1')
+        const m1Path = join(dir, m1Name)
+        if (!existsSync(m1Path)) { errors.push(`${scFile}: missing ${m1Name}`); continue }
+
+        // BG1 area: an 8×8 Map16-sub-tile tilemap → CHR pixels + palette only (no placement —
+        // BG1's layout is the level editor). Rebuild the region from the sidecar's cells (no
+        // level re-decode), then byte-compare the .M1 CHR back to the BG1 tileset files.
+        if (sc.layer === 1) {
+          const mh = toMetatileHeader(sc.header)
+          const ctx = buildMetatileContext(rom, symbols, mh, gfxLiveEdits())
+          applyLivePreviewPalette(ctx.cgram, rom, symbols, mh)
+          const region = { rgba: new Uint8Array(0), width: sc.width, height: sc.height, cells: sc.cells ?? [], paletteRowsUsed: [] }
+          const d = diffBg1RegionM1te2(ctx, region, readFileSync(m1Path), sc.screenX, sc.screenY)
+          regions++
+          manifestRef = ctx.manifest
+          addTilePatches(filePatches, d.tileEdits, 32)
+          let uneditable = 0
+          if (d.paletteEdits.length) {
+            const provenance = new Int32Array(256)
+            loadLevelPalettes(rom, symbols, mh, new Uint8Array(512), provenance)
+            for (const pe of d.paletteEdits) {
+              const off = provenance[pe.cgramIndex] ?? -1
+              if (off < 0) { uneditable++; continue }
+              paletteByOffset.set(off, pe.bgr15)
+            }
+          }
+          perRegion.push({ file: scFile, layer: 1, source: 'm1te2', tiles: d.tileEdits.length, mismatches: 0, conflicts: 0 })
+          log.push(
+            `${scFile} (M1TE, BG1 screen ${sc.screenX},${sc.screenY}): ${d.tileEdits.length} tile${d.tileEdits.length === 1 ? '' : 's'} changed, ` +
+            `${d.paletteEdits.length - uneditable} palette colour${d.paletteEdits.length - uneditable === 1 ? '' : 's'}` +
+            (d.skippedTiles ? `, ${d.skippedTiles} non-editable tile${d.skippedTiles === 1 ? '' : 's'} skipped` : '')
+          )
+          if (uneditable > 0) errors.push(`${scFile}: ${uneditable} recoloured palette entr${uneditable === 1 ? 'y is' : 'ies are'} not editable (not master-blob-sourced)`)
+          continue
+        }
+
+        const mh = toMetatileHeader(sc.header)
+        const bgCtx = buildBgRegionContext(rom, symbols, mh, gfxLiveEdits())
+        applyLivePreviewPalette(bgCtx.cgram, rom, symbols, mh)
+        const region = renderBgRegion(bgCtx, sc.layer)
+        if (region.width !== sc.width || region.height !== sc.height) {
+          errors.push(`${scFile}: BG${sc.layer} is ${region.width}×${region.height}, sidecar expected ${sc.width}×${sc.height} (level changed?)`)
+          continue
+        }
+        const tmAddr = sc.layer === 2 ? bgCtx.regs.bg2TilemapAddr : bgCtx.regs.bg3TilemapAddr
+        const src = resolveBgTilemapSource(rom, symbols, sc.layer, sc.layer === 2 ? mh.bg2Tileset : mh.bg3Tileset)
+        const currentTilemap = src && tmAddr === src.vramBase ? (liveTiles('lz2', src.fileId) ?? src.bytes) : undefined
+        const d = diffBgRegionM1te2(bgCtx, region, readFileSync(m1Path), sc.screenX, sc.screenY, tmAddr, { currentTilemap })
+        regions++
+        manifestRef = bgCtx.manifest
+
+        // CHR pixels → the shared per-file patch map (re-encoded with everything else below).
+        addTilePatches(filePatches, d.tileEdits, sc.bpp === 4 ? 32 : 16)
+
+        // Tilemap words → accumulate per tilemap file (spliced once after the loop).
+        if (d.wordEdits.length > 0) {
+          if (!src) errors.push(`${scFile}: BG${sc.layer} has no static editable tilemap file`)
+          else if (tmAddr !== src.vramBase) errors.push(`${scFile}: BG${sc.layer} tilemap base mismatch (0x${tmAddr.toString(16)} vs 0x${src.vramBase.toString(16)})`)
+          else {
+            const acc = m1WordEdits.get(src.fileId) ?? { src, words: new Map<number, number>() }
+            for (const e of d.wordEdits) if (e.fileOffset >= 0) acc.words.set(e.fileOffset, e.word)
+            m1WordEdits.set(src.fileId, acc)
+          }
+        }
+
+        // Palette colours → master-blob offsets via provenance (skip non-blob-sourced slots).
+        let uneditable = 0
+        if (d.paletteEdits.length) {
+          const provenance = new Int32Array(256)
+          loadLevelPalettes(rom, symbols, mh, new Uint8Array(512), provenance)
+          for (const pe of d.paletteEdits) {
+            const off = provenance[pe.cgramIndex] ?? -1
+            if (off < 0) { uneditable++; continue }
+            paletteByOffset.set(off, pe.bgr15)
+          }
+        }
+
+        perRegion.push({ file: scFile, layer: sc.layer, source: 'm1te2', tiles: d.tileEdits.length, mismatches: 0, conflicts: 0 })
+        log.push(
+          `${scFile} (M1TE2, BG${sc.layer} screen ${sc.screenX},${sc.screenY}): ${d.tileEdits.length} tile${d.tileEdits.length === 1 ? '' : 's'} changed, ` +
+          `${d.wordEdits.length} repositioned, ${d.paletteEdits.length - uneditable} palette colour${d.paletteEdits.length - uneditable === 1 ? '' : 's'}` +
+          (d.skippedTiles ? `, ${d.skippedTiles} non-editable tile${d.skippedTiles === 1 ? '' : 's'} skipped` : '') +
+          (d.skippedWords ? `, ${d.skippedWords} non-editable cell${d.skippedWords === 1 ? '' : 's'} skipped` : '')
+        )
+        if (uneditable > 0) errors.push(`${scFile}: ${uneditable} recoloured palette entr${uneditable === 1 ? 'y is' : 'ies are'} not editable (not master-blob-sourced)`)
+      } catch (e) {
+        errors.push(`${scFile}: ${e instanceof Error ? e.message : String(e)}`)
       }
     }
+    // Splice each tilemap file's accumulated M1TE2 word edits once, onto the live overlay.
+    for (const { src, words } of m1WordEdits.values()) {
+      if (words.size === 0) continue
+      const bytes = (liveTiles('lz2', src.fileId) ?? src.bytes).slice()
+      let written = 0
+      for (const [off, word] of words) if (off >= 0 && off + 1 < bytes.length) { bytes[off] = word & 0xff; bytes[off + 1] = (word >> 8) & 0xff; written++ }
+      const r = saveGfxEdit('lz2', src.fileId, bytes)
+      if (r.ok) repositioned += written
+      else errors.push(`BG tilemap 0x${src.fileId.toString(16)}: ${r.error}`)
+    }
+
+    // Re-encode each patched CHR file once (live-overlay/cart-aware, cross-region merged).
+    const { applied } = applyTilePatches(filePatches, {
+      manifest: manifestRef, scope: 'this level', tileBytesOf: () => 32, rom, symbols, savedFileTiles, errors
+    })
     log.push(`Saved ${applied} gfx file${applied === 1 ? '' : 's'}.`)
 
     // Persist palette colour edits to the master blob (merged with existing edits).

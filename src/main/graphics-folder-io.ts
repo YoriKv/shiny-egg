@@ -3,13 +3,13 @@
 // and merge into one pre-formatted log. Either track may be absent.
 
 import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { importGfxPngsFromDir, type ImportGfxResult as GfxImportCounts } from './gfx-png-import'
 import { importBgRegionFromDir } from './bg-region-io'
 import type { ImportGraphicsResult } from '../shared/ipc-types'
 
 /** Flatten the all-graphics import counts into log lines + errors + a changed total. */
-function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; changed: number } {
+function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; changed: number; paletteChanged: number } {
   const log: string[] = []
   const push = (n: number, label: string): void => { if (n > 0) log.push(`${n} ${label}${n === 1 ? '' : 's'} changed`) }
   push(r.imported, 'gfx file')
@@ -21,6 +21,8 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   if (r.logoImported > 0) log.push('title logo changed')
   if (r.islandImported > 0) log.push(`title island changed${r.islandNewTiles > 0 ? ` (${r.islandNewTiles} new tile${r.islandNewTiles === 1 ? '' : 's'})` : ''}`)
   if (r.sceneryImported > 0) log.push('title scenery changed')
+  if (r.sceneImported > 0) log.push('storybook scene changed')
+  push(r.paletteImported, 'screen palette colour')
   if (r.skipped > 0 || r.imported > 0) log.push(`${r.skipped} unchanged`)
 
   const errors = [...r.errors]
@@ -28,37 +30,54 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   if (r.glyphShared > 0) errors.push(`${r.glyphShared} other sprite${r.glyphShared === 1 ? '' : 's'} share an edited glyph.`)
   if (r.islandSharedCells > 0) errors.push(`Island tiles are shared — your edit also changed ${r.islandSharedCells} other island cell${r.islandSharedCells === 1 ? '' : 's'}.`)
   if (r.iconImported > 0) errors.push('Map-icon edits apply to all worlds (the marker/castle tiles are shared).')
+  if (r.paletteImported > 0) errors.push('Screen-palette colour edits write to the shared master palette blob — a colour also used by another screen or level changes there too.')
 
   const changed = r.imported + r.spriteImported + r.iconImported +
-    r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.glyphImported
-  return { log, errors, changed }
+    r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.sceneImported + r.glyphImported + r.paletteImported
+  return { log, errors, changed, paletteChanged: r.paletteImported }
 }
 
 /**
- * Import everything present in `dir`: the all-graphics PNG manifest
- * (`gfx-manifest.json`) and/or any BG-region files (`bg{1,2,3}-region.json`).
- * Runs whichever exist and merges into one log + error list + changed total.
+ * Import everything present in `dir`: every all-graphics PNG manifest (`gfx-manifest.json`)
+ * AND any BG-region files (`bg{1,2,3}-region.json`). An export folder holds one export type
+ * per SUBFOLDER (each with its own manifest), so this scans the dir AND its immediate
+ * subfolders for manifests and imports them all; a legacy/flat export (or a directly-picked
+ * subfolder) with the manifest at the dir root still works. Merges into one log + error list
+ * + changed total.
  */
 export async function importGraphicsFolder(dir: string): Promise<Exclude<ImportGraphicsResult, { canceled: true }>> {
   try {
-    const hasGfx = existsSync(join(dir, 'gfx-manifest.json'))
-    const hasRegion = readdirSync(dir).some((f) => /^bg[123]-region\.json$/.test(f))
-    if (!hasGfx && !hasRegion) {
-      return { ok: false, error: 'No graphics export found in that folder (no gfx-manifest.json or bg*-region.json).' }
+    let rootEntries: string[]
+    try { rootEntries = readdirSync(dir).sort() } catch { rootEntries = [] }
+    // Every folder carrying a gfx-manifest: the dir itself (flat/legacy export, or a
+    // directly-picked subfolder) plus each immediate subfolder (the per-type export folders).
+    const gfxDirs: string[] = []
+    if (existsSync(join(dir, 'gfx-manifest.json'))) gfxDirs.push(dir)
+    for (const name of rootEntries) {
+      const sub = join(dir, name)
+      if (existsSync(join(sub, 'gfx-manifest.json'))) gfxDirs.push(sub)
+    }
+    const hasRegion = rootEntries.some((f) => /^bg[123]-region\.json$/.test(f) || /^bg[123]-region.*\.m1\.json$/.test(f))
+    if (gfxDirs.length === 0 && !hasRegion) {
+      return { ok: false, error: 'No graphics export found in that folder (no gfx-manifest.json in it or its subfolders, and no bg*-region.json / .M1).' }
     }
 
     const log: string[] = []
     const errors: string[] = []
     let changed = 0
+    let paletteChanged = 0
 
-    if (hasGfx) {
+    for (const gfxDir of gfxDirs) {
+      // Label each by its subfolder (e.g. "All graphics (map)"); the dir itself is unlabelled.
+      const label = gfxDir === dir ? 'All graphics:' : `All graphics (${basename(gfxDir)}):`
       try {
-        const g = gfxResultToLog(await importGfxPngsFromDir(dir)) // throws on a missing/invalid manifest
-        log.push('All graphics:', ...g.log.map((l) => `  ${l}`))
+        const g = gfxResultToLog(await importGfxPngsFromDir(gfxDir)) // throws on a missing/invalid manifest
+        log.push(label, ...g.log.map((l) => `  ${l}`))
         errors.push(...g.errors)
         changed += g.changed
+        paletteChanged += g.paletteChanged
       } catch (e) {
-        errors.push(`All graphics: ${e instanceof Error ? e.message : String(e)}`)
+        errors.push(`${label} ${e instanceof Error ? e.message : String(e)}`)
       }
     }
 
@@ -68,12 +87,13 @@ export async function importGraphicsFolder(dir: string): Promise<Exclude<ImportG
         log.push('BG regions:', ...r.log.map((l) => `  ${l}`))
         errors.push(...r.errors)
         changed += r.applied + r.paletteChanged + r.repositioned
+        paletteChanged += r.paletteChanged
       } else {
         errors.push(`BG regions: ${r.error}`)
       }
     }
 
-    return { ok: true, dir, changed, log, errors }
+    return { ok: true, dir, changed, paletteChanged, log, errors }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }

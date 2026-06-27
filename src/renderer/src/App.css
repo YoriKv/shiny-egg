@@ -3623,6 +3623,16 @@ h3 { margin: 0; }
   color: var(--ink);
   font-weight: 600;
 }
+.se-help__body ul.se-help__list {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+.se-help__body .se-help__list li {
+  margin: 0 0 6px;
+}
+.se-help__body .se-help__list li:last-child {
+  margin-bottom: 0;
+}
 
 /* About page — shown in the help dialog's body. */
 .se-about__name {
@@ -4577,6 +4587,30 @@ h3 { margin: 0; }
 .se-graphics__item:nth-child(odd) {
   background: var(--bg-elevated);
 }
+/* An export-folder entry: the folder row, then its nested clickable .M1 list
+   (each opens in M1TE). The li is a column so the list sits under the row. */
+.se-graphics__folder {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.se-graphics__folder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.se-graphics__m1-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.se-graphics__m1-item {
+  display: flex;
+  align-items: center;
+}
 .se-graphics__item-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -4647,3 +4681,226 @@ h3 { margin: 0; }
   opacity: 0.4;
   cursor: default;
 }
+
+/* ── Validation panel ─────────────────────────────────────────────────────── */
+.se-validation {
+  --sev-error: var(--danger);
+  --sev-warning: #d9a441;
+  --sev-info: #5b9bd5;
+  --sev-ok: var(--accent-soft);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 10px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.se-validation__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 9px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.se-validation__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.se-validation__count em {
+  color: var(--ink-3);
+  font-style: normal;
+  font-weight: 400;
+}
+.se-validation__count-icon {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.se-validation__count-icon--flower { background: #ff6f9c; }
+.se-validation__count-icon--redcoin { background: #e2473c; }
+.se-validation__count-icon--coin { background: #f3c63b; }
+
+.se-validation__actions {
+  display: flex;
+  gap: 8px;
+}
+.se-validation__actions button {
+  flex: 1;
+  padding: 7px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.se-validation__actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-overlay);
+}
+.se-validation__actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.se-validation__scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.se-validation__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.se-validation__heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 5px;
+}
+.se-validation__tally {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.se-validation__chip {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bg-base);
+}
+.se-validation__chip--error { background: var(--sev-error); }
+.se-validation__chip--warning { background: var(--sev-warning); }
+.se-validation__chip--ok { background: var(--sev-ok); }
+.se-validation__muted { color: var(--ink-4); font-weight: 400; }
+.se-validation__note { font-size: 11px; line-height: 1.5; margin: 8px 0 0; }
+.se-validation__empty { color: var(--ink-4); margin: 4px 0; }
+.se-validation__error { color: var(--sev-error); margin: 4px 0; }
+
+.se-validation__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.se-validation__issue { margin: 0; }
+.se-validation__issue-btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-faint);
+  border-radius: 5px;
+  color: var(--ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.se-validation__issue-btn:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--bg-elevated);
+}
+.se-validation__issue-btn:disabled { cursor: default; }
+.se-validation__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+}
+.se-validation__dot--error { background: var(--sev-error); }
+.se-validation__dot--warning { background: var(--sev-warning); }
+.se-validation__dot--info { background: var(--sev-info); }
+.se-validation__issue-title {
+  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.se-validation__issue-msg { color: var(--ink-3); }
+
+.se-validation__sprites {
+  margin: 1px 0 2px 18px;
+  font-size: 11px;
+}
+.se-validation__sprites summary {
+  cursor: pointer;
+  color: var(--ink-3);
+  padding: 2px 0;
+  user-select: none;
+}
+.se-validation__sprites summary:hover { color: var(--ink-2); }
+.se-validation__sprite-list {
+  list-style: none;
+  margin: 1px 0 3px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.se-validation__sprite-btn {
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-3);
+  text-align: left;
+  cursor: pointer;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.se-validation__sprite-btn:hover {
+  color: var(--ink);
+  background: var(--bg-elevated);
+}
+.se-validation__sprite-id { color: var(--ink-2); font-weight: 600; }
+
+.se-validation__level-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+.se-validation__level-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 3px 0;
+}
+.se-validation__level-name--jump {
+  background: none;
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.se-validation__level-name--jump:hover { color: var(--accent); }

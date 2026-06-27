@@ -15,10 +15,11 @@ import type {
   SaveResourceResult
 } from 'snes-framework/types'
 import { exportGfxPngsToDir } from '../gfx-png-export'
-import { exportBgRegionToDir, importBgRegionFromDir } from '../bg-region-io'
+import { exportBgRegionToDir, importBgRegionFromDir, listM1Files } from '../bg-region-io'
 import { importGraphicsFolder } from '../graphics-folder-io'
 import { addRegionExportFolder, listRegionExportFolders, removeRegionExportFolder } from '../region-exports'
-import { resolveAsepriteExe, openInAseprite } from '../aseprite-app'
+import { asepriteInfo, openInAseprite } from '../aseprite-app'
+import { openInM1te } from '../m1te-app'
 import { updateSettings } from '../settings'
 import { basename, join } from 'node:path'
 import { loadMap16Block, saveMap16Block, resetMap16Block, listMap16BlockEdits } from '../map16-edits'
@@ -60,6 +61,7 @@ import type {
   BgRegionExportArgs,
   BgRegionExportResult,
   BgRegionImportResult,
+  M1ExportFile,
   CreatableSlot,
   CreateLevelResult,
   ExportGfxOptions,
@@ -68,6 +70,7 @@ import type {
   GfxFileRole,
   ImportGraphicsResult,
   LocateAsepriteResult,
+  AsepriteInfo,
   Map16BlockPreview,
   Map16SubTileEdit,
   RelocationState,
@@ -216,6 +219,9 @@ export function registerEditorIpc(): void {
       if (picked.canceled || picked.filePaths.length === 0) return { canceled: true }
       const dir = picked.filePaths[0]!
       try {
+        // The picked folder is ONE export folder: exportGfxPngsToDir nests each export type in
+        // its own subfolder (each with its own gfx-manifest) under it, sharing one README. The
+        // unified import scans the folder's subfolders, so remember/return the picked folder.
         const { count } = exportGfxPngsToDir(header, dir, exportOpts ?? {})
         addRegionExportFolder(dir) // remember it for the unified exported-folders list
         return { ok: true, count, dir }
@@ -243,9 +249,10 @@ export function registerEditorIpc(): void {
       return r
     }
   )
-  // "Locate Aseprite" (Graphics panel header): resolved exe path (saved → common
-  // install locations), or null when not located; and a picker that persists it.
-  ipcMain.handle('aseprite:getExe', async (): Promise<string | null> => resolveAsepriteExe())
+  // "Locate Aseprite" (Graphics panel header): the resolved exe (saved → common
+  // install locations) + its probed version, or null when not located; and a picker
+  // that persists it. The version gates the panel's tilemap-export option (1.3+).
+  ipcMain.handle('aseprite:getExe', async (): Promise<AsepriteInfo | null> => asepriteInfo())
   ipcMain.handle('aseprite:locate', async (): Promise<LocateAsepriteResult> => {
     const win = BrowserWindow.getFocusedWindow()
     const opts: Electron.OpenDialogOptions = { title: 'Locate Aseprite', properties: ['openFile'] }
@@ -261,12 +268,18 @@ export function registerEditorIpc(): void {
   })
   // Open a single exported file (image) in Aseprite (the "Auto-Open Exports" toggle).
   ipcMain.handle('aseprite:open', async (_event, dir: string, file: string): Promise<boolean> => openInAseprite(join(dir, file)))
+  // Open an exported .M1 session in the bundled M1TE editor, straight to its BG layer
+  // (the "Auto-Open Exports" toggle for the M1TE2 export). Windows-native or via Wine.
+  ipcMain.handle('m1te:open', async (_event, dir: string, file: string, bg?: 1 | 2 | 3): Promise<boolean> => openInM1te(join(dir, file), bg))
 
   // Folders this project has exported region(s) to — listed in the Region tab with
   // their own import / remove buttons (region-exports.ts).
   ipcMain.handle('editor:listRegionExports', async (): Promise<string[]> => listRegionExportFolders())
   ipcMain.handle('editor:removeRegionExport', async (_event, dir: string): Promise<string[]> => removeRegionExportFolder(dir))
   ipcMain.handle('editor:openRegionFolder', async (_event, dir: string): Promise<void> => { void shell.openPath(dir) })
+  // The .M1 session files in an export folder (with each one's BG layer), for the
+  // panel's clickable "open in M1TE" list under each folder.
+  ipcMain.handle('editor:listM1Files', async (_event, dir: string): Promise<M1ExportFile[]> => listM1Files(dir))
 
   // Unified import: auto-detect the all-graphics manifest AND/OR BG-region files in
   // a folder, import both, merge into one log. Per-folder (no dialog) + a dialog form.

@@ -473,12 +473,15 @@ function templatePatchFile(id: string, romVersion: RomVersion): PatchFile {
       '',
       'chunks[]: each chunk is ONE contiguous byte write, addressed exactly ONE of',
       'two ways:',
-      '  - "offset": an absolute USA V1.0 PC offset as hex (e.g. "0x0093E2"). At apply',
-      '    it is reverse-looked-up to the nearest asm label + delta, so it keeps',
-      '    pointing at the right code even after asm edits shift the cart.',
-      '  - "label" (+ optional "labelOffset"): a .sym label (e.g. "CODE_018041")',
-      '    resolved directly against the just-built ROM — name your own anchor.',
-      '  "bytes": uppercase hex, no separators ("EA" = NOP, "60" = RTS).'
+      '  - "offset": an absolute USA V1.0 PC offset as hex ("0x0093E2" or "$0093E2").',
+      '    At apply it is reverse-looked-up to the nearest asm label + delta, so it',
+      '    keeps pointing at the right code even after asm edits shift the cart.',
+      '  - "label" (+ optional "labelOffset", hex e.g. "0x04" or "$04"): a .sym label',
+      '    (e.g. "CODE_018041") resolved directly against the just-built ROM —',
+      '    name your own anchor.',
+      '  "bytes": hex bytes, packed ("EAEA") or with optional $NN / 0xNN prefixes and',
+      '    whitespace/comma separators ("$EA $EA"). "EA" = NOP, "60" = RTS.',
+      '  Hex anywhere here accepts $NN and 0xNN interchangeably.'
     ],
     source: 'user',
     romVersionAuthored: romVersion,
@@ -513,7 +516,7 @@ function templatePatchFile(id: string, romVersion: RomVersion): PatchFile {
       // Offset-addressed sample (survives asm drift). Replace before enabling.
       { offset: '0x0093E2', bytes: 'EAEA' },
       // Label-addressed sample (resolved against the build .sym). Replace before enabling.
-      { label: 'CODE_018041', labelOffset: 0, bytes: '60' }
+      { label: 'CODE_018041', labelOffset: '0x0', bytes: '60' }
     ]
   }
 }

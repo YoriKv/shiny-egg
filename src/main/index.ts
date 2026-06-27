@@ -16,6 +16,7 @@ import { registerProjectsIpc } from './ipc/projects'
 import { registerDebugIpc } from './ipc/debug'
 import { registerPatchesIpc } from './ipc/patches'
 import { registerImportIpc } from './ipc/import'
+import { registerValidationIpc } from './ipc/validation'
 
 const isDev = !app.isPackaged
 
@@ -99,6 +100,7 @@ registerProjectsIpc()
 registerDebugIpc()
 registerPatchesIpc()
 registerImportIpc()
+registerValidationIpc()
 
 app.whenReady().then(async () => {
   await ensureFrameworkWorkRoot()

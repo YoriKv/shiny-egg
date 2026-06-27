@@ -41,6 +41,10 @@ export interface DecodeLevelByIdOptions {
   /** Per-caller-site captured PRNG bytes (cart caller PC → sequence). Preferred
    *  replay form. See decodeLevel options / state.ts `prngReplayBySite`. */
   prngReplayBySite?: Record<number, readonly number[]>;
+  /** Override the LFSR seed (the editor's "Refresh RNG" action) — re-rolls the
+   *  cosmetic random-tile variants. Omit for the default deterministic seed.
+   *  See decodeLevel options. */
+  prngSeed?: number;
 }
 
 export interface DecodeLevelByIdResult {
@@ -97,7 +101,8 @@ export function decodeLevelById(
 
   const { state, stats } = decodeLevel(opts.rom, opts.symbols, levelBytes, {
     prngReplay: opts.prngReplay,
-    prngReplayBySite: opts.prngReplayBySite
+    prngReplayBySite: opts.prngReplayBySite,
+    prngSeed: opts.prngSeed
   });
   return {
     state,
@@ -118,6 +123,10 @@ export interface DecodeLevelFromLevelDataOptions {
   /** Per-caller-site captured PRNG bytes (cart caller PC → sequence) to replay,
    *  reproducing a specific live entry's random-tile variants. See decodeLevel. */
   prngReplayBySite?: Record<number, readonly number[]>;
+  /** Override the LFSR seed (the editor's "Refresh RNG" action) — re-rolls the
+   *  cosmetic random-tile variants. Omit for the default deterministic seed.
+   *  See decodeLevel options. */
+  prngSeed?: number;
 }
 
 /**
@@ -163,7 +172,8 @@ export function decodeLevelFromLevelData(
   );
   const { state, stats } = decodeLevel(opts.rom, opts.symbols, bytes, {
     provenanceTargets: opts.provenanceTargets,
-    prngReplayBySite: opts.prngReplayBySite
+    prngReplayBySite: opts.prngReplayBySite,
+    prngSeed: opts.prngSeed
   });
   return {
     state,

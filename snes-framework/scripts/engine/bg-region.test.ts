@@ -24,7 +24,8 @@ import { buildPaletteRow } from './color.ts';
 import { SCREEN_PAGE_UNALLOCATED, LRU_PAGE_MASK } from './cell-grid.ts';
 import {
   renderBg1Region, diffBg1Region, buildBgRegionContext, renderBgRegion, diffBgRegionTiles,
-  bg1RegionAseprite, bgRegionAseprite, bgRegionPlacementAseprite, diffBgRegionPlacement
+  bg1RegionAseprite, bgRegionAseprite, bgRegionPlacementAseprite, diffBgRegionPlacement, diffBgRegionCombined,
+  bgRegionM1te2, diffBgRegionM1te2, bg1RegionM1te2, diffBg1RegionM1te2
 } from './bg-region.ts';
 import { decodeAsepriteRegion, decodeAsepriteStructural } from './aseprite.ts';
 import { resolveBgTilemapSource } from './load-bg-tilemaps.ts';
@@ -86,7 +87,7 @@ function pokePixel(
 }
 
 const LEVELS = [0x00, 0x27, 0x31];
-let bg1Tested = 0, bg2Tested = 0, bg3Tested = 0, gatedSeen = 0, placementTested = 0;
+let bg1Tested = 0, bg2Tested = 0, bg3Tested = 0, gatedSeen = 0, placementTested = 0, combinedTested = 0, m1te2Tested = 0;
 
 for (const rec of LEVELS) {
   const base = loadLevel({ workRoot: FRAMEWORK_ROOT, levelRecordId: rec });
@@ -129,6 +130,45 @@ for (const rec of LEVELS) {
         `BG1 aseprite flattens byte-exact to the region RGBA`);
       assert(diffBg1Region(ctx, region, flat.rgba).edits.length === 0,
         `BG1 aseprite round-trips through the slicer (0 edits)`);
+
+      // 4. BG1 M1TE ".M1" round-trip (pixel + palette; no placement). The 16×16-Map16
+      //    region → one 32×32 8×8 screen. Unedited → 0 edits; flipping the .M1 CHR yields
+      //    edits only for writable (faithful) tiles, all 32 B, 0 word edits; a palette edit
+      //    isolates to its CGRAM index.
+      {
+        const screens = bg1RegionM1te2(ctx, region);
+        assert(screens.length === 1, `BG1 M1TE → ${screens.length} screen (single, not split)`);
+        // A larger-than-16×16 area is CROPPED to the top-left block — still ONE .M1, ≤32×32.
+        const bigRect = { col0: scr.sx * 16, row0: scr.sy * 16, cols: 24, rows: 20 };
+        const bigScreens = bg1RegionM1te2(ctx, renderBg1Region(ctx, levelDataBuffer, screenPageMap, bigRect));
+        assert(bigScreens.length === 1 && bigScreens[0]!.cols <= 32 && bigScreens[0]!.rows <= 32,
+          `BG1 M1TE crops a >16×16 area to one top-left screen (got ${bigScreens.length} screen(s), ${bigScreens[0]?.cols}×${bigScreens[0]?.rows} cells)`);
+        const s0 = screens[0]!;
+        const clean = diffBg1RegionM1te2(ctx, region, s0.bytes, 0, 0);
+        assert(clean.tileEdits.length === 0 && clean.wordEdits.length === 0 && clean.paletteEdits.length === 0,
+          `BG1 M1TE unedited round-trips (0 tile / 0 word / 0 palette)`);
+        if (faithful > 0) {
+          // Flip a byte in every CHR tile → writable tiles produce 32 B edits, others skip;
+          // BG1 never writes a tilemap word.
+          const edited = s0.bytes.slice()
+          for (let t = 1; t < 1024; t++) edited[6416 + t * 32]! ^= 0xff
+          const d = diffBg1RegionM1te2(ctx, region, edited, 0, 0)
+          assert(d.tileEdits.length >= 1 && d.wordEdits.length === 0 && d.tileEdits.every((e) => e.bytes.length === 32),
+            `BG1 M1TE CHR edit → ${d.tileEdits.length} writable tile(s) of 32 B, 0 words`)
+        }
+        // Palette edit: recolour a used row's colour 1 (never a blacked transparent slot).
+        if (region.paletteRowsUsed.length > 0) {
+          const pi = region.paletteRowsUsed[0]! * 16 + 1
+          const pe = s0.bytes.slice()
+          const orig = pe[16 + pi * 2]! | (pe[16 + pi * 2 + 1]! << 8)
+          const nc = (orig ^ 0x001f) & 0x7fff
+          pe[16 + pi * 2] = nc & 0xff; pe[16 + pi * 2 + 1] = (nc >> 8) & 0xff
+          const dp = diffBg1RegionM1te2(ctx, region, pe, 0, 0)
+          assert(dp.paletteEdits.length === 1 && dp.paletteEdits[0]!.cgramIndex === pi && dp.paletteEdits[0]!.bgr15 === nc,
+            `BG1 M1TE 1-colour palette edit → exactly that CGRAM index`)
+        }
+        m1te2Tested++;
+      }
 
       bg1Tested++;
     }
@@ -244,6 +284,187 @@ for (const rec of LEVELS) {
       assert(okSrc && checked > 0, `BG${layer} tilemap source bytes match cell words (${checked} cells) — placement splice targets the right file offset`);
     }
 
+    // 5. COMBINED import — the 8×8 PIXEL `.aseprite` as a single authoritative source of
+    //    truth (diffBgRegionCombined): pixels written by tile INDEX + every 16×16 word
+    //    rewritten from its 2×2 group. Unedited → 0 tile + 0 word edits; an index pixel
+    //    edit on one editable tileset tile → exactly that CHR tile (0 words); a 16×16
+    //    block move → exactly that one word (0 tile edits, dest priority preserved).
+    const cstruct = decodeAsepriteStructural(bgRegionAseprite(bgCtx, region));
+    const c0 = diffBgRegionCombined(bgCtx, region, cstruct, tmAddr);
+    assert(c0.tileEdits.length === 0 && c0.wordEdits.length === 0,
+      `BG${layer} combined round-trips (0 tile + 0 word edits, ${cstruct.numTiles} tiles)`);
+    combinedTested++;
+
+    // Pixel edit: blank one opaque pixel of a tileset tile referenced by an editable cell.
+    const w8 = region.width / 8;
+    let editTile = -1;
+    for (const subc of region.subCells) {
+      if (!subc.gfx) continue;
+      const cell = cstruct.cells[(subc.pxY / 8) * w8 + subc.pxX / 8];
+      if (cell && cell.tile > 0) { editTile = cell.tile; break; }
+    }
+    if (editTile >= 0) {
+      const tp = cstruct.tilePixels.slice();
+      const tbase = editTile * 64;
+      let px = -1;
+      for (let i = 0; i < 64; i++) { const a = tp[tbase + i]!; if (a !== 0 && a !== cstruct.transparentIndex) { px = i; break; } }
+      if (px >= 0) {
+        tp[tbase + px] = 0; // blank an opaque pixel → a real, in-row CHR change
+        const cd = diffBgRegionCombined(bgCtx, region, { ...cstruct, tilePixels: tp }, tmAddr);
+        assert(cd.tileEdits.length === 1 && cd.wordEdits.length === 0 && cd.tileEdits[0]!.bytes.length === tileBytes,
+          `BG${layer} combined pixel edit → exactly 1 CHR tile (${tileBytes} B), 0 words`);
+      }
+    }
+
+    // Block move: copy native cell cj's whole 2×2 group into ci (reuse the placement
+    // section's ci/cj). The reconstructed word = cj's char/palette/flip + ci's priority.
+    if (ci >= 0 && cj >= 0) {
+      const sps = region.tileSize / 8;
+      const sci2 = topLeft.get(ci)!, scj2 = topLeft.get(cj)!;
+      const gxi = ci % nAcross, gyi = Math.floor(ci / nAcross);
+      const gxj = cj % nAcross, gyj = Math.floor(cj / nAcross);
+      const ccells = cstruct.cells.slice();
+      for (let sy = 0; sy < sps; sy++) for (let sx = 0; sx < sps; sx++) {
+        ccells[(gyi * sps + sy) * w8 + (gxi * sps + sx)] = cstruct.cells[(gyj * sps + sy) * w8 + (gxj * sps + sx)]!;
+      }
+      const cd = diffBgRegionCombined(bgCtx, region, { ...cstruct, cells: ccells }, tmAddr);
+      const expWord = (scj2.entry & 0xdfff) | (sci2.entry & 0x2000); // cj word, ci priority
+      assert(cd.wordEdits.length === 1 && cd.tileEdits.length === 0 &&
+        cd.wordEdits[0]!.fileOffset === sci2.memoryEntryOff - tmAddr && cd.wordEdits[0]!.word === expWord,
+        `BG${layer} combined block move → exactly that word (got ${cd.wordEdits.length} words / ${cd.tileEdits.length} tiles, word 0x${cd.wordEdits[0]?.word.toString(16)} vs 0x${expWord.toString(16)})`);
+    }
+
+    // 6. SHARED-CHR idempotency (regression): a CHR used under ≥2 palette rows is exported as
+    //    multiple Aseprite tiles that all write back to one fileTile. Editing it under ONE
+    //    row, then re-importing the SAME file, must NOT flip-flop (the user-reported bug).
+    //    Simulate the saveGfxEdit→live feedback: apply the edit to a cloned base, re-diff with
+    //    the stable VANILLA baseVram → 0 edits. (Without the fix, the unedited sibling view
+    //    reverts the edit, so the re-import re-reports it forever / alternates.)
+    {
+      const charRows = new Map<number, Set<number>>();
+      for (const s of region.subCells) { if (!s.gfx) continue; const set = charRows.get(s.charTile) ?? new Set(); set.add(s.paletteRow); charRows.set(s.charTile, set); }
+      let sharedChar = -1; for (const [c, rows] of charRows) if (rows.size >= 2) { sharedChar = c; break; }
+      if (sharedChar >= 0) {
+        const sc = region.subCells.find((s) => s.charTile === sharedChar && s.gfx)!;
+        const editTile = cstruct.cells[(sc.pxY / 8) * (region.width / 8) + sc.pxX / 8]!.tile;
+        const tp = cstruct.tilePixels.slice(), tb = editTile * 64;
+        const vals = new Set<number>(); for (let i = 0; i < 64; i++) { const a = tp[tb + i]!; if (a) vals.add(a); }
+        const dv = [...vals];
+        if (editTile > 0 && dv.length >= 2) {
+          for (let i = 0; i < 64; i++) if (tp[tb + i] === dv[0]) { tp[tb + i] = dv[1]!; break; } // in-row recolour
+          const editedStruct = { ...cstruct, tilePixels: tp };
+          const vanilla = bgCtx.vram.slice();
+          const d1 = diffBgRegionCombined(bgCtx, region, editedStruct, tmAddr, { baseVram: vanilla });
+          assert(d1.tileEdits.length === 1, `BG${layer} shared-CHR edit → exactly 1 CHR write (got ${d1.tileEdits.length})`);
+          // Apply the edit to a cloned base (the live-cache feedback) and re-import.
+          const charAddr = layer === 2 ? bgCtx.regs.bg2CharAddr : bgCtx.regs.bg3CharAddr;
+          const vram2 = bgCtx.vram.slice(); vram2.set(d1.tileEdits[0]!.bytes, (charAddr + sharedChar * tileBytes) & 0xffff);
+          const d2 = diffBgRegionCombined({ ...bgCtx, vram: vram2 }, region, editedStruct, tmAddr, { baseVram: vanilla });
+          assert(d2.tileEdits.length === 0, `BG${layer} shared-CHR re-import is idempotent (got ${d2.tileEdits.length}; the flip-flop bug if > 0)`);
+          combinedTested++;
+        }
+      }
+    }
+
+    // 7. Placement into a NON-EDITABLE (transparent "sky" / wraparound) cell must still
+    //    write a word — placement isn't gated on the cell's pixel-editability (the
+    //    "blank-area placement ignored" bug). Copy a coherent editable block into a gated
+    //    cell and assert it produces a word edit at that cell. AND an all-empty (Aseprite-
+    //    trimmed) group is kept as-is (no word edit, not counted incoherent).
+    {
+      const sps2 = region.tileSize / 8;
+      let gated = -1, src = -1;
+      for (const [idx, s] of topLeft) {
+        if (!s.gfx && s.memoryEntryOff >= 0 && gated < 0) gated = idx;
+        if (s.gfx && src < 0) src = idx;
+      }
+      if (gated >= 0 && src >= 0) {
+        const gx = gated % nAcross, gy = Math.floor(gated / nAcross);
+        const sx0 = src % nAcross, sy0 = Math.floor(src / nAcross);
+        const cells = cstruct.cells.slice();
+        for (let sy = 0; sy < sps2; sy++) for (let sx = 0; sx < sps2; sx++)
+          cells[(gy * sps2 + sy) * w8 + (gx * sps2 + sx)] = cstruct.cells[(sy0 * sps2 + sy) * w8 + (sx0 * sps2 + sx)]!;
+        const cd = diffBgRegionCombined(bgCtx, region, { ...cstruct, cells }, tmAddr);
+        const want = topLeft.get(gated)!.memoryEntryOff - tmAddr;
+        assert(cd.wordEdits.some((e) => e.fileOffset === want),
+          `BG${layer} placement into a non-editable (sky) cell writes a word (not skipped)`);
+      }
+      // EXPLICIT CLEAR: emptying a cell that's INSIDE the cel writes a char-0 word (keeping
+      // palette row + priority); emptying one OUTSIDE the cel (an Aseprite-trimmed cell that
+      // re-expanded to tile 0) is kept as the cart's original word, not cleared.
+      if (src >= 0) {
+        const gx = src % nAcross, gy = Math.floor(src / nAcross);
+        const sc0 = topLeft.get(src)!;
+        const cells = cstruct.cells.slice();
+        for (let sy = 0; sy < sps2; sy++) for (let sx = 0; sx < sps2; sx++)
+          cells[(gy * sps2 + sy) * w8 + (gx * sps2 + sx)] = { tile: 0 };
+        const want = sc0.memoryEntryOff - tmAddr;
+        // in-cel (full export ⇒ celBounds covers everything) → cleared to char 0.
+        const din = diffBgRegionCombined(bgCtx, region, { ...cstruct, cells }, tmAddr);
+        const ein = din.wordEdits.find((e) => e.fileOffset === want);
+        assert(!!ein && ein.word === (sc0.entry & 0x3c00),
+          `BG${layer} clearing an in-cel cell → char-0 word (kept palRow/priority; got 0x${ein?.word.toString(16)})`);
+        // out-of-cel (celBounds excludes this column) → kept, not cleared.
+        const celBounds = { col: gx * sps2 + sps2, row: 0, cols: w8, rows: cstruct.hTiles };
+        const dout = diffBgRegionCombined(bgCtx, region, { ...cstruct, cells, celBounds }, tmAddr);
+        assert(!dout.wordEdits.some((e) => e.fileOffset === want),
+          `BG${layer} an off-cel (trimmed) empty cell is kept, not cleared`);
+      }
+    }
+
+    // 8. M1TE2 ".M1" session round-trip: export the layer (one .M1 per 32×32 screen),
+    //    re-diff the first screen unedited → 0 edits; then a 1-tile CHR edit, a 1-word
+    //    tilemap edit, and a 1-colour palette edit each isolate to exactly one change.
+    {
+      const screens = bgRegionM1te2(bgCtx, region);
+      const ts2 = region.tileSize;
+      const cols2 = region.width / ts2, rows2 = region.height / ts2;
+      assert(screens.length === Math.max(1, Math.ceil(cols2 / 32)) * Math.max(1, Math.ceil(rows2 / 32)),
+        `BG${layer} M1TE2 → ${screens.length} screen(s) for ${cols2}×${rows2} cells`);
+      const s0 = screens[0]!;
+      const clean = diffBgRegionM1te2(bgCtx, region, s0.bytes, 0, 0, tmAddr);
+      assert(clean.tileEdits.length === 0 && clean.wordEdits.length === 0 && clean.paletteEdits.length === 0,
+        `BG${layer} M1TE2 unedited round-trips (0 tile / 0 word / 0 palette)`);
+
+      const chrBase = region.bpp === 4 ? 6416 : 39184;
+      // CHR edit: flip a byte of an editable tile's CHR → exactly that one CHR tile.
+      const ec = region.subCells.find((s) => s.gfx);
+      if (ec) {
+        const b = s0.bytes.slice();
+        b[chrBase + ec.charTile * tileBytes]! ^= 0xff;
+        const d = diffBgRegionM1te2(bgCtx, region, b, 0, 0, tmAddr);
+        assert(d.tileEdits.length === 1 && d.tileEdits[0]!.fileId === ec.gfx!.fileId &&
+          d.tileEdits[0]!.fileTile === ec.gfx!.fileTile && d.tileEdits[0]!.bytes.length === tileBytes,
+          `BG${layer} M1TE2 1-tile CHR edit → exactly that CHR tile (${tileBytes} B)`);
+      }
+      // Word edit: change one editable screen-0 cell's tilemap word → exactly that word.
+      const wcell = region.subCells.find((s) => s.gfx && s.pxX % ts2 === 0 && s.pxY % ts2 === 0 &&
+        s.pxX / ts2 < 32 && s.pxY / ts2 < 32);
+      if (wcell) {
+        const wo = 272 + (layer - 1) * 2048 + ((wcell.pxY / ts2) * 32 + wcell.pxX / ts2) * 2;
+        const b = s0.bytes.slice();
+        const nw = (wcell.entry ^ 0x0001) & 0xffff;
+        b[wo] = nw & 0xff; b[wo + 1] = (nw >> 8) & 0xff;
+        const d = diffBgRegionM1te2(bgCtx, region, b, 0, 0, tmAddr);
+        assert(d.wordEdits.length === 1 && d.wordEdits[0]!.fileOffset === wcell.memoryEntryOff - tmAddr &&
+          d.wordEdits[0]!.word === nw,
+          `BG${layer} M1TE2 1-word edit → exactly that tilemap word`);
+      }
+      // Palette edit: recolour a used, non-blacked CGRAM index (col 1 ≠ any blacked slot).
+      const cpr2 = region.bpp === 4 ? 16 : 4;
+      const pi = region.paletteRowsUsed[0]! * cpr2 + 1;
+      {
+        const b = s0.bytes.slice();
+        const orig = b[16 + pi * 2]! | (b[16 + pi * 2 + 1]! << 8);
+        const nc = (orig ^ 0x001f) & 0x7fff;
+        b[16 + pi * 2] = nc & 0xff; b[16 + pi * 2 + 1] = (nc >> 8) & 0xff;
+        const d = diffBgRegionM1te2(bgCtx, region, b, 0, 0, tmAddr);
+        assert(d.paletteEdits.length === 1 && d.paletteEdits[0]!.cgramIndex === pi && d.paletteEdits[0]!.bgr15 === nc,
+          `BG${layer} M1TE2 1-colour palette edit → exactly that CGRAM index`);
+      }
+      m1te2Tested++;
+    }
+
     if (layer === 2) bg2Tested++; else bg3Tested++;
   }
 }
@@ -275,6 +496,8 @@ assert(bg1Tested > 0, `BG1 regions exercised (${bg1Tested})`);
 assert(bg2Tested > 0, `BG2 regions exercised (${bg2Tested})`);
 assert(bg3Tested > 0, `BG3 regions exercised (${bg3Tested})`);
 assert(placementTested > 0, `placement word-reconstruction exercised (${placementTested})`);
+assert(combinedTested > 0, `combined (authoritative 8×8) import exercised (${combinedTested})`);
+assert(m1te2Tested > 0, `M1TE2 .M1 session round-trip exercised (${m1te2Tested})`);
 console.log(`\n  [gated (non-editable) BG2/BG3 sub-cells seen across levels: ${gatedSeen}]`);
 
 console.log(`\n${failures === 0 ? '✓ all bg-region pins pass' : `✗ ${failures} failure(s)`}`);

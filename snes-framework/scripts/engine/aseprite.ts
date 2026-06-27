@@ -65,6 +65,12 @@ function aseString(s: string): Buffer {
   return Buffer.concat([head, b]);
 }
 
+/** Read an Aseprite STRING (WORD length + UTF-8 bytes) at `off`. */
+function readAseString(buf: Buffer, off: number): string {
+  const len = buf.readUInt16LE(off);
+  return buf.toString('utf8', off + 2, off + 2 + len);
+}
+
 /** Wrap chunk data with its 6-byte header (DWORD size incl. header, WORD type). */
 function aseChunk(type: number, data: Buffer): Buffer {
   const head = Buffer.alloc(6);
@@ -97,43 +103,42 @@ function paletteChunk(palette: Uint32Array): Buffer {
   return aseChunk(0x2019, Buffer.concat([head, entries]));
 }
 
-function tilesetChunk(doc: AsepriteTilemapDoc): Buffer {
-  const numTiles = doc.tiles.length;
+/** Tileset chunk (0x2023): an embedded indexed tileset (id 0, tile 0 = empty). */
+function tilesetChunkRaw(tiles: Uint8Array[], tileW: number, tileH: number, name: string): Buffer {
+  const numTiles = tiles.length;
   const head = Buffer.alloc(32); // id,flags,numTiles, W,H, baseIndex, BYTE[14]
   head.writeUInt32LE(0, 0);            // tileset id
   head.writeUInt32LE(2 | 4, 4);        // flags: 2 = embed tiles, 4 = id 0 = empty
   head.writeUInt32LE(numTiles, 8);
-  head.writeUInt16LE(doc.tileW, 12);
-  head.writeUInt16LE(doc.tileH, 14);
+  head.writeUInt16LE(tileW, 12);
+  head.writeUInt16LE(tileH, 14);
   head.writeInt16LE(1, 16);            // base index shown to the user
-  const name = aseString(doc.tilesetName ?? 'tiles');
   // Embedded image: tileW × (tileH*numTiles), 1 byte/pixel, tiles stacked.
-  const image = Buffer.concat(doc.tiles.map((t) => Buffer.from(t.buffer, t.byteOffset, t.byteLength)));
+  const image = Buffer.concat(tiles.map((t) => Buffer.from(t.buffer, t.byteOffset, t.byteLength)));
   const comp = zlib.deflateSync(image);
   const lenField = Buffer.alloc(4);
   lenField.writeUInt32LE(comp.length, 0);
-  return aseChunk(0x2023, Buffer.concat([head, name, lenField, comp]));
+  return aseChunk(0x2023, Buffer.concat([head, aseString(name), lenField, comp]));
 }
 
-function layerChunk(doc: AsepriteTilemapDoc): Buffer {
+/** Tilemap layer chunk (0x2004 type 2). Layer order = chunk order = layer index; all
+ *  tilemap layers reference tileset id 0 (the one embedded tileset). */
+function tilemapLayerChunkRaw(name: string): Buffer {
   const fixed = Buffer.alloc(16); // flags,type,child,defW,defH,blend,opacity,BYTE[3]
   fixed.writeUInt16LE(1 | 2, 0); // visible + editable (without bit 2 the layer is locked)
   fixed.writeUInt16LE(2, 2);  // type 2 = tilemap
   fixed.writeUInt16LE(0, 4);  // child level
-  fixed.writeUInt16LE(0, 6);  // default width (unused)
-  fixed.writeUInt16LE(0, 8);  // default height (unused)
   fixed.writeUInt16LE(0, 10); // blend = normal
   fixed[12] = 255;            // opacity
-  const name = aseString(doc.layerName ?? 'BG');
-  const tilesetIndex = Buffer.alloc(4); // type 2 → DWORD tileset index
-  tilesetIndex.writeUInt32LE(0, 0);
-  return aseChunk(0x2004, Buffer.concat([fixed, name, tilesetIndex]));
+  const tilesetIndex = Buffer.alloc(4); // type 2 → DWORD tileset index (0)
+  return aseChunk(0x2004, Buffer.concat([fixed, aseString(name), tilesetIndex]));
 }
 
-function tilemapCelChunk(doc: AsepriteTilemapDoc): Buffer {
-  // Cel header: layerIndex, x, y, opacity, celType, zIndex, BYTE[5]
-  const head = Buffer.alloc(16);
-  head.writeUInt16LE(0, 0);   // layer index 0
+/** Compressed-tilemap cel chunk (0x2005 type 3) for `layerIndex`, `tilesAcross×tilesDown`
+ *  cells (row-major). The Nth tilemap-layer chunk is layer index N. */
+function tilemapCelChunkRaw(layerIndex: number, cells: AsepriteCell[], tilesAcross: number, tilesDown: number): Buffer {
+  const head = Buffer.alloc(16); // layerIndex, x, y, opacity, celType, zIndex, BYTE[5]
+  head.writeUInt16LE(layerIndex, 0);
   head.writeInt16LE(0, 2);    // x
   head.writeInt16LE(0, 4);    // y
   head[6] = 255;              // opacity
@@ -141,17 +146,17 @@ function tilemapCelChunk(doc: AsepriteTilemapDoc): Buffer {
   head.writeInt16LE(0, 9);    // z-index
   // bytes 11..15 reserved
   const meta = Buffer.alloc(32); // W,H tiles, bits/tile, 4 masks, BYTE[10]
-  meta.writeUInt16LE(doc.tilesAcross, 0);
-  meta.writeUInt16LE(doc.tilesDown, 2);
+  meta.writeUInt16LE(tilesAcross, 0);
+  meta.writeUInt16LE(tilesDown, 2);
   meta.writeUInt16LE(32, 4); // bits per tile
   meta.writeUInt32LE(TILE_ID_MASK, 6);
   meta.writeUInt32LE(TILE_XFLIP, 10);
   meta.writeUInt32LE(TILE_YFLIP, 14);
   meta.writeUInt32LE(TILE_DFLIP, 18);
   // bytes 22..31 reserved
-  const tileData = Buffer.alloc(doc.tilesAcross * doc.tilesDown * 4);
-  for (let i = 0; i < doc.cells.length; i++) {
-    const c = doc.cells[i]!;
+  const tileData = Buffer.alloc(tilesAcross * tilesDown * 4);
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i]!;
     let v = c.tile & TILE_ID_MASK;
     if (c.hflip) v |= TILE_XFLIP;
     if (c.vflip) v |= TILE_YFLIP;
@@ -200,7 +205,49 @@ function assembleAseFile(
 
 /** Encode a single-frame indexed tilemap document to `.aseprite` bytes. */
 export function encodeAseprite(doc: AsepriteTilemapDoc): Uint8Array {
-  const chunks = [colorProfileChunk(), paletteChunk(doc.palette), tilesetChunk(doc), layerChunk(doc), tilemapCelChunk(doc)];
+  const chunks = [
+    colorProfileChunk(), paletteChunk(doc.palette),
+    tilesetChunkRaw(doc.tiles, doc.tileW, doc.tileH, doc.tilesetName ?? 'tiles'),
+    tilemapLayerChunkRaw(doc.layerName ?? 'BG'),
+    tilemapCelChunkRaw(0, doc.cells, doc.tilesAcross, doc.tilesDown)
+  ];
+  return assembleAseFile(chunks, doc.tilesAcross * doc.tileW, doc.tilesDown * doc.tileH, doc.palette.length, doc.transparentIndex, doc.tileW, doc.tileH);
+}
+
+/** One tilemap layer of a multi-layer document: a name + its own `tilesAcross*tilesDown`
+ *  cells (indices into the SHARED tileset). */
+export interface AsepriteTilemapLayerSpec {
+  name: string;
+  cells: AsepriteCell[];
+}
+
+/** A single-frame indexed document with MULTIPLE tilemap layers over ONE shared tileset
+ *  (e.g. the overworld's BG1+BG2). `layers` are bottom-to-top: `layers[0]` draws first
+ *  (behind), later layers on top — match the hardware layer order so the in-Aseprite
+ *  composite mirrors the game. */
+export interface AsepriteMultiTilemapDoc {
+  tileW: number;
+  tileH: number;
+  tilesAcross: number;
+  tilesDown: number;
+  /** Shared tileset (index 0 = empty), referenced by every layer. */
+  tiles: Uint8Array[];
+  layers: AsepriteTilemapLayerSpec[];
+  palette: Uint32Array;
+  transparentIndex: number;
+  tilesetName?: string;
+}
+
+/** Encode a multi-tilemap-layer document (one shared embedded tileset, one cel per layer). */
+export function encodeAsepriteMultiTilemap(doc: AsepriteMultiTilemapDoc): Uint8Array {
+  const chunks: Buffer[] = [
+    colorProfileChunk(), paletteChunk(doc.palette),
+    tilesetChunkRaw(doc.tiles, doc.tileW, doc.tileH, doc.tilesetName ?? 'tiles')
+  ];
+  // All layer chunks first (defining layer indices 0..N-1 bottom-to-top)…
+  for (const l of doc.layers) chunks.push(tilemapLayerChunkRaw(l.name));
+  // …then one cel per layer, referencing its layer index.
+  doc.layers.forEach((l, i) => chunks.push(tilemapCelChunkRaw(i, l.cells, doc.tilesAcross, doc.tilesDown)));
   return assembleAseFile(chunks, doc.tilesAcross * doc.tileW, doc.tilesDown * doc.tileH, doc.palette.length, doc.transparentIndex, doc.tileW, doc.tileH);
 }
 
@@ -265,7 +312,7 @@ interface ParsedTileset {
  * base-aware slicers. We read only what's needed: header (size + transparent
  * index), the palette, the (single) embedded tileset, and the tilemap cel.
  */
-interface ParsedCel { wTiles: number; hTiles: number; idMask: number; xMask: number; yMask: number; tiles: Uint32Array }
+interface ParsedCel { x: number; y: number; wTiles: number; hTiles: number; idMask: number; xMask: number; yMask: number; tiles: Uint32Array }
 interface ParsedAseprite { widthPx: number; heightPx: number; transparentIndex: number; palette: Uint32Array; tileset: ParsedTileset; cel: ParsedCel }
 
 /** Read a palette chunk into `palette` and return true if `type` was one. Handles the
@@ -349,6 +396,13 @@ function parseAsepriteDoc(bytes: Uint8Array): ParsedAseprite {
         tileset = { tileW, tileH, numTiles, pixels: new Uint8Array(img) };
       }
     } else if (type === 0x2005 && buf.readUInt16LE(data + 7) === 3) {
+      // Cel X/Y (signed, in pixels): Aseprite TRIMS a tilemap cel to its non-empty
+      // bounding box on save, so a layer with empty borders (e.g. BG2's "sky" rows)
+      // saves a smaller wTiles×hTiles at a non-zero origin. The decoders re-place the
+      // cel into the full canvas grid using this offset — without it every cell is
+      // mis-located and a placement import reports the whole layer "not rewritable".
+      const x = buf.readInt16LE(data + 2);
+      const y = buf.readInt16LE(data + 4);
       const wTiles = buf.readUInt16LE(data + 16);
       const hTiles = buf.readUInt16LE(data + 18);
       const idMask = buf.readUInt32LE(data + 22);
@@ -357,7 +411,7 @@ function parseAsepriteDoc(bytes: Uint8Array): ParsedAseprite {
       const raw = zlib.inflateSync(buf.subarray(data + 48, p + size));
       const tiles = new Uint32Array(wTiles * hTiles);
       for (let t = 0; t < tiles.length; t++) tiles[t] = raw.readUInt32LE(t * 4);
-      cel = { wTiles, hTiles, idMask, xMask, yMask, tiles };
+      cel = { x, y, wTiles, hTiles, idMask, xMask, yMask, tiles };
     }
     p += size;
   }
@@ -385,13 +439,16 @@ export function decodeAsepriteRegion(bytes: Uint8Array): { width: number; height
       const hflip = (entry & cel.xMask) !== 0;
       const vflip = (entry & cel.yMask) !== 0;
       const tileBase = id * tileBytes;
+      const destX = cel.x + tx * tileW, destY = cel.y + ty * tileH; // honor a trimmed cel's origin
       for (let py = 0; py < tileH; py++) {
         for (let px = 0; px < tileW; px++) {
+          const ox = destX + px, oy = destY + py;
+          if (ox < 0 || oy < 0 || ox >= widthPx || oy >= heightPx) continue;
           const sx = hflip ? tileW - 1 - px : px;
           const sy = vflip ? tileH - 1 - py : py;
           const idx = pixels[tileBase + sy * tileW + sx]!;
           if (idx === transparentIndex) continue;
-          out[(ty * tileH + py) * widthPx + (tx * tileW + px)] = palette[idx]!;
+          out[oy * widthPx + ox] = palette[idx]!;
         }
       }
     }
@@ -419,19 +476,150 @@ export interface AsepriteStructural {
   cells: AsepriteCell[];
   wTiles: number;
   hTiles: number;
+  /** The (possibly trimmed) cel's rectangle in TILE units within the full grid (clamped to
+   *  the canvas). Cells INSIDE it are authoritative — incl. an intentional clear to tile 0;
+   *  cells OUTSIDE it were trimmed by Aseprite (re-expanded to tile 0, NOT a real edit). */
+  celBounds: { col: number; row: number; cols: number; rows: number };
 }
 
 export function decodeAsepriteStructural(bytes: Uint8Array): AsepriteStructural {
   const { widthPx, heightPx, transparentIndex, palette, tileset, cel } = parseAsepriteDoc(bytes);
-  const cells: AsepriteCell[] = new Array(cel.wTiles * cel.hTiles);
-  for (let t = 0; t < cells.length; t++) {
-    const entry = cel.tiles[t]!;
-    cells[t] = { tile: entry & cel.idMask, hflip: (entry & cel.xMask) !== 0, vflip: (entry & cel.yMask) !== 0 };
+  // Re-expand a (possibly trimmed) cel into the FULL canvas tile grid at the cel's origin —
+  // empty cells default to tile 0. So `cells` is always indexable at canvas (col,row), the
+  // way the placement importers iterate it (region.width/tileW × …), regardless of trimming.
+  const fullW = Math.floor(widthPx / tileset.tileW);
+  const fullH = Math.floor(heightPx / tileset.tileH);
+  const celTX = Math.floor(cel.x / tileset.tileW);
+  const celTY = Math.floor(cel.y / tileset.tileH);
+  const cells: AsepriteCell[] = new Array(fullW * fullH);
+  for (let i = 0; i < cells.length; i++) cells[i] = { tile: 0 };
+  for (let ty = 0; ty < cel.hTiles; ty++) {
+    for (let tx = 0; tx < cel.wTiles; tx++) {
+      const gx = celTX + tx, gy = celTY + ty;
+      if (gx < 0 || gy < 0 || gx >= fullW || gy >= fullH) continue;
+      const entry = cel.tiles[ty * cel.wTiles + tx]!;
+      cells[gy * fullW + gx] = { tile: entry & cel.idMask, hflip: (entry & cel.xMask) !== 0, vflip: (entry & cel.yMask) !== 0 };
+    }
+  }
+  const col = Math.max(0, celTX), row = Math.max(0, celTY);
+  return {
+    width: widthPx, height: heightPx, palette, transparentIndex,
+    tileW: tileset.tileW, tileH: tileset.tileH, numTiles: tileset.numTiles, tilePixels: tileset.pixels,
+    cells, wTiles: fullW, hTiles: fullH,
+    celBounds: { col, row, cols: Math.max(0, Math.min(fullW, celTX + cel.wTiles) - col), rows: Math.max(0, Math.min(fullH, celTY + cel.hTiles) - row) }
+  };
+}
+
+/** One layer of a multi-layer structural decode: its name + per-cell placement. */
+export interface AsepriteStructuralLayer {
+  name: string;
+  /** `wTiles*hTiles` cells, row-major: the tile index + flips placed in each cell. */
+  cells: AsepriteCell[];
+}
+
+/** The structural read of a MULTI-tilemap-layer `.aseprite` (the inverse of
+ *  `encodeAsepriteMultiTilemap`): the shared embedded tileset + EACH layer's per-cell
+ *  arrangement, in file order (layer index 0 = bottom). Used to round-trip the overworld's
+ *  BG1+BG2 layers from one combined file. */
+export interface AsepriteMultiStructural {
+  width: number;
+  height: number;
+  palette: Uint32Array;
+  transparentIndex: number;
+  tileW: number;
+  tileH: number;
+  numTiles: number;
+  tilePixels: Uint8Array;
+  wTiles: number;
+  hTiles: number;
+  layers: AsepriteStructuralLayer[];
+}
+
+export function decodeAsepriteMultiStructural(bytes: Uint8Array): AsepriteMultiStructural {
+  const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (buf.readUInt16LE(4) !== MAGIC_FILE) throw new Error('decodeAsepriteMulti: bad file magic');
+  const widthPx = buf.readUInt16LE(8);
+  const heightPx = buf.readUInt16LE(10);
+  if (buf.readUInt16LE(12) !== 8) throw new Error('decodeAsepriteMulti: expected indexed (8-bit) depth');
+  const transparentIndex = buf[28]!;
+
+  let p = 128;
+  if (buf.readUInt16LE(p + 4) !== MAGIC_FRAME) throw new Error('decodeAsepriteMulti: bad frame magic');
+  let nChunks = buf.readUInt32LE(p + 12);
+  if (nChunks === 0) nChunks = buf.readUInt16LE(p + 6);
+  p += 16;
+
+  const palette = new Uint32Array(256);
+  let tileset: ParsedTileset | null = null;
+  const layerNames: string[] = [];               // layer index → name (chunk order)
+  const cels = new Map<number, ParsedCel>();      // layer index → its tilemap cel
+
+  for (let i = 0; i < nChunks; i++) {
+    const size = buf.readUInt32LE(p);
+    const type = buf.readUInt16LE(p + 4);
+    const data = p + 6;
+    if (readPaletteChunk(buf, type, data, palette)) {
+      // palette read into `palette`
+    } else if (type === 0x2004) {
+      // Layer chunk: layer index = its position among all layer chunks. Name at +16.
+      layerNames.push(readAseString(buf, data + 16));
+    } else if (type === 0x2023) {
+      const flags = buf.readUInt32LE(data + 4);
+      const numTiles = buf.readUInt32LE(data + 8);
+      const tileW = buf.readUInt16LE(data + 12);
+      const tileH = buf.readUInt16LE(data + 14);
+      let o = data + 32;
+      o += 2 + buf.readUInt16LE(o); // skip name string
+      if (flags & 2) {
+        const len = buf.readUInt32LE(o);
+        const img = zlib.inflateSync(buf.subarray(o + 4, o + 4 + len));
+        tileset = { tileW, tileH, numTiles, pixels: new Uint8Array(img) };
+      }
+    } else if (type === 0x2005 && buf.readUInt16LE(data + 7) === 3) {
+      const layerIndex = buf.readUInt16LE(data);
+      const x = buf.readInt16LE(data + 2);
+      const y = buf.readInt16LE(data + 4);
+      const wTiles = buf.readUInt16LE(data + 16);
+      const hTiles = buf.readUInt16LE(data + 18);
+      const idMask = buf.readUInt32LE(data + 22);
+      const xMask = buf.readUInt32LE(data + 26);
+      const yMask = buf.readUInt32LE(data + 30);
+      const raw = zlib.inflateSync(buf.subarray(data + 48, p + size));
+      const tiles = new Uint32Array(wTiles * hTiles);
+      for (let t = 0; t < tiles.length; t++) tiles[t] = raw.readUInt32LE(t * 4);
+      cels.set(layerIndex, { x, y, wTiles, hTiles, idMask, xMask, yMask, tiles });
+    }
+    p += size;
+  }
+  if (!tileset) throw new Error('decodeAsepriteMulti: missing tileset');
+  if (cels.size === 0) throw new Error('decodeAsepriteMulti: no tilemap cels');
+
+  // Re-expand each (possibly trimmed) layer cel into the full canvas tile grid at its
+  // origin — empty cells default to tile 0 (same trim handling as decodeAsepriteStructural).
+  const wTiles = Math.floor(widthPx / tileset.tileW);
+  const hTiles = Math.floor(heightPx / tileset.tileH);
+  const layers: AsepriteStructuralLayer[] = [];
+  for (let li = 0; li < layerNames.length; li++) {
+    const cel = cels.get(li);
+    const cells: AsepriteCell[] = new Array(wTiles * hTiles);
+    for (let i = 0; i < cells.length; i++) cells[i] = { tile: 0, hflip: false, vflip: false };
+    if (cel) {
+      const celTX = Math.floor(cel.x / tileset.tileW), celTY = Math.floor(cel.y / tileset.tileH);
+      for (let ty = 0; ty < cel.hTiles; ty++) {
+        for (let tx = 0; tx < cel.wTiles; tx++) {
+          const gx = celTX + tx, gy = celTY + ty;
+          if (gx < 0 || gy < 0 || gx >= wTiles || gy >= hTiles) continue;
+          const entry = cel.tiles[ty * cel.wTiles + tx]!;
+          cells[gy * wTiles + gx] = { tile: entry & cel.idMask, hflip: (entry & cel.xMask) !== 0, vflip: (entry & cel.yMask) !== 0 };
+        }
+      }
+    }
+    layers.push({ name: layerNames[li]!, cells });
   }
   return {
     width: widthPx, height: heightPx, palette, transparentIndex,
     tileW: tileset.tileW, tileH: tileset.tileH, numTiles: tileset.numTiles, tilePixels: tileset.pixels,
-    cells, wTiles: cel.wTiles, hTiles: cel.hTiles
+    wTiles, hTiles, layers
   };
 }
 

@@ -122,25 +122,34 @@ function lookupBg2Entry(
  * identically; the per-scanline HDMA wave is a runtime effect we
  * don't simulate.
  */
+/** The decompressed tilemap bytes for an LZ2 `fileId` — from the editor's live gfx-edit
+ *  overlay (a placement import's `saveGfxEdit('lz2', …)`) when present, so a tilemap
+ *  rearrangement PREVIEWS on the canvas without a rebuild; else decompressed from the cart.
+ *  Mirrors how `loadLevelGfx` overlays CHR — the tilemap loaders are a separate gm$0C step,
+ *  so they need their own seam (without it, placement edits save but don't show). */
+function tilemapBytes(rom: Uint8Array, symbols: SymbolMap, fileId: number, gfxOverride?: ReadonlyMap<string, Uint8Array>): Uint8Array {
+  const ov = gfxOverride?.get(`lz2/${fileId}`);
+  if (ov) return ov;
+  const srcPC = snesToPC(u24le(rom, symbols.pc('DATA_lz2_compressed_gfx_ptrs') + fileId * 3));
+  const scratch = new Uint8Array(SRAM_STAGING_BYTES);
+  const { destEnd } = lz2(rom, srcPC, scratch, 0);
+  return scratch.subarray(0, destEnd);
+}
+
 export function loadBg2Tilemap(
   rom: Uint8Array,
   symbols: SymbolMap,
   bg2Tileset: number,
-  vram: Uint8Array
+  vram: Uint8Array,
+  gfxOverride?: ReadonlyMap<string, Uint8Array>
 ): number {
   const entry = lookupBg2Entry(rom, symbols, bg2Tileset);
   if (entry.type !== 0x00 && entry.type !== 0x04) return 0;
 
-  const lz2Table = symbols.pc('DATA_lz2_compressed_gfx_ptrs');
-  const srcSnes = u24le(rom, lz2Table + entry.fileIdx * 3);
-  const srcPC = snesToPC(srcSnes);
-
-  const scratch = new Uint8Array(SRAM_STAGING_BYTES);
-  const { destEnd } = lz2(rom, srcPC, scratch, 0);
-
-  const sizeBytes = Math.min(destEnd, vram.length - BG2_TILEMAP_VRAM_ADDR);
+  const bytes = tilemapBytes(rom, symbols, entry.fileIdx, gfxOverride);
+  const sizeBytes = Math.min(bytes.length, vram.length - BG2_TILEMAP_VRAM_ADDR);
   for (let i = 0; i < sizeBytes; i++) {
-    vram[BG2_TILEMAP_VRAM_ADDR + i] = scratch[i];
+    vram[BG2_TILEMAP_VRAM_ADDR + i] = bytes[i]!;
   }
   return sizeBytes;
 }
@@ -203,7 +212,8 @@ export function loadBg3Tilemap(
   rom: Uint8Array,
   symbols: SymbolMap,
   bg3Tileset: number,
-  vram: Uint8Array
+  vram: Uint8Array,
+  gfxOverride?: ReadonlyMap<string, Uint8Array>
 ): Bg3LoadResult {
   if (vram.length < BG3_TILEMAP_VRAM_ADDR + BG3_TILEMAP_VRAM_BYTES) {
     throw new RangeError(
@@ -232,16 +242,11 @@ export function loadBg3Tilemap(
     return { bytesWritten: BG3_TILEMAP_VRAM_BYTES, emptyFilled: true, bg3Disabled: false };
   }
 
-  // LZ2 source ptr — same table as graphics/BG2.
-  const lz2Table = symbols.pc('DATA_lz2_compressed_gfx_ptrs');
-  const srcSnes = u24le(rom, lz2Table + fileId * 3);
-  const srcPC = snesToPC(srcSnes);
+  // Decompressed bytes (live overlay-aware, so a placement edit previews), then copy
+  // the BG3 tilemap region (2 KB) to VRAM.
+  const scratch = tilemapBytes(rom, symbols, fileId, gfxOverride);
 
-  // Decompress into scratch, then copy the BG3 tilemap region (2 KB) to VRAM.
-  const scratch = new Uint8Array(SRAM_STAGING_BYTES);
-  const { destEnd } = lz2(rom, srcPC, scratch, 0);
-
-  const sizeBytes = Math.min(destEnd, BG3_TILEMAP_VRAM_BYTES);
+  const sizeBytes = Math.min(scratch.length, BG3_TILEMAP_VRAM_BYTES);
   for (let i = 0; i < sizeBytes; i++) {
     vram[BG3_TILEMAP_VRAM_ADDR + i] = scratch[i];
   }

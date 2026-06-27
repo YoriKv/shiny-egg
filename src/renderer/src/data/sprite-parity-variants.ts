@@ -52,10 +52,12 @@ export interface SpriteParityVariant {
    *  (canvas/draw/sprite-variant-hints.ts). Absent for behavioural variants
    *  and for mirror-only entries with no true side (the boo-guy mace). */
   dirs?: [ParityDirection, ParityDirection]
-  /** Spawn-variant badge: when the resolved values-index equals `index`, the
-   *  sprite is a continuous `generator` (cyan up-chevron) or spawns a one-shot
+  /** Spawn-variant badge: when the resolved values-index matches `index` (a
+   *  single index, or any of several for an 'xy' variant whose spawn flag comes
+   *  from just one of the two axes — e.g. $0E6, generator on either odd-Y cell),
+   *  the sprite is a continuous `generator` (cyan up-chevron) or spawns a one-shot
    *  `companion` (cyan "+"). Drives the on-outline badge. */
-  badge?: { kind: 'generator' | 'companion'; index: number }
+  badge?: { kind: 'generator' | 'companion'; index: number | number[] }
   /** Which values-index is the WIDE orbit (the $064 cluster) — drives the spin
    *  badge's ring size. */
   orbitWideIndex?: number
@@ -123,7 +125,12 @@ export const SPRITE_PARITY_VARIANTS: Record<number, SpriteParityVariant[]> = {
   0x0e0: [{ axis: 'x', label: 'Climb steps', values: ['2 stair-steps per cycle', '5 stair-steps per cycle'], hint: 'How many rises per swim wave.' }],
   0x0e2: [{ axis: 'x', label: 'Mount', values: ['Floor', 'Ceiling'], hint: 'Ceiling-mounted Boo Blahs hang upside-down.' }],
   0x0e3: [{ axis: 'x', label: 'Mount', values: ['Floor', 'Ceiling'], hint: 'Ceiling-mounted Boo Blahs hang upside-down.' }],
-  0x0e6: [{ axis: 'y', label: 'Spawning', values: ['Single Gusty', 'Continuous generator'], badge: { kind: 'generator', index: 1 }, hint: 'Odd row turns this into a Gusty generator (matches the cyan badge).' }],
+  // $0E6 is XY, not Y: init_gusty (Bank01.asm:5507) reads BOTH $7182,x&$0010 (Y cell: even =
+  // single, odd = continuous generator — `BIT #$0010 : BEQ` sends EVEN to the normal path) AND
+  // $70E2,x&$0010 (X cell: heading). The left/right meaning INVERTS between the two Y states
+  // (single even=left / generator even=right) — labels taken from Advynia's asm-derived variant
+  // table, which our own 4-state object name "left / right / infinite right / infinite left" implied.
+  0x0e6: [{ axis: 'xy', label: 'Variant', values: ['Single, heads left', 'Single, heads right', 'Generator, spawns right', 'Generator, spawns left'], badge: { kind: 'generator', index: [2, 3] }, hint: 'The Y cell parity picks a single Gusty (even) vs a continuous generator (odd, stoppable with sprite $1E2); the X cell parity picks the heading — note left/right swap between the single and generator forms.' }],
   0x0e7: [{ axis: 'x', label: 'Spawning', values: ['Spawns a partner Burt', 'Lone Burt'], badge: { kind: 'companion', index: 0 }, hint: 'Even column spawns the classic Burt pair.' }],
   0x0e8: [{ axis: 'xy', label: 'Variant', values: ['Normal Goonie', 'Normal Goonie', 'Flock respawner (left edge)', 'Flock respawner (right edge)'], hint: 'Odd row makes it an invisible flock-edge respawner; column picks the screen edge.' }],
   0x0f4: [{ axis: 'x', label: 'Spits', values: ['Green Eggs', 'Bouncing Needlenoses'], hint: 'Which projectile the Egg-Plant produces.' }],
@@ -205,7 +212,10 @@ function resolvedIndex(v: SpriteParityVariant, x: number, y: number): number {
  *  no spawn variant or sits at the inactive parity. */
 export function paritySpawnBadge(num: number, x: number, y: number): 'generator' | 'companion' | null {
   for (const v of SPRITE_PARITY_VARIANTS[num] ?? []) {
-    if (v.badge && resolvedIndex(v, x, y) === v.badge.index) return v.badge.kind
+    if (!v.badge) continue
+    const idx = resolvedIndex(v, x, y)
+    const active = Array.isArray(v.badge.index) ? v.badge.index.includes(idx) : v.badge.index === idx
+    if (active) return v.badge.kind
   }
   return null
 }

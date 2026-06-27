@@ -179,18 +179,23 @@ export function decodeForRequest(
   overlayRoot: string | undefined
 ): DecodeLevelByIdResult | null {
   if (req.override) {
-    const key = decodeInputKey(req.override)
+    // The seed (the "Refresh RNG" action) changes the decoded buffer, so it must
+    // be part of the cache key — otherwise a re-roll would hit the cache and
+    // return the previous seed's grid. (decodeInputKey, reused as the render
+    // token, stays seed-independent; that's fine — the grid cache is overwritten
+    // by each render, and a seed change forces a FULL re-render renderer-side.)
+    const key = decodeInputKey(req.override) + (req.prngSeed != null ? `:rng${req.prngSeed}` : '')
     if (decodeCache && decodeCache.symbols === symbols && decodeCache.key === key) {
       return decodeCache.result
     }
     const result = decodeLevelFromLevelData({
-      rom, symbols, workRoot, levelData: req.override
+      rom, symbols, workRoot, levelData: req.override, prngSeed: req.prngSeed
     })
     decodeCache = { symbols, key, result }
     return result
   }
   return decodeLevelById({
-    rom, symbols, workRoot, levelRecordId: req.levelRecordId, overlayRoot
+    rom, symbols, workRoot, levelRecordId: req.levelRecordId, overlayRoot, prngSeed: req.prngSeed
   })
 }
 

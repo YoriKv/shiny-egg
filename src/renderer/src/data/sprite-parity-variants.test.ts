@@ -17,10 +17,11 @@ describe('parityVariantRows', () => {
     expect(parityVariantRows(0x0f4, 10, 7)[0].value).toBe('Green Eggs')
     expect(parityVariantRows(0x0f4, 11, 7)[0].value).toBe('Bouncing Needlenoses')
   })
-  it('y-axis: Gusty generator arms on an odd ROW, column irrelevant', () => {
-    expect(parityVariantRows(0x0e6, 10, 6)[0].value).toBe('Single Gusty')
-    expect(parityVariantRows(0x0e6, 11, 6)[0].value).toBe('Single Gusty')
-    expect(parityVariantRows(0x0e6, 10, 7)[0].value).toBe('Continuous generator')
+  it('xy-axis: Gusty — Y row picks single vs generator, X column picks heading (left/right flips between the two forms, asm-verified Bank01.asm:5507)', () => {
+    expect(parityVariantRows(0x0e6, 10, 6)[0].value).toBe('Single, heads left') // even row, even col
+    expect(parityVariantRows(0x0e6, 11, 6)[0].value).toBe('Single, heads right') // even row, odd col
+    expect(parityVariantRows(0x0e6, 10, 7)[0].value).toBe('Generator, spawns right') // odd row, even col
+    expect(parityVariantRows(0x0e6, 11, 7)[0].value).toBe('Generator, spawns left') // odd row, odd col
   })
   it('xy-axis: Freezegood reward indexes 2*(y&1)+(x&1) — Y is the high bit', () => {
     expect(parityVariantRows(0x01c, 10, 6)[0].value).toBe('Nothing')
@@ -50,9 +51,10 @@ describe('parityVariantRows', () => {
     expect(parityDirection(0x0f4, 10, 7)).toBeNull() // egg-plant — behavioural
     expect(parityDirection(0x185, 10, 7)).toBeNull()
   })
-  it('paritySpawnBadge: Gusty generator on odd rows; Burt companion on EVEN columns', () => {
-    expect(paritySpawnBadge(0x0e6, 10, 7)).toBe('generator')
-    expect(paritySpawnBadge(0x0e6, 10, 6)).toBeNull()
+  it('paritySpawnBadge: Gusty generator on EITHER odd-row cell; Burt companion on EVEN columns', () => {
+    expect(paritySpawnBadge(0x0e6, 10, 7)).toBe('generator') // odd row, even col (index 2)
+    expect(paritySpawnBadge(0x0e6, 11, 7)).toBe('generator') // odd row, odd col (index 3) — array badge
+    expect(paritySpawnBadge(0x0e6, 10, 6)).toBeNull() // even row = single, no badge
     expect(paritySpawnBadge(0x0e7, 10, 7)).toBe('companion') // even column = pair
     expect(paritySpawnBadge(0x0e7, 11, 7)).toBeNull()
     expect(paritySpawnBadge(0x185, 10, 7)).toBeNull()
@@ -73,7 +75,9 @@ describe('parityVariantRows', () => {
     for (const [num, variants] of Object.entries(SPRITE_PARITY_VARIANTS)) {
       const key = `0x${Number(num).toString(16)}`
       for (const v of variants) {
-        if (v.badge) expect(v.badge.index, key).toBeLessThan(v.values.length)
+        if (v.badge)
+          for (const i of Array.isArray(v.badge.index) ? v.badge.index : [v.badge.index])
+            expect(i, key).toBeLessThan(v.values.length)
         if (v.orbitWideIndex !== undefined) expect(v.orbitWideIndex, key).toBeLessThan(v.values.length)
       }
     }

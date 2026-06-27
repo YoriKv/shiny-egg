@@ -77,6 +77,10 @@ export interface ComposeBgLayersArgs {
   vram: Uint8Array;
   /** CGRAM already populated by loadLevelPalettes (+ any palette override). */
   cgram: Uint8Array;
+  /** Editor live gfx-edit overlay (`format/fileId` → decompressed bytes) so a BG2/BG3
+   *  tilemap PLACEMENT edit previews on the canvas without a rebuild — the tilemap is its
+   *  own gm$0C load (separate from the CHR `loadLevelGfx` overlay). Omit for the cart. */
+  gfxOverride?: ReadonlyMap<string, Uint8Array>;
 }
 
 /**
@@ -86,15 +90,15 @@ export interface ComposeBgLayersArgs {
  * `vram` in place (tilemap regions only).
  */
 export function composeBgLayers(args: ComposeBgLayersArgs): ComposedBgLayers {
-  const { rom, symbols, gfxHeader, palHeader, levelMode, vram, cgram } = args;
+  const { rom, symbols, gfxHeader, palHeader, levelMode, vram, cgram, gfxOverride } = args;
 
   // BG2 + BG3 tilemaps are separate gm$0C steps from load_level_gfx — they need
   // explicit loads. Both return the byte count actually written, passed to
   // renderBgLayer as `loadedBytes` so it skips the unloaded portion of a partly
   // filled 32×64 / 64×32 region (common: BG2 declared 32×64 but only top 32×32
   // loaded, the bottom screen overlapping bg3CharAddr).
-  const bg2LoadedBytes = loadBg2Tilemap(rom, symbols, gfxHeader.bg2Tileset, vram);
-  const bg3Load = loadBg3Tilemap(rom, symbols, gfxHeader.bg3Tileset, vram);
+  const bg2LoadedBytes = loadBg2Tilemap(rom, symbols, gfxHeader.bg2Tileset, vram, gfxOverride);
+  const bg3Load = loadBg3Tilemap(rom, symbols, gfxHeader.bg3Tileset, vram, gfxOverride);
 
   const regs = loadSceneRegs(rom, symbols, levelMode);
   const { bg2Layer, bg3Layer } = deriveDescriptors(regs, levelMode, bg3Load.bg3Disabled);

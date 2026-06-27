@@ -15,10 +15,28 @@ import {
   exportWorldMapIcons, buildWorldMapIconContext, renderWorldMapIcon, diffWorldMapIconTiles, worldMapIconAseprite
 } from './screen-gfx.ts';
 import { decodeAsepriteImage } from './aseprite.ts';
+import { diffAsepritePalette } from './gfx-aseprite.ts';
+import { imageDataU32ToBgr15 } from './color.ts';
 
 let failures = 0;
 function assert(cond: boolean, msg: string): void {
   if (cond) { console.log(`  ✓ ${msg}`); } else { console.error(`  ✗ ${msg}`); failures++; }
+}
+
+/** Pin a track's palette write-back against the blob words it was sourced from (provenance,
+ *  cgram): unedited → 0 edits; flipping the first blob-backed entry → exactly one. */
+function assertPaletteRoundTrip(label: string, palette: Uint32Array, offsets: number[], provenance: Int32Array, cgram: Uint8Array): void {
+  const blobWords = new Map<number, number>();
+  for (let ci = 0; ci < provenance.length; ci++) { const o = provenance[ci]!; if (o >= 0) blobWords.set(o, (cgram[ci * 2]! | (cgram[ci * 2 + 1]! << 8)) & 0x7fff); }
+  assert(offsets.length > 0 && offsets.length <= palette.length, `${label}: paletteOffsets covers the meaningful entries (${offsets.length} of ${palette.length})`);
+  assert(diffAsepritePalette(palette, offsets, blobWords).length === 0, `${label}: unedited palette → 0 master-blob colour edits`);
+  const pi = offsets.findIndex((o) => o >= 0);
+  assert(pi >= 0, `${label}: palette has a blob-backed colour to edit`);
+  if (pi >= 0) {
+    const ep = palette.slice(); ep[pi] = (ep[pi]! ^ 0x00080808) >>> 0;
+    const eds = diffAsepritePalette(ep, offsets, blobWords);
+    assert(eds.length === 1 && eds[0]!.offset === offsets[pi] && eds[0]!.value === imageDataU32ToBgr15(ep[pi]!), `${label}: a 1-colour edit → exactly one PaletteEdit at the right offset`);
+  }
 }
 
 let cart;
@@ -78,11 +96,14 @@ assert(rtFail === 0, `unedited round-trip → 0 edits across all 12 icons (${rtF
 {
   const ctx = buildWorldMapIconContext(rom, symbols, 0);
   const canvas = renderWorldMapIcon(ctx, 'marker')!;
-  const dec = decodeAsepriteImage(worldMapIconAseprite(ctx, canvas));
+  const iconFull = worldMapIconAseprite(ctx, canvas);
+  const dec = decodeAsepriteImage(iconFull.bytes);
   assert(dec.width === 24 && dec.height === 24, `icon .aseprite is 24×24 (got ${dec.width}×${dec.height})`);
   const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
   assert(eq(dec.rgba, canvas.rgba), 'icon .aseprite flatten reproduces the assembled icon byte-exact');
   assert(diffWorldMapIconTiles(ctx, canvas, dec.rgba).edits.length === 0, 'icon .aseprite round-trips to 0 tile edits');
+  // Palette write-back: the icon's used BG rows (multi-row flatten, 16-colour, opaque + trailing).
+  assertPaletteRoundTrip('world-map icon', dec.palette, iconFull.paletteOffsets, ctx.provenance, ctx.cgram);
   const edited = dec.rgba.slice();
   const u32 = new Uint32Array(edited.buffer, edited.byteOffset, 24 * 24);
   const i = 10 * 24 + 10; u32[i] = u32[i]! ^ 0x00ffffff;

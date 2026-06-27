@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.0 - 2026-06-26
+
+- New Validation panel. Runs checks against level data looking for issues that may not be apparent in the editor, but can show up during gameplay.
+- New graphics export path using a bundled tile editor: the app now ships M1TE, a SNES Mode 1 tile/map editor, modified with some UX improvements. Harder to use than Aseprite, but has more accurate editing especially for 16x16 tile placement and support for placing the same tiles in different palettes.
+- Palette editing through export/import.
+- Graphics export now supports the overworld map graphics, in addition to the boot, title, and selection of storybook screens.
+- All sprite names reviewed and cleaned up.
+- New built-in patch, Unlock All Worlds and Levels.
+
 ## v0.4.2 - 2026-06-23
 
 - Better getting started readme and clearer first use pointing the user to extract reference assets.

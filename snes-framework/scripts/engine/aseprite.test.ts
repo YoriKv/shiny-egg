@@ -8,7 +8,7 @@
 //
 // Run: node snes-framework/scripts/engine/aseprite.test.ts
 
-import { encodeAseprite, decodeAsepriteRegion, type AsepriteCell } from './aseprite.ts';
+import { encodeAseprite, decodeAsepriteRegion, decodeAsepriteStructural, type AsepriteCell } from './aseprite.ts';
 
 let failures = 0;
 function assert(cond: boolean, msg: string): void {
@@ -115,6 +115,38 @@ const gotOld = new Uint32Array(decOld.rgba.buffer, decOld.rgba.byteOffset, decOl
 let oldExact = decOld.width === 16 && decOld.height === 16;
 for (let i = 0; oldExact && i < expected.length; i++) if (gotOld[i] !== expected[i]) oldExact = false;
 assert(oldExact, 'decodes an equivalent 0x0004 (old FLI_COLOR) palette chunk identically');
+
+// TRIMMED CEL (regression): Aseprite trims a tilemap cel to its non-empty bounding box
+// on save, so a layer with empty borders saves a SMALLER wTiles×hTiles at a non-zero
+// cel origin. The decoders must re-place the cel into the full canvas grid by its X/Y —
+// without it, every cell is mis-located and a placement import reports the whole layer
+// "not rewritable" (the real-file bug). Simulate it: grow the canvas by a 16px top band
+// and offset the cel down by 16px, then verify the decode re-expands.
+function makeTrimmed(file: Uint8Array): Uint8Array {
+  const out = Buffer.from(file); // mutable copy
+  out.writeUInt16LE(32, 10); // heightPx 16 → 32 (a 16px empty band added on top)
+  let p = 128 + 16;
+  const n = out.readUInt32LE(128 + 12);
+  for (let i = 0; i < n; i++) {
+    const size = out.readUInt32LE(p);
+    if (out.readUInt16LE(p + 4) === 0x2005 && out.readUInt16LE(p + 6 + 7) === 3) { out.writeInt16LE(16, p + 6 + 4); break; } // cel Y = 16
+    p += size;
+  }
+  return new Uint8Array(out);
+}
+const trimmed = makeTrimmed(bytes);
+const st = decodeAsepriteStructural(trimmed);
+assert(st.width === 16 && st.height === 32 && st.wTiles === 2 && st.hTiles === 4,
+  `trimmed cel re-expands to the full canvas grid (${st.wTiles}×${st.hTiles} tiles, ${st.width}×${st.height}px)`);
+assert(st.cells[0]!.tile === 0 && st.cells[1]!.tile === 0,
+  'top band (above the cel) fills with the empty tile');
+// original cell (1,0)=tileA now lands at tile row 2 (offset 16px / 8 = 2) → cells index 2*2+1.
+assert(st.cells[2 * 2 + 1]!.tile === 1 && st.cells[2 * 2]!.tile === 0,
+  'cel content re-placed at the cel origin row (tile 1 at row 2, col 1)');
+const dt = decodeAsepriteRegion(trimmed);
+const gt = new Uint32Array(dt.rgba.buffer, dt.rgba.byteOffset, dt.width * dt.height);
+assert(dt.height === 32 && gt[8] === 0 && gt[16 * 16 + 8] === palette[tileA[0]!],
+  'flatten offsets the cel by its origin (tileA top-left now at row 16, top band transparent)');
 
 console.log(`\n${failures === 0 ? '✓ all aseprite codec pins pass' : `✗ ${failures} failure(s)`}`);
 process.exit(failures === 0 ? 0 : 1);

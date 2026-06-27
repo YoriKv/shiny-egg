@@ -120,6 +120,20 @@ export function AboutBody(): JSX.Element {
             - the assembler, emulators, and compression reference behind the
             build, testing, and graphics decoding.
           </li>
+          <li>
+            <b>M1TE</b> - the SNES tile/map editor bundled with the app for
+            editing exported BG-layer, world-map, and screen graphics; a fork of{' '}
+            <b>
+              <a
+                href="https://github.com/nesdoug/M1TE2"
+                target="_blank"
+                rel="noreferrer"
+              >
+                M1TE2
+              </a>
+            </b>{' '}
+            (Doug Fraker / nesdoug).
+          </li>
         </ul>
       </div>
 

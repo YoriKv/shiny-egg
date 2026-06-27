@@ -30,6 +30,18 @@ extraResources:
     to: snes-framework/asar-licenses
     filter:
       - '**/*'
+  # M1TE — our fork of M1TE2 (the .NET SNES tile/map editor) for editing exported
+  # .M1 graphics sessions. A Windows .exe (+ its .NET runtime .config); shipped on
+  # BOTH platforms — run natively on Windows, via Wine on Linux — so it lives here in
+  # the shared block, not the per-OS one. Its MIT license text rides alongside.
+  - from: snes-framework/M1TE.exe
+    to: snes-framework/M1TE.exe
+  - from: snes-framework/M1TE.exe.config
+    to: snes-framework/M1TE.exe.config
+  - from: snes-framework/m1te-licenses
+    to: snes-framework/m1te-licenses
+    filter:
+      - '**/*'
   - from: snes-framework/global
     to: snes-framework/global
     filter:

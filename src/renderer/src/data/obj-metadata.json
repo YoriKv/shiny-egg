@@ -7743,7 +7743,8 @@
     "0x004": {
       "name": "Item from Star Mario block",
       "category": "item",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x005": {
       "name": "Icy watermelon",
@@ -7765,9 +7766,10 @@
       ]
     },
     "0x006": {
-      "name": "Chill",
-      "category": "enemy",
-      "spritesetFiles": null
+      "name": "Ice Breath",
+      "category": "item",
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x007": {
       "name": "Watermelon",
@@ -7789,8 +7791,8 @@
       ]
     },
     "0x008": {
-      "name": "Rubble",
-      "category": "enemy",
+      "name": "Bowser's falling rubble",
+      "category": "decoration",
       "spritesetFiles": null,
       "spawnedOnly": true
     },
@@ -7821,21 +7823,9 @@
       ]
     },
     "0x00B": {
-      "name": "Cannonball of Kaboomba",
+      "name": "Kaboomba's cannonball",
       "category": "hazard",
       "spritesetFiles": null,
-      "neighborDeps": [
-        {
-          "cls": "tile-behavior",
-          "targetKind": "map16-tile",
-          "spatial": "note",
-          "targetIds": [],
-          "enforce": false,
-          "targetName": "breakable soft-dirt tiles (collision tag $08)",
-          "failureMode": "explosion is cosmetic only",
-          "designerRule": "explosions excavate tag-$08 dirt"
-        }
-      ],
       "spawnedOnly": true
     },
     "0x00C": {
@@ -7869,7 +7859,7 @@
       ]
     },
     "0x011": {
-      "name": "Item Card",
+      "name": "Item from Bandit minigame victory",
       "category": "item",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -7937,7 +7927,7 @@
       ]
     },
     "0x018": {
-      "name": "Flame of Red Watermelon",
+      "name": "Fire breath",
       "category": "item",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -8187,7 +8177,7 @@
       "spawnedOnly": true
     },
     "0x036": {
-      "name": "(BG3) Falling down wall",
+      "name": "Falling down wall (BG3)",
       "category": "hazard",
       "spritesetFiles": []
     },
@@ -8205,19 +8195,19 @@
       "spawnedOnly": true
     },
     "0x039": {
-      "name": "(BG3) Spinning wooden platform",
+      "name": "Spinning wooden platform (BG3)",
       "category": "platform",
       "spritesetFiles": []
     },
     "0x03A": {
-      "name": "3 Mini-Ravens",
+      "name": "3 Mini-Ravens, wall-following",
       "category": "enemy",
       "spritesetFiles": [
         "0x4F"
       ]
     },
     "0x03B": {
-      "name": "Mini-Raven",
+      "name": "Mini-Raven, wall-following",
       "category": "enemy",
       "spritesetFiles": [
         "0x4F"
@@ -8231,17 +8221,17 @@
       ]
     },
     "0x03D": {
-      "name": "(BG3) Seesaw",
+      "name": "Seesaw (BG3)",
       "category": "platform",
       "spritesetFiles": []
     },
     "0x03E": {
-      "name": "Skinny platform",
+      "name": "Red bridge, deformable",
       "category": "platform",
       "spritesetFiles": []
     },
     "0x03F": {
-      "name": "Slime",
+      "name": "Block Slime",
       "category": "enemy",
       "spritesetFiles": [
         "0x1C",
@@ -8329,7 +8319,8 @@
     "0x047": {
       "name": "Shy Guy for Rogger the Potted Ghost",
       "category": "boss",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x048": {
       "name": "Kamek, for scenes before boss fights",
@@ -8364,7 +8355,7 @@
       ]
     },
     "0x04D": {
-      "name": "Unused Unknown",
+      "name": "Balloon, attached to ground",
       "category": "unknown",
       "spritesetFiles": null
     },
@@ -8406,12 +8397,12 @@
       "spritesetFiles": []
     },
     "0x050": {
-      "name": "(BG3) Board",
+      "name": "Board (BG3)",
       "category": "platform",
       "spritesetFiles": []
     },
     "0x051": {
-      "name": "(BG3) Large log",
+      "name": "Large log (BG3)",
       "category": "platform",
       "spritesetFiles": []
     },
@@ -8512,7 +8503,7 @@
       ]
     },
     "0x057": {
-      "name": "(BG3) Sewer ghost with Flatbed Ferry on its head",
+      "name": "Sewer ghost with Flatbed Ferry on its head, irregular loop (BG3)",
       "category": "platform",
       "spritesetFiles": [
         "0x45"
@@ -8524,7 +8515,7 @@
       "spritesetFiles": []
     },
     "0x059": {
-      "name": "Continuous Super Star",
+      "name": "Super Star, continuous",
       "category": "item",
       "spritesetFiles": []
     },
@@ -8547,17 +8538,17 @@
       "spritesetFiles": []
     },
     "0x05D": {
-      "name": "[CRASH]",
+      "name": "Unused sprite ID (crash)",
       "category": "unknown",
       "spritesetFiles": null
     },
     "0x05E": {
-      "name": "(BG3) Plank",
+      "name": "Plank, tilts (BG3)",
       "category": "platform",
       "spritesetFiles": []
     },
     "0x05F": {
-      "name": "(BG3) Plank",
+      "name": "Plank, rotates(BG3)",
       "category": "platform",
       "spritesetFiles": []
     },
@@ -8582,7 +8573,8 @@
     "0x061": {
       "name": "Baby Mario",
       "category": "interactive",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x062": {
       "name": "Goomba",
@@ -8636,7 +8628,7 @@
       ]
     },
     "0x067": {
-      "name": "Hidden Winged Cloud, stars / seed / flower / 1-up",
+      "name": "Hidden Winged Cloud, stars / seed / flower / 1-up, chomp rock or snowball activated",
       "category": "item",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -8695,12 +8687,12 @@
       ]
     },
     "0x06D": {
-      "name": "Hootie the Blue Fish, clockwise",
+      "name": "Propeller Piranha, clockwise",
       "category": "enemy",
       "spritesetFiles": []
     },
     "0x06E": {
-      "name": "Hootie the Blue Fish, anticlockwise",
+      "name": "Propeller Piranha, counterclockwise",
       "category": "enemy",
       "spritesetFiles": []
     },
@@ -8746,7 +8738,7 @@
       ]
     },
     "0x073": {
-      "name": "(BG3) Balloon Pumper with red balloon",
+      "name": "Balloon Pumper with red balloon (BG3)",
       "category": "platform",
       "spritesetFiles": []
     },
@@ -8803,19 +8795,22 @@
     "0x07B": {
       "name": "Biting (Red) Bullet Bill",
       "category": "enemy",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x07C": {
       "name": "Bouncing (Yellow) Bullet Bill",
       "category": "enemy",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x07D": {
       "name": "Bullet Bill",
       "category": "enemy",
       "spritesetFiles": [
         "0x31"
-      ]
+      ],
+      "spawnedOnly": true
     },
     "0x07E": {
       "name": "Dent of castella",
@@ -8906,7 +8901,8 @@
     "0x08C": {
       "name": "Yoshi, receives Baby Mario at the Goal",
       "category": "interactive",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x08D": {
       "name": "Fly Guy, 5 stars / red coin / 1-up / 1-up",
@@ -8926,7 +8922,7 @@
       "spritesetFiles": []
     },
     "0x090": {
-      "name": "(BG3) Dangling Ghost",
+      "name": "Dangling Ghost (BG3)",
       "category": "platform",
       "spritesetFiles": [
         "0x42",
@@ -8934,9 +8930,10 @@
       ]
     },
     "0x091": {
-      "name": "4 Toadies",
+      "name": "4 Toadies (steal Baby Mario sequence)",
       "category": "enemy",
-      "spritesetFiles": []
+      "spritesetFiles": [],
+      "spawnedOnly": true
     },
     "0x092": {
       "name": "Melon Bug",
@@ -8971,12 +8968,12 @@
       "spritesetFiles": []
     },
     "0x095": {
-      "name": "Blue checkered block",
+      "name": "Platform block, left/right blue",
       "category": "interactive",
       "spritesetFiles": []
     },
     "0x096": {
-      "name": "Red checkered block",
+      "name": "Platform block, up/down red",
       "category": "interactive",
       "spritesetFiles": []
     },
@@ -9145,13 +9142,13 @@
       "spawnedOnly": true
     },
     "0x0AC": {
-      "name": "Sign Arrow and Shadow",
+      "name": "Falling rock warning arrow and shadow",
       "category": "decoration",
       "spritesetFiles": null,
       "spawnedOnly": true
     },
     "0x0AD": {
-      "name": "Hint Block",
+      "name": "Message Block",
       "category": "interactive",
       "spritesetFiles": []
     },
@@ -9183,9 +9180,10 @@
       "spritesetFiles": []
     },
     "0x0B3": {
-      "name": "Wind of Fuzzy",
+      "name": "Cloud from Eating Fuzzy",
       "category": "decoration",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x0B4": {
       "name": "Morph Bubble, Submarine",
@@ -9421,7 +9419,7 @@
       "spawnedOnly": true
     },
     "0x0D6": {
-      "name": "(BG3) Ghost with Flatbed Ferry on its head",
+      "name": "Ghost with Flatbed Ferry on its head, level 5-4 movement (BG3)",
       "category": "platform",
       "spritesetFiles": [
         "0x53"
@@ -9455,7 +9453,7 @@
       ]
     },
     "0x0DB": {
-      "name": "(BG3) Soft thing",
+      "name": "Pushable deformable rectangular platform (BG3)",
       "category": "platform",
       "spritesetFiles": []
     },
@@ -9465,7 +9463,7 @@
       "spritesetFiles": []
     },
     "0x0DD": {
-      "name": "Closer, in Naval Piranha's room",
+      "name": "Closes boss room entrances, in Naval Piranha's room",
       "category": "boss",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -9523,14 +9521,14 @@
       "spritesetFiles": null
     },
     "0x0E4": {
-      "name": "Heading cactus",
+      "name": "Heading Pokey (cactus)",
       "category": "enemy",
       "spritesetFiles": [
         "0x24"
       ]
     },
     "0x0E5": {
-      "name": "Green Needlenose",
+      "name": "Heading Pokey's Green Needlenose",
       "category": "enemy",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -9577,14 +9575,14 @@
       ]
     },
     "0x0EC": {
-      "name": "Flamer Guy, jumping around",
+      "name": "Pyro Guy, jumping around",
       "category": "enemy",
       "spritesetFiles": [
         "0x30"
       ]
     },
     "0x0ED": {
-      "name": "Flamer Guy, walking around",
+      "name": "Pyro Guy, walking around",
       "category": "enemy",
       "spritesetFiles": [
         "0x30"
@@ -9610,7 +9608,7 @@
       "spawnedOnly": true
     },
     "0x0F1": {
-      "name": "Bubble-Plant",
+      "name": "Bubble-Plant (unused)",
       "category": "enemy",
       "spritesetFiles": null
     },
@@ -9669,7 +9667,7 @@
       ]
     },
     "0x0F6": {
-      "name": "Parent and children of Huffin' Puffins",
+      "name": "Huffin' Puffin, parent with children",
       "category": "enemy",
       "spritesetFiles": []
     },
@@ -9746,7 +9744,7 @@
       ]
     },
     "0x0FE": {
-      "name": "Energy of Zeus Guy",
+      "name": "Zeus Guy's projectile",
       "category": "hazard",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -9870,7 +9868,7 @@
       ]
     },
     "0x10B": {
-      "name": "Hopping Tap-tap",
+      "name": "Tap-tap, hopping",
       "category": "enemy",
       "spritesetFiles": [
         "0x29"
@@ -9895,7 +9893,7 @@
       "spritesetFiles": []
     },
     "0x10F": {
-      "name": "Boo Man Bluff",
+      "name": "Blindfold Boo",
       "category": "enemy",
       "spritesetFiles": [
         "0x30"
@@ -9930,7 +9928,7 @@
       ]
     },
     "0x112": {
-      "name": "Splashed Georgette Jelly",
+      "name": "Georgette Jelly's particles",
       "category": "enemy",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -9941,7 +9939,7 @@
       "spritesetFiles": []
     },
     "0x114": {
-      "name": "Bullet, shot by Snifit",
+      "name": "Snifit's bullet",
       "category": "hazard",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -9970,7 +9968,7 @@
       "spritesetFiles": []
     },
     "0x119": {
-      "name": "Spooky",
+      "name": "Spooky Shy Guy",
       "category": "enemy",
       "spritesetFiles": [
         "0x46"
@@ -9997,30 +9995,31 @@
       "spawnedOnly": true
     },
     "0x11D": {
-      "name": "Spiny Egg",
+      "name": "Spiny Egg, from regular Lakitu",
       "category": "hazard",
       "spritesetFiles": null,
       "spawnedOnly": true
     },
     "0x11E": {
-      "name": "Brown Arrow Wheel",
+      "name": "Brown Arrow Wheel, untimed",
       "category": "platform",
       "spritesetFiles": []
     },
     "0x11F": {
-      "name": "Blue Arrow Wheel",
+      "name": "Blue Arrow Wheel, timed",
       "category": "platform",
       "spritesetFiles": []
     },
     "0x120": {
-      "name": "Double-ended arrow lift",
+      "name": "Two-way arrow lift",
       "category": "platform",
       "spritesetFiles": []
     },
     "0x121": {
-      "name": "Explosion of Number Platform",
+      "name": "Pressed countdown platform effects",
       "category": "decoration",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x122": {
       "name": "? bucket, Bandit",
@@ -10061,9 +10060,10 @@
       "spawnedOnly": true
     },
     "0x128": {
-      "name": "Ground shake",
+      "name": "Baby Bowser shockwave",
       "category": "command",
-      "spritesetFiles": null
+      "spritesetFiles": null,
+      "spawnedOnly": true
     },
     "0x129": {
       "name": "Fuzzy",
@@ -10197,17 +10197,17 @@
       "spawnedOnly": true
     },
     "0x135": {
-      "name": "Raven, always circling, anticlockwise / clockwise",
+      "name": "Raven, planetoid, slow continuous",
       "category": "enemy",
       "spritesetFiles": []
     },
     "0x136": {
-      "name": "Raven, anticlockwise / clockwise initially",
+      "name": "Raven, planetoid, fast with pausing",
       "category": "enemy",
       "spritesetFiles": []
     },
     "0x137": {
-      "name": "3x6 Falling Rock",
+      "name": "Falling stone block, 3x6",
       "category": "hazard",
       "spritesetFiles": [
         "0x1C",
@@ -10219,7 +10219,7 @@
       ]
     },
     "0x138": {
-      "name": "3x3 Falling Rock",
+      "name": "Falling stone block, 3x3",
       "category": "hazard",
       "spritesetFiles": [
         "0x20",
@@ -10227,7 +10227,7 @@
       ]
     },
     "0x139": {
-      "name": "3x9 Falling Rock",
+      "name": "Falling stone block, 3x9",
       "category": "hazard",
       "spritesetFiles": [
         "0x1C",
@@ -10239,7 +10239,7 @@
       ]
     },
     "0x13A": {
-      "name": "6x3 Falling Rock",
+      "name": "Falling stone block, 6x3",
       "category": "hazard",
       "spritesetFiles": [
         "0x20",
@@ -10247,7 +10247,7 @@
       ]
     },
     "0x13B": {
-      "name": "Stomach Acid",
+      "name": "Prince Froggy's Stomach Acid",
       "category": "boss",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -10265,35 +10265,35 @@
       ]
     },
     "0x13E": {
-      "name": "Fang, flying wavily",
+      "name": "Fang, flying in wave pattern",
       "category": "enemy",
       "spritesetFiles": [
         "0x55"
       ]
     },
     "0x13F": {
-      "name": "Flopsy Fish, swimming around",
+      "name": "Flopsy Fish (Cheep Cheep), swimming around",
       "category": "enemy",
       "spritesetFiles": [
         "0x54"
       ]
     },
     "0x140": {
-      "name": "Flopsy Fish, swimming and occasionally jumps vertically",
+      "name": "Flopsy Fish (Cheep Cheep), swimming and occasionally jumps vertically",
       "category": "enemy",
       "spritesetFiles": [
         "0x54"
       ]
     },
     "0x141": {
-      "name": "Flopsy Fish, swimming and jumps in an arc",
+      "name": "Flopsy Fish (Cheep Cheep), swimming and jumps in an arc",
       "category": "enemy",
       "spritesetFiles": [
         "0x54"
       ]
     },
     "0x142": {
-      "name": "Flopsy Fish, jumps 3 times in an arc, right / left",
+      "name": "Flopsy Fish (Cheep Cheep), jumps 3 times in an arc, right / left",
       "category": "enemy",
       "spritesetFiles": [
         "0x54"
@@ -10456,7 +10456,7 @@
       ]
     },
     "0x155": {
-      "name": "Very Goonie",
+      "name": "Very Goonie (Hefty)",
       "category": "enemy",
       "spritesetFiles": [
         "0x2A",
@@ -10594,12 +10594,12 @@
       "spritesetFiles": []
     },
     "0x162": {
-      "name": "Two spiked platforms with one switch in the center",
+      "name": "Two spiked platforms with one switch in the center (unused)",
       "category": "hazard",
       "spritesetFiles": null
     },
     "0x163": {
-      "name": "Bouncing green Needlenose",
+      "name": "Needlenose, bounces once",
       "category": "enemy",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -10641,14 +10641,14 @@
       ]
     },
     "0x169": {
-      "name": "Green Beach Koopa",
+      "name": "Green Beach Koopa, unshelled",
       "category": "enemy",
       "spritesetFiles": [
         "0x47"
       ]
     },
     "0x16A": {
-      "name": "Red Beach Koopa",
+      "name": "Red Beach Koopa, unshelled",
       "category": "enemy",
       "spritesetFiles": [
         "0x47"
@@ -10707,7 +10707,7 @@
       ]
     },
     "0x172": {
-      "name": "Naval Bud",
+      "name": "Naval Piranha's vine, vertical",
       "category": "enemy",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -10828,7 +10828,7 @@
       ]
     },
     "0x185": {
-      "name": "Active line guided green Flatbed Ferry, left",
+      "name": "Line guided green Flatbed Ferry, active left",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10856,7 +10856,7 @@
       ]
     },
     "0x186": {
-      "name": "Active line guided green Flatbed Ferry, right",
+      "name": "Line guided green Flatbed Ferry, active right",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10884,7 +10884,7 @@
       ]
     },
     "0x187": {
-      "name": "Active line guided yellow Flatbed Ferry, left",
+      "name": "Line guided yellow Flatbed Ferry, active left",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10912,7 +10912,7 @@
       ]
     },
     "0x188": {
-      "name": "Active line guided yellow Flatbed Ferry, right",
+      "name": "Line guided yellow Flatbed Ferry, active right",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10940,7 +10940,7 @@
       ]
     },
     "0x189": {
-      "name": "Line guided green Flatbed Ferry, left",
+      "name": "Line guided green Flatbed Ferry, activatable left",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10968,7 +10968,7 @@
       ]
     },
     "0x18A": {
-      "name": "Line guided green Flatbed Ferry, right",
+      "name": "Line guided green Flatbed Ferry, activatable right",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -10996,7 +10996,7 @@
       ]
     },
     "0x18B": {
-      "name": "Line guided yellow Flatbed Ferry, left",
+      "name": "Line guided yellow Flatbed Ferry, activatable left",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -11024,7 +11024,7 @@
       ]
     },
     "0x18C": {
-      "name": "Line guided yellow Flatbed Ferry, right",
+      "name": "Line guided yellow Flatbed Ferry, activatable right",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -11052,7 +11052,7 @@
       ]
     },
     "0x18D": {
-      "name": "Line guided red Flatbed Ferry, left",
+      "name": "Line guided red Flatbed Ferry, activatable left",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -11080,7 +11080,7 @@
       ]
     },
     "0x18E": {
-      "name": "Line guided red Flatbed Ferry, right",
+      "name": "Line guided red Flatbed Ferry, activatable right",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -11108,7 +11108,7 @@
       ]
     },
     "0x18F": {
-      "name": "Whirling lift",
+      "name": "Line guided rolling platform",
       "category": "platform",
       "spritesetFiles": [],
       "neighborDeps": [
@@ -11170,7 +11170,7 @@
       ]
     },
     "0x192": {
-      "name": "Mufti Guy, green / red / yellow / purple",
+      "name": "Petal (Mufti) Guy, green / red / yellow / purple",
       "category": "enemy",
       "spritesetFiles": [
         "0x5D"
@@ -11192,24 +11192,24 @@
       ]
     },
     "0x195": {
-      "name": "unknown",
-      "category": "unknown",
+      "name": "Rock spire, small platform, unstable",
+      "category": "platform",
       "spritesetFiles": null
     },
     "0x196": {
-      "name": "Unbalanced snowy platform",
+      "name": "Rock spire, large platform, unstable",
       "category": "platform",
       "spritesetFiles": null
     },
     "0x197": {
-      "name": "Arrow sign, up / right / left / down",
+      "name": "Arrow sign cardinal, up / right / left / down",
       "category": "decoration",
       "spritesetFiles": [
         "0x1C"
       ]
     },
     "0x198": {
-      "name": "Diagonal arrow sign, up left / up right / down left / down right",
+      "name": "Arrow sign diagonal, up left / up right / down left / down right",
       "category": "decoration",
       "spritesetFiles": [
         "0x1C"
@@ -11507,7 +11507,7 @@
       "spritesetFiles": []
     },
     "0x1B0": {
-      "name": "(BG3) Balloon",
+      "name": "Red Balloon (BG3)",
       "category": "platform",
       "spritesetFiles": null,
       "spawnedOnly": true
@@ -11631,52 +11631,52 @@
       "category": "command"
     },
     "0x1CA": {
-      "name": "Extremely slow auto-scroll",
+      "name": "Autoscroll path 0x00",
       "category": "command"
     },
     "0x1CB": {
-      "name": "Special auto-scroll 0",
+      "name": "Autoscroll path 0x01",
       "category": "command"
     },
     "0x1CC": {
-      "name": "Special auto-scroll 1",
+      "name": "Autoscroll path 0x02",
       "category": "command"
     },
     "0x1CD": {
-      "name": "Special auto-scroll 2",
+      "name": "Autoscroll path 0x03",
       "category": "command"
     },
     "0x1CE": {
-      "name": "Special auto-scroll 3",
+      "name": "Autoscroll path 0x04",
       "category": "command"
     },
     "0x1CF": {
-      "name": "Special auto-scroll 4",
+      "name": "Autoscroll path 0x05",
       "category": "command"
     },
     "0x1D0": {
-      "name": "Special auto-scroll 5",
+      "name": "Autoscroll path 0x06",
       "category": "command"
     },
     "0x1D1": {
-      "name": "Special auto-scroll 6",
+      "name": "Autoscroll path 0x07",
       "category": "command"
     },
     "0x1D2": {
-      "name": "Special auto-scroll 7",
+      "name": "Autoscroll path 0x08",
       "category": "command"
     },
     "0x1D3": {
-      "name": "Special auto-scroll 8",
+      "name": "Autoscroll path 0x09",
       "category": "command"
     },
     "0x1D4": {
-      "name": "Slow auto-scroll",
+      "name": "Autoscroll path 0x0A",
       "category": "command"
     },
     "0x1D5": {
-      "name": "Broken auto-scroll",
-      "category": "unknown"
+      "name": "Boo Balloon stopper",
+      "category": "command"
     },
     "0x1D6": {
       "name": "Lock horizontal scroll",
@@ -11692,15 +11692,15 @@
     },
     "0x1D9": {
       "name": "Lakitu stopper",
-      "category": "generator"
+      "category": "command"
     },
     "0x1DA": {
       "name": "Fuzzy generator stopper",
       "category": "generator"
     },
     "0x1DB": {
-      "name": "unknown",
-      "category": "unknown"
+      "name": "Poochy stopper",
+      "category": "command"
     },
     "0x1DC": {
       "name": "Fang generator, from right",
@@ -11719,7 +11719,7 @@
       "category": "generator"
     },
     "0x1E0": {
-      "name": "Wall Lakitu generator?",
+      "name": "Wall Lakitu generator",
       "category": "generator",
       "neighborDeps": [
         {
@@ -11739,16 +11739,16 @@
       ]
     },
     "0x1E1": {
-      "name": "unknown",
-      "category": "unknown"
+      "name": "Wall Lakitu generator stopper",
+      "category": "generator"
     },
     "0x1E2": {
       "name": "Dancing Spear Guy trigger",
       "category": "command"
     },
     "0x1E3": {
-      "name": "unknown",
-      "category": "unknown"
+      "name": "Dancing Spear Guy stopper",
+      "category": "command"
     },
     "0x1E4": {
       "name": "Thunder Lakitu stopper",
@@ -11811,8 +11811,8 @@
       "category": "command"
     },
     "0x1F3": {
-      "name": "unknown",
-      "category": "unknown"
+      "name": "Goonie generator stopper",
+      "category": "generator"
     },
     "0x1F4": {
       "name": "Fuzzy generator",

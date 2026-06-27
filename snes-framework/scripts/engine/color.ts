@@ -81,6 +81,20 @@ export function bgr15ToImageDataU32(
 }
 
 /**
+ * Inverse of {@link bgr15ToImageDataU32}: an ImageData-packed RGBA u32 (`0xAABBGGRR`) →
+ * a 15-bit BGR color word. Each 5-bit channel is the top 5 bits of the 8-bit channel
+ * (`byte >> 3`), which exactly recovers the original 5-bit value for both the 'expand'
+ * (bit-replicate) and 'shift' encodings. Alpha is dropped. Used to write an edited
+ * Aseprite/PNG palette colour back into the BGR-15 master palette blob.
+ */
+export function imageDataU32ToBgr15(u: number): number {
+  const r = (u & 0xff) >>> 3;
+  const g = ((u >>> 8) & 0xff) >>> 3;
+  const b = ((u >>> 16) & 0xff) >>> 3;
+  return (r | (g << 5) | (b << 10)) & 0x7fff;
+}
+
+/**
  * Read one 15-bit CGRAM color from a raw byte buffer. `cgram` is little-
  * endian u16 entries (cart-order); `index` selects the palette entry
  * (0..255), not a byte offset.
@@ -116,15 +130,12 @@ export function readCgramColor(cgram: Uint8Array, index: number): number {
  * `rowStride` decouples the per-row CGRAM step from `colorsPerRow` for the
  * (rarer) case where the cart lays palette rows out at a WIDER stride than the
  * tile reads. It defaults to `colorsPerRow` — i.e. tightly packed, which is
- * right for every tightly-packed caller (4bpp@16, Mode-1 2bpp BG3@4). The one
- * place it differs is the **Mode-0 title BG palette**: it is 2bpp (4 colors per
- * tile, `colorsPerRow = 4`) but the cart loads its sub-palettes at a 16-colour
- * stride (`row N = CGRAM[N*16..N*16+3]`, the upper 12 colours of each 16-row
- * unused by the 2bpp tiles). That program is byte-verified — `scene_palette_
- * layout` @ $26 writes with `destByte += $20` (one full 16-colour CGRAM row) per
- * palette row — and matches the live title CGRAM capture. Pass
- * `colorsPerRow = 4, rowStride = 16` there; the N*4 default mis-reads rows 1+
- * (the dominant logo body) as green/grey instead of the real white/cyan.
+ * right for every tightly-packed caller (4bpp@16, Mode-1 2bpp BG3@4, and the
+ * Mode-0 title BG2 logo@4). Note the Mode-0 title logo is **not** a wide-stride
+ * case: the `title-render` trace proved it reads at the tight 4-colour stride from
+ * the **BG2 palette region** (CGRAM 32..63 — Mode-0 BG2 owns palette rows 8..15).
+ * The caller supplies that base by passing palette row `8 + field` (see
+ * screen-scene.ts `LOGO_BG2_PALETTE_BASE`), not by a wider `rowStride`.
  *
  * `transparent0 = true` makes the first entry fully-transparent regardless
  * of its CGRAM color — the SNES convention for sprite and BG2/BG3 layers

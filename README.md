@@ -26,12 +26,12 @@ the changelog for the latest updates.
 - A legally-owned Yoshi's Island ROM - **USA V1.0**.
 - Windows (x64) or Linux (x64, AppImage).
 - [BizHawk](https://tasvideos.org/BizHawk) (EmuHawk) for testing levels in-game
-  — on Linux, BizHawk's `EmuHawk.sh` launcher.
+  - on Linux, BizHawk's `EmuHawk.sh` launcher.
 
 ## Getting started
 
-1. Download the latest build for your OS — the Windows installer (`.exe`) or the
-   Linux `.AppImage` — from the [Releases](../../releases) page and run it.
+1. Download the latest build for your OS - the Windows installer (`.exe`) or the
+   Linux `.AppImage` - from the [Releases](../../releases) page and run it.
 2. On first launch, use the reference cart menu in the top right corner to
    point the editor at an unedited Yoshi's Island USA 1.0 ROM to extract the base
    assets. You will only have to do this once.
@@ -59,6 +59,9 @@ work this tool couldn't exist. So thank you to these folks and many more.
 - **asar**, **BizHawk**, **Mesen**, and **Lunar Compress** - the assembler,
   emulators, and compression reference behind the build, testing, and graphics
   decoding.
+- **M1TE** - the SNES tile/map editor bundled with the app for editing exported
+  BG-layer graphics sessions; a fork of
+  **[M1TE2](https://github.com/nesdoug/M1TE2)** (Doug Fraker / nesdoug).
 
 ## AI Use Disclaimer
 
@@ -84,3 +87,11 @@ work this tool couldn't exist. So thank you to these folks and many more.
   upstream source is at https://github.com/RPGHacker/asar. Asar is run as a
   separate program (not linked into the editor) and can be replaced with your own
   copy of the binary.
+- This editor also bundles **M1TE**, our fork of **M1TE2** (© 2020 Doug Fraker /
+  nesdoug) — a SNES tile/map editor — for editing exported `.M1` graphics
+  sessions. It's a Windows .NET executable, shipped on both the Windows and Linux
+  builds: run it natively on Windows, or via [Wine](https://www.winehq.org/) on
+  Linux. M1TE2 is licensed under the MIT license; its license text ships with the
+  install under `resources/snes-framework/m1te-licenses/`, and the upstream
+  source is at https://github.com/nesdoug/M1TE2. It runs separately from the
+  editor.

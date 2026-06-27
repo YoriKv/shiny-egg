@@ -82,7 +82,7 @@ describe('spawnedOnly flag', () => {
 
   it('the flagged set is the audited size + sprite-only + always < 0x1BA', () => {
     const flagged = listSprites().filter(({ info }) => info.spawnedOnly)
-    expect(flagged.length).toBe(71)
+    expect(flagged.length).toBe(84)
     for (const { id, info } of flagged) {
       expect(info.spawnedOnly).toBe(true) // a definite boolean, never truthy-other
       expect(id).toBeLessThan(0x1ba) // normal sprites only; specials use another path

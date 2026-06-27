@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
 import type {
   BgRegionRect,
   ExtractFreshness,
@@ -53,6 +53,7 @@ import { ObjectFinderBody } from './panels/ObjectFinderBody'
 import { BanksBody } from './panels/BanksPanel'
 import { GraphicsBody } from './panels/GraphicsPanel'
 import { PatchesBody } from './panels/PatchesBody'
+import { ValidationPanel } from './panels/ValidationPanel'
 import { useSubLevelBFS } from './hooks/useSubLevelBFS'
 import { useFloatingWindows, type WindowDef } from './hooks/useFloatingWindows'
 import { useLevelTileUsage } from './hooks/useLevelTileUsage'
@@ -115,7 +116,7 @@ const TOOLS: ToolDef[] = [
   {
     id: 'spawn',
     label: 'Set Spawn (Test Level)',
-    hotkey: 'R / Middle Click',
+    hotkey: 'T / Middle Click',
     // Abstract Yoshi egg (outline + two spot rings) — matches the egg marker
     // drawn on the canvas by drawTestSpawnGlyph.
     path:
@@ -126,9 +127,10 @@ const TOOLS: ToolDef[] = [
 ]
 
 // Single-key tool shortcuts (lower-cased) → tool id, derived from TOOLS so the
-// tooltip and the keyboard handler can never drift apart.
+// tooltip and the keyboard handler can never drift apart. The hotkey string
+// LEADS with the single key (e.g. 'T / Middle Click'), so key on its first char.
 const TOOL_HOTKEYS: Record<string, string> = Object.fromEntries(
-  TOOLS.map((t) => [t.hotkey.toLowerCase(), t.id])
+  TOOLS.map((t) => [t.hotkey[0]!.toLowerCase(), t.id])
 )
 
 // ── Layer visibility ──────────────────────────────────────────────────────
@@ -197,6 +199,7 @@ const PANEL_TOGGLES = [
   { kind: 'strings', label: 'Strings', title: 'Strings' },
   { kind: 'world-map', label: 'World Map', title: 'World-map entrances' },
   { kind: 'banks', label: 'Level Banks', title: 'Bank byte budgets' },
+  { kind: 'validation', label: 'Validation', title: 'Validate levels for playability issues' },
   { kind: 'patches', label: 'Patches', title: 'Custom patches' }
 ] as const
 type PanelKind = (typeof PANEL_TOGGLES)[number]['kind']
@@ -204,7 +207,7 @@ type PanelKind = (typeof PANEL_TOGGLES)[number]['kind']
 // inline buttons: the ROM-global panels (cart-wide data, not the loaded level)
 // under "Global Panels", and the art panels under "Graphics Panels". Everything
 // else stays an inline toggle button.
-const GLOBAL_PANEL_KINDS = new Set<string>(['strings', 'world-map', 'banks', 'patches'])
+const GLOBAL_PANEL_KINDS = new Set<string>(['strings', 'world-map', 'banks', 'patches', 'validation'])
 const GRAPHICS_PANEL_KINDS = new Set<string>(['graphics', 'tiles', 'palette'])
 
 // Resolve a finder jump's (kind, id, cell) to the loaded level's matching
@@ -240,6 +243,10 @@ export default function App(): JSX.Element {
   // Bumped to force every overlay-backed panel to re-read from disk without a
   // project switch — e.g. after a ROM import rewrites the overlay in place.
   const [projectRev, setProjectRev] = useState(0)
+  // Bumped when a graphics IMPORT persists master-palette colours (e.g. a recolour from
+  // M1TE / a swatch) — those bypass the palette edit-session, so reload ONLY the palette
+  // draft (not every overlay panel) from disk so the canvas live-preview shows them.
+  const [paletteImportRev, setPaletteImportRev] = useState(0)
   // Outdated-overlay checker: drift found on the active project's launch (null =
   // none / dismissed). Drives the OverlayUpgradeModal.
   const [overlayDrift, setOverlayDrift] = useState<OverlayDriftReport | null>(null)
@@ -356,6 +363,25 @@ export default function App(): JSX.Element {
   const poolLabel = useMemo(() => poolSummary(budget), [budget])
   const saveBlocked = isBlocked(blockers, 'save')
 
+  // Decode PRNG seed (the "Refresh RNG" toolbar action). `undefined` = the
+  // engine's default deterministic seed (0xACE1) until the user first re-rolls;
+  // each refresh picks a new non-zero 16-bit seed, re-rolling the cosmetic
+  // random-tile variants the cart's HV-counter PRNG would (our LFSR port). The
+  // value threads through Canvas → useLevelRenderLayers → the bg1 + collision
+  // render requests (and the Tiles "Used" view); a change re-fetches just those
+  // seed-dependent renders.
+  const [rngSeed, setRngSeed] = useState<number | undefined>(undefined)
+  const onRefreshRng = useCallback(() => {
+    // 1..0xFFFF — non-zero so the Galois LFSR isn't seeded at its stuck-at-zero
+    // fixed point; re-roll until it differs from the current seed so a double-tap
+    // always produces a visible change.
+    setRngSeed((prev) => {
+      let next = prev
+      while (next === prev) next = 1 + Math.floor(Math.random() * 0xffff)
+      return next
+    })
+  }, [])
+
   // Tiles + Palette panels: the level's shared Map16 usage (fetched only while a
   // consuming panel is open) and the selected object's blocks/palette rows — the
   // selection ↔ panel linkage. `selectedObjectRows` maps the object's block IDs
@@ -363,7 +389,7 @@ export default function App(): JSX.Element {
   const tilePanelsOpen = windows.some(
     (w) => w.open && (w.kind === 'tiles' || w.kind === 'palette')
   )
-  const tileUsage = useLevelTileUsage(levelState.level, tilePanelsOpen)
+  const tileUsage = useLevelTileUsage(levelState.level, tilePanelsOpen, rngSeed)
   const selectedObjectInfluence = useSelectedObjectInfluence(levelState.level, primarySelection)
   const selectedObjectBlockIds = useMemo(
     () => influenceBlockIds(selectedObjectInfluence),
@@ -438,6 +464,10 @@ export default function App(): JSX.Element {
     markRomDirty()
     bumpRenderRefresh()
   }, [markRomDirty, bumpRenderRefresh])
+  // A graphics import wrote master-palette colours straight to the overlay (bypassing the
+  // palette edit-session), so reload the palette draft from disk — its new value flows to
+  // the canvas as `paletteOverride`, updating the live preview.
+  const onPaletteImported = useCallback(() => setPaletteImportRev((v) => v + 1), [])
   // A Banks-panel free-space migrate / de-couple toggle changes the build layout
   // (mark dirty) AND the per-level byte budget of every bank-mate (bump the
   // layout version so the budget gate re-fetches and stale "N over" banners clear).
@@ -481,7 +511,7 @@ export default function App(): JSX.Element {
     void window.shinyEgg.settings.set({ gridColor: color })
   }, [])
 
-  // Activate a toolbar tool — shared by the tool buttons and the Q/W/E/R
+  // Activate a toolbar tool — shared by the tool buttons and the Q/W/E/T
   // hotkeys. The Place tool also pops the Place panel so an entity can be armed.
   const selectTool = useCallback(
     (id: string) => {
@@ -517,6 +547,12 @@ export default function App(): JSX.Element {
   // Drop out of the Place tool back to Select so the toolbar button de-highlights
   // (Escape clears the armed placement too — see useLevelKeyboardShortcuts).
   const cancelPlacement = useCallback(() => setActiveTool('select'), [])
+  // Right-click on the canvas while placing → clear the armed item and return to
+  // Select (mirrors Escape, minus the selection clear). Passed to Canvas.
+  const onCancelPlacement = useCallback(() => {
+    setPlacement(null)
+    cancelPlacement()
+  }, [cancelPlacement])
   const onPlaceAt = useCallback(
     (cx: number, cy: number) => {
       if (!placement) return
@@ -877,7 +913,11 @@ export default function App(): JSX.Element {
   // Palette colour-edit document — its `draft` is fed to the canvas as a live
   // render override; its Save (or the global Save / Test Level) persists the
   // delta to the overlay before a build.
-  const paletteEditor = usePaletteEditor(projectScope, markRomDirty, docHistory)
+  // Palette reload scope = the project scope PLUS the import nonce, so a graphics import
+  // that wrote palette colours reloads ONLY the palette draft (the other overlay editors
+  // keep their unsaved drafts).
+  const paletteScope = projectScope === null ? null : `${projectScope}#p${paletteImportRev}`
+  const paletteEditor = usePaletteEditor(paletteScope, markRomDirty, docHistory)
   // World-map entrance-table document — spawn / progression edits per world-map
   // slot. Spawn X/Y previews live via the canvas marker (read from this draft);
   // other fields verify in Test Level (asm edit → markRomDirty). Its save shares
@@ -1121,11 +1161,11 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [onSaveAll, handleTestLevel])
 
-  // Plain-key shortcuts: Q/W/E/R pick the toolbar tools (Select / Place / Erase /
-  // Set Spawn) — see TOOL_HOTKEYS — and G toggles the grid overlay (cycling its
-  // off → screen → tile modes, same as the toolbar button). Plain keys only:
-  // ignored while typing in a field and whenever a modifier is held, so Ctrl+R
-  // (Test Level) etc. still win.
+  // Plain-key shortcuts: Q/W/E/T pick the toolbar tools (Select / Place / Erase /
+  // Set Spawn) — see TOOL_HOTKEYS — R re-rolls the decode RNG (the Refresh RNG
+  // button), and G toggles the grid overlay (cycling its off → screen → tile
+  // modes, same as the toolbar button). Plain keys only: ignored while typing in
+  // a field and whenever a modifier is held, so Ctrl+R (Test Level) etc. still win.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
@@ -1145,6 +1185,11 @@ export default function App(): JSX.Element {
         toggleLayer('grid')
         return
       }
+      if (k === 'r') {
+        e.preventDefault()
+        onRefreshRng()
+        return
+      }
       const id = TOOL_HOTKEYS[k]
       if (!id) return
       e.preventDefault()
@@ -1152,7 +1197,7 @@ export default function App(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectTool, toggleLayer])
+  }, [selectTool, toggleLayer, onRefreshRng])
 
   // Project change from the toolbar Project menu. On an actual switch (new /
   // open / delete) clear the level selection so the canvas drops back to "pick
@@ -1240,24 +1285,55 @@ export default function App(): JSX.Element {
 
         <nav className="se-toolbar__tools">
           {TOOLS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`se-tool${activeTool === t.id ? ' is-active' : ''}`}
-              onClick={() => selectTool(t.id)}
-              title={`${t.label}  (${t.hotkey})${t.hint ? `  ·  ${t.hint}` : ''}`}
-            >
-              <svg viewBox="0 0 16 16" width="16" height="16">
-                <path
-                  d={t.path}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.25"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+            <Fragment key={t.id}>
+              {/* Refresh RNG — an ACTION (not a tool mode), sited just left of Set
+                  Spawn. Re-rolls the decode's cosmetic random-tile variants. */}
+              {t.id === 'spawn' && (
+                <button
+                  type="button"
+                  className="se-tool"
+                  onClick={onRefreshRng}
+                  title="Refresh RNG  (R)  ·  Re-roll the random decorative tiles"
+                >
+                  <svg viewBox="0 0 16 16" width="16" height="16">
+                    <rect
+                      x="2.75"
+                      y="2.75"
+                      width="10.5"
+                      height="10.5"
+                      rx="2.2"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                    <g fill="currentColor" stroke="none">
+                      <circle cx="5.2" cy="5.2" r="1" />
+                      <circle cx="10.8" cy="5.2" r="1" />
+                      <circle cx="8" cy="8" r="1" />
+                      <circle cx="5.2" cy="10.8" r="1" />
+                      <circle cx="10.8" cy="10.8" r="1" />
+                    </g>
+                  </svg>
+                </button>
+              )}
+              <button
+                type="button"
+                className={`se-tool${activeTool === t.id ? ' is-active' : ''}`}
+                onClick={() => selectTool(t.id)}
+                title={`${t.label}  (${t.hotkey})${t.hint ? `  ·  ${t.hint}` : ''}`}
+              >
+                <svg viewBox="0 0 16 16" width="16" height="16">
+                  <path
+                    d={t.path}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.25"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </Fragment>
           ))}
           <span className="se-toolbar__divider" />
           <label className="se-toolbar__bgcolor" title="Canvas background color">
@@ -1439,6 +1515,7 @@ export default function App(): JSX.Element {
           cameraRequest={cameraReq}
           placing={activeTool === 'place' && placement !== null}
           onPlaceAt={onPlaceAt}
+          onCancelPlacement={onCancelPlacement}
           regionPickMode={pickingRegion}
           onRegionPicked={(rect) => {
             setBg1RegionRect(rect)
@@ -1460,6 +1537,7 @@ export default function App(): JSX.Element {
           onSpawnCommit={onSpawnCommit}
           paletteOverride={paletteEditor.draft}
           renderRefresh={renderRefresh}
+          prngSeed={rngSeed}
           canvasBackground={canvasBg}
           gridColor={gridColor}
         />
@@ -1573,10 +1651,19 @@ export default function App(): JSX.Element {
                   onLayoutChange={onLayoutChange}
                   onLevelsRemoved={onLevelsRemoved}
                 />
+              ) : w.kind === 'validation' ? (
+                <ValidationPanel
+                  level={levelState.level}
+                  levelRecordId={selectedLevelRecordId}
+                  onJump={(rec, x, y) => jumpToInstance({ levelRecordId: rec, x, y })}
+                />
               ) : w.kind === 'graphics' ? (
                 <GraphicsBody
                   level={levelState.level}
                   onMutated={onGfxEdited}
+                  onPaletteImported={onPaletteImported}
+                  paletteEditCount={paletteEditor.draft.length}
+                  onResetPalette={paletteEditor.resetAll}
                   bg1RegionRect={bg1RegionRect}
                   pickingRegion={pickingRegion}
                   onStartRegionPick={() => setPickingRegion(true)}

@@ -7,7 +7,7 @@ import { loadScenePalettes } from './load-palettes.ts';
 import { buildPaletteRow, paletteIndexOf } from './color.ts';
 import { encodePng } from './png.ts';
 import { snesToPC, type SymbolMap } from './symbol-map.ts';
-import { tilesAseprite, type TilesetTile } from './gfx-aseprite.ts';
+import { tilesAseprite, tilesetPaletteOffsets, type TilesetTile } from './gfx-aseprite.ts';
 import { type AsepriteCell, type AsepriteStructural } from './aseprite.ts';
 import { TILE_PX, titleVariant } from './screen-scene.ts';
 
@@ -35,14 +35,18 @@ const ISLAND_PX_W = ISLAND_COLS * TILE_PX; // 256
 /** The title's island char is file $B1, decompressed to VRAM $0000. */
 const ISLAND_CHAR_VRAM = 0x0000;
 
+/** Bytes per Mode-7 CPC char tile (8×8 @ 2 px/byte). Exported with the pack/unpack pair
+ *  so the M1TE2 island export (`screen-m1te2.ts`) reuses the exact CPC codec. */
+export const ISLAND_CPC_TILE_BYTES = M7_CPC_TILE_BYTES;
+
 /** Unpack one CPC char tile (32 bytes) → 64 8bpp pixels (low nibble = even pixel). */
-function unpackCpcTile(cpc: Uint8Array, off: number): Uint8Array {
+export function unpackCpcTile(cpc: Uint8Array, off: number): Uint8Array {
   const out = new Uint8Array(64);
   for (let k = 0; k < M7_CPC_TILE_BYTES; k++) { const b = cpc[off + k]!; out[k * 2] = b & 0x0f; out[k * 2 + 1] = b >> 4; }
   return out;
 }
 /** Re-pack 64 8bpp pixels (values 0-15) → one CPC char tile (32 bytes). */
-function packCpcTile(px: Uint8Array): Uint8Array {
+export function packCpcTile(px: Uint8Array): Uint8Array {
   const out = new Uint8Array(M7_CPC_TILE_BYTES);
   for (let k = 0; k < M7_CPC_TILE_BYTES; k++) out[k] = ((px[k * 2 + 1]! & 0x0f) << 4) | (px[k * 2]! & 0x0f);
   return out;
@@ -57,6 +61,9 @@ export interface TitleIslandContext {
   tilemap: Uint8Array;
   palette: Uint32Array; // 16 ARGB (CGRAM 0-15)
   cgram: Uint8Array; // for the Aseprite tilemap export (palette = row 0, 16 colours)
+  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source) — lets an
+   *  island (Mode-7, CGRAM 0-15) palette-colour edit round-trip to the blob. */
+  provenance: Int32Array;
   /** $B1 char slots referenced by NEITHER island tilemap (worlds 1-5 AND world 6),
    *  so writing new art to them can't corrupt the other world. The combined import's
    *  budget for ADDED tiles (~9 slots — most "unused by W1-5" chars are used by W6). */
@@ -68,7 +75,8 @@ export function buildTitleIslandContext(rom: Uint8Array, symbols: SymbolMap): Ti
   loadSceneGfx(rom, symbols, titleVariant(rom, symbols).gfx, vram);
   const b1cpc = vram.slice(ISLAND_CHAR_VRAM, ISLAND_CHAR_VRAM + 0x1000); // $B1 decompressed (CPC)
   const cgram = new Uint8Array(512);
-  loadScenePalettes(rom, symbols, titleVariant(rom, symbols).palette, cgram);
+  const provenance = new Int32Array(256); // loadScenePalettes fills it (-1 = no blob source)
+  loadScenePalettes(rom, symbols, titleVariant(rom, symbols).palette, cgram, provenance);
   const palette = buildPaletteRow(cgram, 0, false, 'expand', ISLAND_COLORS); // CGRAM 0-15, opaque
   const pc = symbols.pc(ISLAND_TILEMAP_SYM);
   // Char slots free in BOTH worlds (the addable-tile budget). $B1 is shared by the
@@ -81,7 +89,7 @@ export function buildTitleIslandContext(rom: Uint8Array, symbols: SymbolMap): Ti
   for (let i = 0; i < ISLAND_COLS * ISLAND_ROWS; i++) usedAnyWorld.add(rom[w6pc + i]!);
   const addableChars: number[] = [];
   for (let c = 0; c < charCount; c++) if (!usedAnyWorld.has(c)) addableChars.push(c);
-  return { rom, symbols, b1cpc, tilemap: rom.subarray(pc, pc + ISLAND_COLS * ISLAND_ROWS), palette, cgram, addableChars };
+  return { rom, symbols, b1cpc, tilemap: rom.subarray(pc, pc + ISLAND_COLS * ISLAND_ROWS), palette, cgram, provenance, addableChars };
 }
 
 interface IslandUnit { char: number; cellX: number; cellY: number; basePx: Uint8Array }
@@ -195,8 +203,8 @@ export function islandTileChars(ctx: TitleIslandContext): number[] {
   return tileToChar;
 }
 
-export function titleIslandAseprite(ctx: TitleIslandContext, _canvas: TitleIslandCanvas): Uint8Array {
-  const tileToChar = islandTileChars(ctx);
+export function titleIslandAseprite(ctx: TitleIslandContext, _canvas: TitleIslandCanvas, tileChars: readonly number[]): { bytes: Uint8Array; paletteOffsets: number[] } {
+  const tileToChar = tileChars;
   const charToTile = new Map<number, number>();
   const tiles: TilesetTile[] = [];
   for (let ti = 1; ti < tileToChar.length; ti++) {
@@ -209,11 +217,14 @@ export function titleIslandAseprite(ctx: TitleIslandContext, _canvas: TitleIslan
   // the flatten still reproduces the assembled island byte-exact). Mode-7 = no flip.
   const cells: AsepriteCell[] = [];
   for (let i = 0; i < ISLAND_COLS * ISLAND_ROWS; i++) cells.push({ tile: charToTile.get(ctx.tilemap[i]!)! });
-  return tilesAseprite({
+  const bytes = tilesAseprite({
     cgram: ctx.cgram, bpp: 4, tileW: TILE_PX, tileH: TILE_PX, tiles, cells,
     tilesAcross: ISLAND_COLS, tilesDown: ISLAND_ROWS, index0Transparent: false,
     layerName: 'island', tilesetName: 'island-tiles'
   });
+  // Colour write-back map — Mode-7 single palette row 0, 16 colours (bpp 4, default stride 16).
+  const paletteOffsets = tilesetPaletteOffsets({ tiles, bpp: 4, index0Transparent: false, provenance: ctx.provenance });
+  return { bytes, paletteOffsets };
 }
 
 /** One changed island tilemap byte: `offset` into `DATA_5F9800` (0..1023), new Mode-7
@@ -280,8 +291,8 @@ export interface IslandCombinedDiff {
  * tiles than the export (`removedTiles`) is refused (indices unreliable). Assumes the
  * palette wasn't reordered (indices still mean CGRAM 0-15) and tiles weren't deleted.
  */
-export function diffTitleIslandCombined(ctx: TitleIslandContext, struct: AsepriteStructural): IslandCombinedDiff {
-  const tileToChar = islandTileChars(ctx); // index 0 = empty; identical mapping to the export
+export function diffTitleIslandCombined(ctx: TitleIslandContext, tileChars: readonly number[], struct: AsepriteStructural): IslandCombinedDiff {
+  const tileToChar = tileChars; // the serialized tileKeys (tileset tile → $B1 char) — the file's own order
   const exportTileCount = tileToChar.length; // 1 (empty) + every $B1 char
   const charCount = Math.floor(ctx.b1cpc.length / M7_CPC_TILE_BYTES);
   const out: IslandCombinedDiff = { placement: [], pixels: [], newTiles: 0, unmappedTiles: 0, skippedW6Tiles: 0, sharedCells: 0, removedTiles: false };

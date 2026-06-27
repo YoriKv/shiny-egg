@@ -9,9 +9,10 @@
 //   the RGBA unchanged. `diffGfxFileAseprite` is the faithful-sheet slice (the .aseprite
 //   twin of imageToGfx — base-aware, per palette row, bpp-correct re-plane).
 
-import { encodeAseprite, encodeAsepriteImage, type AsepriteCell } from './aseprite.ts';
+import { encodeAseprite, encodeAsepriteImage, encodeAsepriteMultiTilemap, type AsepriteCell, type AsepriteTilemapLayerSpec } from './aseprite.ts';
 import { decode2bppTile, decode4bppTile, encode2bppTile, encode4bppTile } from './tile.ts';
-import { buildPaletteRow, paletteIndexOf } from './color.ts';
+import { buildPaletteRow, paletteIndexOf, imageDataU32ToBgr15 } from './color.ts';
+import type { PaletteEdit } from '../types.ts';
 
 const TILE_PX = 8;
 
@@ -28,6 +29,100 @@ export interface TileEdit {
   bytes: Uint8Array;
 }
 
+/** The distinct CGRAM palette rows a tileset uses, ascending — the order the `.aseprite`
+ *  palette flattens them in (block k = `usedPaletteRows[k]`). Shared by `buildAsepriteTileset`
+ *  + `tilesetPaletteOffsets` so the colour layout and the offset map can't drift. */
+export function usedPaletteRows(tiles: readonly TilesetTile[]): number[] {
+  return [...new Set(tiles.map((t) => t.paletteRow))].sort((a, b) => a - b);
+}
+
+/**
+ * Per-`.aseprite`-palette-entry master-palette-blob byte-offset for a `buildAsepriteTileset`
+ * palette — the colour analog of the tileset `tileKeys`, so the import can write an edited
+ * colour back to the blob without re-deriving. `provenance` is the scene's CGRAM-index →
+ * blob-offset map (from `loadScenePalettes`/`loadLevelPalettes`, `-1` = no blob source). The
+ * entry at `k*cpr + i` is CGRAM colour index `usedPaletteRows[k]*stride + i` (the exact index
+ * `buildPaletteRow` read). Transparent slots map to `-1` (their colour isn't editable):
+ * index-0-transparent ⇒ each row's local-0; opaque ⇒ the single trailing slot.
+ */
+export function tilesetPaletteOffsets(args: {
+  tiles: readonly TilesetTile[];
+  bpp: 2 | 4;
+  index0Transparent: boolean;
+  provenance: Int32Array;
+  rowStride?: number;
+}): number[] {
+  const { tiles, bpp, index0Transparent, provenance } = args;
+  const cpr = bpp === 4 ? 16 : 4;
+  const stride = args.rowStride ?? cpr;
+  const usedRows = usedPaletteRows(tiles);
+  const offsets: number[] = [];
+  usedRows.forEach((r) => {
+    for (let i = 0; i < cpr; i++) {
+      offsets.push(index0Transparent && i === 0 ? -1 : (provenance[r * stride + i] ?? -1));
+    }
+  });
+  if (!index0Transparent) offsets.push(-1); // trailing transparent slot
+  return offsets;
+}
+
+/**
+ * Per-`imageAseprite`-palette-entry master-blob byte-offset — the image (flat-palette,
+ * no-tileset) analog of {@link tilesetPaletteOffsets}, for tracks that export via
+ * `imageAseprite` (world-map icons, level icons, title scenery, screen region crops). The
+ * image palette is the CGRAM `rows` concatenated in emit order (`colorsPerRow` each, read at
+ * `rowStride`), exactly as the track built it; entry `k*colorsPerRow + i` ⇒ CGRAM colour
+ * index `rows[k]*rowStride + i` → `provenance`. Mirrors `imageAseprite`'s index assignment:
+ * `index0Transparent` ⇒ the single GLOBAL index 0 is the transparent key (`-1`, no trailing
+ * slot); opaque ⇒ every entry maps + one trailing transparent slot (`-1`).
+ */
+export function imagePaletteOffsets(args: {
+  provenance: Int32Array;
+  rows: readonly number[];
+  index0Transparent: boolean;
+  colorsPerRow?: number;
+  rowStride?: number;
+}): number[] {
+  const { provenance, rows, index0Transparent } = args;
+  const cpr = args.colorsPerRow ?? 16;
+  const stride = args.rowStride ?? cpr;
+  const offsets: number[] = [];
+  rows.forEach((row, k) => {
+    for (let i = 0; i < cpr; i++) {
+      offsets.push(index0Transparent && k === 0 && i === 0 ? -1 : (provenance[row * stride + i] ?? -1));
+    }
+  });
+  if (!index0Transparent) offsets.push(-1); // imageAseprite appends one trailing transparent slot
+  return offsets;
+}
+
+/**
+ * Diff an edited `.aseprite`/PNG palette against the master palette blob → the colour edits
+ * to write back (via `savePaletteEdits`). `asePalette` is the file's embedded palette (RGBA
+ * u32 per index); `paletteOffsets[i]` is that entry's blob byte-offset (`-1` = transparent /
+ * non-blob, skipped); `baseBlobWords` is the blob's current `offset → BGR-15` map. Base-aware:
+ * emits an edit only where the entry's colour DIFFERS from the blob (so an unedited palette →
+ * 0 edits, byte-exact). Deduped by offset (entries sharing an offset must agree; first wins).
+ */
+export function diffAsepritePalette(
+  asePalette: Uint32Array, paletteOffsets: readonly number[], baseBlobWords: ReadonlyMap<number, number>
+): PaletteEdit[] {
+  const edits: PaletteEdit[] = [];
+  const seen = new Set<number>();
+  const n = Math.min(asePalette.length, paletteOffsets.length);
+  for (let i = 0; i < n; i++) {
+    const offset = paletteOffsets[i]!;
+    if (offset < 0 || seen.has(offset)) continue;
+    const base = baseBlobWords.get(offset);
+    if (base === undefined) continue; // offset not a real blob word (shouldn't happen) → never write
+    const value = imageDataU32ToBgr15(asePalette[i]! >>> 0);
+    if (value === base) continue; // unchanged vs the blob → no edit
+    seen.add(offset);
+    edits.push({ offset, value });
+  }
+  return edits;
+}
+
 /**
  * Build an `.aseprite` (indexed tileset + one tilemap layer) from a tileset + a
  * tilemap `cells` arrangement (row-major, `cell.tile` 1-based into `tiles`, 0 =
@@ -38,30 +133,25 @@ export interface TileEdit {
  * rendered RGBA byte-for-byte (every entry resolves to a palette colour with the
  * cell flip re-applied the same way `decode{2,4}bppTile` does).
  */
-export function tilesAseprite(args: {
+/**
+ * Build the flattened CGRAM palette + the index-remapped `.aseprite` tileset (tile 0 =
+ * empty) from a tileset + transparency rule — the shared core of the single- and
+ * multi-layer tilemap exports, so both colour tiles identically. See `tilesAseprite` for
+ * the §1 transparency semantics.
+ */
+function buildAsepriteTileset(args: {
   cgram: Uint8Array;
   bpp: 2 | 4;
   tileW: number;
   tileH: number;
   tiles: TilesetTile[];
-  cells: AsepriteCell[];
-  tilesAcross: number;
-  tilesDown: number;
   index0Transparent: boolean;
-  /** CGRAM colours per palette-row STEP, when the cart loads rows at a wider stride
-   *  than the tile reads (`buildPaletteRow`'s `rowStride`). Defaults to the tight
-   *  bpp stride (16 @ 4bpp, 4 @ 2bpp). Pass 16 for the Mode-0 title logo (2bpp tiles,
-   *  16-colour-strided BG palette — see screen-gfx.ts `LOGO_ROW_STRIDE`); otherwise
-   *  the embedded palette would mis-colour palRow≥1 and break the render-flatten
-   *  equality the import path relies on. */
   rowStride?: number;
-  layerName?: string;
-  tilesetName?: string;
-}): Uint8Array {
-  const { cgram, bpp, tileW, tileH, tiles, cells, tilesAcross, tilesDown, index0Transparent } = args;
+}): { palette: Uint32Array; transparentIndex: number; aseTiles: Uint8Array[] } {
+  const { cgram, bpp, tileW, tileH, tiles, index0Transparent } = args;
   const cpr = bpp === 4 ? 16 : 4;
   const stride = args.rowStride ?? cpr;
-  const usedRows = [...new Set(tiles.map((t) => t.paletteRow))].sort((a, b) => a - b);
+  const usedRows = usedPaletteRows(tiles);
   const rowToBase = new Map<number, number>();
   usedRows.forEach((r, k) => rowToBase.set(r, k * cpr));
 
@@ -97,11 +187,63 @@ export function tilesAseprite(args: {
     }
     aseTiles.push(px);
   }
+  return { palette, transparentIndex, aseTiles };
+}
 
+export function tilesAseprite(args: {
+  cgram: Uint8Array;
+  bpp: 2 | 4;
+  tileW: number;
+  tileH: number;
+  tiles: TilesetTile[];
+  cells: AsepriteCell[];
+  tilesAcross: number;
+  tilesDown: number;
+  index0Transparent: boolean;
+  /** CGRAM colours per palette-row STEP, when the cart loads rows at a wider stride
+   *  than the tile reads (`buildPaletteRow`'s `rowStride`). Defaults to the tight
+   *  bpp stride (16 @ 4bpp, 4 @ 2bpp). The Mode-0 title logo uses the tight 4-colour
+   *  stride too, but reads from the BG2 palette region — the caller offsets each
+   *  tile's `paletteRow` by 8 (see screen-scene.ts `LOGO_BG2_PALETTE_BASE`) rather
+   *  than widening the stride. */
+  rowStride?: number;
+  layerName?: string;
+  tilesetName?: string;
+}): Uint8Array {
+  const { cgram, bpp, tileW, tileH, tiles, cells, tilesAcross, tilesDown, index0Transparent } = args;
+  const { palette, transparentIndex, aseTiles } = buildAsepriteTileset({ cgram, bpp, tileW, tileH, tiles, index0Transparent, rowStride: args.rowStride });
   return encodeAseprite({
     tileW, tileH, tilesAcross, tilesDown,
     tiles: aseTiles, cells, palette, transparentIndex,
     layerName: args.layerName ?? 'GFX', tilesetName: args.tilesetName ?? 'tiles'
+  });
+}
+
+/**
+ * Multi-layer twin of `tilesAseprite`: ONE shared tileset (colouring every layer) +
+ * several tilemap `layers`, each `{name, cells}` indexing that shared tileset. `layers`
+ * are bottom-to-top (so the in-Aseprite composite mirrors the hardware layer order). Used
+ * by the overworld terrain to put BG1+BG2 in one file sharing a unified tileset.
+ */
+export function tilesAsepriteMulti(args: {
+  cgram: Uint8Array;
+  bpp: 2 | 4;
+  tileW: number;
+  tileH: number;
+  tiles: TilesetTile[];
+  layers: AsepriteTilemapLayerSpec[];
+  tilesAcross: number;
+  tilesDown: number;
+  index0Transparent: boolean;
+  rowStride?: number;
+  tilesetName?: string;
+}): Uint8Array {
+  const { cgram, bpp, tileW, tileH, tiles, layers, tilesAcross, tilesDown, index0Transparent } = args;
+  const { palette, transparentIndex, aseTiles } = buildAsepriteTileset({ cgram, bpp, tileW, tileH, tiles, index0Transparent, rowStride: args.rowStride });
+  return encodeAsepriteMultiTilemap({
+    tileW, tileH, tilesAcross, tilesDown,
+    tiles: aseTiles, layers, palette, transparentIndex,
+    tilesetName: args.tilesetName ?? 'tiles'
   });
 }
 

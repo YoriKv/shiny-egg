@@ -287,7 +287,11 @@ export function registerRenderIpc(): void {
         palHeader,
         levelMode,
         vram,
-        cgram
+        cgram,
+        // Live overlay so a BG2/BG3 tilemap PLACEMENT import previews without a rebuild
+        // (CHR edits already preview via buildLevelVramCgram's gfxOverride; the tilemap is
+        // a separate load, so it needs the same seam).
+        gfxOverride: gfxLiveEdits()
       })
       const { bg2, bg3, bg2Front, bg3Front, bg2Layer, bg3Layer, regs } = composed
       const backdrop: BgLayersResult['backdrop'] =

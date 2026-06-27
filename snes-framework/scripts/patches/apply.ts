@@ -23,9 +23,15 @@ export function bytesToHex(b: Uint8Array): string {
   return s.toUpperCase();
 }
 
-/** Decode an even-length hex string to bytes. Throws on odd length / non-hex. */
+/** Decode a hex byte string to bytes. The packed form ("EAEA") is canonical, but
+ *  `$NN` / `0xNN` byte prefixes and whitespace / comma separators are accepted as
+ *  equivalents — "EAEA", "$EA $EA", and "0xEA, 0xEA" all decode the same. Throws
+ *  on odd length / non-hex. */
 export function hexToBytes(hex: string): Uint8Array {
-  const clean = hex.trim();
+  // Strip the prefix/separator sugar down to packed hex. `x` is never a hex
+  // digit, so a "0x" substring can only be a byte prefix (never data) — a global
+  // strip is safe and can't corrupt legitimate packed input.
+  const clean = hex.replace(/0x/gi, '').replace(/[$\s,]/g, '');
   if (clean.length % 2 !== 0 || /[^0-9a-fA-F]/.test(clean)) {
     throw new Error(`invalid hex bytes: "${clean.slice(0, 24)}${clean.length > 24 ? '…' : ''}"`);
   }
@@ -46,10 +52,11 @@ export function validateChunkAddressing(c: { offset?: number | string; label?: s
   }
 }
 
-/** Stored offset (hex string, e.g. "0x62D2") → numeric file offset. Also
- *  accepts "$.."/bare-hex and legacy decimal numbers so older patch files on
+/** Stored hex addressing value → number, for both `offset` and `labelOffset`.
+ *  `$NN`, `0xNN`, and bare hex are equivalent ("$62D2" === "0x62D2" === "62D2").
+ *  Legacy decimal numbers are also accepted (as numbers) so older patch files on
  *  disk keep loading. */
-function parseStoredOffset(v: number | string): number {
+function parseStoredHex(v: number | string): number {
   if (typeof v === 'number') return v;
   const s = v.trim();
   if (s.startsWith('$')) return parseInt(s.slice(1), 16);
@@ -57,32 +64,32 @@ function parseStoredOffset(v: number | string): number {
   return parseInt(s, 16);
 }
 
-/** Copy the label-form addressing fields (label + labelOffset) verbatim. */
-function labelOf<T extends { label?: string; labelOffset?: number }>(c: T) {
-  return {
-    ...(c.label !== undefined ? { label: c.label } : {}),
-    ...(c.labelOffset !== undefined ? { labelOffset: c.labelOffset } : {})
-  };
+/** Number → on-disk "0x" hex string. */
+function numToStoredHex(n: number): string {
+  return '0x' + n.toString(16).toUpperCase();
 }
 
-/** Runtime chunks → on-disk form (bytes → hex, offset → "0x" hex string). */
+/** Runtime chunks → on-disk form (bytes → hex, offset + labelOffset → "0x" hex
+ *  strings, label verbatim). */
 export function chunksToStored(chunks: PatchChunk[]): StoredPatchChunk[] {
   return chunks.map((c) => ({
-    ...(c.offset !== undefined ? { offset: '0x' + c.offset.toString(16).toUpperCase() } : {}),
-    ...labelOf(c),
+    ...(c.offset !== undefined ? { offset: numToStoredHex(c.offset) } : {}),
+    ...(c.label !== undefined ? { label: c.label } : {}),
+    ...(c.labelOffset !== undefined ? { labelOffset: numToStoredHex(c.labelOffset) } : {}),
     bytes: bytesToHex(c.bytes)
   }));
 }
 
-/** On-disk chunks → runtime form (hex → bytes, offset string → number). Throws
- *  on malformed hex or invalid addressing (must have exactly one of offset /
- *  label). */
+/** On-disk chunks → runtime form (hex → bytes, offset + labelOffset strings →
+ *  numbers, label verbatim). Throws on malformed hex or invalid addressing
+ *  (must have exactly one of offset / label). */
 export function storedToChunks(stored: StoredPatchChunk[]): PatchChunk[] {
   return stored.map((s) => {
     validateChunkAddressing(s);
     return {
-      ...(s.offset !== undefined ? { offset: parseStoredOffset(s.offset) } : {}),
-      ...labelOf(s),
+      ...(s.offset !== undefined ? { offset: parseStoredHex(s.offset) } : {}),
+      ...(s.label !== undefined ? { label: s.label } : {}),
+      ...(s.labelOffset !== undefined ? { labelOffset: parseStoredHex(s.labelOffset) } : {}),
       bytes: hexToBytes(s.bytes)
     };
   });

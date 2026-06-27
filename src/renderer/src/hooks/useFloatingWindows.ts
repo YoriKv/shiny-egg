@@ -32,6 +32,7 @@ export interface WindowDef {
     | 'graphics'
     | 'paint'
     | 'exits'
+    | 'validation'
 }
 
 // Start positions are driven by each window's `anchor` (resolved against the
@@ -173,6 +174,18 @@ const INITIAL_WINDOWS: WindowDef[] = [
     open: false,
     anchor: 'top-center',
     kind: 'banks'
+  },
+  {
+    id: 'validation',
+    title: 'Validation',
+    // Static playability lints — closed by default; reopen from the toolbar.
+    pos: { x: 780, y: 140 },
+    width: 560,
+    height: 520,
+    z: 8,
+    open: false,
+    anchor: 'top-center',
+    kind: 'validation'
   },
   {
     id: 'graphics',

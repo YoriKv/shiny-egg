@@ -198,6 +198,56 @@ export const PANEL_HELP: PanelHelp = {
       </p>
     </>
   ),
+  validation: (
+    <>
+      <p>
+        Static playability checks &mdash; bugs that look fine in the editor but break,
+        glitch, or read garbage once the level runs. The tally at the top counts this
+        level&rsquo;s flowers, red coins, and coins.
+      </p>
+      <p>
+        <b>Check this level</b> lints the loaded level (auto-runs on level change);{' '}
+        <b>Check all levels</b> sweeps the whole ROM. Click an issue to jump to it.
+        Findings are <span style={{ color: '#e6584d' }}>errors</span> (corruption,
+        crashes, lost data) or <span style={{ color: '#d9a441' }}>warnings</span> (glitch
+        / suspect).
+      </p>
+      <p>What it checks:</p>
+      <ul className="se-help__list">
+        <li>
+          <b>Sprite &amp; exit limits</b> &mdash; too many sprites or screen exits for the
+          engine&rsquo;s tables.
+        </li>
+        <li>
+          <b>Page-pool overflow</b> &mdash; more than 63 screen pages; the level buffer
+          corrupts.
+        </li>
+        <li>
+          <b>Corrupt level data</b> &mdash; the object stream aborts mid-parse.
+        </li>
+        <li>
+          <b>Item-memory collision</b> &mdash; a red coin, flower, or key shares one
+          collected-bit with another collectible, so taking one despawns the rest. The
+          all-levels sweep also catches this <i>across</i> warp-connected sub-rooms.
+        </li>
+        <li>
+          <b>Duplicate screen exit</b> &mdash; two exits on one screen, where the table
+          keeps only one.
+        </li>
+        <li>
+          <b>Warp to sentinel slot</b> &mdash; a warp points at an unallocated level slot.
+        </li>
+        <li>
+          <b>Glitched header value</b> &mdash; a header field set to a known garbage value.
+        </li>
+        <li>
+          <b>Render validity</b> (this level only) &mdash; objects or sprites that render
+          wrong under this level&rsquo;s tilesets; also shown on the Picker badges.
+        </li>
+      </ul>
+      <p>Every check is tuned to stay silent on the vanilla levels (no false positives).</p>
+    </>
+  ),
   'world-map': (
     <>
       <p>
@@ -222,13 +272,17 @@ export const PANEL_HELP: PanelHelp = {
         Edit the game&rsquo;s graphics in an external editor. <b>Export</b> writes
         graphics to a folder, you edit them, and <b>Import</b> reads the whole folder
         back and saves only what changed. The dropdown picks what to export; Import
-        auto-detects everything in the folder you choose.
+        auto-detects everything in the folder you choose. Each export drops its files in a
+        cleanly-named subfolder (e.g. <code>map</code> or <code>screens</code>) with its own
+        manifest, so you can export several types into one folder — importing that folder
+        reads every subfolder.
       </p>
       <p>
         <b>What to export:</b> a <b>BG1&nbsp;area</b> (use <b>Select&nbsp;area</b> and
         shift-drag a rectangle on the canvas to choose the region), the whole{' '}
-        <b>BG2</b> or <b>BG3</b> background, or the <b>Screens</b> (the system / title /
-        overworld graphics).
+        <b>BG2</b> or <b>BG3</b> background, the <b>World&nbsp;Map</b> (the overworld map
+        graphics), or the <b>Boot/Story/Title&nbsp;Screens</b> (the boot, title and
+        storybook graphics).
       </p>
       <p>
         <b>Format:</b> <b>PNG</b> opens in any image editor and includes a swatch column

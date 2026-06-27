@@ -103,6 +103,12 @@ export interface DecodeLevelOptions {
   /** Per-caller-site captured PRNG bytes (cart caller PC → byte sequence in call
    *  order), the preferred replay form. See state.ts `prngReplayBySite`. */
   prngReplayBySite?: Record<number, readonly number[]>;
+  /** Override the LFSR seed (the editor's "Refresh RNG" action) — re-rolls the
+   *  cosmetic random-tile variants by starting the PRNG from a different value.
+   *  Omit for the default deterministic seed (0xACE1) the render-parity goldens
+   *  pin. Only meaningful for untagged sites (a replay queue, when present, takes
+   *  precedence over the LFSR). See state.ts `prngState`. */
+  prngSeed?: number;
 }
 
 export function decodeLevel(
@@ -130,6 +136,14 @@ export function decodeLevel(
       m.set(Number(pc), { bytes, idx: 0 });
     }
     state.prngReplayBySite = m;
+  }
+
+  // Override the LFSR seed (the "Refresh RNG" editor action). Set after reset()
+  // (which installs the default 0xACE1) so it survives into the parse. Guarded
+  // non-zero: a 0 seed is a Galois-LFSR fixed point (stuck → all-zero output), so
+  // fall back to the default rather than render a dead-RNG level.
+  if (opts.prngSeed != null) {
+    state.prngState = (opts.prngSeed & 0xffff) || 0xACE1;
   }
 
   // Arm the provenance recorder (object drag cell-highlight) when requested.

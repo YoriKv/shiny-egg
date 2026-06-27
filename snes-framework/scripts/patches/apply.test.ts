@@ -41,6 +41,24 @@ console.log('=== hex codec + PatchFile chunk round-trip ===');
   assert(back[0].bytes[1] === 0xbb && back[1].offset === 0x200 && back[1].bytes[0] === 0xcc, 'round-trips');
 }
 
+console.log('\n=== $NN / 0xNN hex formats are equivalent across patch fields ===');
+{
+  // bytes: packed, $NN-prefixed, 0xNN-prefixed, and separated all decode the same.
+  const want = '170,187,204'; // AA BB CC
+  assert(Array.from(hexToBytes('AABBCC')).join(',') === want, 'bytes: packed');
+  assert(Array.from(hexToBytes('$AA $BB $CC')).join(',') === want, 'bytes: $NN-prefixed + spaces');
+  assert(Array.from(hexToBytes('0xAA, 0xBB, 0xCC')).join(',') === want, 'bytes: 0xNN-prefixed + commas');
+  assert(Array.from(hexToBytes('AA bb,CC')).join(',') === want, 'bytes: bare with mixed separators');
+  // offset: "$.." and "0x.." parse to the same number (treated identically).
+  const oa = storedToChunks([{ offset: '$66971', bytes: '80' }])[0].offset;
+  const ob = storedToChunks([{ offset: '0x66971', bytes: '80' }])[0].offset;
+  assert(oa === 0x66971 && oa === ob, 'offset: "$NN" === "0xNN"');
+  // labelOffset: "$.." and "0x.." parse to the same number.
+  const la = storedToChunks([{ label: 'bar', labelOffset: '$1F', bytes: '80' }])[0].labelOffset;
+  const lb = storedToChunks([{ label: 'bar', labelOffset: '0x1F', bytes: '80' }])[0].labelOffset;
+  assert(la === 0x1f && la === lb, 'labelOffset: "$NN" === "0xNN"');
+}
+
 console.log('\n=== remapChunk (build-time drift tracking) ===');
 {
   // identity when ref === build: foo@0x40, reference 0x48 → foo+8 → 0x48.
@@ -124,11 +142,14 @@ console.log('\n=== label-addressed chunks (sym label + labelOffset, resolved aga
   assert(threw(() => validateChunkAddressing({})), 'neither offset nor label → throws');
   assert(!threw(() => validateChunkAddressing({ label: 'bar' })), 'label-only → ok');
   assert(!threw(() => validateChunkAddressing({ offset: 1 })), 'offset-only → ok');
-  // round-trip preserves label+labelOffset.
-  const st = chunksToStored([{ label: 'bar', labelOffset: 4, bytes: bytes(0x99) }]);
-  assert(st[0].label === 'bar' && st[0].labelOffset === 4 && st[0].offset === undefined, 'stored label-chunk keeps label+labelOffset, no offset');
+  // round-trip preserves label+labelOffset (labelOffset stored as a hex string).
+  const st = chunksToStored([{ label: 'bar', labelOffset: 0x1f, bytes: bytes(0x99) }]);
+  assert(st[0].label === 'bar' && st[0].labelOffset === '0x1F' && st[0].offset === undefined, 'stored label-chunk keeps label + hex labelOffset, no offset');
   const back = storedToChunks(st);
-  assert(back[0].label === 'bar' && back[0].labelOffset === 4 && back[0].bytes[0] === 0x99, 'label-chunk round-trips');
+  assert(back[0].label === 'bar' && back[0].labelOffset === 0x1f && back[0].bytes[0] === 0x99, 'label-chunk round-trips');
+  // legacy decimal-number labelOffset still parses (back-compat with older files).
+  const legacy = storedToChunks([{ label: 'bar', labelOffset: 4 as unknown as string, bytes: '99' }]);
+  assert(legacy[0].labelOffset === 4, 'legacy decimal labelOffset still parses to its number');
   // resolve: bar lives at 0x120 in the build; +4 → 0x124. NO reverse-lookup, NO ref needed.
   const r = resolveChunkTarget({ label: 'bar', labelOffset: 4, bytes: bytes(0) }, null, buildSym);
   assert(r.offset === 0x0124 && r.resolvedVia === 'label' && r.label === 'bar', 'label+labelOffset resolves directly against the build symbols');

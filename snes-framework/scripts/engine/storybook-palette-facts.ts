@@ -14,13 +14,20 @@
 // whole cutscene by the yi-shiny `storybook-render` trace (walks each shown BG
 // tilemap cell -> (word>>10)&7 = BG row 0-7, and each OAM record -> (attr>>1)&7
 // = OBJ palette -> CGRAM row 8-15, mapping every char/OBJ tile back to its gfx
-// file). KEY FINDING: the cutscene loads ONE static palette (gm$05 palette
-// program $50) and scenes differ ONLY by which rows they use — verified that the
-// settled live CGRAM equals the static palette-$50 load row-for-row — so the
-// export colours each tile in its captured dominant row using the cart's own
-// static CGRAM (no captured colours committed, like the world map). f89 is
-// omitted: loaded into VRAM but never referenced across the entire cutscene
-// (the storybook analogue of the world-map fold-only files).
+// file). The storybook is BG **Mode 1** (BG1/BG2 4bpp, BG3 2bpp), so a BG cell's
+// field reads CGRAM at base 0 (no per-BG offset) and OBJ at row 8+P — unlike the
+// Mode-0 title logo (BG2 -> CGRAM 32). The captured rows ARE the per-tile fact;
+// only the palette HALF (BG 0-7 vs OBJ 8-15) is fixed per file class.
+//
+// COLOURS: the export uses the cart's static palette-$50 load (no captured
+// colours committed, provenance-clean like the world map). The settled intro
+// frames are byte-identical to that load, but the cutscene STREAMS page-specific
+// colours into most BG rows (2-7) and OBJ row 0 as illustrations appear — so a
+// tile on a re-streamed row (e.g. f87's rows 2-3, the clouds) shows the settled
+// placeholder colours, not its per-page colours. That's a known limit of a static
+// export of a streamed cutscene; editing is INDEX-based so it round-trips byte-exact
+// regardless (paletteAnimated). f89 is omitted: loaded into VRAM but never referenced
+// across the entire cutscene (the storybook analogue of the world-map fold-only files).
 import facts from './storybook-palette-facts.json' with { type: 'json' };
 
 /** Display class of a storybook char file — fixes which CGRAM half + transparency

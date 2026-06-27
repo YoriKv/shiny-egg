@@ -126,6 +126,9 @@ export interface CanvasProps {
    *  armed entity at the clicked cell (via onPlaceAt) instead of selecting. */
   placing: boolean
   onPlaceAt: (cellX: number, cellY: number) => void
+  /** Right-click while placing → clear the armed item and drop back to the
+   *  Select tool (mirrors Escape) instead of opening the entity context menu. */
+  onCancelPlacement: () => void
   /** Region-pick mode (Graphics panel "Region" tab → BG1): a shift-drag marquee
    *  commits the dragged cell rectangle via `onRegionPicked` instead of selecting
    *  entities. */
@@ -174,6 +177,10 @@ export interface CanvasProps {
    *  the freshly-built ROM (asm/palette edits only reach the pixels via a rebuild,
    *  and nothing else in the render deps changes). See hooks/useLevelRenderLayers. */
   renderRefresh: number
+  /** Decode PRNG-seed override (the toolbar's "Refresh RNG" action) — re-rolls
+   *  the cosmetic random-tile variants. Changing it re-fetches bg1 + collision.
+   *  `undefined` ⇒ the default deterministic seed. See hooks/useLevelRenderLayers. */
+  prngSeed: number | undefined
   /** App-wide canvas background colour (`#rrggbb`) — also used for the level-
    *  switch wipe so that transient matches the surrounding background. */
   canvasBackground: string
@@ -215,6 +222,7 @@ export function Canvas({
   cameraRequest,
   placing,
   onPlaceAt,
+  onCancelPlacement,
   regionPickMode,
   onRegionPicked,
   eraseTool,
@@ -229,6 +237,7 @@ export function Canvas({
   onClearTestSpawn,
   paletteOverride,
   renderRefresh,
+  prngSeed,
   canvasBackground,
   gridColor
 }: CanvasProps): JSX.Element {
@@ -283,7 +292,7 @@ export function Canvas({
     bgLayers,
     collisionCanvas,
     renderVersion
-  } = useLevelRenderLayers(renderLevel, paletteOverride, renderRefresh, canvasBackground)
+  } = useLevelRenderLayers(renderLevel, paletteOverride, renderRefresh, canvasBackground, prngSeed)
   const [loadError, setLoadError] = useState<string | null>(null)
   // Hover preview — objects show a chartreuse box; cel-backed sprites a
   // size-matched chartreuse box, marker/flag sprites a chartreuse ring.
@@ -1658,6 +1667,13 @@ export function Canvas({
   const onContextMenu = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
       e.preventDefault()
+      // While the Place tool is armed, right-click cancels it (clear the armed
+      // item + drop back to Select) rather than opening the entity context menu.
+      if (placing) {
+        setCtxMenu(null)
+        onCancelPlacement()
+        return
+      }
       const wrap = wrapRef.current
       if (!wrap || !levelRef.current) return
       const rect = wrap.getBoundingClientRect()
@@ -1681,7 +1697,7 @@ export function Canvas({
       onSelect([{ kind: hit.kind, uid: hit.uid } as Selection])
       setCtxMenu({ x: e.clientX, y: e.clientY, kind: hit.kind, uid: hit.uid })
     },
-    [layers, onSelect]
+    [layers, onSelect, placing, onCancelPlacement]
   )
 
   // Context-menu items for the targeted entity. Duplicate + Delete for all;

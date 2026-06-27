@@ -22,6 +22,7 @@ import type {
   LevelTileUsage,
   LocateBizhawkResult,
   LocateAsepriteResult,
+  AsepriteInfo,
   ObjectInfluenceRequest,
   ObjectInstance,
   PickerThumbnails,
@@ -53,6 +54,7 @@ import type {
   ImportGraphicsResult,
   BgRegionExportArgs,
   BgRegionExportResult,
+  M1ExportFile,
   BgRegionImportResult,
   CreatableSlot,
   CreateLevelResult,
@@ -92,8 +94,10 @@ import type {
   EditableResource,
   GfxFileEntry,
   LevelData,
+  LevelDecodeSignals,
   LevelObject,
   LevelsCatalog,
+  LevelValidationInput,
   PaletteEdit,
   PoolBudgetReport,
   PoolOverview,
@@ -367,9 +371,11 @@ const api = {
     ): Promise<BgRegionExportResult> =>
       ipcRenderer.invoke('editor:exportBgRegion', header, args),
     importBgRegion: (): Promise<BgRegionImportResult> => ipcRenderer.invoke('editor:importBgRegion'),
-    getAsepriteExe: (): Promise<string | null> => ipcRenderer.invoke('aseprite:getExe'),
+    getAsepriteExe: (): Promise<AsepriteInfo | null> => ipcRenderer.invoke('aseprite:getExe'),
     locateAseprite: (): Promise<LocateAsepriteResult> => ipcRenderer.invoke('aseprite:locate'),
     openInAseprite: (dir: string, file: string): Promise<boolean> => ipcRenderer.invoke('aseprite:open', dir, file),
+    openInM1te: (dir: string, file: string, bg?: 1 | 2 | 3): Promise<boolean> => ipcRenderer.invoke('m1te:open', dir, file, bg),
+    listM1Files: (dir: string): Promise<M1ExportFile[]> => ipcRenderer.invoke('editor:listM1Files', dir),
     listRegionExports: (): Promise<string[]> => ipcRenderer.invoke('editor:listRegionExports'),
     removeRegionExport: (dir: string): Promise<string[]> => ipcRenderer.invoke('editor:removeRegionExport', dir),
     openRegionFolder: (dir: string): Promise<void> => ipcRenderer.invoke('editor:openRegionFolder', dir),
@@ -491,6 +497,14 @@ const api = {
     analyze: (): Promise<GbaImportReport | null> => ipcRenderer.invoke('gbaImport:analyze'),
     apply: (selection: GbaImportApplySelection): Promise<GbaImportApplyResult> =>
       ipcRenderer.invoke('gbaImport:apply', selection)
+  },
+
+  // Level validation: the decode side of the Validation panel. The check logic
+  // is renderer-side; these only run the object decoder main-side.
+  validation: {
+    signals: (level: LevelData): Promise<LevelDecodeSignals> =>
+      ipcRenderer.invoke('validation:signals', level),
+    allLevels: (): Promise<LevelValidationInput[]> => ipcRenderer.invoke('validation:allLevels')
   }
 } satisfies ShinyEggAPI
 

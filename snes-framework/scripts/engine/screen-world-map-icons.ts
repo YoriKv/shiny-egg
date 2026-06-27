@@ -9,7 +9,7 @@ import { encodePng, type ImageData } from './png.ts';
 import { decode4bppTile, encode4bppTile } from './tile.ts';
 import { u16le } from './rom-read.ts';
 import { type SymbolMap } from './symbol-map.ts';
-import { imageAseprite } from './gfx-aseprite.ts';
+import { imageAseprite, imagePaletteOffsets } from './gfx-aseprite.ts';
 import { TILE_PX, TILE_BYTES_4BPP, MAP_BG1_CHAR_ADDR, WORLD_COUNT, mapTintRow, mapGfx, mapPalette, type IconUnit, type IconTileEdit } from './screen-scene.ts';
 
 // ===========================================================================
@@ -62,6 +62,10 @@ export interface WorldMapIconContext {
   manifest: GfxFileEntry[];
   tintRow: number;
   palettes: (Uint32Array | undefined)[];
+  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source), from the
+   *  scene palette load — lets a palette-colour edit (terrain/ground/icon) round-trip to the
+   *  blob. Shared by every track that builds off this scene context. */
+  provenance: Int32Array;
 }
 
 /** Build a world's overworld decode context (its map VRAM + CGRAM + manifest). */
@@ -70,8 +74,9 @@ export function buildWorldMapIconContext(rom: Uint8Array, symbols: SymbolMap, wo
   const manifest: GfxFileEntry[] = [];
   loadSceneGfx(rom, symbols, mapGfx(rom, symbols, world), vram, manifest);
   const cgram = new Uint8Array(512);
-  loadScenePalettes(rom, symbols, mapPalette(rom, symbols, world), cgram);
-  return { rom, symbols, world, vram, cgram, manifest, tintRow: mapTintRow(rom, symbols, world), palettes: new Array(8) };
+  const provenance = new Int32Array(256); // loadScenePalettes fills it (-1 = no blob source)
+  loadScenePalettes(rom, symbols, mapPalette(rom, symbols, world), cgram, provenance);
+  return { rom, symbols, world, vram, cgram, manifest, tintRow: mapTintRow(rom, symbols, world), palettes: new Array(8), provenance };
 }
 
 /** BG palette row `row` (0..7) as ARGB, opaque index 0 (BG composites index 0 as a
@@ -85,8 +90,9 @@ function iconPalFor(ctx: WorldMapIconContext, row: number): Uint32Array {
   return p;
 }
 
-/** Map a BG1-tile VRAM byte offset → its map gfx file + file-relative tile. */
-function iconFileForVramByte(
+/** Map a BG1-tile VRAM byte offset → its map gfx file + file-relative tile (4bpp). Shared
+ *  by the icon slice + the overworld-terrain pixel slice (both write the $74/$75/$4C char). */
+export function iconFileForVramByte(
   manifest: GfxFileEntry[],
   vramByte: number
 ): { fileId: number; format: 'lz2' | 'lz16'; fileTile: number } | null {
@@ -248,10 +254,13 @@ export function worldMapIconPng(ctx: WorldMapIconContext, canvas: WorldMapIconCa
 /** The assembled icon as a "single image with palette" `.aseprite` (no tilemap): the
  *  24×24 indexed image coloured in its used BG rows (the same colours the PNG swatch shows).
  *  Import flattens it back to the canvas RGBA → `diffWorldMapIconTiles`, like the PNG. */
-export function worldMapIconAseprite(ctx: WorldMapIconContext, canvas: WorldMapIconCanvas): Uint8Array {
+export function worldMapIconAseprite(ctx: WorldMapIconContext, canvas: WorldMapIconCanvas): { bytes: Uint8Array; paletteOffsets: number[] } {
   const pal: number[] = [];
   for (const row of canvas.paletteRowsUsed) { const rp = iconPalFor(ctx, row); for (let i = 0; i < 16; i++) pal.push(rp[i]!); }
-  return imageAseprite({ rgba: canvas.rgba, width: canvas.width, height: canvas.height, palette: pal, index0Transparent: false, layerName: `icon-${canvas.name}` });
+  const bytes = imageAseprite({ rgba: canvas.rgba, width: canvas.width, height: canvas.height, palette: pal, index0Transparent: false, layerName: `icon-${canvas.name}` });
+  // Colour write-back map — the SAME used BG rows concatenated (16-colour, opaque + trailing slot).
+  const paletteOffsets = imagePaletteOffsets({ provenance: ctx.provenance, rows: canvas.paletteRowsUsed, index0Transparent: false });
+  return { bytes, paletteOffsets };
 }
 
 /** One assembled level-slot icon PNG (per world × shape), shaped for the manifest. */
@@ -267,6 +276,9 @@ export interface WorldMapIconPng {
   png: Uint8Array;
   /** The same icon as a single-image `.aseprite` (built only when `aseprite` is requested). */
   aseprite?: Uint8Array;
+  /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
+   *  editing the embedded palette writes those colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[];
 }
 
 /** Export the overworld's level-slot icons (marker + castle) for every world as
@@ -280,16 +292,18 @@ export function exportWorldMapIcons(rom: Uint8Array, symbols: SymbolMap, opts: {
     for (const def of ICON_DEFS) {
       const canvas = renderWorldMapIcon(ctx, def.name);
       if (!canvas) continue;
+      const ase = opts.aseprite && canvas.faithful ? worldMapIconAseprite(ctx, canvas) : undefined;
       out.push({
         file: `screens/map/world-${world}/icon-${def.name}.png`,
-        description: `map level-slot icon — ${def.label} (world ${world} tint; shared tiles across worlds)`,
+        description: `map level-slot icon — ${def.label} (world ${world} tint; shared tiles across worlds). Editing the embedded palette writes those colours back to the master palette blob.`,
         world,
         name: def.name,
         faithful: canvas.faithful,
         width: canvas.width,
         height: canvas.height,
         png: worldMapIconPng(ctx, canvas),
-        aseprite: opts.aseprite && canvas.faithful ? worldMapIconAseprite(ctx, canvas) : undefined
+        aseprite: ase?.bytes,
+        paletteOffsets: ase?.paletteOffsets
       });
     }
   }

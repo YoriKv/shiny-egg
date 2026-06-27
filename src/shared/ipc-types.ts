@@ -77,6 +77,27 @@ export interface LocateAsepriteResult {
   error?: string
 }
 
+/** The located Aseprite, with the version probed from `<exe> --version`. The
+ *  `.aseprite` format has NO version field (aseprite/docs/ase-file-specs.md — the
+ *  128-byte header carries none; Aseprite decides "minimum version to open" purely
+ *  from which chunk types are present), so the only way to match our save format to
+ *  the user's install is to probe the binary. The Graphics panel keys the
+ *  tilemap-export gate off `supportsTilemap`: our tilemap `.aseprite` files (tileset
+ *  chunk 0x2023 + tilemap layer type 2 + cel type 3) need Aseprite 1.3+, where
+ *  tilemaps landed — an older Aseprite skips those chunks and opens a blank layer,
+ *  corrupting the round-trip on save. */
+export interface AsepriteInfo {
+  path: string
+  /** Dotted version from `--version` (e.g. `"1.3.17"`), or null when the probe
+   *  failed / output couldn't be parsed (then `supportsTilemap` is given the benefit
+   *  of the doubt — see below). */
+  version: string | null
+  /** Version ≥ 1.3 ⇒ tilemap export is safe to offer. A null/unparseable `version`
+   *  is treated as `true` (don't punish a working install for a flaky `--version`);
+   *  the gate fires only when we POSITIVELY read a pre-1.3 version. */
+  supportsTilemap: boolean
+}
+
 /** Result of the `bizhawk:locate` file picker. `ok` + `path` on success;
  *  `ok:false` with no `error` = the user cancelled; `ok:false` + `error` = the
  *  pick was rejected (e.g. not EmuHawk.exe). */
@@ -470,6 +491,12 @@ export interface LevelRenderRequest {
    *  returns a sparse PATCH; absent / unknown / a context change ⇒ a FULL render.
    *  Other handlers ignore it. */
   baseToken?: LayerStateToken
+  /** Override the decode's PRNG seed (the "Refresh RNG" editor action) — re-rolls
+   *  the cosmetic random-tile variants the cart picks via its HV-counter PRNG (we
+   *  port it as a 16-bit LFSR). Absent ⇒ the default deterministic seed (0xACE1).
+   *  `bg1Layer` / `collisionLayer` (and any other decode-backed handler) honour
+   *  it; the seed-independent layers (`spriteLayer`, `bgLayers`) ignore it. */
+  prngSeed?: number
   // (The sprite cel-format gate, settled palette row (SP4) and rest frame (SP3) are asm-fixed
   //  facts the engine now owns directly — sprite-render-facts.ts — so they're no longer sent.)
 }
@@ -665,9 +692,11 @@ export interface Map16BlockPreview {
 
 /** Options for exporting graphics PNGs (the Graphics panel). All optional. */
 /** Which sub-track(s) of the graphics export to write. `metasprites` includes the
- *  GSU glyphs; `screens` covers system screens + world-map / level icons + title
- *  logo/island/scenery. */
-export type GfxExportTrack = 'metasprites' | 'screens'
+ *  GSU glyphs; `worldmap` covers the overworld map char sheets + world-map / level
+ *  icons + terrain / ground; `systemscreens` covers the boot / title / storybook
+ *  char sheets + the title logo / island / scenery + storybook scene. (`worldmap` +
+ *  `systemscreens` are the two halves of what used to be a single `screens` track.) */
+export type GfxExportTrack = 'metasprites' | 'worldmap' | 'systemscreens'
 
 export interface ExportGfxOptions {
   /** Limit the export to these tracks. */
@@ -675,8 +704,11 @@ export interface ExportGfxOptions {
   /** `aseprite` writes the assembled screens / metasprites as indexed Aseprite
    *  projects instead of PNGs. The title island's Aseprite export is a COMBINED
    *  tilemap: one file edits pixels, placement, AND added tiles together (assumes
-   *  Manual tileset mode — see gfx-png-import.ts). Default `png`. */
-  format?: 'png' | 'aseprite'
+   *  Manual tileset mode — see gfx-png-import.ts). `m1te2` (World Map track only)
+   *  writes the overworld (one `.M1` per world × half, BG1+BG2+BG3) + a combined icons
+   *  `.M1` (all per-level icons in level order + marker + castle) as M1TE2 sessions
+   *  instead of the PNG/Aseprite map outputs. Default `png`. */
+  format?: 'png' | 'aseprite' | 'm1te2'
   /** Sprite id → friendly name; NAMES the metasprite PNGs (does not limit them). */
   spriteNames?: Record<number, string>
 }
@@ -699,8 +731,10 @@ export type BgRegionLayer = 1 | 2 | 3
  *  the **16×16-WORD placement** tilemap for BG2/BG3 only (rearrange which tile goes where;
  *  8×8 placement is impossible in 16×16 tile mode — see research/graphics-editing). BG1
  *  has no static tilemap placement (that's the level editor), so it rejects
- *  `aseprite-layout`. */
-export type BgRegionFormat = 'png' | 'aseprite' | 'aseprite-layout'
+ *  `aseprite-layout`. `m1te2` = an M1TE2 `.M1` session file (BG2/BG3 only) bundling the
+ *  layer's tilemap + CHR + palette for editing in M1TE2 — one `.M1` per 32×32 screen since
+ *  M1TE2's map is a fixed 32×32. Round-trips (CHR pixels + tilemap words + palette). */
+export type BgRegionFormat = 'png' | 'aseprite' | 'aseprite-layout' | 'm1te2'
 
 /** A rectangle of BG1 level cells (16×16 px each), in absolute level coords.
  *  Ignored for BG2/BG3 (the whole tilemap is exported). */
@@ -725,15 +759,23 @@ export interface BgRegionExportArgs {
 }
 
 export type BgRegionExportResult =
-  | { ok: true; file: string; cells: number; dir: string }
+  | { ok: true; file: string; cells: number; dir: string; /** Non-fatal notice (e.g. a BG1 M1TE area cropped to 16×16). */ warning?: string }
   | { ok: false; error: string }
   | { canceled: true }
+
+/** An exported `.M1` session file in a tracked export folder, with its BG layer
+ *  parsed from the filename (`bg2-region*.M1` → 2) — for the Graphics panel's list
+ *  of clickable "open in M1TE" entries under each folder. */
+export interface M1ExportFile {
+  file: string
+  layer: 1 | 2 | 3
+}
 
 /** Per-region detail line for the import log. */
 export interface RegionImportLogEntry {
   file: string
   layer: BgRegionLayer
-  source: 'png' | 'aseprite'
+  source: 'png' | 'aseprite' | 'm1te2'
   /** Tile edits sliced from this region. */
   tiles: number
   /** Opaque pixels whose colour was in no slot of their cell's palette row. */
@@ -770,6 +812,10 @@ export type ImportGraphicsResult =
       dir: string
       /** Files (gfx + palette) changed — drives the build-dirty mark. */
       changed: number
+      /** Master-palette colours written back (e.g. a recolour imported from M1TE / a
+       *  swatch). Non-zero ⇒ the renderer reloads its palette draft so the live preview
+       *  reflects the import (the edits were persisted behind the edit-session's back). */
+      paletteChanged: number
       /** Pre-formatted log + error lines for display (gfx counts + region log). */
       log: string[]
       errors: string[]

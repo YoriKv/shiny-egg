@@ -146,7 +146,10 @@ export class DecodeState {
   // --- PRNG state -------------------------------------------------------
   /** Deterministic 16-bit LFSR seed for our PRNG port. The cart uses
    *  HV-counter entropy which we can't reproduce offline; this gives a
-   *  reproducible but uncorrelated value for cosmetic-randomness handlers. */
+   *  reproducible but uncorrelated value for cosmetic-randomness handlers.
+   *  `reset()` restores this default; `decodeLevel`'s `prngSeed` option then
+   *  overrides it (the editor's "Refresh RNG" action — re-rolls the cosmetic
+   *  random-tile variants by starting the LFSR from a different value). */
   prngState = 0xACE1;
   /** Optional captured cart-PRNG output sequence (one byte per get_random_byte
    *  call, in call order) from the `level-rng` trace. When set, `prngNext`

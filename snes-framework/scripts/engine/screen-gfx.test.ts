@@ -1,7 +1,9 @@
 // System-screen gfx export (boot / title / storybook / map). Pins:
 //   1. the screens export the expected folder shapes — screens/boot/,
-//      screens/title/, screens/storybook/, screens/map/common/ + per-world
-//      screens/map/world-N/,
+//      screens/storybook/, screens/map/common/ + per-world screens/map/world-N/
+//      (NO raw screens/title/ char sheets — only the assembled logo/island/scenery,
+//      tested separately), and the `groups` filter partitions them into the
+//      `systemscreens` (boot/storybook + title views) vs `worldmap` (map) tracks,
 //   2. the boot screen is CROPPED to the "Nintendo Presents" logo (a tile region,
 //      not the whole 0x72 sheet),
 //   3. every exported file's UNEDITED round-trip (region-aware, base-aware) is
@@ -21,6 +23,7 @@ import {
   diffTitleLogoTiles,
   diffTitleLogoCombined,
   logoTileMeta,
+  logoTileKeys,
   titleLogoAseprite,
   exportTitleIsland,
   buildTitleIslandContext,
@@ -35,19 +38,52 @@ import {
   renderTitleScenery,
   diffTitleScenery,
   titleSceneryAseprite,
+  exportStorybookScene,
+  buildStorybookSceneContext,
+  renderStorybookScene,
+  diffStorybookSceneTiles,
+  storybookSceneAseprite,
   type ScreenGfxPng
 } from './screen-gfx.ts';
 import { decodePng } from './png.ts';
 import { decodeAsepriteRegion, decodeAsepriteStructural, decodeAsepriteImage } from './aseprite.ts';
-import { diffGfxFileAseprite } from './gfx-aseprite.ts';
+import { diffGfxFileAseprite, diffAsepritePalette } from './gfx-aseprite.ts';
+import { imageDataU32ToBgr15 } from './color.ts';
 import { imageToGfx, lz16Layout, lz2Layout, readSwatchPalette, type GfxImageLayout } from './gfx-png.ts';
 import { decode2bppTile, decode4bppTile, encode2bppTile, encode4bppTile } from './tile.ts';
 import { lz2, lz16 } from './decompress/index.ts';
 import { snesToPC } from './symbol-map.ts';
+import { PALETTE_BLOB_LABEL } from '../palette-edit.ts';
 
 let failures = 0;
 const assert = (c: boolean, m: string): void => { if (!c) { console.error(`  ✗ ${m}`); failures++; } else console.log(`  ✓ ${m}`); };
 const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
+
+/** The master-blob's current `offset → BGR-15` words from a scene's (provenance, cgram) —
+ *  the same source the export read. Pins the palette write-back (unedited → 0 edits). */
+function blobWordsFrom(provenance: Int32Array, cgram: Uint8Array): Map<number, number> {
+  const w = new Map<number, number>();
+  for (let ci = 0; ci < provenance.length; ci++) {
+    const off = provenance[ci]!;
+    if (off >= 0) w.set(off, (cgram[ci * 2]! | (cgram[ci * 2 + 1]! << 8)) & 0x7fff);
+  }
+  return w;
+}
+
+/** Pin a track's palette write-back: offsets cover the meaningful entries, an unedited
+ *  palette → 0 colour edits, and flipping the first blob-backed entry → exactly one. */
+function assertPaletteRoundTrip(label: string, palette: Uint32Array, offsets: number[], blobWords: Map<number, number>): void {
+  assert(offsets.length > 0 && offsets.length <= palette.length, `${label}: paletteOffsets covers the meaningful entries (${offsets.length} of ${palette.length})`);
+  assert(diffAsepritePalette(palette, offsets, blobWords).length === 0, `${label}: unedited palette → 0 master-blob colour edits`);
+  const pi = offsets.findIndex((o) => o >= 0);
+  assert(pi >= 0, `${label}: palette has a blob-backed colour to edit`);
+  if (pi >= 0) {
+    const ep = palette.slice();
+    ep[pi] = (ep[pi]! ^ 0x00080808) >>> 0; // flip bit 3 of each RGB byte → ±1 in the 5-bit channel
+    const eds = diffAsepritePalette(ep, offsets, blobWords);
+    assert(eds.length === 1 && eds[0]!.offset === offsets[pi] && eds[0]!.value === imageDataU32ToBgr15(ep[pi]!), `${label}: a 1-colour edit → exactly one PaletteEdit at the right offset`);
+  }
+}
 
 const { rom, symbols } = loadDevCart();
 const entries = exportScreenGfxPngs(rom, symbols);
@@ -75,8 +111,8 @@ const decodeBase = (e: ScreenGfxPng): Uint8Array => {
   }
   return out;
 };
-// Per-tile palette decoder for fidelity entries (map BG f74/f75, title logo $1D) —
-// each tile decodes against its own row; the swatch is ignored (same as the import).
+// Per-tile palette decoder for fidelity entries (map BG f74/f75) — each tile decodes
+// against its own row; the swatch is ignored (same as the import).
 const tilePaletteOf = (e: ScreenGfxPng): ((t: number) => readonly number[]) | undefined =>
   e.perTilePalette
     ? (t) => e.perTilePalette!.subPalettes[e.perTilePalette!.tileSub[t] ?? 0] ?? e.perTilePalette!.subPalettes[0]!
@@ -85,7 +121,9 @@ const tilePaletteOf = (e: ScreenGfxPng): ((t: number) => readonly number[]) | un
 // (1) folder shapes.
 const has = (re: RegExp): boolean => entries.some((e) => re.test(e.file));
 assert(has(/^screens\/boot\/f[0-9A-F]+\.png$/), 'exports screens/boot/');
-assert(has(/^screens\/title\/f[0-9A-F]+\.png$/), 'exports screens/title/');
+// Title raw char sheets (f1D/f1F/f73/f74) are NOT exported — only the assembled
+// logo/island/scenery views (emitted by the driver; tested separately below).
+assert(!has(/^screens\/title\/f[0-9A-F]+\.png$/), 'no raw screens/title/ char sheets');
 assert(has(/^screens\/storybook\/f[0-9A-F]+\.png$/), 'exports screens/storybook/');
 assert(has(/^screens\/map\/common\/f[0-9A-F]+\.png$/), 'exports screens/map/common/');
 // (Per-world map GFX is now empty: the only per-world map tilesets are the BG1
@@ -94,6 +132,20 @@ assert(has(/^screens\/map\/common\/f[0-9A-F]+\.png$/), 'exports screens/map/comm
 // separately by exportWorldMapIcons.)
 assert(new Set(entries.map((e) => e.file)).size === entries.length, 'every screen file path is unique');
 console.log(`  (exported ${entries.length} screen files)`);
+
+// (1b) groups filter — the `systemscreens` vs `worldmap` track split. `{ system }` emits
+// only the boot/title/storybook char sheets; `{ map }` only the per-world map sheets;
+// together they partition the full default export with no overlap and no loss.
+// The exact prefixes the export driver's path REBASE relies on (systemscreens strips
+// `screens/`, worldmap strips `screens/map/`, so each export folder gets a clean layout).
+const isMapFile = (f: string): boolean => /^screens\/map\//.test(f);
+const sysOnly = exportScreenGfxPngs(rom, symbols, { groups: { system: true, map: false } });
+const mapOnly = exportScreenGfxPngs(rom, symbols, { groups: { system: false, map: true } });
+assert(sysOnly.length > 0 && sysOnly.every((e) => /^screens\/(boot|title|storybook)\//.test(e.file)), `system group → only boot/title/storybook sheets (${sysOnly.length})`);
+assert(mapOnly.length > 0 && mapOnly.every((e) => isMapFile(e.file)), `map group → only screens/map/ sheets (${mapOnly.length})`);
+assert(sysOnly.length + mapOnly.length === entries.length, `groups partition the full export (${sysOnly.length}+${mapOnly.length}=${entries.length})`);
+const partFiles = new Set([...sysOnly, ...mapOnly].map((e) => e.file));
+assert(partFiles.size === entries.length && entries.every((e) => partFiles.has(e.file)), 'groups union == full export, no overlap');
 
 // (2) boot is cropped to the logo region (a sub-grid, not the full 256-tile sheet).
 const boot = entries.find((e) => /^screens\/boot\//.test(e.file))!;
@@ -122,6 +174,21 @@ assert(bootTiles < boot.sizeBytes / tileBytesOf(boot), `boot crop (${bootTiles} 
   }
   assert(done && diffGfxFileAseprite({ palette: dec.palette, bpp: boot.bpp, baseTileData: baseRegion, flatten: edited, width: dec.width }).length >= 1,
     'boot .aseprite a 1-px edit slices to a tile');
+  // Palette write-back wiring: the region .aseprite carries a colour write-back map (one
+  // blob offset per palette entry + the trailing transparent slot). (imagePaletteOffsets'
+  // provenance correctness is pinned against real CGRAM by the scenery/icon/level-icon
+  // tracks; here we pin the boot region's shape + a self-consistent diff round-trip.)
+  const bootOff = bootAse.paletteOffsets!;
+  assert(!!bootOff && bootOff.length === 17, `boot region paletteOffsets = 16 colours + trailing slot (got ${bootOff?.length})`);
+  assert(bootOff[16] === -1, 'boot region offsets end with a trailing transparent slot (-1)');
+  const bootBi = bootOff.slice(0, 16).findIndex((o) => o >= 0); // a blob-backed entry (some OBJ slots have no blob source)
+  assert(bootBi >= 0, 'boot region has at least one blob-backed colour');
+  const bootBlob = new Map<number, number>();
+  for (let i = 0; i < 16; i++) if (bootOff[i]! >= 0) bootBlob.set(bootOff[i]!, imageDataU32ToBgr15(dec.palette[i]!));
+  assert(diffAsepritePalette(dec.palette, bootOff, bootBlob).length === 0, 'boot region: unedited palette → 0 colour edits');
+  const bootFlip = dec.palette.slice(); bootFlip[bootBi] = (bootFlip[bootBi]! ^ 0x00080808) >>> 0;
+  const bootEd = diffAsepritePalette(bootFlip, bootOff, bootBlob);
+  assert(bootEd.length === 1 && bootEd[0]!.offset === bootOff[bootBi], 'boot region: a 1-colour edit → exactly one PaletteEdit at the right offset');
 }
 
 // (3) unedited round-trip byte-exact for every file (region- AND per-tile-aware).
@@ -134,73 +201,172 @@ for (const e of entries) {
   else assert(false, `${e.file} unedited round-trip byte-exact`);
 }
 assert(exact === entries.length, `all ${entries.length} screen files round-trip byte-exact`);
-// per-tile fidelity is active where it should be (map BG f74/f75 + the title logo $1D).
-assert(entries.find((e) => e.file === 'screens/title/f1D.png')?.perTilePalette != null, 'title logo char $1D uses per-tile palette (matches title/logo.png)');
+// per-tile fidelity is active where it should be (map BG f74/f75).
 assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette != null), 'map BG terrain uses per-tile palette');
 
-// (3b) STORYBOOK palette correctness pin. The gm$05 storybook is a runtime-streamed
-// multi-page cutscene (51 story beats); a static decode only sees the initial
-// Nintendo-logo frame, so the per-tile rows come from a CAPTURE (storybook-palette-
-// facts.ts, the `storybook-render` trace) — NOT a static tilemap scan. Each char file
-// renders PER-TILE (perTilePalette) coloured in its captured dominant row using the
-// cart's static palette-$50 CGRAM. Two classification fixes vs the old static decode:
-//   * the OBJ sprite sheets (f8A/f4A, loaded into OBJ VRAM $8000+) read OBJ palette
-//     rows 8-15 with TRANSPARENT index 0 — the old decode mis-classed them as BG row 0
-//     (the wrong HALF of CGRAM), rendering the stork/cloud illustrations as garbage;
-//   * the tilemap-data files (f73/f74/f75) and f89 (loaded but never displayed across
-//     the whole cutscene) are absent from the facts and SKIPPED.
+// (3a) Per-tile-palette char sheets (map BG f74/f75, storybook f88) export a
+// MULTI-ROW .aseprite (every used CGRAM row's colours concatenated) whose palette round-trips
+// to the master blob. (imagePaletteOffsets' provenance correctness is pinned against real
+// CGRAM by the scenery/icon/level-icon image tracks; here we pin the multi-row sheets' shape +
+// a self-consistent diff round-trip.)
 {
-  const sbook = entries.filter((e) => /^screens\/storybook\//.test(e.file));
-  assert(sbook.length > 0, 'storybook exports char files');
-  assert(sbook.every((e) => e.perTilePalette != null), 'every storybook char file uses per-tile palette');
-  // Tilemap-data files + the never-displayed f89 are skipped (NOT exported as char sheets).
-  for (const id of [0x73, 0x74, 0x75, 0x89]) {
-    assert(!sbook.some((e) => e.fileId === id), `storybook non-char file 0x${id.toString(16)} is skipped`);
-  }
-  // The BG char file $87 spans >1 sub-palette (rows 0-5); the BG3 2bpp file $27 too.
-  const f87 = sbook.find((e) => e.fileId === 0x87);
-  const f27 = sbook.find((e) => e.fileId === 0x27);
-  assert(f87 != null && f87.bpp === 4 && f87.perTilePalette!.subPalettes.length > 1,
-    `storybook char $87 (4bpp) spans multiple sub-palettes (got ${f87?.perTilePalette?.subPalettes.length})`);
-  assert(f27 != null && f27.bpp === 2 && f27.perTilePalette!.subPalettes.length > 1,
-    `storybook BG3 char $27 (2bpp) spans multiple sub-palettes (got ${f27?.perTilePalette?.subPalettes.length})`);
-  // BG3 2bpp tight 4-colour stride; $87 has tiles in a non-first row (not flat row 0).
-  assert(f27!.perTilePalette!.subPalettes.every((p) => p.length === 4), 'storybook BG3 sub-palettes are 4 colours (2bpp, tight stride)');
-  assert(f87!.perTilePalette!.tileSub.some((s) => s > 0), 'storybook char $87 has tiles in a non-first row (the mis-colour fix)');
-  assert(f87!.index0Transparent === false, 'storybook BG char $87 has opaque index 0');
-  // The OBJ sprite sheets f8A/f4A are classed OBJ: 4bpp + TRANSPARENT index 0 (the
-  // classification fix — they were mis-coloured at BG row 0 before).
-  for (const id of [0x8a, 0x4a]) {
-    const f = sbook.find((e) => e.fileId === id);
-    assert(f != null && f.bpp === 4 && f.index0Transparent === true,
-      `storybook OBJ sprite sheet 0x${id.toString(16)} is 4bpp with transparent index 0 (OBJ-class fix)`);
+  const perTileAse = exportScreenGfxPngs(rom, symbols, { aseprite: true }).filter((e) => e.perTilePalette && e.paletteOffsets);
+  assert(perTileAse.length >= 3, `per-tile char sheets emit a multi-row .aseprite + paletteOffsets (got ${perTileAse.length})`);
+  for (const e of perTileAse) {
+    const aimg = decodeAsepriteImage(e.aseprite!);
+    // PIXELS: the multi-row .aseprite must round-trip byte-exact through the per-tile import
+    // path (decodeAsepriteImage → imageToGfx with the per-tile palette) — same as the PNG.
+    const base = decodeBase(e);
+    const round = imageToGfx(aimg, layoutOf(e), { base, index0Transparent: e.index0Transparent, tilePalette: tilePaletteOf(e) }).subarray(0, base.length);
+    assert(eq(round, base), `${e.file}: per-tile .aseprite pixel round-trip byte-exact`);
+    // COLOURS: paletteOffsets parallels the embedded multi-row palette; self-consistent blob
+    // words (each blob-backed entry's current colour at its offset) → unedited 0, flip → 1.
+    const pal = aimg.palette;
+    const off = e.paletteOffsets!;
+    const bw = new Map<number, number>();
+    for (let i = 0; i < off.length; i++) if (off[i]! >= 0) bw.set(off[i]!, imageDataU32ToBgr15(pal[i]!));
+    assertPaletteRoundTrip(e.file, pal, off, bw);
   }
 }
 
-// (3c) STORYBOOK Aseprite output. Each storybook char file also exports as a single-
-// image `.aseprite` (the per-tile-coloured sheet + the used-row colours as the indexed
-// palette). The palette lives IN the file, so the `.aseprite` OMITS the reference swatch
-// the PNG appends to the right — it's the bare tile grid (narrower than the PNG). The
-// correctness invariant: its flatten reproduces the PNG's TILE-GRID region byte-for-byte
-// (imageToGfx never reads the swatch when a per-tile palette is supplied), so the import
-// (decodeAsepriteImage → imageToGfx with perTilePalette) round-trips byte-exact like the
-// PNG (pinned by (3)). Covers both transparency modes (BG opaque-0 + OBJ transparent-0).
+// (3c) LIVE BASELINE (pixels) — the export reflects UNBUILT gfx edits via `gfxOverride`, so a
+// second export taken before a rebuild shows prior edits and re-importing it won't revert them
+// (export baseline ≡ the import's `liveTiles`). A no-op override (= base) leaves the export
+// byte-identical; an edited override changes only that file and round-trips back to the edit.
+{
+  const target = entries.find((e) => !e.region && !e.perTilePalette);
+  assert(!!target, 'found a full-file single-palette screen entry to test gfxOverride');
+  if (target) {
+    const base = decodeBase(target);
+    const key = `${target.format}/${target.fileId}`;
+    const exp = (gfxOverride?: ReadonlyMap<string, Uint8Array>): ScreenGfxPng =>
+      exportScreenGfxPngs(rom, symbols, gfxOverride ? { gfxOverride } : {}).find((e) => e.file === target.file)!;
+    const plain = exp();
+    assert(eq(plain.png, exp(new Map([[key, base]])).png), 'a no-op gfxOverride (= base tiles) leaves the export byte-identical');
+    const edited = base.slice(); edited[0] ^= 0xff; edited[1] ^= 0xff; // perturb tile 0 indices
+    const live = exp(new Map([[key, edited]]));
+    assert(!eq(live.png, plain.png), 'an edited gfxOverride changes the exported file (export reflects the unbuilt edit)');
+    // Re-import the live export against the live baseline (decodeBase = the edit) → 0 change.
+    const round = imageToGfx(decodePng(Buffer.from(live.png)), layoutOf(live), { base: edited, index0Transparent: live.index0Transparent, tilePalette: tilePaletteOf(live) }).subarray(0, edited.length);
+    assert(eq(round, edited), 'the live-edited export re-imports to the edit (no pixel revert across a pre-rebuild cycle)');
+  }
+}
+
+// (3d) LIVE BASELINE (colours) — `romWithLivePalette` patches the master-palette blob at each
+// edit's blob offset; this proves that lands in CGRAM at the index whose provenance is that
+// offset, so the export's CGRAM reflects unbuilt colour edits (≡ the import's effectiveBlobWords)
+// → no colour revert pre-rebuild. (Project-free: patches the ROM directly, like the helper does.)
+{
+  const ctx = buildTitleSceneryContext(rom, symbols);
+  const ci = [...ctx.provenance].findIndex((o) => o >= 0);
+  assert(ci >= 0, 'scenery palette has a blob-backed CGRAM colour to test the blob patch');
+  if (ci >= 0) {
+    const offset = ctx.provenance[ci]!;
+    const blobPC = symbols.pc(PALETTE_BLOB_LABEL);
+    const orig = (rom[blobPC + offset]! | (rom[blobPC + offset + 1]! << 8)) & 0x7fff;
+    const want = (orig ^ 0x1234) & 0x7fff; // a guaranteed-different 15-bit colour
+    const patched = rom.slice();
+    patched[blobPC + offset] = want & 0xff; patched[blobPC + offset + 1] = (want >> 8) & 0xff;
+    const ctx2 = buildTitleSceneryContext(patched, symbols);
+    const got = (ctx2.cgram[ci * 2]! | (ctx2.cgram[ci * 2 + 1]! << 8)) & 0x7fff;
+    assert(got === want, `a blob patch at provenance[${ci}]'s offset lands in CGRAM[${ci}] (got 0x${got.toString(16)}, want 0x${want.toString(16)})`);
+    assert(ctx2.provenance[ci] === offset, 'the blob patch leaves provenance unchanged (same blob source)');
+  }
+}
+
+// (3b) STORYBOOK narrowed export. The storybook char-sheet export is deliberately
+// narrowed to ONE file — f88 (the BG 4bpp sheet, per-tile palette from the capture,
+// opaque index 0). f87/f8A/f4A/f8B are no longer exported; f27 moves to the scene-layout
+// view (3d). Tilemap-data files (f73/f74/f75) + the never-displayed f89 stay skipped.
+{
+  const sbook = entries.filter((e) => /^screens\/storybook\//.test(e.file));
+  const ids = sbook.map((e) => e.fileId).sort((a, b) => a - b);
+  assert(ids.length === 1 && ids[0] === 0x88, `storybook char-sheet export is narrowed to f88 (got ${ids.map((i) => '0x' + i.toString(16)).join(',')})`);
+  // The other former sheets + tilemap-data + never-displayed are all absent as char sheets.
+  for (const id of [0x73, 0x74, 0x75, 0x87, 0x89, 0x8a, 0x4a, 0x8b, 0x27]) {
+    assert(!sbook.some((e) => e.fileId === id), `storybook char sheet 0x${id.toString(16)} not exported (narrowed/scene/skip)`);
+  }
+  const f88 = sbook.find((e) => e.fileId === 0x88)!;
+  assert(f88.bpp === 4 && f88.perTilePalette != null, 'storybook f88 is 4bpp per-tile palette');
+  assert(f88.index0Transparent === false, 'storybook BG char f88 has opaque index 0');
+}
+
+// (3c) STORYBOOK f88 Aseprite output (single-image, per-tile-coloured; the palette lives
+// in-file so the `.aseprite` omits the swatch the PNG appends — the bare tile grid). The
+// flatten reproduces the PNG's tile-grid region byte-for-byte.
 {
   const sbookAse = exportScreenGfxPngs(rom, symbols, { aseprite: true }).filter((e) => /^screens\/storybook\//.test(e.file));
-  assert(sbookAse.length > 0 && sbookAse.every((e) => !!e.aseprite), 'every storybook char file builds an .aseprite when requested');
+  assert(sbookAse.length === 1 && sbookAse.every((e) => !!e.aseprite), 'storybook f88 builds an .aseprite when requested');
   for (const e of sbookAse) {
     const png = decodePng(Buffer.from(e.png));
     const dec = decodeAsepriteImage(e.aseprite!);
-    // Swatch excluded: the .aseprite is the bare tile grid, narrower than the swatched PNG.
     assert(dec.width < png.width && dec.height <= png.height,
       `storybook ${e.file} .aseprite drops the swatch (${dec.width}×${dec.height} vs png ${png.width}×${png.height})`);
-    // Flatten == the PNG's tile-grid region (cols 0..dec.width, rows 0..dec.height).
     let match = true;
     for (let y = 0; y < dec.height && match; y++)
       match = eq(dec.rgba.subarray(y * dec.width * 4, (y + 1) * dec.width * 4),
                  png.rgba.subarray(y * png.width * 4, (y * png.width + dec.width) * 4));
     assert(match, `storybook ${e.file} .aseprite flatten == the PNG tile grid (swatch excluded)`);
   }
+}
+
+// (3d) STORYBOOK FIRST-SCENE LAYOUT (f27). f27 (the BG3 decorative frame) exports laid
+// out as the FIRST scene renders it — the BG3 tilemap read straight from the gfx-bundle
+// VRAM (byte-identical to the `storybook-render` trace's first-scene capture). Cells whose
+// char lands in f27 are editable + slice back byte-exact; the frame interior is preview-only.
+{
+  const scene = exportStorybookScene(rom, symbols);
+  assert(scene.file === 'screens/storybook/scene-f27.png', 'storybook scene exports to screens/storybook/scene-f27.png');
+  assert(scene.faithful, 'storybook scene is faithfully reconstructable (every f27 cell slices back byte-exact)');
+  assert(scene.width === 256 && scene.height === 256, `storybook scene canvas is 256×256 (got ${scene.width}×${scene.height})`);
+
+  const ctx = buildStorybookSceneContext(rom, symbols);
+  const canvas = renderStorybookScene(ctx);
+  const editable = canvas.units.filter((u) => u !== null);
+  assert(editable.length > 0 && editable.length < canvas.units.length,
+    `storybook scene has both editable f27 cells and preview-only interior cells (got ${editable.length}/${canvas.units.length})`);
+  assert(editable.every((u) => u!.fileId === 0x27 && u!.format === 'lz2'), 'every editable scene cell maps to the lz2 f27 char file');
+
+  // Unedited round-trip: diffing the canvas against itself yields no edits.
+  const clean = diffStorybookSceneTiles(ctx, canvas, canvas.rgba);
+  assert(clean.edits.length === 0 && clean.conflicts === 0, 'unedited storybook scene diff is empty (round-trips byte-exact)');
+
+  // A 1-pixel in-palette edit on an editable cell → exactly one f27 (2bpp) tile edit.
+  const u32 = new Uint32Array(canvas.rgba.buffer, canvas.rgba.byteOffset, canvas.width * canvas.height);
+  let edited2: Uint8Array | null = null;
+  for (const u of editable) {
+    const o = u!.cellY * canvas.width + u!.cellX;
+    for (let p = 1; p < 64 && !edited2; p++) {
+      const px = o + (p % 8) + Math.floor(p / 8) * canvas.width;
+      if (u32[px] !== u32[o]) {
+        const e = canvas.rgba.slice();
+        new Uint32Array(e.buffer, e.byteOffset, canvas.width * canvas.height)[o] = u32[px]!;
+        edited2 = e;
+      }
+    }
+    if (edited2) break;
+  }
+  assert(edited2 !== null, 'found a storybook scene cell with ≥2 colours to test an edit');
+  if (edited2) {
+    const d = diffStorybookSceneTiles(ctx, canvas, edited2);
+    assert(d.edits.length === 1, `a 1-pixel scene edit changes exactly one f27 tile (got ${d.edits.length})`);
+    assert(d.edits.every((e) => e.fileId === 0x27 && e.format === 'lz2' && e.bytes.length === 16), 'scene edits are 2bpp f27 (16-byte tiles)');
+  }
+
+  // Aseprite tilemap: flatten reproduces the canvas, and round-trips to 0 edits.
+  const sceneAseFull = storybookSceneAseprite(ctx, canvas);
+  const sceneAse = decodeAsepriteRegion(sceneAseFull.bytes);
+  assert(sceneAse.width === canvas.width && sceneAse.height === canvas.height, `scene .aseprite canvas is ${canvas.width}×${canvas.height} (got ${sceneAse.width}×${sceneAse.height})`);
+  assert(eq(sceneAse.rgba, canvas.rgba), 'scene .aseprite flatten reproduces the assembled scene byte-exact');
+  assert(diffStorybookSceneTiles(ctx, canvas, sceneAse.rgba).edits.length === 0, 'scene .aseprite round-trips to 0 tile edits');
+
+  // Palette write-back: paletteOffsets is one master-blob byte-offset per .aseprite palette
+  // entry. Build the blob's current words from (provenance, cgram) — the same source the
+  // export read — and confirm an UNEDITED palette diffs to 0 colour edits, while flipping
+  // one entry yields exactly one PaletteEdit. (The decoder pads the palette to 256 entries;
+  // the encoder writes only the meaningful ones, and diffAsepritePalette min-clamps to
+  // offsets.length, so offsets covers exactly the meaningful prefix — not the padding.)
+  assertPaletteRoundTrip('storybook', sceneAse.palette, sceneAseFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
 }
 
 // (4) 1-pixel edit on tile 0: change pixel (0,0) to another (unique) swatch colour
@@ -230,24 +396,24 @@ function pixelEditCheck(e: ScreenGfxPng, label: string): void {
   assert(eq(round.subarray(0, tileBytes), exp), `${label} 1-pixel edit: tile 0 byte = expected (index ${bi}→${k})`);
   assert(eq(round.subarray(tileBytes), base.subarray(tileBytes)), `${label} 1-pixel edit: every other tile byte-identical`);
 }
-// pixelEditCheck reads a single-row swatch, so target NON-per-tile entries (per-tile
-// fidelity is covered by the round-trip above + the dedicated logo test below).
+// pixelEditCheck reads a single-row swatch, so it only applies to NON-per-tile entries.
+// The map's only 4bpp sheets now are the per-tile f74/f75 (covered by the round-trip
+// above); the OBJ-marker chrome (single-palette sheets) is no longer exported. So the
+// boot region is the remaining swatch-based pixel-edit case here.
 pixelEditCheck(boot, 'boot (region)');
-pixelEditCheck(entries.find((e) => /screens\/map\/.*\.png$/.test(e.file) && e.bpp === 4 && !e.region && !e.perTilePalette)!, 'map (4bpp)');
 
-// (5) map dedup is content-correct (each id exported once). The BG terrain/panel char
-// ($56/$74/$75) is world-invariant → common/; the OBJ-marker chrome is NOT — the cart's
-// DATA_00B409[world*8] set genuinely differs (world 5 / "World 6" loads $95-$98 where
-// worlds 0-4 load $9d-$a0), so those land per-world. (The per-world OVERWORLD MAP and
-// the level-slot icons are their own tracks — world-map-terrain.ts / -level-icons.ts.)
+// (5) map export is content-correct. The OBJ-marker chrome (cursor $73, HUD $8F, the
+// $8C/$95-$A0 path/Yoshi markers, lz16 ≥ $8000) is NOT exported — raw OBJ char, not an
+// editable map sheet. So only the world-invariant BG char ($56 ground + $74/$75 terrain)
+// is exported, all under common/, each id once. (The per-world OVERWORLD MAP and the
+// level-slot icons are their own tracks — world-map-terrain.ts / -level-icons.ts.)
 const mapFiles = entries.filter((e) => /^screens\/map\//.test(e.file));
 const mapIds = mapFiles.map((e) => e.fileId);
 assert(new Set(mapIds).size === mapIds.length, 'each map gfx file id is exported exactly once');
-assert(mapFiles.some((e) => /\/common\//.test(e.file)), 'map exports a shared common/ set');
-// Every BG file (opaque index 0) is common; only OBJ-marker chrome (transparent index 0,
-// sprite row 8) may be per-world.
-assert(mapFiles.every((e) => /\/common\//.test(e.file) || e.index0Transparent),
-  'only OBJ-marker chrome is per-world; the BG terrain/panel char is all common');
+assert(mapFiles.length > 0 && mapFiles.every((e) => /\/common\//.test(e.file)),
+  'all exported map char is world-invariant (common/); the OBJ-marker chrome is dropped');
+assert(!entries.some((e) => /^screens\/map\/world-\d/.test(e.file)),
+  'no per-world map char sheets are exported (OBJ markers removed)');
 
 // (6) Title "Yoshi's Island" logo meta-view: faithful, 32×14, slices back to $1D,
 // unedited round-trips to zero edits, and a 1-pixel edit changes exactly one tile.
@@ -292,7 +458,9 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
   // Aseprite tilemap: the .aseprite flatten reproduces the assembled canvas byte-exact
   // (cell flips re-applied), and the embedded-palette flatten slices back to 0 edits —
   // so the import path is decodeAsepriteRegion → diffTitleLogoTiles.
-  const logoAse = decodeAsepriteRegion(titleLogoAseprite(ctx, canvas));
+  const lkeys = logoTileKeys(ctx);
+  const logoFull = titleLogoAseprite(ctx, canvas, lkeys);
+  const logoAse = decodeAsepriteRegion(logoFull.bytes);
   assert(logoAse.width === canvas.width && logoAse.height === canvas.height, `logo .aseprite canvas is ${canvas.width}×${canvas.height} (got ${logoAse.width}×${logoAse.height})`);
   assert(eq(logoAse.rgba, canvas.rgba), 'logo .aseprite flatten reproduces the assembled logo byte-exact');
   assert(diffTitleLogoTiles(ctx, canvas, logoAse.rgba).edits.length === 0, 'logo .aseprite round-trips to 0 tile edits');
@@ -300,9 +468,11 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
   // (6b) COMBINED logo import (Manual tileset mode): one .aseprite = pixels + placement.
   // Unedited → nothing; an in-place pixel edit → ≥1 char edit + 0 placement; a cell move →
   // exactly that word + 0 pixels; fewer tiles than export → refused.
-  const lbase = decodeAsepriteStructural(titleLogoAseprite(ctx, canvas));
+  const lbase = decodeAsepriteStructural(titleLogoAseprite(ctx, canvas, lkeys).bytes);
+  // Palette write-back: logo BG2 sub-palettes (CGRAM rows 8..15, 2bpp tight stride 4).
+  assertPaletteRoundTrip('title logo', lbase.palette, logoFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
   const lmeta = logoTileMeta(ctx);
-  assert((() => { const d = diffTitleLogoCombined(ctx, lbase); return d.placement.length === 0 && d.pixels.length === 0 && d.skipped === 0 && !d.removedTiles; })(),
+  assert((() => { const d = diffTitleLogoCombined(ctx, lkeys, lbase); return d.placement.length === 0 && d.pixels.length === 0 && d.skipped === 0 && !d.removedTiles; })(),
     'logo combined: unedited → no edits');
   {
     const t0 = lbase.cells.find((c) => c.tile > 0)!.tile;
@@ -313,7 +483,7 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
       if (lbase.palette[nv] !== lbase.palette[v]) { tp[t0 * 64 + i] = nv; painted = true; }
     }
     if (painted) {
-      const d = diffTitleLogoCombined(ctx, { ...lbase, tilePixels: tp });
+      const d = diffTitleLogoCombined(ctx, lkeys, { ...lbase, tilePixels: tp });
       assert(d.pixels.length >= 1 && d.placement.length === 0, `logo combined: a pixel edit → char edit, no placement (got ${d.pixels.length}px ${d.placement.length}place)`);
     }
   }
@@ -322,7 +492,7 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
     for (let i = 0; i < lbase.cells.length && pj < 0; i++) for (let j = i + 1; j < lbase.cells.length; j++) if (lbase.cells[i]!.tile !== lbase.cells[j]!.tile) { pi = i; pj = j; break; }
     if (pi >= 0) {
       const cells = lbase.cells.slice(); cells[pi] = { ...lbase.cells[pj]! }; // move cell pj's tile into cell pi
-      const d = diffTitleLogoCombined(ctx, { ...lbase, cells });
+      const d = diffTitleLogoCombined(ctx, lkeys, { ...lbase, cells });
       const pcL = symbols.pc('DATA_title_screen_logo_tilemap');
       const origPi = rom[pcL + pi * 2]! | (rom[pcL + pi * 2 + 1]! << 8);
       const mj = lmeta[lbase.cells[pj]!.tile]!;
@@ -331,7 +501,7 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
         `logo combined: a cell move → exactly that word (got ${d.placement.length} place, 0x${d.placement[0]?.value.toString(16)} vs 0x${exp.toString(16)}, ${d.pixels.length}px)`);
     }
   }
-  assert((() => { const d = diffTitleLogoCombined(ctx, { ...lbase, numTiles: lbase.numTiles - 1 }); return d.removedTiles && d.placement.length === 0 && d.pixels.length === 0; })(),
+  assert((() => { const d = diffTitleLogoCombined(ctx, lkeys, { ...lbase, numTiles: lbase.numTiles - 1 }); return d.removedTiles && d.placement.length === 0 && d.pixels.length === 0; })(),
     'logo combined: fewer tiles than export → removedTiles (refused)');
 }
 
@@ -379,7 +549,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
   }
   // Aseprite tilemap: the .aseprite flatten reproduces the assembled island byte-exact,
   // and slices back to 0 edits (import path: decodeAsepriteRegion → diffTitleIslandTiles).
-  const islandAse = decodeAsepriteRegion(titleIslandAseprite(ctx, canvas));
+  const islandAse = decodeAsepriteRegion(titleIslandAseprite(ctx, canvas, islandTileChars(ctx)).bytes);
   assert(islandAse.width === canvas.width && islandAse.height === canvas.height, `island .aseprite canvas is ${canvas.width}×${canvas.height} (got ${islandAse.width}×${islandAse.height})`);
   assert(eq(islandAse.rgba, canvas.rgba), 'island .aseprite flatten reproduces the assembled island byte-exact');
   assert(diffTitleIslandTiles(ctx, canvas, islandAse.rgba).edits.length === 0, 'island .aseprite round-trips to 0 tile edits');
@@ -387,8 +557,11 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
   // PLACEMENT: the island tilemap (DATA_5F9800, 1 byte/cell Mode-7 char) is
   // rearrangeable. Unedited → 0 byte edits; moving one cell to another char → exactly
   // that one tilemap byte changes.
-  const istruct = decodeAsepriteStructural(titleIslandAseprite(ctx, canvas));
+  const islandFull = titleIslandAseprite(ctx, canvas, islandTileChars(ctx));
+  const istruct = decodeAsepriteStructural(islandFull.bytes);
   assert(diffTitleIslandPlacement(ctx, istruct).length === 0, 'island placement round-trips (unedited → 0 byte edits)');
+  // Palette write-back: Mode-7 single palette (CGRAM 0-15, bpp 4 / default stride 16).
+  assertPaletteRoundTrip('title island', istruct.palette, islandFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
   let pi = -1, pj = -1;
   for (let i = 0; i < istruct.cells.length && pj < 0; i++) for (let j = i + 1; j < istruct.cells.length; j++) {
     if (istruct.cells[i]!.tile !== istruct.cells[j]!.tile) { pi = i; pj = j; break; }
@@ -423,12 +596,12 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
 {
   const ctx = buildTitleIslandContext(rom, symbols);
   const canvas = renderTitleIsland(ctx);
-  const baseStruct = decodeAsepriteStructural(titleIslandAseprite(ctx, canvas));
   const t2c = islandTileChars(ctx);
+  const baseStruct = decodeAsepriteStructural(titleIslandAseprite(ctx, canvas, t2c).bytes);
   const exportTileCount = t2c.length;
 
   {
-    const d = diffTitleIslandCombined(ctx, baseStruct);
+    const d = diffTitleIslandCombined(ctx, t2c, baseStruct);
     assert(d.placement.length === 0 && d.pixels.length === 0 && d.newTiles === 0 &&
       d.unmappedTiles === 0 && d.skippedW6Tiles === 0 && !d.removedTiles,
       'combined: unedited island → no edits of any kind');
@@ -439,7 +612,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
     const t0 = baseStruct.cells[0]!.tile;
     const tp = baseStruct.tilePixels.slice();
     tp[t0 * 64] = (tp[t0 * 64]! + 1) & 0x0f;
-    const d = diffTitleIslandCombined(ctx, { ...baseStruct, tilePixels: tp });
+    const d = diffTitleIslandCombined(ctx, t2c, { ...baseStruct, tilePixels: tp });
     assert(d.pixels.length === 1 && d.pixels[0]!.char === t2c[t0] && d.placement.length === 0 && d.newTiles === 0,
       `combined: a pixel edit → 1 char write (char 0x${t2c[t0]?.toString(16)}), no placement (got ${d.pixels.length}px ${d.placement.length}place)`);
     assert(d.sharedCells >= 1, 'combined: a pixel edit reports its in-game cell spread');
@@ -452,7 +625,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
       if (baseStruct.cells[i]!.tile !== baseStruct.cells[j]!.tile) { pi = i; pj = j; break; }
     }
     const cells = baseStruct.cells.slice(); cells[pi] = { ...baseStruct.cells[pj]! };
-    const d = diffTitleIslandCombined(ctx, { ...baseStruct, cells });
+    const d = diffTitleIslandCombined(ctx, t2c, { ...baseStruct, cells });
     assert(d.placement.length === 1 && d.placement[0]!.offset === pi && d.placement[0]!.value === ctx.tilemap[pj] && d.pixels.length === 0,
       `combined: a cell move → 1 placement byte, no pixels (got ${d.placement.length}place ${d.pixels.length}px)`);
   }
@@ -465,7 +638,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
     tp.set(baseStruct.tilePixels);
     for (let k = 0; k < 64; k++) tp[nt * 64 + k] = (k % 15) + 1; // distinctive non-blank pattern (won't dedup)
     const cells = baseStruct.cells.slice(); cells[0] = { tile: nt, hflip: false, vflip: false };
-    const d = diffTitleIslandCombined(ctx, { ...baseStruct, tilePixels: tp, cells, numTiles: nt + 1 });
+    const d = diffTitleIslandCombined(ctx, t2c, { ...baseStruct, tilePixels: tp, cells, numTiles: nt + 1 });
     assert(d.newTiles === 1 && d.pixels.length === 1 && d.pixels[0]!.char === ctx.addableChars[0],
       `combined: a new tile → allocated to free char 0x${ctx.addableChars[0]?.toString(16)} (got newTiles=${d.newTiles}, char 0x${d.pixels[0]?.char.toString(16)})`);
     assert(d.placement.length === 1 && d.placement[0]!.offset === 0 && d.placement[0]!.value === ctx.addableChars[0],
@@ -474,7 +647,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
 
   // fewer tiles than export → refused (indices unreliable)
   {
-    const d = diffTitleIslandCombined(ctx, { ...baseStruct, numTiles: baseStruct.numTiles - 1 });
+    const d = diffTitleIslandCombined(ctx, t2c, { ...baseStruct, numTiles: baseStruct.numTiles - 1 });
     assert(d.removedTiles && d.placement.length === 0 && d.pixels.length === 0,
       'combined: fewer tiles than export → removedTiles (refused)');
   }
@@ -489,7 +662,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
     if (tW6 > 0) {
       const tp = baseStruct.tilePixels.slice();
       tp[tW6 * 64] = (tp[tW6 * 64]! + 1) & 0x0f;
-      const d = diffTitleIslandCombined(ctx, { ...baseStruct, tilePixels: tp });
+      const d = diffTitleIslandCombined(ctx, t2c, { ...baseStruct, tilePixels: tp });
       assert(d.skippedW6Tiles === 1 && d.pixels.length === 0,
         `combined: a world-6-only tile edit is skipped (got skipped=${d.skippedW6Tiles}, pixels=${d.pixels.length})`);
     }
@@ -513,10 +686,13 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
 
   // Single-image .aseprite round-trip (no tilemap; transparent index 0): flatten ==
   // canvas → diffTitleScenery reports no change.
-  const sceneryAse = decodeAsepriteImage(titleSceneryAseprite(ctx, canvas));
+  const sceneryFull = titleSceneryAseprite(ctx, canvas);
+  const sceneryAse = decodeAsepriteImage(sceneryFull.bytes);
   assert(sceneryAse.width === 256 && sceneryAse.height === 96, `scenery .aseprite is 256×96 (got ${sceneryAse.width}×${sceneryAse.height})`);
   assert(eq(sceneryAse.rgba, canvas.rgba), 'scenery .aseprite flatten reproduces the atlas byte-exact');
   assert(diffTitleScenery(ctx, sceneryAse.rgba).changed === 0, 'scenery .aseprite round-trips to 0 changes');
+  // Palette write-back: scenery OBJ row 7 (CGRAM 240-255, single row, index 0 transparent).
+  assertPaletteRoundTrip('title scenery', sceneryAse.palette, sceneryFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
 
   // 1-pixel edit: recolour a non-transparent pixel to another colour in the row.
   const u32 = new Uint32Array(canvas.rgba.buffer, canvas.rgba.byteOffset, 256 * 96);

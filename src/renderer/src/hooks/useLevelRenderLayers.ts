@@ -154,7 +154,12 @@ export function useLevelRenderLayers(
   /** App-wide canvas background colour (`#rrggbb`). Used for the opaque wipe of
    *  the bg1 backing canvas on a level switch, so that transient matches the
    *  surrounding canvas background (`.se-canvas`) instead of always being black. */
-  canvasBackground = '#000000'
+  canvasBackground = '#000000',
+  /** Decode PRNG-seed override (the "Refresh RNG" action) — re-rolls the cosmetic
+   *  random-tile variants. Only bg1 + collision read the decode, so a change
+   *  forces a FULL re-fetch of just those two (sprites/bg2/bg3 are
+   *  seed-independent). `undefined` ⇒ the default deterministic seed. */
+  prngSeed?: number
 ): LevelRenderLayers {
   // bg1 + collision backing canvases (created lazily, reused across edits).
   const bg1CanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -321,7 +326,8 @@ export function useLevelRenderLayers(
       levelRecordId: lvl.recordId,
       override: lvl,
       baseToken,
-      paletteOverride
+      paletteOverride,
+      prngSeed
     })
     if (!mountedRef.current || bg1GenRef.current !== myGen) return
     if (!res) {
@@ -463,6 +469,22 @@ export function useLevelRenderLayers(
     triggerBgLayers()
   }, [refreshNonce, triggerBg1, triggerSprite, triggerBgLayers])
 
+  // A PRNG-seed refresh (the "Refresh RNG" action) re-rolls the decode's cosmetic
+  // random tiles. Among the trigger-driven layers only bg1 reads that decode
+  // (collision handles the seed in its own effect below; sprites/bg2/bg3/backdrop
+  // are seed-independent), so force a FULL bg1 re-fetch: drop its patch token (a
+  // stale-seed token patch would diff against the pre-roll grid) + bump its gen
+  // (discard any in-flight render), then re-trigger. Skips the initial render
+  // (seed starts undefined).
+  const prevSeedRef = useRef(prngSeed)
+  useEffect(() => {
+    if (prevSeedRef.current === prngSeed) return
+    prevSeedRef.current = prngSeed
+    bg1TokenRef.current = null
+    bg1GenRef.current += 1
+    triggerBg1()
+  }, [prngSeed, triggerBg1])
+
   // Release the previous bgLayers' ImageBitmaps when it's replaced (level /
   // header / palette change) or on unmount. `createImageBitmap` holds GPU/native
   // memory that is only reclaimed on `.close()` or eventual GC (which lags,
@@ -487,6 +509,7 @@ export function useLevelRenderLayers(
   // the overlay stale). The patch gate is recordId-only, so the grid diff
   // captures any header-driven decode change correctly.
   const collisionRefreshRef = useRef(refreshNonce)
+  const collisionSeedRef = useRef(prngSeed)
   useEffect(() => {
     const lvl = levelRef.current
     if (!objects || !header || !lvl) {
@@ -494,14 +517,16 @@ export function useLevelRenderLayers(
       collisionTokenRef.current = null
       return
     }
-    // On a rebuild, drop the patch token so this fetches FULL from the new ROM.
-    if (collisionRefreshRef.current !== refreshNonce) {
+    // On a rebuild OR a PRNG-seed re-roll, drop the patch token so this fetches
+    // FULL (a token patch would diff against the pre-change grid → stale pixels).
+    if (collisionRefreshRef.current !== refreshNonce || collisionSeedRef.current !== prngSeed) {
       collisionRefreshRef.current = refreshNonce
+      collisionSeedRef.current = prngSeed
       collisionTokenRef.current = null
     }
     let cancelled = false
     void window.shinyEgg.render
-      .collisionLayer({ levelRecordId: lvl.recordId, override: lvl, baseToken: collisionTokenRef.current ?? undefined })
+      .collisionLayer({ levelRecordId: lvl.recordId, override: lvl, baseToken: collisionTokenRef.current ?? undefined, prngSeed })
       .then(async (res: CollisionLayerResponse | null) => {
         if (cancelled) return
         if (!res) {
@@ -529,7 +554,7 @@ export function useLevelRenderLayers(
       })
       .catch(() => { /* keep the existing canvas; next edit re-syncs */ })
     return () => { cancelled = true }
-  }, [objects, header, refreshNonce])
+  }, [objects, header, refreshNonce, prngSeed])
 
   return {
     bg1Canvas,

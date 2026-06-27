@@ -53,6 +53,7 @@ import type {
   LevelRenderRequest,
   LocateBizhawkResult,
   LocateAsepriteResult,
+  AsepriteInfo,
   ObjectInfluenceRequest,
   ObjectInstance,
   OverlayDriftReport,
@@ -82,6 +83,7 @@ import type {
   BgRegionExportArgs,
   BgRegionExportResult,
   BgRegionImportResult,
+  M1ExportFile,
   RegionImportLogEntry,
   ExportGfxOptions,
   GfxExportTrack,
@@ -119,10 +121,12 @@ import type {
 // The renderer imports these from this contract (single import surface). Each
 // name resolves to its single definition site; this contract never re-declares.
 export type {
+  AllLevelsValidationResult,
   AnchorMethod,
   AnchorResolution,
   Bg1RenderResult,
   BuildResult,
+  CollectibleCounts,
   EditableResource,
   ExtractFreshness,
   ExtractionState,
@@ -136,12 +140,15 @@ export type {
   LevelCatalogEntry,
   LevelCatalogGroup,
   LevelData,
+  LevelDecodeSignals,
   LevelImportability,
   LevelStreamCounts,
   LevelMap16Usage,
   LevelObject,
   LevelSprite,
   LevelsCatalog,
+  LevelValidationInput,
+  LevelValidationResult,
   Map16SubTileUsage,
   MessagePtrOption,
   MessagePtrTableModel,
@@ -165,6 +172,8 @@ export type {
   StringTableModel,
   TileCoverage,
   UsedMap16,
+  ValidationIssue,
+  ValidationSeverity,
   WorldMapEntrance,
   WorldMapMidwayEntrance,
   WorldMapModel
@@ -201,6 +210,7 @@ export type {
   LevelTileUsage,
   LocateBizhawkResult,
   LocateAsepriteResult,
+  AsepriteInfo,
   PaintCorner,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -238,6 +248,7 @@ export type {
   BgRegionExportArgs,
   BgRegionExportResult,
   BgRegionImportResult,
+  M1ExportFile,
   RegionImportLogEntry,
   ExportGfxOptions,
   GfxExportTrack,
@@ -537,14 +548,22 @@ export interface EditorAPI {
    *  changed files are saved). The renderer marks the build dirty when
    *  `applied > 0`. Also remembers the folder (listRegionExports). */
   importBgRegion: () => Promise<BgRegionImportResult>
-  /** Resolved Aseprite executable path (saved → common install locations), or null
-   *  when not located. */
-  getAsepriteExe: () => Promise<string | null>
+  /** The located Aseprite (saved → common install locations) + its probed version,
+   *  or null when not located. The Graphics panel gates its tilemap-export option on
+   *  `supportsTilemap` (tilemap `.aseprite` files need Aseprite 1.3+). */
+  getAsepriteExe: () => Promise<AsepriteInfo | null>
   /** Pick the Aseprite executable and persist it to settings. */
   locateAseprite: () => Promise<LocateAsepriteResult>
   /** Open `dir/file` in Aseprite (the "Auto-Open Exports" toggle). Returns false
    *  if Aseprite isn't located or the file is missing. */
   openInAseprite: (dir: string, file: string) => Promise<boolean>
+  /** Open an exported `.M1` session (`dir/file`) in the bundled M1TE editor, opened
+   *  straight to BG layer `bg` (2 or 3). Windows-native or via Wine on Linux. Returns
+   *  false if the bundled exe or the file is missing (or the launch fails). */
+  openInM1te: (dir: string, file: string, bg?: 1 | 2 | 3) => Promise<boolean>
+  /** The `.M1` session files in an export folder (each with its BG layer), for the
+   *  clickable "open in M1TE" list under each folder. */
+  listM1Files: (dir: string) => Promise<M1ExportFile[]>
   /** Folders this project has exported region(s) to (most-recent first) — the
    *  Region tab lists them with per-folder import / remove. */
   listRegionExports: () => Promise<string[]>
@@ -645,6 +664,19 @@ export interface ShinyEggAPI {
   patches: PatchesAPI
   importRom: ImportRomAPI
   importGba: ImportGbaAPI
+  validation: ValidationAPI
+}
+
+/** Level validation — the decode side of the Validation panel. The check logic
+ *  is renderer-side (`lib/validation.ts`); these calls only run the object
+ *  decoder main-side and return the decode-derived signals the renderer can't
+ *  compute itself (page-pool count/overflow, abort flag, screen→page map). */
+export interface ValidationAPI {
+  /** Decode signals for one (possibly-edited) level — via the override decode
+   *  path, so it reflects unsaved edits. */
+  signals: (level: LevelData) => Promise<LevelDecodeSignals>
+  /** Level data + signals for every backed record, for the all-levels sweep. */
+  allLevels: () => Promise<LevelValidationInput[]>
 }
 
 /** Import data from a modified/built third-party ROM into the active project as

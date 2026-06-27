@@ -26,6 +26,9 @@ export interface GfxManifestEntry {
   /** Screens only: the PNG is just this tile-region of the file (e.g. the boot
    *  logo). Import maps edits back into the full file by these coords. */
   region?: TileRegion
+  /** Region `.aseprite` only: per-palette-entry master-palette-blob byte-offset (`-1` =
+   *  transparent/non-blob) — the import writes edited colours back to the blob. */
+  paletteOffsets?: number[]
 }
 
 /** One reconstructed-metasprite PNG (the editable "meta" view of a sprite). The
@@ -52,6 +55,9 @@ export interface MapIconManifestEntry {
   faithful: boolean
   width: number
   height: number
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
+   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
 }
 
 /** One assembled per-level ICON PNG (the unique overworld level-select picture).
@@ -65,30 +71,48 @@ export interface LevelIconManifestEntry {
   faithful: boolean
   width: number
   height: number
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
+   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
 }
 
-/** One per-world×half OVERWORLD MAP (the terrain Yoshi paths across). The PNG is the
- *  composited view; the `.aseprite` is the editable LAYOUT tilemap. `world`+`half`
- *  re-render it on import; layout edits (the `.aseprite`) round-trip to the `$7C`/`$7D`…
- *  LZ2 tilemap file (`fileId`) via saveGfxEdit. Map PIXELS edit via the shared
- *  screens/map char sheets, not here. */
+/** One OVERWORLD MAP entry per world (the terrain Yoshi paths across). The displayed map is
+ *  BG1 ⊕ BG2 ⊕ BG3 composited. The PNG is the composited view; the `.aseprite` (Aseprite
+ *  mode) is a 2-LAYER tilemap (BG1+BG2, one shared tileset). `world` re-renders it on
+ *  import; the BG1 layer's layout round-trips to `bg1FileId`, the BG2 layer's to
+ *  `bg2FileId` (the `$7C`/`$7D`… LZ2 tilemap files) via saveGfxEdit. Map PIXELS edit via the
+ *  shared screens/map char sheets, not here. */
 export interface MapTerrainManifestEntry {
   file: string
   world: number
-  half: 0 | 1
-  fileId: number
+  bg1FileId: number
+  bg2FileId: number
   width: number
   height: number
+  /** Per shared-tileset-tile `(char,pal,prio)` key (index 0 = empty `-1`), in the embedded
+   *  tileset's order. The import maps each cell/tile → its cart char + palette row from this
+   *  (never re-deriving), so placement + pixel edits round-trip from the .aseprite alone.
+   *  Aseprite mode only (the PNG view carries no editable tilemap). */
+  tileKeys?: number[]
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
+   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
 }
 
 /** The shared decorative-GROUND layout (BG3, world-invariant). The `.aseprite` round-trips
  *  layout edits to the $7E LZ2 tilemap file via saveGfxEdit; the PNG is the view. Ground
- *  pixels edit via the screens/map/common/f56 char sheet. */
+ *  pixels edit via the M1TE2 overworld `.M1` (BG3 slot, which bundles the $56 char). */
 export interface MapGroundManifestEntry {
   file: string
   fileId: number
   width: number
   height: number
+  /** Per-tileset-tile `(char,pal,prio)` key (index 0 = `-1`), the file's tileset order —
+   *  the import maps cells back from this without re-deriving. Aseprite mode only. */
+  tileKeys?: number[]
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
+   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
 }
 
 /** The assembled title "Yoshi's Island" logo (the editable "meta" view of the Mode-0
@@ -99,6 +123,13 @@ export interface TitleLogoManifestEntry {
   faithful: boolean
   width: number
   height: number
+  /** Per-tileset-tile `(char<<3)|palRow` key (`logoTileKeys`; index 0 = `-1`), the file's
+   *  tileset order — the import maps cells/tiles back from this without re-deriving.
+   *  Aseprite mode only. */
+  tileKeys?: number[]
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
+   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
 }
 
 /** The assembled title floating-island (the editable "meta" view of the Mode-7
@@ -111,6 +142,12 @@ export interface TitleIslandManifestEntry {
   faithful: boolean
   width: number
   height: number
+  /** Per-tileset-tile $B1 char (`islandTileChars`; index 0 = `-1`), the file's tileset
+   *  order — the import maps cells/tiles back from this without re-deriving. Aseprite mode. */
+  tileKeys?: number[]
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
+   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
 }
 
 /** The title island SCENERY atlas PNG (the GSU-billboarded 3D decorations). Edits
@@ -119,6 +156,63 @@ export interface TitleSceneryManifestEntry {
   file: string
   width: number
   height: number
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
+   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
+}
+
+/** The storybook first scene laid out as it renders (the gm$05 cutscene's opening-page
+ *  BG3 frame) — a PNG, or a real Aseprite tilemap when exported as `.aseprite`.
+ *  `faithful` ones slice frame-tile edits back to the f27 char tiles via saveGfxEdit;
+ *  the frame interior (BG1/BG2 illustration) is preview-only. */
+export interface StorybookSceneManifestEntry {
+  file: string
+  faithful: boolean
+  width: number
+  height: number
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
+   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
+}
+
+/** One OVERWORLD M1TE2 `.M1` session — a world's LEFT or RIGHT 32×32 half (M1TE2 maps are a
+ *  fixed 32×32, the overworld is 64 wide). The file bundles slot 0 = BG1 ($7C-class) / slot
+ *  1 = BG2 ($7D-class) / slot 2 = BG3 ground ($7E) tilemaps + the shared $74/$75/$4C (4bpp) +
+ *  $56 (2bpp) CHR + the per-world palette. `world`+`half` rebuild the scene on import; CHR
+ *  pixels round-trip to the char files, tilemap words to bg1/bg2/bg3FileId, palette to the
+ *  master blob. */
+export interface MapOverworldM1ManifestEntry {
+  file: string
+  world: number
+  half: 0 | 1
+  bg1FileId: number
+  bg2FileId: number
+  bg3FileId: number
+}
+
+/** The combined ICONS `.M1` — every per-level icon (6 worlds × 10 slots, level order) + the
+ *  level MARKER + boss CASTLE shapes, in one synthesized grid (map slot 0). The import
+ *  re-derives the whole layout from the cart deterministically, so the entry is just the
+ *  path; per-level pixels slice back to bank-$53, marker/castle to the $74/$75 char. */
+export interface MapIconsM1ManifestEntry {
+  file: string
+}
+
+/** The world-map M1TE2 export section: the 12 overworld halves + the one combined icons
+ *  file. Present only when the World Map track was exported in M1TE2 format. */
+export interface MapM1Manifest {
+  overworlds: MapOverworldM1ManifestEntry[]
+  icons: MapIconsM1ManifestEntry | null
+}
+
+/** One system-screen M1TE2 `.M1` (the tilemap-based screens: title island, storybook first
+ *  scene). `kind` dispatches the import to the right slice-back: island → $B1 + DATA_5F9800;
+ *  storybook-scene → f27 (pixels-only). The import re-derives the scene from the cart, so the
+ *  entry is just the path + kind. (The title logo is excluded — Mode-0 BG2 renders with the
+ *  wrong palette base in M1TE; edit it via PNG/Aseprite.) */
+export interface ScreenM1ManifestEntry {
+  file: string
+  kind: 'island' | 'storybook-scene'
 }
 
 /** One dynamic-sprite glyph PNG (a GSU-rasterized sprite's editable bank-$54

@@ -36,6 +36,7 @@ import { mapPalette } from './screen-gfx.ts';
 import { buildPaletteRow } from './color.ts';
 import { encodePng, type ImageData } from './png.ts';
 import { encodeAsepriteImage } from './aseprite.ts';
+import { imagePaletteOffsets } from './gfx-aseprite.ts';
 import { snesToPC, type SymbolMap } from './symbol-map.ts';
 
 // Each icon PICTURE is 24×24. The GSU plots a 32×32 region, but the per-slot
@@ -111,11 +112,15 @@ export interface LevelIconContext {
   symbols: SymbolMap;
   world: number;
   cgram: Uint8Array;
+  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source) — lets a
+   *  level-icon palette-colour edit (OBJ row 8+slot) round-trip to the blob. */
+  provenance: Int32Array;
 }
 export function buildLevelIconContext(rom: Uint8Array, symbols: SymbolMap, world: number): LevelIconContext {
   const cgram = new Uint8Array(512);
-  loadScenePalettes(rom, symbols, mapPalette(rom, symbols, world), cgram);
-  return { rom, symbols, world, cgram };
+  const provenance = new Int32Array(256); // loadScenePalettes fills it (-1 = no blob source)
+  loadScenePalettes(rom, symbols, mapPalette(rom, symbols, world), cgram, provenance);
+  return { rom, symbols, world, cgram, provenance };
 }
 
 /** OBJ palette row as ARGB, index 0 transparent (the icon's background). */
@@ -222,15 +227,50 @@ export function sliceLevelIconWrites(
   return { writes, changed };
 }
 
+/**
+ * Slice an edited 24×24 INDEX buffer (nibble indices 0-15 — e.g. the decoded CHR of an
+ * M1TE2 `.M1` icon) back to bank-$53 writes: the index-domain twin of `sliceLevelIconWrites`
+ * (no RGBA round-trip, so no palette-aliasing risk on a duplicate colour). RMW only THIS
+ * icon's nibble (the other column's nibble in the shared byte is preserved), one write per
+ * chunky row. Returns null if a row is outside the bins.
+ */
+export function sliceLevelIconIndices(
+  ctx: LevelIconContext,
+  canvas: LevelIconCanvas,
+  editedIndices: Uint8Array
+): { writes: IconWrite[]; changed: boolean } | null {
+  const pc = snesToPC(canvas.srcSnes);
+  const high = canvas.highNibble;
+  const writes: IconWrite[] = [];
+  let changed = false;
+  for (let y = 0; y < ICON_H; y++) {
+    const bin = iconBin(canvas.srcSnes + y * ROW_STRIDE);
+    if (!bin) return null;
+    const bytes = new Uint8Array(ICON_W);
+    for (let x = 0; x < ICON_W; x++) {
+      const cur = ctx.rom[pc + y * ROW_STRIDE + x]!;
+      const idx = editedIndices[y * ICON_W + x]! & 0x0f;
+      const next = high ? ((cur & 0x0f) | (idx << 4)) : ((cur & 0xf0) | idx);
+      if (next !== cur) changed = true;
+      bytes[x] = next;
+    }
+    writes.push({ binFile: bin.file, offset: bin.offset, bytes });
+  }
+  return { writes, changed };
+}
+
 /** The icon as a single-image (no-tilemap) `.aseprite`: the 24×24 indexed image (the
  *  chunky nibble indices directly) + its OBJ palette row (index 0 transparent). Import
  *  flattens it back → `sliceLevelIconWrites`, like the PNG. */
-export function levelIconAseprite(ctx: LevelIconContext, canvas: LevelIconCanvas): Uint8Array {
-  return encodeAsepriteImage({
+export function levelIconAseprite(ctx: LevelIconContext, canvas: LevelIconCanvas): { bytes: Uint8Array; paletteOffsets: number[] } {
+  const bytes = encodeAsepriteImage({
     width: canvas.width, height: canvas.height,
     pixels: canvas.indices.slice(), palette: iconPalette(ctx.cgram, canvas.paletteRow),
     transparentIndex: 0, layerName: `level-icon-${canvas.world}-${canvas.slot}`
   });
+  // Colour write-back map — the SAME single OBJ row (8+paletteRow), 16-colour, index 0 transparent.
+  const paletteOffsets = imagePaletteOffsets({ provenance: ctx.provenance, rows: [8 + canvas.paletteRow], index0Transparent: true });
+  return { bytes, paletteOffsets };
 }
 
 export interface LevelIconPngEntry {
@@ -243,6 +283,9 @@ export interface LevelIconPngEntry {
   png: Uint8Array;
   /** The same icon as a single-image `.aseprite` (built only when requested). */
   aseprite?: Uint8Array;
+  /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
+   *  editing the embedded palette writes those colours back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[];
 }
 
 /**
@@ -258,10 +301,12 @@ export function exportWorldMapLevelIcons(rom: Uint8Array, symbols: SymbolMap, op
     for (let slot = 0; slot < ICON_SLOTS; slot++) {
       const c = renderWorldMapLevelIcon(ctx, slot);
       if (!c) continue;
+      const ase = opts.aseprite && c.faithful ? levelIconAseprite(ctx, c) : undefined;
       out.push({
         world, slot, name: c.name, faithful: c.faithful, width: c.width, height: c.height,
         png: levelIconPng(ctx, c),
-        aseprite: opts.aseprite && c.faithful ? levelIconAseprite(ctx, c) : undefined
+        aseprite: ase?.bytes,
+        paletteOffsets: ase?.paletteOffsets
       });
     }
   }
