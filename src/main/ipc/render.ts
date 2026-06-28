@@ -13,6 +13,7 @@ import {
   renderVramGrid
 } from 'snes-framework/render-gallery'
 import { levelMap16Usage } from 'snes-framework/level-tile-usage'
+import { levelBgPaletteRows } from 'snes-framework/load-bg-tilemaps'
 import {
   renderGfxFiles,
   type GfxFilesResult
@@ -40,6 +41,7 @@ import { loadSpritesetFileIds, type GfxFileEntry } from 'snes-framework/load-gra
 import { bestStockSpriteset } from 'snes-framework/sprite-tile-base'
 import { hex0x } from 'snes-framework/hex'
 import { loadLevel } from 'snes-framework/level'
+import { buildPaletteCatalog } from 'snes-framework/palette-catalog'
 import { frameworkWorkRoot, overlayRoot } from '../framework-paths'
 import { getCurrentProjectId } from '../projects'
 import type {
@@ -61,6 +63,8 @@ import type {
   LevelRenderRequest,
   LevelTileUsage,
   ObjectInfluenceRequest,
+  PaletteCatalog,
+  PaletteLiveResult,
   RenderGfxFilesArgs,
   RenderImage,
   RenderMap16Args,
@@ -68,7 +72,9 @@ import type {
   SpriteLayerResponse
 } from '../../shared/ipc-types'
 import { fitHeightProfile, fitMetadata } from 'snes-framework/surface-fit'
-import type { LevelObject } from 'snes-framework/types'
+import type { LevelObject, PaletteEdit } from 'snes-framework/types'
+import { getBizHawk } from '../bizhawk'
+import { liveSceneProvenance, LIVE_WRAM_BASE, LIVE_WRAM_LEN } from '../render/palette-live'
 import { loadRomAndSymbols } from '../render/rom-cache'
 import { gfxLiveEdits, gfxLiveRevision } from '../gfx-live-cache'
 import {
@@ -88,6 +94,10 @@ import {
   isWorld6,
   buildLevelCgram,
   buildLevelVramCgram,
+  offsetCgramRuns,
+  CGRAM_MIRROR_CARTRAM_OFFSET,
+  CGRAM_FADE_BASE_CARTRAM_OFFSET,
+  pristineBasePalette,
   changerSpriteSig,
   getEntityCatalog,
   getPickerThumbnails,
@@ -230,6 +240,80 @@ export function registerRenderIpc(): void {
     }
   )
 
+  // Sync palette edits into the RUNNING emulator's CURRENT screen (consumer of the
+  // generic bizhawk:writeMem pathway). Classifies the screen from a live WRAM read
+  // (game mode + level header) and writes the touched CGRAM entries for that scene.
+  //
+  // Writes BOTH the CGRAM mirror (CARTRAM $2000) AND PPU CGRAM directly: only the
+  // level NMI re-DMAs the mirror to CGRAM each frame (CODE_00D4E5) — the world-map /
+  // title / mode-7 NMI handlers do NOT, so there the mirror write is invisible and
+  // the DIRECT CGRAM write is what shows (and isn't overwritten). On a level the
+  // direct write is replaced next frame by the identical mirror value — harmless.
+  // So writing both covers every scene.
+  //
+  // PER-SCREEN ONLY: every scene load repopulates CGRAM from the master palette
+  // blob, which lives in read-only ROM (BizHawk can't write CARTROM — verified), so
+  // there's no way to persist an edit across screens. Re-sync after switching
+  // screens. No-ops WITHOUT booting when EmuHawk isn't running. Registered here, not
+  // ipc/bizhawk.ts, because it needs the render-side palette plumbing
+  // (loadRomAndSymbols + the palette interpreters).
+  ipcMain.handle(
+    'bizhawk:applyPaletteLive',
+    async (_event, edits: PaletteEdit[], revertOffsets: number[]): Promise<PaletteLiveResult> => {
+      const bizhawk = getBizHawk()
+      if (!bizhawk.isRunning()) return { applied: false }
+      const { rom, symbols } = loadRomAndSymbols()
+
+      // Read the live scene classifier + level-header fields in one shot.
+      let wram: Uint8Array | null = null
+      try {
+        wram = new Uint8Array(await bizhawk.readMem('WRAM', LIVE_WRAM_BASE, LIVE_WRAM_LEN))
+      } catch {
+        wram = null // can't read WRAM → can't classify the screen
+      }
+
+      // Apply ONLY the entries the user actually touched: the edited offsets
+      // (draft value) plus offsets undone/reset since the last sync (`revertOffsets`,
+      // written back to base). We deliberately do NOT write entries just because our
+      // static base differs from the live palette — that path stomped the backdrop's
+      // gradient slot, animated rows, and runtime palette effects ("wrong colours").
+      let scene: PaletteLiveResult['scene'] = null
+      let bytesWritten = 0
+      const live = wram ? liveSceneProvenance(rom, symbols, wram) : null
+      if (live) {
+        scene = live.scene
+        const base = pristineBasePalette(frameworkWorkRoot())
+        const offsetsToWrite = new Set<number>(revertOffsets ?? [])
+        for (const e of edits ?? []) offsetsToWrite.add(e.offset)
+        for (const run of offsetCgramRuns(live.provenance, edits, base, offsetsToWrite)) {
+          const cgramByte = run.addr - CGRAM_MIRROR_CARTRAM_OFFSET // colour index × 2
+          // Live mirror ($2000, NMI-DMA'd on most scenes) + fade base ($2D6C, what a
+          // brightness fade rescales from) + PPU CGRAM direct (for scenes whose NMI
+          // doesn't re-DMA the mirror — world map / title). Covers every case.
+          await bizhawk.writeMem('CARTRAM', run.addr, run.bytes)
+          await bizhawk.writeMem('CARTRAM', CGRAM_FADE_BASE_CARTRAM_OFFSET + cgramByte, run.bytes)
+          await bizhawk.writeMem('CGRAM', cgramByte, run.bytes)
+          bytesWritten += run.bytes.length
+        }
+      }
+      return { applied: true, scene, bytesWritten }
+    }
+  )
+
+  // Whole-game palette catalog (the Palette panel's "All Palettes" tab): every
+  // palette the cart can select out of the master blob, organised by the pointer
+  // tables + by scene, each swatch carrying its blob byte-offset so it reuses the
+  // SAME global edit model as editablePalette. Colours are PRISTINE base (the
+  // panel overlays the live draft), so it's independent of build freshness.
+  ipcMain.handle('render:paletteCatalog', async (): Promise<PaletteCatalog | null> => {
+    const { rom, symbols } = loadRomAndSymbols()
+    const baseMap = pristineBasePalette(frameworkWorkRoot())
+    const blobPC = symbols.pc('DATA_master_palette_rom_blob')
+    const baseWord = (offset: number): number =>
+      baseMap.get(offset) ?? (rom[blobPC + offset]! | (rom[blobPC + offset + 1]! << 8))
+    return buildPaletteCatalog(rom, symbols, baseWord)
+  })
+
   ipcMain.handle(
     'render:gfxFiles',
     async (_event, args: RenderGfxFilesArgs): Promise<GfxFilesResult> => {
@@ -291,7 +375,10 @@ export function registerRenderIpc(): void {
         // Live overlay so a BG2/BG3 tilemap PLACEMENT import previews without a rebuild
         // (CHR edits already preview via buildLevelVramCgram's gfxOverride; the tilemap is
         // a separate load, so it needs the same seam).
-        gfxOverride: gfxLiveEdits()
+        gfxOverride: gfxLiveEdits(),
+        // Live gradient-backdrop preview: BASE ⊕ the gradient editor's draft for this
+        // level's table (24 stops). Replaces the ROM-read gradient without a rebuild.
+        gradientOverride: req.gradientOverride ?? undefined
       })
       const { bg2, bg3, bg2Front, bg3Front, bg2Layer, bg3Layer, regs } = composed
       const backdrop: BgLayersResult['backdrop'] =
@@ -661,7 +748,20 @@ export function registerRenderIpc(): void {
       const image = renderMap16Cells(
         rom, symbols, renderHeader, usage.blocks.map((b) => b.id), { cellsPerRow }
       )
-      return { ...usage, image, cellsPerRow, cellPx: 16 }
+      // Per-layer palette-row attribution for the Palette panel's row indicators:
+      // BG1 is `usage.paletteRowsUsed`; BG2/BG3 come from a cheap tilemap scan.
+      const bgRows = levelBgPaletteRows(rom, symbols, {
+        bg2Tileset: level.header[3] ?? 0,
+        bg3Tileset: level.header[5] ?? 0
+      })
+      return {
+        ...usage,
+        image,
+        cellsPerRow,
+        cellPx: 16,
+        bg2PaletteRowsUsed: bgRows.bg2,
+        bg3PaletteRowsUsed: bgRows.bg3
+      }
     }
   )
 }

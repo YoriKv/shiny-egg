@@ -25,6 +25,8 @@ import type {
   AsepriteInfo,
   ObjectInfluenceRequest,
   ObjectInstance,
+  PaletteCatalog,
+  PaletteLiveResult,
   PickerThumbnails,
   PickerThumbnailsRequest,
   PatchAuthoringPaths,
@@ -94,6 +96,7 @@ import type {
   EditableResource,
   GfxFileEntry,
   LevelData,
+  GradientEdit,
   LevelDecodeSignals,
   LevelObject,
   LevelsCatalog,
@@ -177,6 +180,11 @@ const api = {
      *  slots. */
     editablePalette: (req: LevelRenderRequest): Promise<DecodedPalette | null> =>
       ipcRenderer.invoke('render:editablePalette', req),
+    /** Whole-game palette catalog (the "All Palettes" tab) — every selectable
+     *  master-blob palette by pointer table + by scene. Cart-static; null when
+     *  the built ROM/symbols are unavailable. */
+    paletteCatalog: (): Promise<PaletteCatalog | null> =>
+      ipcRenderer.invoke('render:paletteCatalog'),
     /** Run the object decoder on a level and return the stamped Map16
      *  buffer plus per-screen page mapping. Null for empty / special-case
      *  records (e.g. 0x38, the engine-driven intro-cutscene level). Pass
@@ -328,6 +336,16 @@ const api = {
      *  project overlay (Bank57.asm). Caller marks the build dirty on success. */
     savePaletteEdits: (edits: PaletteEdit[]): Promise<SaveResourceResult> =>
       ipcRenderer.invoke('editor:savePaletteEdits', edits),
+    /** Backdrop-gradient editing: the saved overlay's gradient stop edits
+     *  (useGradientEditor baseline). */
+    loadGradientEdits: (): Promise<GradientEdit[]> => ipcRenderer.invoke('editor:loadGradientEdits'),
+    /** Backdrop-gradient editing: persist the full gradient stop edit set to the
+     *  project overlay (Bank57.asm). Caller marks the build dirty on success. */
+    saveGradientEdits: (edits: GradientEdit[]): Promise<SaveResourceResult> =>
+      ipcRenderer.invoke('editor:saveGradientEdits', edits),
+    /** The 16×24 pristine base gradient colours; the panel overlays the draft for
+     *  display so a reset reveals base without a rebuild. */
+    gradientBaseColors: (): Promise<number[][]> => ipcRenderer.invoke('editor:gradientBaseColors'),
     levelBudget: (
       levelRecordId: number,
       level: LevelData
@@ -440,6 +458,11 @@ const api = {
       ipcRenderer.invoke('bizhawk:loadLevel', translevelId, warps, inventory),
     readMem: (domain: string, addr: number, len: number): Promise<Uint8Array> =>
       ipcRenderer.invoke('bizhawk:readMem', domain, addr, len),
+    writeMem: (domain: string, addr: number, bytes: Uint8Array): Promise<string> =>
+      ipcRenderer.invoke('bizhawk:writeMem', domain, addr, bytes),
+    isRunning: (): Promise<boolean> => ipcRenderer.invoke('bizhawk:isRunning'),
+    applyPaletteLive: (edits: PaletteEdit[], revertOffsets: number[]): Promise<PaletteLiveResult> =>
+      ipcRenderer.invoke('bizhawk:applyPaletteLive', edits, revertOffsets),
     captureAt: (
       x: number,
       y: number

@@ -287,10 +287,13 @@ export const PANEL_HELP: PanelHelp = {
       <p>
         <b>Format:</b> <b>PNG</b> opens in any image editor and includes a swatch column
         of the exact colours to paint from. <b>Aseprite&nbsp;(tilemap)</b> writes a
-        configured &ldquo;.aseprite&rdquo; file with the indexed palette built in (no
-        Aseprite install needed to produce it). <b>Locate Aseprite</b> lets the panel
-        open exports for you, and <b>Auto-Open Exports</b> opens each one as you export
-        it.
+        configured &ldquo;.aseprite&rdquo; file with the palette built in (no Aseprite
+        install needed to produce it). <b>M1TE2&nbsp;(.M1)</b> bundles a layer&rsquo;s
+        tilemap, tiles, and palette into one session you edit in <b>M1TE</b>, the bundled
+        tile/map editor &mdash; available for the BG layers, the World&nbsp;Map, and the
+        Boot/Story/Title screens. <b>Auto-Open&nbsp;Exports</b> opens each file as you
+        make it (in M1TE for a&nbsp;.M1, in Aseprite otherwise &mdash;{' '}
+        <b>Locate&nbsp;Aseprite</b> points the app at your install).
       </p>
       <p>
         <b>Palette rows.</b> Each background tile uses a single colour row. If you paint
@@ -300,8 +303,9 @@ export const PANEL_HELP: PanelHelp = {
       </p>
       <p>
         Below the controls: the folders you&rsquo;ve exported to (click to open,
-        re-import, or remove); the graphics this project has changed (each shows what it
-        maps back to, with a reset to vanilla); and the last import&rsquo;s log.
+        re-import, or remove &mdash; any <code>.M1</code> files there are clickable to
+        open in M1TE); the graphics this project has changed (each shows what it maps
+        back to, with a reset to vanilla); and the last import&rsquo;s log.
       </p>
       <p>
         Edits to the loaded level&rsquo;s graphics preview live on the canvas; a rebuild

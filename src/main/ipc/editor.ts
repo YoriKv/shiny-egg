@@ -8,6 +8,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type {
   EditableResource,
+  GradientEdit,
   LevelData,
   PaletteEdit,
   PoolBudgetReport,
@@ -37,11 +38,14 @@ import {
   listGfxEdits,
   gfxFileRole,
   loadPaletteEdits,
+  loadGradientEdits,
+  loadGradientBaseColors,
   loadResource,
   resetGfxEdit,
   resetGfxEditFile,
   resetLevelResource,
   savePaletteEdits,
+  saveGradientEdits,
   saveGfxEdit,
   saveResource,
   setExitDestResource,
@@ -123,6 +127,16 @@ export function registerEditorIpc(): void {
     async (_event, edits: PaletteEdit[]): Promise<SaveResourceResult> =>
       savePaletteEdits(edits)
   )
+
+  // Backdrop-gradient editing: the saved overlay's gradient stop edits (the
+  // useGradientEditor baseline) + the full-set save (also into Bank57.asm), plus
+  // the 16×24 pristine base colours the panel overlays the draft on for display.
+  ipcMain.handle('editor:loadGradientEdits', async (): Promise<GradientEdit[]> => loadGradientEdits())
+  ipcMain.handle(
+    'editor:saveGradientEdits',
+    async (_event, edits: GradientEdit[]): Promise<SaveResourceResult> => saveGradientEdits(edits)
+  )
+  ipcMain.handle('editor:gradientBaseColors', async (): Promise<number[][]> => loadGradientBaseColors())
 
   // Live level-data byte-budget for the editor's warn/block surfaces (task #14).
   // Null when there's no pool map yet (unbuilt) or the level has no streams.

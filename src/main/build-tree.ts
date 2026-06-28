@@ -434,7 +434,7 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
     // edited blobs into the free regions (after the level-data layout above, so
     // the region appends stack on top of it). A shrink needs neither.
     if (gfxPlan.mode === 'boundary-move') {
-      applyGfxLayout(join(base, 'yi'), join(buildTreeRoot(id), 'yi'), gfxPlan)
+      applyGfxLayout(join(buildTreeRoot(id), 'yi'), gfxPlan)
     } else if (gfxPlan.mode === 'overflow') {
       relocateGfxBlobs(join(buildTreeRoot(id), 'yi'), gfxGrowth.blobs, activeFreeRegions())
     }

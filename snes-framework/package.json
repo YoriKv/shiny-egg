@@ -79,6 +79,8 @@
     "./cell-grid": "./scripts/engine/cell-grid.ts",
     "./level-tile-usage": "./scripts/engine/level-tile-usage.ts",
     "./palette-edit": "./scripts/palette-edit.ts",
+    "./gradient-edit": "./scripts/gradient-edit.ts",
+    "./palette-catalog": "./scripts/engine/palette-catalog.ts",
     "./island-tilemap": "./scripts/island-tilemap.ts",
     "./logo-tilemap": "./scripts/logo-tilemap.ts"
   }

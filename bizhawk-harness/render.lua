@@ -8,6 +8,8 @@
 --   PING                -- reply PONG (heartbeat sanity check)
 --   DUMP_VRAM           -- reply with 65536 bytes of VRAM
 --   DUMP_CGRAM          -- reply with 512 bytes of CGRAM
+--   READ_MEM <dom> <a> <n>      -- reply with n bytes from domain dom at addr a
+--   WRITE_MEM <dom> <a> <hex>   -- write the hex bytes into domain dom at addr a
 --   INFO                -- reply with a short text summary (core name, etc.)
 --
 -- Wire format
@@ -425,6 +427,37 @@ local function dispatch(cmd)
       sendFramed(payload)
       return
     end
+    if name == "WRITE_MEM" then
+      -- WRITE_MEM <domain> <hex-addr> <hex-bytes>
+      --   domain: "WRAM" / "CARTRAM" / "VRAM" / "CGRAM" / "OAM" / etc.
+      --   hex-addr: hex string (no 0x prefix) — the offset within the domain.
+      --   hex-bytes: contiguous hex (2 chars/byte), written sequentially from
+      --     addr. The editor's pathway to edit the RUNNING game's memory without
+      --     a rebuild (the generic twin of READ_MEM). First consumer: live
+      --     palette edits write the CGRAM mirror at CARTRAM $2000 (the NMI then
+      --     DMAs it to PPU CGRAM each frame — writing PPU CGRAM directly would be
+      --     overwritten next frame). Replies "OK <n>" (bytes written) or "ERR ...".
+      local sp1 = rest:find(" ")
+      if not sp1 then sendFramed("ERR write_mem needs 3 args") return end
+      local sp2 = rest:find(" ", sp1 + 1)
+      if not sp2 then sendFramed("ERR write_mem needs 3 args") return end
+      local domain = rest:sub(1, sp1 - 1)
+      local addr   = tonumber(rest:sub(sp1 + 1, sp2 - 1), 16)
+      local hexstr = rest:sub(sp2 + 1)
+      if not addr then sendFramed("ERR write_mem bad addr") return end
+      if #hexstr % 2 ~= 0 then sendFramed("ERR write_mem odd hex length") return end
+      local n = math.floor(#hexstr / 2)
+      local ok, err = pcall(function()
+        for k = 0, n - 1 do
+          local byte = tonumber(hexstr:sub(k * 2 + 1, k * 2 + 2), 16)
+          if not byte then error("bad hex byte at index " .. k) end
+          memory.write_u8(addr + k, byte, domain)
+        end
+      end)
+      if not ok then sendFramed("ERR write_mem " .. tostring(err)) return end
+      sendFramed(string.format("OK %d", n))
+      return
+    end
     if name == "CAPTURE_AT" then
       -- "CAPTURE_AT <x-pixels> <y-pixels> <path>"
       -- Known-working camera control. Teleports Yoshi to the screen
@@ -540,8 +573,12 @@ local function tick()
   dispatch(cmd)
 end
 
--- Short timeout so a missed reply doesn't stall emulation forever.
-comm.socketServerSetTimeout(2000)
+-- Per-frame response timeout. Long enough that a heavy screen-transition frame
+-- (force-blank + big DMA, esp. while the editor is pushing live palette writes)
+-- doesn't trip it, short enough that a genuinely wedged editor doesn't stall
+-- emulation forever. The main loop pcall-guards the comm call regardless, so a
+-- timeout is recoverable rather than fatal.
+comm.socketServerSetTimeout(8000)
 
 -- Start every fresh EmuHawk session at NORMAL speed. client.speedmode /
 -- emu.limitframerate / SetSoundOn mutate BizHawk's GLOBAL (config.ini-persisted)
@@ -562,7 +599,16 @@ log("harness loaded, awaiting socket")
 -- callbacks. The while-true + frameadvance pattern lets dispatch handlers
 -- call frameadvance freely — needed for CAPTURE_AT and the eventual
 -- camera-sweep that walks BizHawk's camera across the whole level.
+-- pcall the per-frame tick so a TRANSIENT comm error (e.g. socketServerResponse
+-- throwing on a slow screen-transition frame) doesn't kill the whole loop and
+-- tear down the socket permanently — it logs and retries next frame, so the link
+-- self-heals. Without this, one bad frame ended the session's harness for good
+-- (the "link dies when I switch screens" bug). frameadvance stays OUTSIDE the
+-- pcall so emulation always advances even if tick throws.
 while true do
-  tick()
+  local ok, err = pcall(tick)
+  if not ok then
+    log("tick error (recovering): " .. tostring(err))
+  end
   emu.frameadvance()
 end

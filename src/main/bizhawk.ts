@@ -209,6 +209,11 @@ class BizHawkSupervisor {
     socket.setNoDelay(true)
     socket.on('data', (chunk) => this.onData(chunk))
     socket.on('close', () => {
+      // Surfaced because a mid-session drop = the live link is dead until EmuHawk
+      // is relaunched (BizHawk's comm socket doesn't auto-reconnect). If this fires
+      // on a screen transition, the harness loop died — see render.lua's pcall guard.
+      // eslint-disable-next-line no-console
+      console.warn('[bizhawk] harness socket closed — live link lost until relaunch')
       this.client = null
       this.failPending(new Error('BizHawk disconnected'))
     })
@@ -244,6 +249,21 @@ class BizHawkSupervisor {
   }
 
   private onFramedMessage(body: Buffer): void {
+    // "RDY" is ALWAYS a heartbeat — no command reply is the literal 3 bytes "RDY"
+    // (replies are "OK …"/"ERR …"/"PONG" or a known-length binary dump). So we
+    // must check it BEFORE the awaiting branch: if a slow frame tripped the
+    // harness's response timeout, the reply was lost and the next thing in is an
+    // RDY — treating it as the awaited reply would resolve the caller with garbage
+    // and desync the channel for good. Instead, fail the lost command and resync.
+    if (body.length === 3 && body.toString('ascii') === 'RDY') {
+      if (this.awaiting) {
+        const lost = this.awaiting
+        this.awaiting = null
+        lost.reject(new Error('BizHawk reply lost (harness resynced)'))
+      }
+      this.pump()
+      return
+    }
     if (this.awaiting) {
       const cmd = this.awaiting
       this.awaiting = null
@@ -251,14 +271,8 @@ class BizHawkSupervisor {
       // After the reply, the harness will tick again next frame with RDY.
       return
     }
-    // Heartbeat from harness — answer with the next queued command or NOP.
-    const text = body.toString('utf8')
-    if (text === 'RDY') {
-      this.pump()
-      return
-    }
     // eslint-disable-next-line no-console
-    console.warn('[bizhawk] unexpected unsolicited message:', text.slice(0, 60))
+    console.warn('[bizhawk] unexpected unsolicited message:', body.toString('utf8').slice(0, 60))
   }
 
   private pump(): void {
@@ -392,6 +406,29 @@ class BizHawkSupervisor {
     const addrHex = addr.toString(16)
     const lenHex = len.toString(16)
     return this.enqueue(`READ_MEM ${domain} ${addrHex} ${lenHex}`, true)
+  }
+
+  // Generic memory-WRITE primitive — the editor's pathway to edit the RUNNING
+  // game's memory without a rebuild (the write twin of `readMem`). `domain` /
+  // `addr` are as in `readMem`; `bytes` are written sequentially from `addr`,
+  // hex-encoded into the (text) command. Boots EmuHawk if not running, like
+  // `readMem` — callers that must NOT boot (live-edit pushes) gate on
+  // `isRunning()` first. Returns the harness reply ("OK <n>"). First consumer:
+  // live palette edits (see the CGRAM-mirror write in ipc/render.ts).
+  async writeMem(domain: string, addr: number, bytes: Uint8Array): Promise<string> {
+    if (!Number.isInteger(addr) || addr < 0) {
+      throw new Error(`writeMem: addr must be non-negative integer, got ${addr}`)
+    }
+    if (bytes.length > 0x10000) {
+      throw new Error(`writeMem: byte count must be 0..65536, got ${bytes.length}`)
+    }
+    if (bytes.length === 0) return 'OK 0'
+    await this.ensureRunning()
+    const addrHex = addr.toString(16)
+    let hexBytes = ''
+    for (let i = 0; i < bytes.length; i++) hexBytes += bytes[i]!.toString(16).padStart(2, '0')
+    const buf = await this.enqueue(`WRITE_MEM ${domain} ${addrHex} ${hexBytes}`, true)
+    return buf.toString('utf8')
   }
 
   // Single-frame camera teleport + capture. Known-working approach:

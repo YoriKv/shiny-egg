@@ -295,21 +295,34 @@ export function writeGfxEdit(
 
 /**
  * Apply a graphics layout plan into the build tree: for a boundary move, rewrite
- * the arena bank's `%FREE_BYTES` from the PRISTINE base into the tree (idempotent
- * — re-running with different growth, or none, reconciles from base). Data-only
- * needs no asm edit. Overflow throws (relocation not yet wired). `baseYiRoot` /
- * `treeYiRoot` are the `yi/` dirs of the pristine base and the build tree.
+ * the arena bank's `%FREE_BYTES` IN PLACE in the tree. The tree's `Bank57.asm`
+ * already has the project's overlay merged (`materializeBuildTree`), and the
+ * master palette blob, the 16 backdrop-gradient tables, AND the title-island
+ * tilemap all live inline in this SAME bank — so the move MUST compose with the
+ * tree copy, not re-derive the bank from the pristine base, or it silently
+ * clobbers every palette / gradient / island edit (they vanish from the build).
+ * The move still starts from the PRISTINE boundary the plan carries: any stale
+ * boundary a prior build left in the tree (when there's no `Bank57` overlay for
+ * `materializeBuildTree` to re-stamp) is normalized back first, so the rewrite is
+ * idempotent across rebuilds. Data-only needs no asm edit (the merged tree is
+ * already correct); overflow throws (relocation not yet wired). `treeYiRoot` is
+ * the build tree's `yi/` dir.
  */
-export function applyGfxLayout(baseYiRoot: string, treeYiRoot: string, plan: GfxLayoutPlan): void {
+export function applyGfxLayout(treeYiRoot: string, plan: GfxLayoutPlan): void {
   if (plan.mode === 'overflow') {
     throw new Error(
       `gfx-reinsert: edit grows the arena by ${plan.growth}B, ${plan.overflowBy}B past the ` +
         `${plan.fillSize}B slack. Relocation to FreeRegion50/51 is not yet wired.`
     );
   }
-  const baseText = fs.readFileSync(path.join(baseYiRoot, GFX_ARENA.bankFile), 'utf8');
-  const out = plan.mode === 'boundary-move' ? rewriteFreeBytesText(baseText, plan.move!) : baseText;
+  if (plan.mode !== 'boundary-move') return; // data-only: the merged tree is already correct
+  const move = plan.move!;
   const dest = path.join(treeYiRoot, GFX_ARENA.bankFile);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.writeFileSync(dest, out, 'utf8');
+  const treeText = fs.readFileSync(dest, 'utf8');
+  // Normalize the arena's single `%FREE_BYTES` back to the pristine boundary the
+  // move expects (handles a stale move from a prior no-Bank57-overlay build),
+  // then apply the move — preserving every OTHER edit in this bank.
+  const pristine = `%FREE_BYTES($${snes6(move.boundary)}, ${move.fillSize}, $FF)`;
+  const normalized = treeText.replace(/%FREE_BYTES\(\$[0-9A-Fa-f]{6},\s*\d+,\s*\$FF\)/, pristine);
+  fs.writeFileSync(dest, rewriteFreeBytesText(normalized, move), 'utf8');
 }

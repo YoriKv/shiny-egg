@@ -187,19 +187,15 @@ export function titleIslandPng(ctx: TitleIslandContext, canvas: TitleIslandCanva
  *  directly, so the tileset is a single 16-colour (4bpp-sized) palette. The flatten
  *  reproduces `renderTitleIsland`'s canvas byte-exact, so the import path is
  *  `decodeAsepriteRegion` → `diffTitleIslandTiles`. */
-/** Aseprite tile index → island char (index 0 = the empty tile, so real tiles start at
- *  1). The tilemap's USED chars in encounter order first, then every UNUSED $B1 char —
- *  the "available" tiles the artist can place. Shared by the export + the placement diff
- *  so both agree on the mapping. */
+/** Aseprite tile index → island char. **Tile 0 is Aseprite's mandatory empty tile** (`-1`);
+ *  the $B1 CHR file follows 1:1 at tiles 1..N in char order (tile `i` = char `i − 1`), every
+ *  char placed or not. (Aseprite reserves tileset index 0 as the empty tile, so the CHR is
+ *  1-indexed.) Mode-7 has no per-cell palette/flip, so the char IS the whole tile identity.
+ *  Shared by the export + the placement diffs so both agree. */
 export function islandTileChars(ctx: TitleIslandContext): number[] {
-  const tileToChar: number[] = [-1]; // index 0 = empty (no char)
-  const seen = new Set<number>();
-  for (let i = 0; i < ISLAND_COLS * ISLAND_ROWS; i++) {
-    const char = ctx.tilemap[i]!;
-    if (!seen.has(char)) { seen.add(char); tileToChar.push(char); }
-  }
   const charCount = Math.floor(ctx.b1cpc.length / M7_CPC_TILE_BYTES);
-  for (let char = 0; char < charCount; char++) if (!seen.has(char)) { seen.add(char); tileToChar.push(char); }
+  const tileToChar: number[] = [-1]; // index 0 = Aseprite's empty tile
+  for (let char = 0; char < charCount; char++) tileToChar.push(char);
   return tileToChar;
 }
 
@@ -213,10 +209,10 @@ export function titleIslandAseprite(ctx: TitleIslandContext, _canvas: TitleIslan
     const off = char * M7_CPC_TILE_BYTES;
     tiles.push({ indices: off + M7_CPC_TILE_BYTES <= ctx.b1cpc.length ? unpackCpcTile(ctx.b1cpc, off) : new Uint8Array(64), paletteRow: 0 });
   }
-  // Cells reference only the USED chars (the unused ones are AVAILABLE, not placed, so
-  // the flatten still reproduces the assembled island byte-exact). Mode-7 = no flip.
+  // Mode-7 = no flip. Tile 0 = Aseprite's synthetic empty; unused chars are AVAILABLE (in the
+  // tileset, not placed). A fresh export has no tile-0 cells (every cell maps to a char tile).
   const cells: AsepriteCell[] = [];
-  for (let i = 0; i < ISLAND_COLS * ISLAND_ROWS; i++) cells.push({ tile: charToTile.get(ctx.tilemap[i]!)! });
+  for (let i = 0; i < ISLAND_COLS * ISLAND_ROWS; i++) cells.push({ tile: charToTile.get(ctx.tilemap[i]!) ?? 0 });
   const bytes = tilesAseprite({
     cgram: ctx.cgram, bpp: 4, tileW: TILE_PX, tileH: TILE_PX, tiles, cells,
     tilesAcross: ISLAND_COLS, tilesDown: ISLAND_ROWS, index0Transparent: false,
@@ -228,27 +224,8 @@ export function titleIslandAseprite(ctx: TitleIslandContext, _canvas: TitleIslan
 }
 
 /** One changed island tilemap byte: `offset` into `DATA_5F9800` (0..1023), new Mode-7
- *  char index `value`. */
+ *  char index `value`. (Placement is imported via `diffTitleIslandCombined`.) */
 export interface IslandPlacementEdit { offset: number; value: number }
-
-/**
- * Diff a rearranged island placement `.aseprite` (`titleIslandAseprite` output, edited)
- * against the original `DATA_5F9800` tilemap → the changed char-index bytes. The island
- * is Mode-7: 1 byte/cell, no palette/flip, so a moved cell just writes the moved tile's
- * char index. The caller overwrites those bytes in `DATA_5F9800` (raw-word region write).
- */
-export function diffTitleIslandPlacement(ctx: TitleIslandContext, struct: AsepriteStructural): IslandPlacementEdit[] {
-  const tileToChar = islandTileChars(ctx); // identical mapping to the export (incl. available tiles)
-  const edits: IslandPlacementEdit[] = [];
-  for (let i = 0; i < ISLAND_COLS * ISLAND_ROWS; i++) {
-    const cell = struct.cells[i];
-    if (!cell) continue;
-    const char = tileToChar[cell.tile];
-    if (char === undefined || char < 0) continue; // empty / out-of-range cell → ignore
-    if (char !== ctx.tilemap[i]) edits.push({ offset: i, value: char });
-  }
-  return edits;
-}
 
 /** One edited $B1 char tile (the 32 CPC bytes to write at `char`). */
 export interface IslandCharPixelEdit { char: number; bytes: Uint8Array }
@@ -269,6 +246,9 @@ export interface IslandCombinedDiff {
   skippedW6Tiles: number;
   /** Cells (final layout) that change in-game because they share an in-place-edited char. */
   sharedCells: number;
+  /** Cells erased to Aseprite's empty tile 0 → resolved to cell 0's backdrop char. Surfaced
+   *  so the caller can warn (an erased cell becomes the backdrop, which may look unexpected). */
+  erased: number;
   /** numTiles < export ⇒ tiles were deleted/reordered; the index→char map is unreliable.
    *  Caller should refuse and tell the user to re-export / not delete tiles. */
   removedTiles: boolean;
@@ -293,9 +273,9 @@ export interface IslandCombinedDiff {
  */
 export function diffTitleIslandCombined(ctx: TitleIslandContext, tileChars: readonly number[], struct: AsepriteStructural): IslandCombinedDiff {
   const tileToChar = tileChars; // the serialized tileKeys (tileset tile → $B1 char) — the file's own order
-  const exportTileCount = tileToChar.length; // 1 (empty) + every $B1 char
+  const exportTileCount = tileToChar.length; // empty tile 0 + every $B1 char (1..N)
   const charCount = Math.floor(ctx.b1cpc.length / M7_CPC_TILE_BYTES);
-  const out: IslandCombinedDiff = { placement: [], pixels: [], newTiles: 0, unmappedTiles: 0, skippedW6Tiles: 0, sharedCells: 0, removedTiles: false };
+  const out: IslandCombinedDiff = { placement: [], pixels: [], newTiles: 0, unmappedTiles: 0, skippedW6Tiles: 0, sharedCells: 0, erased: 0, removedTiles: false };
   if (struct.numTiles < exportTileCount) { out.removedTiles = true; return out; }
 
   const CELLS = ISLAND_COLS * ISLAND_ROWS;
@@ -325,9 +305,9 @@ export function diffTitleIslandCombined(ctx: TitleIslandContext, tileChars: read
   const occupied = new Set<number>(editedChars);
   const newIdx = new Set<number>();
   for (let i = 0; i < CELLS; i++) {
-    const cell = struct.cells[i]; if (!cell || cell.tile <= 0) continue;
-    if (cell.tile < exportTileCount) { const c = tileToChar[cell.tile]; if (c !== undefined && c >= 0) { resolved[i] = c; occupied.add(c); } }
-    else newIdx.add(cell.tile);
+    const tile = struct.cells[i]?.tile ?? 0; // tile 0 = empty (tileToChar[0] = -1, not resolved here)
+    if (tile < exportTileCount) { const c = tileToChar[tile]; if (c !== undefined && c >= 0) { resolved[i] = c; occupied.add(c); } }
+    else newIdx.add(tile);
   }
 
   // (3) Allocate each placed NEW tile: dedup to an identical existing char (no write),
@@ -346,11 +326,19 @@ export function diffTitleIslandCombined(ctx: TitleIslandContext, tileChars: read
     out.pixels.push({ char: c, bytes: packCpcTile(tilePx(t)) }); out.newTiles++;
   }
 
-  // (4) Placement edits: each cell's resolved char vs the original tilemap.
+  // (4) Placement edits: each cell's resolved char vs the original tilemap. A cell ERASED to the
+  //     empty tile 0 → cell 0's authored backdrop char (the one blank we can pick), counted in
+  //     `erased` so the caller can warn. An unmapped new tile leaves the cell as-is.
   // (5) Spread: count cells (final layout) referencing an in-place-edited char.
+  const cell0Char = ctx.tilemap[0]!; // tilemap cell 0 — the authored backdrop (sky) char
   for (let i = 0; i < CELLS; i++) {
-    const cell = struct.cells[i]; if (!cell || cell.tile <= 0) continue;
-    const c = cell.tile < exportTileCount ? resolved[i] : newToChar.get(cell.tile);
+    const tile = struct.cells[i]?.tile ?? 0;
+    if (tile === 0) { // erased / empty cell → cell 0's backdrop char
+      out.erased++;
+      if (cell0Char !== ctx.tilemap[i]) out.placement.push({ offset: i, value: cell0Char });
+      continue;
+    }
+    const c = tile < exportTileCount ? resolved[i] : newToChar.get(tile);
     if (c === undefined || c < 0) continue; // unmapped new tile → leave the cell as-is
     if (c !== ctx.tilemap[i]) out.placement.push({ offset: i, value: c });
     if (editedChars.has(c)) out.sharedCells++;

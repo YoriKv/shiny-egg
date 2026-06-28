@@ -50,6 +50,20 @@ export function registerBizHawkIpc(): void {
     }
   )
 
+  // Generic memory-write pathway (the write twin of readMem). `bizhawk:applyPaletteLive`
+  // (registered in ipc/render.ts, where the level/provenance plumbing lives) is the
+  // first consumer.
+  ipcMain.handle(
+    'bizhawk:writeMem',
+    async (_e, domain: string, addr: number, bytes: Uint8Array): Promise<string> => {
+      return getBizHawk().writeMem(domain, addr, bytes)
+    }
+  )
+
+  // Whether EmuHawk is running + connected. Lets live-edit pushes no-op (without
+  // booting) when there's nothing to push to.
+  ipcMain.handle('bizhawk:isRunning', async (): Promise<boolean> => getBizHawk().isRunning())
+
   ipcMain.handle(
     'bizhawk:captureAt',
     async (_e, x: number, y: number): Promise<CaptureAtResult> => {

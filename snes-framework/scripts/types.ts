@@ -772,6 +772,67 @@ export interface PaletteEdit {
   value: number;
 }
 
+/** One edited BGR-15 stop in a backdrop gradient table. `offset` is a byte offset
+ *  into the virtual 16-table gradient blob — `gradientId * GRADIENT_STRIDE_BYTES +
+ *  stopIndex * 2` — so the 16 tables (one per BackgroundColor $10..$1F) share one
+ *  flat `{offset,value}` shape with `PaletteEdit`. `value` is the new 16-bit
+ *  colour. A global edit (the table is shared by every level using that
+ *  BackgroundColor). See `gradient-edit.ts`. */
+export interface GradientEdit {
+  offset: number;
+  value: number;
+}
+
+/** One swatch in the whole-game palette catalog (`buildPaletteCatalog`). */
+export interface PaletteCatalogSwatch {
+  /** Master-blob byte-offset backing this swatch — the `PaletteEdit.offset` an
+   *  edit writes (and the live-draft key). `-1` = not blob-backed (display-only,
+   *  e.g. a scene CGRAM entry the interpreter loaded from a non-blob source). */
+  offset: number;
+  /** Base (pristine, pre-edit) BGR-15 colour word; the UI overlays the live edit
+   *  draft on top by `offset`. */
+  base: number;
+  /** Additional blob byte-offsets that hold the SAME colour and should receive
+   *  the same edit (so one swatch edit updates every copy). Used by the World-map
+   *  panels group, where worlds 4–6 store their panel colour once per world
+   *  palette. Absent/empty ⇒ a plain single-offset swatch. */
+  mirrors?: number[];
+}
+
+/** One selectable palette in the catalog (a labelled strip of swatches) — e.g.
+ *  "BG1 #0x05", a single backdrop colour, or a whole composed scene CGRAM. */
+export interface PaletteCatalogEntry {
+  /** Primary label, e.g. `#0x05`, `World 4 map`, `Title screen`. */
+  label: string;
+  /** Optional secondary note, e.g. `rows 4–5 · terrain` or `OBJ pal 5 · Yoshi`. */
+  sublabel?: string;
+  /** Swatches per display row (the grid is laid out row-major at this width). */
+  cols: number;
+  swatches: PaletteCatalogSwatch[];
+}
+
+/** A labelled group of catalog entries (one pointer table, or one scene class). */
+export interface PaletteCatalogGroup {
+  /** Stable id, e.g. `bg1`, `bg2`, `sprite`, `backdrop`, `fixed`, `scene`. */
+  id: string;
+  label: string;
+  /** What the graphics pipeline knows about these rows (shown under the header). */
+  note?: string;
+  entries: PaletteCatalogEntry[];
+}
+
+/** The whole-game palette catalog — every palette the cart can select out of the
+ *  master blob, organised two ways. Both axes share the global blob-offset edit
+ *  model (a swatch edit propagates everywhere that offset is used). */
+export interface PaletteCatalog {
+  /** Master-blob palettes organised by the cart's pointer tables (BG1/BG2/BG3/
+   *  sprite/Yoshi/backdrop) plus the fixed/universal literal rows. */
+  catalog: PaletteCatalogGroup[];
+  /** System-screen / scene palettes — the composed CGRAM for each known context
+   *  (boot, title, storybook, per-world maps). */
+  scenes: PaletteCatalogGroup[];
+}
+
 // ── Custom patches (post-build binary patch layer) ──────────────────────────
 // A patch is byte-level edits applied to the FINISHED build (after asar + the
 // project overlay). On disk a patch is a single **self-contained JSON file**

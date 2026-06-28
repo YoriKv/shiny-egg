@@ -27,6 +27,15 @@ import type {
 } from 'snes-framework/types'
 import type { CollisionEntry } from 'snes-framework/collision'
 
+// The whole-game palette catalog is framework-produced (`buildPaletteCatalog`);
+// re-exported here so it rides the IPC surface alongside the app envelopes.
+export type {
+  PaletteCatalog,
+  PaletteCatalogGroup,
+  PaletteCatalogEntry,
+  PaletteCatalogSwatch
+} from 'snes-framework/types'
+
 // ── Cart lifecycle ──────────────────────────────────────────────────────────
 
 export interface FrameworkExtractArgs {
@@ -137,6 +146,20 @@ export interface TestInventory {
 export interface CaptureAtResult {
   png: Uint8Array
   message: string
+}
+
+/** `bizhawk.applyPaletteLive` result. The draft is written into the CURRENT
+ *  screen's CGRAM (the only thing we can change live — the master palette blob is
+ *  in read-only ROM, so there's no cross-screen persistence; re-sync per screen). */
+export interface PaletteLiveResult {
+  /** False only when the emulator isn't running (the sync no-ops without booting). */
+  applied: boolean
+  /** The live screen we wrote to (classified from the game mode), or null when the
+   *  current screen isn't one we recognise (boss / bonus / credits or a load/fade
+   *  transition) — then nothing was written. */
+  scene?: 'level' | 'world-map' | 'title' | 'story-cutscene' | 'storybook' | 'boot' | null
+  /** Palette bytes written to the current screen's CGRAM (0 when nothing mapped). */
+  bytesWritten?: number
 }
 
 // ── Projects ────────────────────────────────────────────────────────────────
@@ -348,6 +371,12 @@ export interface LevelTileUsage extends LevelMap16Usage {
   cellsPerRow: number
   /** Pixel size of one Map16 cell in `image` (16). */
   cellPx: number
+  /** CGRAM palette rows (0–7) the level's BG2 tilemap references (blank filler
+   *  excluded). Sibling of the inherited `paletteRowsUsed` (BG1). */
+  bg2PaletteRowsUsed: number[]
+  /** CGRAM palette rows (0–7) the level's BG3 tilemap references; empty when the
+   *  cart hides BG3 or only the empty-tile pattern is loaded. */
+  bg3PaletteRowsUsed: number[]
 }
 
 /** `render:editablePalette` result — the level's BASE 512-byte CGRAM (no colour
@@ -484,6 +513,12 @@ export interface LevelRenderRequest {
    *  provenance offset. Absent / empty ⇒ base palette. `render:cgram`,
    *  `bg1Layer`, `spriteLayer`, `bgLayers` honour it. */
   paletteOverride?: PaletteEdit[]
+  /** Pending backdrop-gradient stops (24 BGR-15 colours = BASE ⊕ the
+   *  `useGradientEditor` draft for THIS level's gradient table) to use in place of
+   *  the ROM-read gradient — the live in-editor preview of unsaved gradient edits.
+   *  Only `render:bgLayers` honours it (the backdrop layer); absent / wrong length
+   *  / a solid-backdrop level ⇒ the ROM gradient. */
+  gradientOverride?: number[] | null
   /** `render:bg1Layer` / `render:collisionLayer` / `render:spriteLayer` (Tier 2
    *  incremental re-render): the `token` of the state the renderer's backing canvas
    *  for this layer currently shows. Main diffs the new decode against that base's

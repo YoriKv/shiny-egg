@@ -42,9 +42,10 @@
 // • `tileKeys` convention: every COMBINED track's manifest entry carries a per-tileset-tile
 //   key list (the file's own tileset order) so the import maps each tile/cell back to its cart
 //   source WITHOUT re-deriving it from the (possibly-drifted) cart — the .aseprite + manifest
-//   are self-describing. The key is the track's packed source: terrain/ground = the 14-bit
-//   (char,pal,prio) word-key, island = the $B1 char, logo = (char<<3)|palRow. Each falls back
-//   to re-deriving only for an older export that predates the field.
+//   are self-describing. The key is the track's packed source: terrain = the 14-bit
+//   (char,pal,prio) word-key (multi-palette), island = the $B1 char, ground/logo =
+//   (char<<3)|palRow (1:1 char→palette). Each falls back to re-deriving only for an older
+//   export that predates the field.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -134,6 +135,12 @@ import {
 } from './gfx-manifest'
 
 const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
+
+/** A tilemap-screen import warning for cells erased to Aseprite's empty tile 0 — they resolve
+ *  to the screen's backdrop (cell 0's word), which may not be what the artist intended. The
+ *  blank-tile editing convention is shared by every screen, so the message is one place. */
+const erasedCellsWarning = (label: string, n: number): string =>
+  `${label}: ${n} erased cell${n === 1 ? '' : 's'} set to the backdrop tile — this may look unexpected in-game; to blank a cell, paint the backdrop tile instead.`
 
 /** Decompress a gfx file's base blob to tile bytes (for the changed-vs-base check). */
 const decodeBase = (rom: Uint8Array, symbols: SymbolMap, e: GfxManifestEntry): Uint8Array =>
@@ -536,13 +543,16 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         const bg1 = layerFor(1), bg2 = layerFor(2)
         if (bg1) jobs.push({ layer: 0, fileId: e.bg1FileId, cells: bg1.cells })
         if (bg2) jobs.push({ layer: 1, fileId: e.bg2FileId, cells: bg2.cells })
+        let terrainErased = 0
         for (const j of jobs) {
-          const tilemap = diffWorldMapTerrainPlacement(ctx, j.layer, keys, j.cells)
+          const { tilemap, erased } = diffWorldMapTerrainPlacement(ctx, j.layer, keys, j.cells)
+          terrainErased += erased
           if (!tilemap) continue // unchanged layer → no overlay
           const r = saveGfxEdit('lz2', j.fileId, tilemap)
           if (r.ok) { mapTerrainImported++; entryChanged = true }
           else errors.push(`${e.file} (0x${j.fileId.toString(16)}): ${r.error}`)
         }
+        if (terrainErased > 0) errors.push(erasedCellsWarning(e.file, terrainErased))
         // (b) PIXELS: slice the edited tileset back to the shared $74/$75/$4C CHR.
         const { edits, conflicts } = diffWorldMapTerrainPixels(ctx, keys, ms.tilePixels, ms.numTiles, ms.palette)
         if (edits.length > 0) { addTilePatches(mapTerrainPatches, edits); entryChanged = true }
@@ -574,7 +584,8 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         const ctx = buildWorldMapGroundContext(rom, symbols)
         const keys = mapGround.tileKeys ?? groundTileKeys(ctx) // from manifest; derive only for old exports
         const struct = decodeAsepriteStructural(readFileSync(p))
-        const tilemap = diffWorldMapGroundPlacement(ctx, keys, struct)
+        const { tilemap, erased } = diffWorldMapGroundPlacement(ctx, keys, struct)
+        if (erased > 0) errors.push(erasedCellsWarning(mapGround.file, erased))
         if (!tilemap) { mapTerrainSkipped++ }
         else {
           const r = saveGfxEdit('lz2', mapGround.fileId, tilemap)
@@ -711,6 +722,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
                 else errors.push(`title logo (DATA_title_screen_logo_tilemap): ${r.error}`)
               }
               if (d.skipped > 0) errors.push(`title logo: ${d.skipped} repositioned cell${d.skipped === 1 ? '' : 's'} skipped (non-editable / new tile — add new logo art via the faithful $1D sheet).`)
+              if (d.erased > 0) errors.push(erasedCellsWarning('title logo', d.erased))
             }
             // COLOURS: an edited embedded palette (logo BG2 rows 8..15) → the master blob.
             if (titleLogo.paletteOffsets) {
@@ -779,6 +791,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
               if (ok && d.placement.length > 0) { const r = await saveIslandTilemap(d.placement); if (!r.ok) { errors.push(`title island (DATA_5F9800): ${r.error}`); ok = false } }
               if (d.unmappedTiles > 0) errors.push(`title island: ${d.unmappedTiles} new tile${d.unmappedTiles === 1 ? '' : 's'} couldn't be added — only ${ctx.addableChars.length} free $B1 char slot${ctx.addableChars.length === 1 ? '' : 's'} exist (the rest are used by the world-6 island).`)
               if (d.skippedW6Tiles > 0) errors.push(`title island: ${d.skippedW6Tiles} edit${d.skippedW6Tiles === 1 ? '' : 's'} to world-6-only tiles were skipped (they'd corrupt the world-6 island) — edit those via the faithful $B1 sheet.`)
+              if (d.erased > 0) errors.push(erasedCellsWarning('title island', d.erased))
               islandSharedCells = d.sharedCells
               islandNewTiles = d.newTiles
               if (ok && (d.pixels.length > 0 || d.placement.length > 0)) islandImported++

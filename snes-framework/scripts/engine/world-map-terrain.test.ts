@@ -111,8 +111,8 @@ for (let world = 0; world < 6; world++) {
   if (ms.layers.length !== 2) layerFail++;
   const bg1 = layerNamed(ms.layers, 1), bg2 = layerNamed(ms.layers, 2);
   if (!bg1 || !bg2) { layerFail++; continue; }
-  if (diffWorldMapTerrainPlacement(ctx, 0, unified, bg1.cells) !== null) rtFail++;
-  if (diffWorldMapTerrainPlacement(ctx, 1, unified, bg2.cells) !== null) rtFail++;
+  if (diffWorldMapTerrainPlacement(ctx, 0, unified, bg1.cells).tilemap !== null) rtFail++;
+  if (diffWorldMapTerrainPlacement(ctx, 1, unified, bg2.cells).tilemap !== null) rtFail++;
 
   // 5. single-cell edit on BG1 → one word in bg1Tilemap, bg2 untouched.
   const target = 5 * 64 + 10;
@@ -121,11 +121,11 @@ for (let world = 0; world < 6; world++) {
   if (other) {
     const edited = bg1.cells.slice();
     edited[target] = { tile: other.tile, hflip: false, vflip: false };
-    const out = diffWorldMapTerrainPlacement(ctx, 0, unified, edited);
+    const out = diffWorldMapTerrainPlacement(ctx, 0, unified, edited).tilemap;
     let n = 0; if (out) for (let i = 0; i < ctx.bg1Tilemap.length; i++) if (out[i] !== ctx.bg1Tilemap[i]) n++;
     if (!out || n < 1 || n > 2) editFail++;
     // BG2 layout (unedited) still round-trips to null — proves the layers are independent.
-    if (diffWorldMapTerrainPlacement(ctx, 1, unified, bg2.cells) !== null) editFail++;
+    if (diffWorldMapTerrainPlacement(ctx, 1, unified, bg2.cells).tilemap !== null) editFail++;
   }
 
   // 6. cross-layer sharing: a key BG2 uses but BG1 doesn't is still in the unified set
@@ -143,6 +143,25 @@ assert(rtFail === 0, `every unedited layer round-trips to null (${rtFail} failed
 assert(editFail === 0, `a single-cell BG1 edit changes one word, BG2 untouched (${editFail} failed)`);
 assert(crossFail === 0, `BG2-only tiles are placeable in BG1 via the shared tileset (${crossFail} missing)`);
 assert(terrainTileKeys(buildWorldMapTerrainContext(rom, symbols, 0)).length >= 2, 'unified placeable set is non-trivial');
+
+// 6a. Erase: tile 0 is Aseprite's empty tile; a cell erased to it → this layer's cell 0 word,
+// counted in `erased`. Unedited → 0 erased.
+{
+  const ctx = buildWorldMapTerrainContext(rom, symbols, 0);
+  const keys = unifiedTerrainKeys(ctx);
+  assert(keys[0] === -1, 'terrain: tile 0 is the empty tile (-1)');
+  const ms = decodeAsepriteMultiStructural(worldMapTerrainAseprite(ctx, keys).bytes);
+  const bg1 = layerNamed(ms.layers, 1)!;
+  const cell0 = ctx.bg1Tilemap[0]! | (ctx.bg1Tilemap[1]! << 8);
+  const wordAt = (i: number) => { const cc = i % 64, r = (i / 64) | 0, o = ((cc >= 32 ? 0x400 : 0) + r * 32 + (cc & 31)) * 2; return ctx.bg1Tilemap[o]! | (ctx.bg1Tilemap[o + 1]! << 8); };
+  let lc = 0; for (let i = 0; i < bg1.cells.length; i++) if (wordAt(i) !== cell0) { lc = i; break; } // a cell whose word differs from cell 0
+  const cells = bg1.cells.slice(); cells[lc] = { tile: 0 };
+  const { tilemap: out, erased } = diffWorldMapTerrainPlacement(ctx, 0, keys, cells);
+  const cc = lc % 64, r = (lc / 64) | 0, off = ((cc >= 32 ? 0x400 : 0) + r * 32 + (cc & 31)) * 2;
+  const word = out ? (out[off]! | (out[off + 1]! << 8)) : -1;
+  assert(erased === 1 && out !== null && word === cell0, `terrain: erasing a BG1 cell → cell 0's word 0x${cell0.toString(16)}, erased=1 (got 0x${word.toString(16)}, erased ${erased})`);
+  assert(diffWorldMapTerrainPlacement(ctx, 0, keys, bg1.cells).erased === 0, 'terrain: unedited BG1 → 0 erased');
+}
 
 // 6b. Combined-file PIXEL editing (the second axis), used-rows (compacted) palette.
 {
@@ -207,12 +226,34 @@ assert(gctx.tilemap.length === 4096, `ground tilemap is 4096 bytes (got ${gctx.t
   const gkeys = groundTileKeys(gctx);
   const groundAse = worldMapGroundAseprite(gctx, gkeys);
   const gstruct = decodeAsepriteStructural(groundAse.bytes);
-  assert(diffWorldMapGroundPlacement(gctx, gkeys, gstruct) === null, 'unedited ground round-trips to null');
+  assert(diffWorldMapGroundPlacement(gctx, gkeys, gstruct).tilemap === null, 'unedited ground round-trips to null');
+  // Char-keyed (the title-logo model, NOT the terrain's word-keyed one): the tileset is the FULL
+  // $56 CHR sheet in char order at tiles 1..N (every char, placed or not), so tile i = char i-1 —
+  // not just the distinct words actually used.
+  assert(gkeys[0] === -1, 'ground: tile 0 is the empty tile (-1)');
+  assert(gkeys.length === 1 + 128, `ground tileset = empty + full $56 sheet (129 entries, got ${gkeys.length})`);
+  assert(gkeys.slice(1).every((k, i) => ((k >> 3) & 0x3ff) === i), 'ground tile i = char i (CHR 1:1 at indices 1..N)');
+  {
+    const usedChars = new Set<number>();
+    for (let i = 0; i < gctx.tilemap.length; i += 2) usedChars.add((gctx.tilemap[i]! | (gctx.tilemap[i + 1]! << 8)) & 0x3ff);
+    assert(gkeys.length - 1 > usedChars.size, `ground export includes available (unused) $56 chars (${gkeys.length - 1 - usedChars.size})`);
+  }
+  // Erase: tile 0 is Aseprite's empty tile; a cell erased to it → cell 0's word, counted in `erased`.
+  {
+    const cell0 = gctx.tilemap[0]! | (gctx.tilemap[1]! << 8);
+    const gWordAt = (i: number) => { const cc = i % 64, r = (i / 64) | 0, o = ((cc >= 32 ? 0x400 : 0) + r * 32 + (cc & 31)) * 2; return gctx.tilemap[o]! | (gctx.tilemap[o + 1]! << 8); };
+    let lc = 0; for (let i = 0; i < gstruct.cells.length; i++) if (gWordAt(i) !== cell0) { lc = i; break; } // a cell whose word differs from cell 0
+    const cells = gstruct.cells.slice(); cells[lc] = { tile: 0 };
+    const { tilemap: gout, erased } = diffWorldMapGroundPlacement(gctx, gkeys, { ...gstruct, cells });
+    const cc = lc % 64, r = (lc / 64) | 0, off = ((cc >= 32 ? 0x400 : 0) + r * 32 + (cc & 31)) * 2;
+    const word = gout ? (gout[off]! | (gout[off + 1]! << 8)) : -1;
+    assert(erased === 1 && gout !== null && word === cell0, `ground: erasing a cell → cell 0's word 0x${cell0.toString(16)}, erased=1 (got 0x${word.toString(16)}, erased ${erased})`);
+  }
   const gt = 28 * 64 + 10; const gcur = gstruct.cells[gt]!;
   const gother = gstruct.cells.find((c) => c.tile > 0 && c.tile !== gcur.tile);
   if (gother) {
     gstruct.cells[gt] = { tile: gother.tile, hflip: false, vflip: false };
-    const gout = diffWorldMapGroundPlacement(gctx, gkeys, gstruct);
+    const gout = diffWorldMapGroundPlacement(gctx, gkeys, gstruct).tilemap;
     let gn = 0; if (gout) for (let i = 0; i < gctx.tilemap.length; i++) if (gout[i] !== gctx.tilemap[i]) gn++;
     assert(!!gout && gn >= 1 && gn <= 2, `a single ground-cell edit changes one word (got ${gn} bytes)`);
   }

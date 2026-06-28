@@ -177,16 +177,17 @@ function buildAsepriteTileset(args: {
     });
   }
 
-  const aseTiles: Uint8Array[] = [new Uint8Array(tileW * tileH)]; // tile 0 = empty
-  for (const t of tiles) {
-    const base = rowToBase.get(t.paletteRow)!;
+  const colorTile = (t: TilesetTile): Uint8Array => {
+    const base = rowToBase.get(t.paletteRow) ?? 0;
     const px = new Uint8Array(tileW * tileH);
     for (let i = 0; i < px.length; i++) {
       const li = t.indices[i]!;
       px[i] = index0Transparent ? (li === 0 ? transparentIndex : base + li) : base + li;
     }
-    aseTiles.push(px);
-  }
+    return px;
+  };
+  // Aseprite reserves tileset index 0 as the empty tile; the real tiles follow at 1..N.
+  const aseTiles: Uint8Array[] = [new Uint8Array(tileW * tileH), ...tiles.map(colorTile)];
   return { palette, transparentIndex, aseTiles };
 }
 

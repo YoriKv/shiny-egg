@@ -81,6 +81,9 @@ export interface ComposeBgLayersArgs {
    *  tilemap PLACEMENT edit previews on the canvas without a rebuild — the tilemap is its
    *  own gm$0C load (separate from the CHR `loadLevelGfx` overlay). Omit for the cart. */
   gfxOverride?: ReadonlyMap<string, Uint8Array>;
+  /** Live gradient-backdrop override (24 BGR-15 stops) so an unsaved gradient draft
+   *  previews without a rebuild — passed straight to `buildBackdrop`. Omit for the cart. */
+  gradientOverride?: readonly number[];
 }
 
 /**
@@ -90,7 +93,7 @@ export interface ComposeBgLayersArgs {
  * `vram` in place (tilemap regions only).
  */
 export function composeBgLayers(args: ComposeBgLayersArgs): ComposedBgLayers {
-  const { rom, symbols, gfxHeader, palHeader, levelMode, vram, cgram, gfxOverride } = args;
+  const { rom, symbols, gfxHeader, palHeader, levelMode, vram, cgram, gfxOverride, gradientOverride } = args;
 
   // BG2 + BG3 tilemaps are separate gm$0C steps from load_level_gfx — they need
   // explicit loads. Both return the byte count actually written, passed to
@@ -147,7 +150,7 @@ export function composeBgLayers(args: ComposeBgLayersArgs): ComposedBgLayers {
   const bg2Front = bg2HasFg ? renderBg2('high') : null;
   const bg3Front = bg3HasFg ? renderBg3('high') : null;
 
-  const backdrop = buildBackdrop(rom, symbols, cgram, palHeader.bgColor);
+  const backdrop = buildBackdrop(rom, symbols, cgram, palHeader.bgColor, gradientOverride);
 
   return { bg2, bg3, bg2Front, bg3Front, backdrop, bg2Layer, bg3Layer, regs };
 }

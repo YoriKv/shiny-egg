@@ -276,3 +276,43 @@ function fillBg3WithEmptyTile(vram: Uint8Array): void {
     vram[BG3_TILEMAP_VRAM_ADDR + i + 1] = hi;
   }
 }
+
+/** Which CGRAM palette rows (0–7) a level's BG2 and BG3 tilemaps reference — the
+ *  per-layer twin of `levelMap16Usage`'s BG1 `paletteRowsUsed`, used by the
+ *  Palette panel to attribute each row to the layer(s) that use it.
+ *
+ *  Cheap by design: a row's palette is encoded in tilemap-entry bits 10–12, so
+ *  this loads only the two tilemaps (no gfx/char decode, no RGBA) and unions the
+ *  palette rows over every loaded word. **Blank filler tiles are excluded** so a
+ *  row isn't flagged just because the empty background uses it: tile 0 for both
+ *  layers, plus BG3's designated empty-tile word `$01CE`. A BG3 layer the cart
+ *  hides (`bg3Disabled`) or that's only empty-filled contributes nothing. */
+export function levelBgPaletteRows(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  header: { bg2Tileset: number; bg3Tileset: number }
+): { bg2: number[]; bg3: number[] } {
+  const vram = new Uint8Array(0x10000);
+  const bg2Bytes = loadBg2Tilemap(rom, symbols, header.bg2Tileset, vram);
+  const bg3 = loadBg3Tilemap(rom, symbols, header.bg3Tileset, vram);
+
+  const collect = (addr: number, len: number, skipBlankTile: number): number[] => {
+    const rows = new Set<number>();
+    const end = Math.min(addr + len, vram.length - 1);
+    for (let off = addr; off + 2 <= end + 2 && off + 1 < vram.length; off += 2) {
+      const entry = vram[off]! | (vram[off + 1]! << 8);
+      const baseTile = entry & 0x3ff;
+      if (baseTile === 0 || baseTile === skipBlankTile) continue; // blank filler
+      rows.add((entry >>> 10) & 0x07);
+    }
+    return [...rows].sort((a, b) => a - b);
+  };
+
+  return {
+    bg2: collect(BG2_TILEMAP_VRAM_ADDR, bg2Bytes, -1),
+    bg3:
+      bg3.bg3Disabled || bg3.emptyFilled
+        ? []
+        : collect(BG3_TILEMAP_VRAM_ADDR, bg3.bytesWritten, BG3_EMPTY_TILE_WORD & 0x3ff)
+  };
+}

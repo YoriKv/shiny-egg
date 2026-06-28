@@ -41,6 +41,8 @@ import { PropertiesBody } from './panels/PropertiesPanel'
 import { HeaderBody } from './panels/HeaderPanel'
 import { PaletteBody } from './panels/PalettePanel'
 import { usePaletteEditor } from './edit-session/usePaletteEditor'
+import { useGradientEditor } from './edit-session/useGradientEditor'
+import { gradientOffset } from './lib/gradient'
 import { TilesBody } from './panels/TilesPanel'
 import { StringsBody, useMessagePtrTableEditor, useStringsEditor } from './panels/StringsPanel'
 import { useWorldMapEditor } from './edit-session/useWorldMapEditor'
@@ -403,6 +405,21 @@ export default function App(): JSX.Element {
     }
     return rows
   }, [selectedObjectBlockIds, tileUsage])
+
+  // Per-layer BG palette-row attribution for the Palette panel's row indicators
+  // (BG1 from Map16 usage, BG2/BG3 from their tilemaps). Memoised so a stable
+  // identity feeds the panel's per-row tag computation.
+  const paletteRowUsage = useMemo(
+    () =>
+      tileUsage
+        ? {
+            bg1: tileUsage.paletteRowsUsed,
+            bg2: tileUsage.bg2PaletteRowsUsed,
+            bg3: tileUsage.bg3PaletteRowsUsed
+          }
+        : null,
+    [tileUsage]
+  )
 
   // The level's CGRAM is a function of only the palette-relevant header fields:
   // BG color (0), the BG1/BG2/BG3/sprite palette rows (2/4/6/8), and level mode
@@ -918,6 +935,28 @@ export default function App(): JSX.Element {
   // keep their unsaved drafts).
   const paletteScope = projectScope === null ? null : `${projectScope}#p${paletteImportRev}`
   const paletteEditor = usePaletteEditor(paletteScope, markRomDirty, docHistory)
+  // Backdrop-gradient colour-edit document (sibling of the palette editor; also
+  // saves into Bank57.asm). Its draft, resolved to the current level's 24 stops,
+  // feeds the canvas as `gradientOverride` for live preview.
+  const gradientEditor = useGradientEditor(paletteScope, markRomDirty, docHistory)
+  // The current level's 24 gradient stops (BASE ⊕ draft) for the canvas preview —
+  // null for a solid-backdrop level (BackgroundColor < $10) or before base colours
+  // load, in which case the canvas renders the ROM gradient. Keyed on just the
+  // BackgroundColor header byte (not the whole level) so an object edit doesn't
+  // recompute it; ALWAYS supplied for a gradient level so a reset shows base
+  // immediately, independent of the built ROM (mirrors the palette re-source).
+  const bgColorByte = levelState.level?.header?.[0] ?? null
+  const gradientOverride = useMemo<number[] | null>(() => {
+    if (bgColorByte === null || bgColorByte < 0x10) return null
+    const gid = bgColorByte - 0x10
+    const base = gradientEditor.baseColors?.[gid]
+    if (!base) return null
+    const dm = gradientEditor.draftMap
+    return Array.from({ length: 24 }, (_, i) => dm.get(gradientOffset(gid, i)) ?? base[i]!)
+  }, [bgColorByte, gradientEditor.baseColors, gradientEditor.draftMap])
+  // Pushing palette edits into a running emulator is a MANUAL action — the
+  // Palette panel's "Sync to Emulator" button (bizhawk.applyPaletteLive) — rather
+  // than an automatic per-edit push, so it never competes with gameplay.
   // World-map entrance-table document — spawn / progression edits per world-map
   // slot. Spawn X/Y previews live via the canvas marker (read from this draft);
   // other fields verify in Test Level (asm edit → markRomDirty). Its save shares
@@ -964,13 +1003,13 @@ export default function App(): JSX.Element {
       kind: WindowDef['kind']
     ): Array<{ dirty: boolean; save: () => Promise<boolean>; discard: () => void }> =>
       kind === 'palette'
-        ? [paletteEditor]
+        ? [paletteEditor, gradientEditor]
         : kind === 'strings'
           ? [levelNameStrings, messageStrings, messagePtrs, introStory, endingText]
           : kind === 'world-map'
             ? [worldMapEditor]
             : [],
-    [paletteEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor]
+    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor]
   )
   const requestCloseWindow = useCallback(
     (w: WindowDef): void => {
@@ -1536,6 +1575,7 @@ export default function App(): JSX.Element {
           spawnOverride={worldMapSpawn}
           onSpawnCommit={onSpawnCommit}
           paletteOverride={paletteEditor.draft}
+          gradientOverride={gradientOverride}
           renderRefresh={renderRefresh}
           prngSeed={rngSeed}
           canvasBackground={canvasBg}
@@ -1578,9 +1618,10 @@ export default function App(): JSX.Element {
               ) : w.kind === 'palette' ? (
                 <PaletteBody
                   selectedLevelRecordId={selectedLevelRecordId}
-                  paletteRowsUsed={tileUsage?.paletteRowsUsed ?? null}
+                  rowUsage={paletteRowUsage}
                   highlightRows={selectedObjectRows}
                   editor={paletteEditor}
+                  gradientEditor={gradientEditor}
                   renderRefresh={renderRefresh}
                   override={levelState.level}
                   headerVersion={paletteHeaderVersion}

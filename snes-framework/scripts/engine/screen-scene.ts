@@ -1421,30 +1421,50 @@ export function titleLogoPng(ctx: TitleLogoContext, canvas: TitleLogoCanvas): Ui
   return new Uint8Array(encodePng({ width, height, rgba }));
 }
 
-/** The title logo as a real Aseprite **tilemap** (tileset of distinct (char, palette
- *  row) 2bpp tiles + a 32×14 cell grid carrying each word's flip). The flatten
- *  reproduces `renderTitleLogo`'s canvas byte-exact (cell flips re-applied the same
- *  way `decode2bppTile` does), so the import path is `decodeAsepriteRegion` →
+/** The title logo as a real Aseprite **tilemap** (the full ROM-ordered char tileset, 2bpp
+ *  tiles, + a 32×14 cell grid carrying each word's flip). The flatten reproduces
+ *  `renderTitleLogo`'s canvas byte-exact (cell flips re-applied the same way
+ *  `decode2bppTile` does), so the import path is `decodeAsepriteRegion` →
  *  `diffTitleLogoTiles` — no swatch, the palette is embedded. */
-/** Aseprite tile index → the logo word's `(char, palRow)` it encodes (index 0 = empty).
- *  The tilemap's distinct `(char, palRow)` pairs in encounter order. Shared by the export
- *  (`titleLogoAseprite`) AND the combined placement diff (`diffTitleLogoCombined`) so both
- *  agree on the index↔(char,palRow) mapping — the stable identity under Manual mode. */
+/** Aseprite tile index → the logo word's `(char, palRow)`. **Tile 0 is Aseprite's mandatory
+ *  empty tile** (`null`); the `$1D` CHR file is replicated 1:1 at tiles 1..N in CHR order (tile
+ *  `i` = char `0x300 + i − 1`), every char placed or not. (Aseprite reserves tileset index 0 as
+ *  the empty tile — `notile = 0`, and `fix_old_tileset` inserts it — so the CHR is 1-indexed; we
+ *  can't put a real char at tile 0.) Each char is coloured by the palette row it's placed with
+ *  (logo chars are 1:1 char→palRow); an unplaced char falls back to the dominant used row. Shared
+ *  by the export (`titleLogoAseprite`) AND the combined diff (`diffTitleLogoCombined`). */
 export function logoTileMeta(ctx: TitleLogoContext): ({ char: number; palRow: number } | null)[] {
   const pc = ctx.symbols.pc(LOGO_TILEMAP_SYM);
-  const meta: ({ char: number; palRow: number } | null)[] = [null]; // tile 0 = empty
-  const seen = new Set<number>();
+  const usedPal = new Map<number, number>(); // char → the (single) palette row it's placed with
+  const palCount = new Map<number, number>(); // palette row → cell count (picks the unused default)
   for (let i = 0; i < LOGO_COLS * LOGO_ROWS; i++) {
     const word = u16le(ctx.rom, pc + i * 2);
     const char = word & 0x3ff, palRow = (word >> 10) & 0x07;
-    const key = (char << 3) | palRow;
-    if (!seen.has(key)) { seen.add(key); meta.push({ char, palRow }); }
+    if (!usedPal.has(char)) usedPal.set(char, palRow);
+    palCount.set(palRow, (palCount.get(palRow) ?? 0) + 1);
   }
+  // The full char set = every tile of the gfx file(s) the placed chars live in, so unused
+  // tiles ride along as placeable art. (char ↔ VRAM byte is `LOGO_CHAR_ADDR + char*16`.)
+  const fileChars = new Set<number>();
+  for (const char of usedPal.keys()) {
+    const vramByte = (LOGO_CHAR_ADDR + char * TILE_BYTES_2BPP) & 0xffff;
+    const e = ctx.manifest.find((e) => vramByte >= e.vramByteOffset && vramByte < e.vramByteOffset + e.sizeBytes);
+    if (!e || (e.vramByteOffset - LOGO_CHAR_ADDR) % TILE_BYTES_2BPP !== 0) continue;
+    const start = (e.vramByteOffset - LOGO_CHAR_ADDR) / TILE_BYTES_2BPP;
+    const count = Math.floor(e.sizeBytes / TILE_BYTES_2BPP);
+    for (let k = 0; k < count; k++) { const c = start + k; if (c >= 0 && c <= 0x3ff) fileChars.add(c); }
+  }
+  const defPal = [...palCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+  // Tile 0 = Aseprite's mandatory empty tile; the CHR file follows 1:1 at tiles 1..N in char
+  // order. Each char coloured by its placed palette row (1:1 char→palRow), unplaced chars fall
+  // back to the dominant used row.
+  const meta: ({ char: number; palRow: number } | null)[] = [null];
+  for (const char of [...fileChars].sort((a, b) => a - b)) meta.push({ char, palRow: usedPal.get(char) ?? defPal });
   return meta;
 }
 
 /** Pack `logoTileMeta` to a flat `(char<<3)|palRow` per-tile key list (index 0 = empty `-1`)
- *  — the serialized `tileKeys` so the import maps tiles back without re-deriving. */
+ *  — the serialized `tileKeys` so the import maps each aseprite tile back to its char. */
 export function logoTileKeys(ctx: TitleLogoContext): number[] {
   return logoTileMeta(ctx).map((m) => (m === null ? -1 : (m.char << 3) | m.palRow));
 }
@@ -1457,12 +1477,12 @@ function logoMetaFromKeys(keys: readonly number[]): ({ char: number; palRow: num
 export function titleLogoAseprite(ctx: TitleLogoContext, _canvas: TitleLogoCanvas, keys: readonly number[]): { bytes: Uint8Array; paletteOffsets: number[] } {
   const pc = ctx.symbols.pc(LOGO_TILEMAP_SYM);
   const meta = logoMetaFromKeys(keys);
-  const tileIndex = new Map<number, number>(); // (char<<3 | palRow) → aseprite tile index
+  const tileIndex = new Map<number, number>(); // char → aseprite tile index (1-based; tile 0 = empty)
   const tiles: TilesetTile[] = [];
   const indices = new Uint8Array(64);
   for (let ti = 1; ti < meta.length; ti++) {
     const { char, palRow } = meta[ti]!;
-    tileIndex.set((char << 3) | palRow, ti);
+    tileIndex.set(char, ti);
     const vramByte = (LOGO_CHAR_ADDR + char * TILE_BYTES_2BPP) & 0xffff;
     decode2bppTile(ctx.vram, vramByte, false, false, indices, 0); // UN-flipped; cell carries flip
     // Embed the BG2 colours: field P → CGRAM palette row 8+P (see LOGO_BG2_PALETTE_BASE).
@@ -1471,8 +1491,8 @@ export function titleLogoAseprite(ctx: TitleLogoContext, _canvas: TitleLogoCanva
   const cells: AsepriteCell[] = [];
   for (let i = 0; i < LOGO_COLS * LOGO_ROWS; i++) {
     const word = u16le(ctx.rom, pc + i * 2);
-    const char = word & 0x3ff, hflip = (word & 0x4000) !== 0, vflip = (word & 0x8000) !== 0, palRow = (word >> 10) & 0x07;
-    cells.push({ tile: tileIndex.get((char << 3) | palRow)!, hflip, vflip }); // tile 0 = empty
+    const char = word & 0x3ff, hflip = (word & 0x4000) !== 0, vflip = (word & 0x8000) !== 0;
+    cells.push({ tile: tileIndex.get(char) ?? 0, hflip, vflip }); // cell → its char's tile (0 = empty)
   }
   const bytes = tilesAseprite({
     cgram: ctx.cgram, bpp: 2, tileW: TILE_PX, tileH: TILE_PX, tiles, cells,
@@ -1498,34 +1518,41 @@ export interface LogoCombinedDiff {
   /** Placed cells referencing a NEW/unmapped tile — CHR allocation is out of scope, so
    *  these are skipped (add new logo art via the faithful $1D sheet). */
   skipped: number;
+  /** Cells erased to Aseprite's empty tile 0 → resolved to cell 0's backdrop word. Surfaced
+   *  so the caller can warn (an erased cell becomes the backdrop, which may look unexpected). */
+  erased: number;
   /** numTiles < export ⇒ tiles deleted/reordered; the index→(char,palRow) map is
    *  unreliable. Caller should refuse. */
   removedTiles: boolean;
 }
 
 /**
- * Combined title-logo import — **assumes Manual Aseprite tileset mode** (stable tile
- * indices). One edited `.aseprite` carries BOTH pixel edits and cell repositions/flips,
- * resolved by index: a tile `ti`'s pixels → its `$1D` char (`logoTileMeta` gives its
- * `(char, palRow)`; the 2bpp index is `aseIndex & (LOGO_COLORS-1)`); each cell → the BG
- * word rebuilt from its tile's `(char, palRow)` + the cell's flips (the dest cell's
- * priority bit preserved). New/unmapped tiles are reported (`skipped`); a smaller tileset
- * than the export is refused (`removedTiles`). The logo palette animates in-game, so the
- * edited indices are byte-safe regardless of the shown frame.
+ * Combined title-logo import — **assumes Manual Aseprite tileset mode** (stable tile indices).
+ * One edited `.aseprite` carries BOTH pixel edits and cell repositions/flips, resolved by
+ * index: a tile `ti`'s pixels → its `$1D` char (`logoTileMeta` gives the char; the 2bpp index
+ * is `aseIndex & (LOGO_COLORS-1)`); each cell → the BG word rebuilt from its tile's
+ * `(char, palRow)` + the cell's flips (the dest cell's priority bit preserved). The tileset is
+ * the `$1D` CHR file at tiles 1..N (tile 0 = Aseprite's empty tile). A cell ERASED to tile 0 →
+ * cell 0's authored backdrop word (the only sensible blank), counted in `erased` so the caller
+ * can warn. New/unmapped tiles are reported (`skipped`); a smaller tileset than the export is
+ * refused (`removedTiles`). The logo palette animates in-game, so the edited indices are
+ * byte-safe regardless of the shown frame.
  */
 export function diffTitleLogoCombined(ctx: TitleLogoContext, keys: readonly number[], struct: AsepriteStructural): LogoCombinedDiff {
   const meta = logoMetaFromKeys(keys); // the serialized tileKeys (tileset tile → char/palRow)
   const exportTileCount = meta.length;
-  const out: LogoCombinedDiff = { placement: [], pixels: [], skipped: 0, removedTiles: false };
+  const out: LogoCombinedDiff = { placement: [], pixels: [], skipped: 0, erased: 0, removedTiles: false };
   if (struct.numTiles < exportTileCount) { out.removedTiles = true; return out; }
   const pc = ctx.symbols.pc(LOGO_TILEMAP_SYM);
   const TPX = TILE_PX * TILE_PX; // 64
 
   // PIXELS: each export tile → its $1D char tile (the char bytes are palette-row-agnostic).
+  // Tile 0 is the empty tile (meta[0] = null), skipped.
   const byTile = new Map<string, IconTileEdit>();
   const raw = new Uint8Array(TPX);
   for (let ti = 1; ti < exportTileCount; ti++) {
-    const { char } = meta[ti]!;
+    const m = meta[ti]; if (!m) continue;
+    const char = m.char;
     const vramByte = (LOGO_CHAR_ADDR + char * TILE_BYTES_2BPP) & 0xffff;
     const map = logoFileForVramByte(ctx.manifest, vramByte);
     if (!map) continue;
@@ -1538,13 +1565,23 @@ export function diffTitleLogoCombined(ctx: TitleLogoContext, keys: readonly numb
   }
   out.pixels = [...byTile.values()];
 
-  // PLACEMENT: each cell → the BG word from its tile's (char, palRow) + the cell flips.
+  // PLACEMENT: each non-empty cell → the BG word from its tile's (char, palRow) + the cell
+  // flips (the cell's priority bit preserved). A cell ERASED to the empty tile 0 → cell 0's
+  // authored backdrop word (the one blank we can pick without guessing), counted in `erased`.
+  // A tile beyond the tileset is a new/unmapped tile (skipped).
+  const cell0Word = u16le(ctx.rom, pc); // tilemap cell 0 — the authored backdrop word
   for (let i = 0; i < LOGO_COLS * LOGO_ROWS; i++) {
-    const cell = struct.cells[i]; if (!cell || cell.tile <= 0) continue;
-    const m = meta[cell.tile];
-    if (!m) { out.skipped++; continue; } // new/unmapped tile (CHR allocation out of scope)
+    const cell = struct.cells[i];
+    const tile = cell?.tile ?? 0;
     const orig = u16le(ctx.rom, pc + i * 2);
-    const word = (m.char & 0x3ff) | ((m.palRow & 7) << 10) | (orig & 0x2000) | (cell.hflip ? 0x4000 : 0) | (cell.vflip ? 0x8000 : 0);
+    if (tile === 0) { // erased / empty cell → cell 0's backdrop word
+      out.erased++;
+      if (cell0Word !== orig) out.placement.push({ offset: i, value: cell0Word });
+      continue;
+    }
+    const m = meta[tile];
+    if (!m) { out.skipped++; continue; } // new/unmapped tile (CHR allocation out of scope)
+    const word = (m.char & 0x3ff) | ((m.palRow & 7) << 10) | (orig & 0x2000) | (cell?.hflip ? 0x4000 : 0) | (cell?.vflip ? 0x8000 : 0);
     if (word !== orig) out.placement.push({ offset: i, value: word });
   }
   return out;

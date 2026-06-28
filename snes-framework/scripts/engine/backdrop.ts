@@ -46,7 +46,16 @@ import { u16le } from './rom-read.ts';
 
 export const LEVEL_HEIGHT_PX = 2048;
 const GRADIENT_THRESHOLD = 0x10;
-const GRADIENT_COLOR_COUNT = 24;
+/** Colours per gradient table (24 BGR-15 stops, bottom-to-top). */
+export const GRADIENT_COLOR_COUNT = 24;
+/** Gradient tables in `DATA_bg_gradient_ptrs` — one per BackgroundColor $10..$1F. */
+export const GRADIENT_TABLE_COUNT = 16;
+
+/** The gradient-table index (0..15) a level's BackgroundColor header byte selects,
+ *  or `null` when the level uses a solid backdrop (BackgroundColor < $10). */
+export function gradientIdForBgColor(backgroundColor: number): number | null {
+  return backgroundColor >= GRADIENT_THRESHOLD ? backgroundColor - GRADIENT_THRESHOLD : null;
+}
 const GRADIENT_BYTES = GRADIENT_COLOR_COUNT * 2;
 const ENTRIES_PER_COLOR = 16;
 const PAD_TOP_ENTRIES = 72;
@@ -66,12 +75,19 @@ export type Backdrop =
 /**
  * Build the per-level backdrop. CGRAM must already be populated by
  * `loadLevelPalettes` (we read CGRAM[0] for the solid case).
+ *
+ * `overrideColors` (24 BGR-15 stops) replaces the ROM-read gradient when present —
+ * the live-preview seam for the Palette panel's gradient editor (so an unsaved
+ * gradient draft previews on the canvas without a rebuild, independent of the
+ * built ROM, exactly like `paletteOverride` does for CGRAM colours). Ignored for
+ * solid backdrops and when the wrong length.
  */
 export function buildBackdrop(
   rom: Uint8Array,
   symbols: SymbolMap,
   cgram: Uint8Array,
-  backgroundColor: number
+  backgroundColor: number,
+  overrideColors?: readonly number[]
 ): Backdrop {
   if (backgroundColor < GRADIENT_THRESHOLD) {
     return {
@@ -80,7 +96,10 @@ export function buildBackdrop(
     };
   }
 
-  const colors15 = readGradientColors(rom, symbols, backgroundColor);
+  const colors15 =
+    overrideColors && overrideColors.length === GRADIENT_COLOR_COUNT
+      ? Uint16Array.from(overrideColors, (c) => c & 0xffff)
+      : readGradientColors(rom, symbols, backgroundColor);
   const rgba = renderGradientColumn(colors15);
   return { kind: 'gradient', rgba, width: 1, height: LEVEL_HEIGHT_PX };
 }

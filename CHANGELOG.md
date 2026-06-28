@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.1 - 2026-06-28
+
+- Color palette editing for non-level scenes.
+- Level gradient editing.
+- Push palette edits to emulator via CGRAM (experimental).
+- Graphics import/export cleanup.
+
 ## v0.5.0 - 2026-06-26
 
 - New Validation panel. Runs checks against level data looking for issues that may not be apparent in the editor, but can show up during gameplay.

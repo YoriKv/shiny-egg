@@ -35,10 +35,17 @@ export interface PaletteEditorApi {
   read: () => PaletteEdit[]
   /** Set one colour WITHOUT an undo step — a drag's (throttled) preview frames. */
   preview: (offset: number, value: number) => void
+  /** Set SEVERAL offsets to one colour WITHOUT an undo step — the preview frames
+   *  for a multi-offset swatch (e.g. a World-map panel's mirrored copies). */
+  previewMany: (offsets: number[], value: number) => void
   /** Commit one undo step: set the colour and record `before`→draft (drag release). */
   commitFrom: (before: PaletteEdit[], offset: number, value: number) => void
+  /** Commit one undo step setting SEVERAL offsets to one colour (mirrored copies). */
+  commitManyFrom: (before: PaletteEdit[], offsets: number[], value: number) => void
   /** Revert one colour to base (drop its offset) — one undo step. */
   resetColor: (offset: number) => void
+  /** Revert SEVERAL colours to base (drop their offsets) — one undo step. */
+  resetColors: (offsets: number[]) => void
   /** Revert every colour to base — one undo step. */
   resetAll: () => void
 }
@@ -79,10 +86,30 @@ export function usePaletteEditor(
     [doc]
   )
 
+  const previewMany = useCallback(
+    (offsets: number[], value: number) => {
+      const m = arrToMap(doc.read() ?? EMPTY_EDITS)
+      for (const o of offsets) m.set(o, value & 0xffff)
+      doc.setDraft(mapToArr(m))
+    },
+    [doc]
+  )
+
   const commitFrom = useCallback(
     (before: PaletteEdit[], offset: number, value: number) => {
       const m = arrToMap(doc.read() ?? EMPTY_EDITS)
       m.set(offset, value & 0xffff)
+      const after = mapToArr(m)
+      doc.setDraft(after)
+      if (!editsEqual(before, after)) doc.recordUndo(before, after)
+    },
+    [doc]
+  )
+
+  const commitManyFrom = useCallback(
+    (before: PaletteEdit[], offsets: number[], value: number) => {
+      const m = arrToMap(doc.read() ?? EMPTY_EDITS)
+      for (const o of offsets) m.set(o, value & 0xffff)
       const after = mapToArr(m)
       doc.setDraft(after)
       if (!editsEqual(before, after)) doc.recordUndo(before, after)
@@ -110,6 +137,21 @@ export function usePaletteEditor(
     [doc]
   )
 
+  const resetColors = useCallback(
+    (offsets: number[]) => {
+      const before = doc.read() ?? EMPTY_EDITS
+      const m = arrToMap(before)
+      let changed = false
+      for (const o of offsets) if (m.delete(o)) changed = true
+      if (!changed) return
+      const after = mapToArr(m)
+      doc.setDraft(after)
+      doc.recordUndo(before, after)
+      void doc.save()
+    },
+    [doc]
+  )
+
   const resetAll = useCallback(() => {
     const before = doc.read() ?? EMPTY_EDITS
     if (before.length === 0) return
@@ -128,8 +170,11 @@ export function usePaletteEditor(
     discard: doc.discard,
     read,
     preview,
+    previewMany,
     commitFrom,
+    commitManyFrom,
     resetColor,
+    resetColors,
     resetAll
   }
 }

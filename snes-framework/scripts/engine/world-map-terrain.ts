@@ -26,9 +26,11 @@
 // PNG carries no layout). Aseprite mode → one Aseprite **tilemap** per BG layer
 // (`overworld-bg1`/`overworld-bg2`), the editable layout. Rearranging the Aseprite cells
 // rewrites that layer's `$7C`/`$7D` tilemap (round-trips byte-exact via `saveGfxEdit` —
-// the tilemap IS an LZ2 gfx file). The tileset is keyed by the BG word's (char, palette,
-// priority) with the un-flipped char pixels; H/V flip rides on the cell, so the full
-// 16-bit BG word reconstructs losslessly.
+// the tilemap IS an LZ2 gfx file). The per-world terrain tileset is WORD-keyed by the BG
+// word's (char, palette, priority) with the un-flipped char pixels (the terrain reuses a char
+// across palette rows); H/V flip rides on the cell, so the full 16-bit BG word reconstructs
+// losslessly. (The decorative GROUND below — a separate, single-palette layer — is instead
+// CHAR-keyed, mirroring the title logo; see its section.)
 
 import { buildWorldMapIconContext, mapTilemapFileId, iconFileForVramByte, type WorldMapIconContext } from './screen-gfx.ts';
 import { lz2 } from './decompress/index.ts';
@@ -171,88 +173,16 @@ export function worldMapTerrainPng(canvas: WorldMapTerrainCanvas): Uint8Array {
 }
 
 // --- Aseprite tilemap (the editable LAYOUT surface) --------------------------
-// The tileset is keyed by the BG word's (char, palette, priority) — the bits that pick
-// a distinct tileset entry; H/V flip rides on the cell (Aseprite's native flip), so the
-// full 16-bit BG word reconstructs losslessly. The map fill (char $1BF, index-0 tile)
-// is just another tileset entry. Tile index 0 = empty (Aseprite reserves it).
+// The per-world TERRAIN (BG1/BG2) tileset is WORD-keyed: keyed by the BG word's
+// (char, palette, priority) — the bits that pick a distinct tileset entry — because the
+// terrain reuses the SAME char across multiple palette rows (it's not 1:1 char→palette).
+// H/V flip rides on the cell (Aseprite's native flip), so the full 16-bit BG word
+// reconstructs losslessly. The map fill (char $1BF, index-0 tile) is just another tileset
+// entry. Tile index 0 = empty (Aseprite reserves it). (The decorative GROUND below is
+// instead CHAR-keyed — it's single-palette, so it mirrors the title-logo model; see there.)
 
 /** The (char,palette,priority) key for a BG word = bits 0-13 (flip bits 14/15 masked off). */
 const wordKey = (w: number): number => w & 0x3fff;
-
-// --- Generic BG-tilemap ⇄ Aseprite core (shared by the per-world map + the ground) ---
-// A tilemap is a 64×32 screen-block array of 16-bit BG words. The Aseprite tileset is
-// keyed by each word's (char,pal,prio); H/V flip rides on the cell, so the full word
-// reconstructs losslessly. Index 0 = Aseprite's reserved empty tile.
-
-/** Ordered list of distinct word-keys (index 0 = empty; real keys at 1+) in screen-block
- *  reading order. Shared by the aseprite export + the placement diff so both agree on the
- *  tile↔word mapping. */
-function distinctWordKeys(tilemap: Uint8Array): number[] {
-  const keys: number[] = [-1];
-  const seen = new Set<number>();
-  for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
-    const off = wordIndex(cc, r) * 2;
-    const k = wordKey(tilemap[off]! | (tilemap[off + 1]! << 8));
-    if (!seen.has(k)) { seen.add(k); keys.push(k); }
-  }
-  return keys;
-}
-
-/** A BG tilemap → an Aseprite tilemap project (tileset of distinct (char,pal,prio) tiles
- *  decoded from `vram` at `charBase`, `bpp`-bit, un-flipped; cells carry per-cell flip).
- *  `keys` (= `distinctWordKeys(tilemap)`) is the tileset's key list — passed in so the SAME
- *  array can be serialized to the manifest (`tileKeys`) for the import to reuse. */
-function tilemapToAseprite(
-  vram: Uint8Array, cgram: Uint8Array, tilemap: Uint8Array,
-  bpp: 2 | 4, charBase: number, layerName: string, tilesetName: string, keys: readonly number[],
-  provenance: Int32Array
-): { bytes: Uint8Array; paletteOffsets: number[] } {
-  const tileBytes = bpp === 4 ? TILE_BYTES_4BPP : TILE_BYTES_2BPP;
-  const dec = bpp === 4 ? decode4bppTile : decode2bppTile;
-  const keyToTile = new Map<number, number>();
-  const tiles: TilesetTile[] = [];
-  const idx = new Uint8Array(64);
-  for (let ti = 1; ti < keys.length; ti++) {
-    const k = keys[ti]!;
-    keyToTile.set(k, ti);
-    const ch = k & 0x3ff, pal = (k >> 10) & 7;
-    dec(vram, (charBase + ch * tileBytes) & 0xffff, false, false, idx, 0); // UN-flipped; cell carries flip
-    tiles.push({ indices: idx.slice(), paletteRow: pal });
-  }
-  const cells: AsepriteCell[] = [];
-  for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
-    const off = wordIndex(cc, r) * 2;
-    const w = tilemap[off]! | (tilemap[off + 1]! << 8);
-    cells.push({ tile: keyToTile.get(wordKey(w))!, hflip: (w & 0x4000) !== 0, vflip: (w & 0x8000) !== 0 });
-  }
-  const bytes = tilesAseprite({
-    cgram, bpp, tileW: TILE_PX, tileH: TILE_PX, tiles, cells,
-    tilesAcross: COLS, tilesDown: ROWS, index0Transparent: false, layerName, tilesetName
-  });
-  // Colour write-back map — SAME bpp/index0Transparent (default rowStride) as the encode above.
-  const paletteOffsets = tilesetPaletteOffsets({ tiles, bpp, index0Transparent: false, provenance });
-  return { bytes, paletteOffsets };
-}
-
-/** Reconstruct a full 4096-byte tilemap from an edited placement `.aseprite`. Each cell →
- *  its tile's (char,pal,prio) word (`keys[cell.tile]`, the serialized `tileKeys`) | the
- *  cell's flip bits → the screen-block word. An empty / out-of-range cell keeps the original
- *  word (never corrupts). Returns the new tilemap bytes (for `saveGfxEdit`), or `null`. */
-function diffTilemapPlacement(tilemap: Uint8Array, keys: readonly number[], struct: AsepriteStructural): Uint8Array | null {
-  const out = tilemap.slice();
-  let changed = false;
-  for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
-    const cell = struct.cells[r * COLS + cc];
-    if (!cell || cell.tile <= 0 || cell.tile >= keys.length) continue; // empty/unknown → keep base
-    const k = keys[cell.tile]!;
-    if (k < 0) continue;
-    const word = (k | (cell.hflip ? 0x4000 : 0) | (cell.vflip ? 0x8000 : 0)) & 0xffff;
-    const off = wordIndex(cc, r) * 2;
-    const orig = out[off]! | (out[off + 1]! << 8);
-    if (word !== orig) { out[off] = word & 0xff; out[off + 1] = (word >> 8) & 0xff; changed = true; }
-  }
-  return changed ? out : null;
-}
 
 // --- Unified tileset shared by BG1 + BG2 -------------------------------------
 // Both layers draw 4bpp from the SAME char base ($4000) and, in practice, the same
@@ -266,7 +196,7 @@ function diffTilemapPlacement(tilemap: Uint8Array, keys: readonly number[], stru
  *  Aseprite export and the placement diff derive it from the same cart context, so the
  *  tile↔word mapping is identical on both sides. */
 export function unifiedTerrainKeys(c: WorldMapTerrainContext): number[] {
-  const keys: number[] = [-1];
+  const keys: number[] = [-1]; // index 0 = Aseprite's mandatory empty tile
   const seen = new Set<number>();
   for (const tm of [c.bg1Tilemap, c.bg2Tilemap]) {
     for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
@@ -290,7 +220,7 @@ function layerCells(tilemap: Uint8Array, keyToTile: Map<number, number>): Asepri
   for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
     const off = wordIndex(cc, r) * 2;
     const w = tilemap[off]! | (tilemap[off + 1]! << 8);
-    cells.push({ tile: keyToTile.get(wordKey(w))!, hflip: (w & 0x4000) !== 0, vflip: (w & 0x8000) !== 0 });
+    cells.push({ tile: keyToTile.get(wordKey(w)) ?? 0, hflip: (w & 0x4000) !== 0, vflip: (w & 0x8000) !== 0 }); // blank/unmapped → tile 0
   }
   return cells;
 }
@@ -317,6 +247,8 @@ export function worldMapTerrainAseprite(c: WorldMapTerrainContext, keys: number[
     decode4bppTile(vram, (MAP_CHAR_BASE + ch * TILE_BYTES_4BPP) & 0xffff, false, false, idx, 0); // UN-flipped; cell carries flip
     tiles.push({ indices: idx.slice(), paletteRow: pal });
   }
+  // Tile 0 = Aseprite's synthetic empty (shared by both layers); every distinct word is a real
+  // tile at 1..N, so a fresh export has no tile-0 cells.
   const bytes = tilesAsepriteMulti({
     cgram, bpp: 4, tileW: TILE_PX, tileH: TILE_PX, tiles,
     layers: [
@@ -403,25 +335,27 @@ export function diffWorldMapTerrainPixels(
 }
 
 /** New 4096-byte tilemap for a BG layer from an edited combined `.aseprite` layer's `cells`
- *  (for `saveGfxEdit` to `terrainLayerFileId(c, layer)`), or `null` if unchanged. `keys` is
- *  the serialized `tileKeys` (tileset tile → (char,pal,prio)); each cell → `keys[cell.tile]`
- *  | the cell's flip → its word; an empty/out-of-range cell keeps the original word (never
- *  corrupts). */
-export function diffWorldMapTerrainPlacement(c: WorldMapTerrainContext, layer: TerrainLayer, keys: readonly number[], cells: AsepriteCell[]): Uint8Array | null {
+ *  (for `saveGfxEdit` to `terrainLayerFileId(c, layer)`) + the erased-cell count. `keys` is the
+ *  serialized `tileKeys` (tileset tile → (char,pal,prio)); each cell → `keys[cell.tile]` | the
+ *  cell's flip → its word. A cell ERASED to the empty tile 0 → this layer's cell 0 word (counted
+ *  in `erased`); an out-of-range (new) tile keeps the original word (never corrupts). */
+export function diffWorldMapTerrainPlacement(c: WorldMapTerrainContext, layer: TerrainLayer, keys: readonly number[], cells: AsepriteCell[]): { tilemap: Uint8Array | null; erased: number } {
   const base = layerTilemap(c, layer);
   const out = base.slice();
-  let changed = false;
+  let changed = false, erased = 0;
+  const cell0Word = base[0]! | (base[1]! << 8); // this layer's cell 0 — the authored backdrop word
   for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
     const cell = cells[r * COLS + cc];
-    if (!cell || cell.tile <= 0 || cell.tile >= keys.length) continue; // empty/unknown → keep base
-    const k = keys[cell.tile]!;
-    if (k < 0) continue;
-    const word = (k | (cell.hflip ? 0x4000 : 0) | (cell.vflip ? 0x8000 : 0)) & 0xffff;
+    const tile = cell?.tile ?? 0;
     const off = wordIndex(cc, r) * 2;
     const orig = out[off]! | (out[off + 1]! << 8);
+    let word: number;
+    if (tile === 0) { erased++; word = cell0Word; } // erased / empty cell → cell 0's word
+    else if (tile >= keys.length) continue; // unknown/new tile → keep base
+    else { const k = keys[tile]!; if (k < 0) continue; word = (k | (cell?.hflip ? 0x4000 : 0) | (cell?.vflip ? 0x8000 : 0)) & 0xffff; }
     if (word !== orig) { out[off] = word & 0xff; out[off + 1] = (word >> 8) & 0xff; changed = true; }
   }
-  return changed ? out : null;
+  return { tilemap: changed ? out : null, erased };
 }
 
 /** One exported map-terrain entry, shaped for the gfx manifest. */
@@ -526,22 +460,112 @@ export function renderWorldMapGround(c: WorldMapGroundContext): WorldMapTerrainC
   return { rgba, width: W, height: H, faithful: true };
 }
 
-/** The ground tileset's `(char,pal,prio)` key list (index 0 = empty `-1`) — serialized to
- *  the manifest as `tileKeys` so the import maps cells back without re-deriving. */
+// The decorative ground is CHAR-keyed (the title-logo model), NOT word-keyed like the terrain
+// above: every ground cell is single-palette (palette row 0), so a char maps 1:1 to a tileset
+// entry. The tileset is the full $56 CHR sheet in char order at tiles 1..N (tile 0 = Aseprite's
+// empty); H/V flip rides on the cell. A cell's priority bit is preserved from the destination
+// cell (char-keying doesn't carry priority), which is lossless here since the ground is all
+// priority 0. (See screen-scene.ts `logoTileMeta`/`diffTitleLogoCombined` for the twin.)
+
+/** Aseprite tile index → the ground word's `(char, palRow)`. **Tile 0 is Aseprite's mandatory
+ *  empty tile** (`null`); the $56 BG3-ground CHR file is replicated 1:1 at tiles 1..N in char
+ *  order (every char, placed or not), so the editor offers the full sheet. Each char's palRow =
+ *  the (single) row it's placed with, defaulting to the dominant used row for an unplaced char
+ *  (the ground is single-palette, so in practice every char is row 0). Backs `groundTileKeys`
+ *  (the serialized tileset order shared by the export + the placement diff). */
+function groundTileMeta(c: WorldMapGroundContext): ({ char: number; palRow: number } | null)[] {
+  const tm = c.tilemap;
+  const usedPal = new Map<number, number>(); // char → the (single) palette row it's placed with
+  const palCount = new Map<number, number>(); // palette row → cell count (picks the unplaced default)
+  for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
+    const off = wordIndex(cc, r) * 2;
+    const w = tm[off]! | (tm[off + 1]! << 8);
+    const char = w & 0x3ff, palRow = (w >> 10) & 0x07;
+    if (!usedPal.has(char)) usedPal.set(char, palRow);
+    palCount.set(palRow, (palCount.get(palRow) ?? 0) + 1);
+  }
+  // The full char set = every tile of the $56 BG3-ground file (char base $2000 = the file's load
+  // addr), so unused tiles ride along as placeable art. char ↔ VRAM byte = $2000 + char*16 (2bpp).
+  const e = c.scene.manifest.find((m) => m.vramByteOffset <= GROUND_CHAR_VRAM && GROUND_CHAR_VRAM < m.vramByteOffset + m.sizeBytes);
+  const defPal = [...palCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+  const meta: ({ char: number; palRow: number } | null)[] = [null]; // tile 0 = Aseprite's empty
+  if (e) {
+    const start = (e.vramByteOffset - GROUND_CHAR_VRAM) / TILE_BYTES_2BPP;
+    const count = Math.floor(e.sizeBytes / TILE_BYTES_2BPP);
+    for (let k = 0; k < count; k++) { const char = start + k; if (char >= 0 && char <= 0x3ff) meta.push({ char, palRow: usedPal.get(char) ?? defPal }); }
+  }
+  return meta;
+}
+
+/** Pack `groundTileMeta` to a flat `(char<<3)|palRow` per-tile key list (index 0 = empty `-1`)
+ *  — the serialized `tileKeys` so the import maps each aseprite tile back to its char. */
 export function groundTileKeys(c: WorldMapGroundContext): number[] {
-  return distinctWordKeys(c.tilemap);
+  return groundTileMeta(c).map((m) => (m === null ? -1 : (m.char << 3) | m.palRow));
 }
 
-/** The ground as an Aseprite tilemap (2bpp, char base $2000). `keys` = `groundTileKeys(c)`
- *  (the same array serialized to the manifest). Rearranging cells → `diffWorldMapGroundPlacement`. */
+/** Inverse of `groundTileKeys`: the per-tile `{char,palRow}` meta from the serialized keys. */
+function groundMetaFromKeys(keys: readonly number[]): ({ char: number; palRow: number } | null)[] {
+  return keys.map((k) => (k < 0 ? null : { char: (k >> 3) & 0x3ff, palRow: k & 0x07 }));
+}
+
+/** The ground as an Aseprite tilemap (2bpp, char base $2000) — the full $56 CHR sheet at tiles
+ *  1..N (tile 0 = Aseprite's empty), each cell referencing its char's tile. `keys` =
+ *  `groundTileKeys(c)` (the same array serialized to the manifest). Rearranging cells →
+ *  `diffWorldMapGroundPlacement`. */
 export function worldMapGroundAseprite(c: WorldMapGroundContext, keys: readonly number[]): { bytes: Uint8Array; paletteOffsets: number[] } {
-  return tilemapToAseprite(c.scene.vram, c.scene.cgram, c.tilemap, 2, GROUND_CHAR_VRAM, 'ground', 'ground-tiles', keys, c.scene.provenance);
+  const { vram, cgram } = c.scene;
+  const meta = groundMetaFromKeys(keys);
+  const tileIndex = new Map<number, number>(); // char → aseprite tile index (1-based; tile 0 = empty)
+  const tiles: TilesetTile[] = [];
+  const idx = new Uint8Array(64);
+  for (let ti = 1; ti < meta.length; ti++) {
+    const { char, palRow } = meta[ti]!;
+    tileIndex.set(char, ti);
+    decode2bppTile(vram, (GROUND_CHAR_VRAM + char * TILE_BYTES_2BPP) & 0xffff, false, false, idx, 0); // UN-flipped; cell carries flip
+    tiles.push({ indices: idx.slice(), paletteRow: palRow });
+  }
+  const cells: AsepriteCell[] = [];
+  for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
+    const off = wordIndex(cc, r) * 2;
+    const w = c.tilemap[off]! | (c.tilemap[off + 1]! << 8);
+    cells.push({ tile: tileIndex.get(w & 0x3ff) ?? 0, hflip: (w & 0x4000) !== 0, vflip: (w & 0x8000) !== 0 }); // cell → its char's tile (0 = empty)
+  }
+  const bytes = tilesAseprite({
+    cgram, bpp: 2, tileW: TILE_PX, tileH: TILE_PX, tiles, cells,
+    tilesAcross: COLS, tilesDown: ROWS, index0Transparent: false, // BG3 index 0 is an opaque colour
+    layerName: 'ground', tilesetName: 'ground-tiles'
+  });
+  // Colour write-back map — SAME bpp/index0Transparent (default 4-colour stride) as above.
+  const paletteOffsets = tilesetPaletteOffsets({ tiles, bpp: 2, index0Transparent: false, provenance: c.scene.provenance });
+  return { bytes, paletteOffsets };
 }
 
-/** New 4096-byte ground tilemap from an edited placement `.aseprite` (for `saveGfxEdit`), or
- *  `null`. `keys` is the serialized `tileKeys` (tileset tile → (char,pal,prio)). */
-export function diffWorldMapGroundPlacement(c: WorldMapGroundContext, keys: readonly number[], struct: AsepriteStructural): Uint8Array | null {
-  return diffTilemapPlacement(c.tilemap, keys, struct);
+/** New 4096-byte ground tilemap from an edited placement `.aseprite` (for `saveGfxEdit`, or
+ *  `null` if unchanged) + the erased-cell count. `keys` is the serialized `tileKeys`. Each cell
+ *  → the BG word from its tile's (char, palRow) + the cell's flip (the dest cell's priority bit
+ *  preserved). A cell ERASED to the empty tile 0 → cell 0's authored word (the one blank we can
+ *  pick), counted in `erased`; a new/unmapped tile keeps the base word (never corrupts). */
+export function diffWorldMapGroundPlacement(c: WorldMapGroundContext, keys: readonly number[], struct: AsepriteStructural): { tilemap: Uint8Array | null; erased: number } {
+  const meta = groundMetaFromKeys(keys);
+  const base = c.tilemap;
+  const out = base.slice();
+  let changed = false, erased = 0;
+  const cell0Word = base[0]! | (base[1]! << 8); // cell 0 — authored backdrop word (the erase target)
+  for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
+    const cell = struct.cells[r * COLS + cc];
+    const tile = cell?.tile ?? 0;
+    const off = wordIndex(cc, r) * 2;
+    const orig = out[off]! | (out[off + 1]! << 8);
+    let word: number;
+    if (tile === 0) { erased++; word = cell0Word; } // erased / empty cell → cell 0's word
+    else {
+      const m = meta[tile];
+      if (!m) continue; // new/unmapped tile (CHR allocation out of scope) → keep base
+      word = ((m.char & 0x3ff) | ((m.palRow & 7) << 10) | (orig & 0x2000) | (cell?.hflip ? 0x4000 : 0) | (cell?.vflip ? 0x8000 : 0)) & 0xffff;
+    }
+    if (word !== orig) { out[off] = word & 0xff; out[off + 1] = (word >> 8) & 0xff; changed = true; }
+  }
+  return { tilemap: changed ? out : null, erased };
 }
 
 /** One exported decorative-ground entry (single BG3 layer, world-invariant). */
@@ -555,7 +579,7 @@ export interface WorldMapGroundPng {
   png: Uint8Array;
   /** The editable layout as a single-layer Aseprite tilemap — built only in aseprite mode. */
   aseprite?: Uint8Array;
-  /** Per-tileset-tile `(char,pal,prio)` key (`groundTileKeys`; index 0 = `-1`) — serialized
+  /** Per-tileset-tile `(char<<3)|palRow` key (`groundTileKeys`; index 0 = `-1`) — serialized
    *  as `tileKeys` so the import reuses the file's tileset order. Aseprite mode only. */
   tileKeys?: number[];
   /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —

@@ -159,7 +159,12 @@ export function useLevelRenderLayers(
    *  random-tile variants. Only bg1 + collision read the decode, so a change
    *  forces a FULL re-fetch of just those two (sprites/bg2/bg3 are
    *  seed-independent). `undefined` ⇒ the default deterministic seed. */
-  prngSeed?: number
+  prngSeed?: number,
+  /** The current level's 24 backdrop-gradient stops (BASE ⊕ the gradient editor
+   *  draft), or null for a solid-backdrop level — passed to `bgLayers` as
+   *  `gradientOverride` so an unsaved gradient edit previews on the canvas. Only
+   *  the backdrop (in bgLayers) reads it; a change re-fetches just that layer. */
+  gradientOverride: number[] | null = null
 ): LevelRenderLayers {
   // bg1 + collision backing canvases (created lazily, reused across edits).
   const bg1CanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -434,7 +439,8 @@ export function useLevelRenderLayers(
     const result = await window.shinyEgg.render.bgLayers({
       levelRecordId: lvl.recordId,
       override: lvl,
-      paletteOverride
+      paletteOverride,
+      gradientOverride
     })
     if (!mountedRef.current || bgLayersGenRef.current !== myGen) return
     if (!result) { setBgLayers(null); return }
@@ -446,8 +452,9 @@ export function useLevelRenderLayers(
   useEffect(() => {
     void header
     void paletteOverride
+    void gradientOverride
     triggerBgLayers()
-  }, [header, paletteOverride, triggerBgLayers])
+  }, [header, paletteOverride, gradientOverride, triggerBgLayers])
 
   // A rebuild changed the ROM bytes but not the level structure or palette draft,
   // so no layer effect above re-fires. Force a FULL re-fetch of the colour-bearing

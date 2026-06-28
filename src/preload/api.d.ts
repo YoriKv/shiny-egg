@@ -18,9 +18,14 @@ import type {
   ExtractResult,
   GfxFileEntry,
   GfxFilesResult,
+  GradientEdit,
   LayerCellPatch,
   LevelData,
   LevelsCatalog,
+  PaletteCatalog,
+  PaletteCatalogGroup,
+  PaletteCatalogEntry,
+  PaletteCatalogSwatch,
   PaletteEdit,
   PoolBudgetReport,
   PoolOverview,
@@ -58,6 +63,7 @@ import type {
   ObjectInstance,
   OverlayDriftReport,
   OverlayUpgradeResult,
+  PaletteLiveResult,
   PatchAuthoringPaths,
   PatchImportResult,
   PatchMutationResult,
@@ -135,6 +141,7 @@ export type {
   GfxFileBlock,
   GfxFileEntry,
   GfxFilesResult,
+  GradientEdit,
   InventoryCategory,
   LayerCellPatch,
   LevelCatalogEntry,
@@ -153,6 +160,10 @@ export type {
   MessagePtrOption,
   MessagePtrTableModel,
   ObjectRenderVerdict,
+  PaletteCatalog,
+  PaletteCatalogGroup,
+  PaletteCatalogEntry,
+  PaletteCatalogSwatch,
   PaletteEdit,
   PoolBudgetEntry,
   PoolBudgetReport,
@@ -217,6 +228,7 @@ export type {
   OverlayDriftFile,
   OverlayDriftReport,
   OverlayUpgradeResult,
+  PaletteLiveResult,
   PatchAuthoringPaths,
   PatchImportResult,
   PatchMutationResult,
@@ -368,6 +380,27 @@ export interface BizHawkAPI {
    */
   readMem: (domain: string, addr: number, len: number) => Promise<Uint8Array>
   /**
+   * Write `bytes` into BizHawk memory `domain` ("WRAM" / "CARTRAM" / "CGRAM" /
+   * …) starting at `addr` (the offset within the domain — NOT a 24-bit SNES
+   * address). The generic counterpart of `readMem` — the editor's pathway to
+   * edit the RUNNING game's memory without a rebuild. Boots EmuHawk if not
+   * running (like `readMem`); reply is "OK <n>". Live-edit pushes that must NOT
+   * boot go through `applyPaletteLive`, which gates on `isRunning` first.
+   */
+  writeMem: (domain: string, addr: number, bytes: Uint8Array) => Promise<string>
+  /** Whether the managed EmuHawk subprocess is currently running + connected.
+   *  Lets callers push live edits only when there's something to push to. */
+  isRunning: () => Promise<boolean>
+  /**
+   * Apply the unsaved palette colour edits to the screen the RUNNING emulator is
+   * showing now (level / world map / title / …, detected from live state), with NO
+   * rebuild. Writes ONLY the edited entries plus `revertOffsets` (offsets undone or
+   * reset since the last sync, written back to base) — nothing else is touched.
+   * Per-screen only (the master blob is read-only ROM); no-ops WITHOUT booting when
+   * EmuHawk isn't running.
+   */
+  applyPaletteLive: (edits: PaletteEdit[], revertOffsets: number[]) => Promise<PaletteLiveResult>
+  /**
    * Teleport BizHawk's camera + Yoshi to (x, y) pixel coords, settle
    * for ~60 frames so the game's camera-smoothing converges to our
    * target, then capture. Programmatic primitive — no UI button.
@@ -417,6 +450,11 @@ export interface RenderAPI {
   /** Palette-colour editing: CGRAM (overlay-patched) + per-entry blob
    *  provenance + the project's current palette edits. Null for empty/special. */
   editablePalette: (req: LevelRenderRequest) => Promise<DecodedPalette | null>
+  /** Whole-game palette catalog (the Palette panel's "All Palettes" tab): every
+   *  selectable master-blob palette by pointer table + by scene, each swatch
+   *  carrying its blob offset for the shared global-edit model. Cart-static (no
+   *  per-level args). Null if the built ROM/symbols are unavailable. */
+  paletteCatalog: () => Promise<PaletteCatalog | null>
   decodeLevelLayout: (req: LevelRenderRequest) => Promise<DecodedLevelLayout | null>
   /** Paint tool — forward-fit a painted height curve to std objects. The corners
    *  are interpolated into slope lines, decomposed into a representable staircase,
@@ -482,6 +520,14 @@ export interface EditorAPI {
   /** Persist the full palette-colour edit set (offset → value) to the project
    *  overlay (Bank57.asm). Caller marks the build dirty on success. */
   savePaletteEdits: (edits: PaletteEdit[]) => Promise<SaveResourceResult>
+  /** The saved overlay's backdrop-gradient stop edits (the useGradientEditor baseline). */
+  loadGradientEdits: () => Promise<GradientEdit[]>
+  /** Persist the full gradient stop edit set to the project overlay (Bank57.asm).
+   *  Caller marks the build dirty on success. */
+  saveGradientEdits: (edits: GradientEdit[]) => Promise<SaveResourceResult>
+  /** The 16×24 pristine base gradient colours (BackgroundColor $10..$1F × 24 stops);
+   *  the panel overlays the live draft on these for display. */
+  gradientBaseColors: () => Promise<number[][]>
   /** Live byte-budget for a level's shared bank pool(s) — drives the editor's
    *  warn-on-save / block-on-build surfaces. Null when there's no pool map yet
    *  (unbuilt cart) or the level has no editable streams (empty/special). */

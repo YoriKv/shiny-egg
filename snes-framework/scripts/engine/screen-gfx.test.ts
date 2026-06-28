@@ -30,7 +30,6 @@ import {
   renderTitleIsland,
   diffTitleIslandTiles,
   titleIslandAseprite,
-  diffTitleIslandPlacement,
   diffTitleIslandCombined,
   islandTileChars,
   exportTitleScenery,
@@ -462,8 +461,10 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
   const logoFull = titleLogoAseprite(ctx, canvas, lkeys);
   const logoAse = decodeAsepriteRegion(logoFull.bytes);
   assert(logoAse.width === canvas.width && logoAse.height === canvas.height, `logo .aseprite canvas is ${canvas.width}×${canvas.height} (got ${logoAse.width}×${logoAse.height})`);
+  // Tile 0 is Aseprite's empty tile; every cell (backdrop included) references a real CHR tile
+  // at 1..N, so the flatten reproduces the assembled canvas byte-exact.
   assert(eq(logoAse.rgba, canvas.rgba), 'logo .aseprite flatten reproduces the assembled logo byte-exact');
-  assert(diffTitleLogoTiles(ctx, canvas, logoAse.rgba).edits.length === 0, 'logo .aseprite round-trips to 0 tile edits');
+  assert(logoAse.rgba[3] === 255, 'logo: cell 0 (backdrop) renders OPAQUE — it references the backdrop char tile, not the empty tile 0');
 
   // (6b) COMBINED logo import (Manual tileset mode): one .aseprite = pixels + placement.
   // Unedited → nothing; an in-place pixel edit → ≥1 char edit + 0 placement; a cell move →
@@ -472,6 +473,12 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
   // Palette write-back: logo BG2 sub-palettes (CGRAM rows 8..15, 2bpp tight stride 4).
   assertPaletteRoundTrip('title logo', lbase.palette, logoFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
   const lmeta = logoTileMeta(ctx);
+  // Tile 0 = Aseprite's mandatory empty tile (null); the $1D CHR file follows 1:1 at tiles
+  // 1..128 in char order (tile i = char 0x300+i-1). The backdrop char 0x322 is a normal tile.
+  assert(lmeta[0] === null && lmeta.length === 129, `logo tileset: empty tile 0 + full $1D file (129 entries, got ${lmeta.length})`);
+  assert((() => { for (let i = 1; i < lmeta.length; i++) if (lmeta[i]!.char !== 0x300 + i - 1) return false; return true; })(),
+    'logo tileset: tile i = char 0x300+i-1 (CHR 1:1 at indices 1..N)');
+  assert(lmeta[0x23]!.char === 0x322, `logo tileset: backdrop char 0x322 is a normal tile at index 0x23 (got 0x${lmeta[0x23]?.char.toString(16)})`);
   assert((() => { const d = diffTitleLogoCombined(ctx, lkeys, lbase); return d.placement.length === 0 && d.pixels.length === 0 && d.skipped === 0 && !d.removedTiles; })(),
     'logo combined: unedited → no edits');
   {
@@ -503,6 +510,26 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
   }
   assert((() => { const d = diffTitleLogoCombined(ctx, lkeys, { ...lbase, numTiles: lbase.numTiles - 1 }); return d.removedTiles && d.placement.length === 0 && d.pixels.length === 0; })(),
     'logo combined: fewer tiles than export → removedTiles (refused)');
+  {
+    const pcL = symbols.pc('DATA_title_screen_logo_tilemap');
+    const origAt = (i: number) => rom[pcL + i * 2]! | (rom[pcL + i * 2 + 1]! << 8);
+    let textCell = -1; // an interior cell whose vanilla word is a real (non-backdrop) tile
+    for (let i = 0; i < lbase.cells.length; i++) { const gx = i % 32, gy = (i / 32) | 0; if (gx > 0 && gx < 31 && gy > 0 && gy < 13 && origAt(i) !== 0x2722) { textCell = i; break; } }
+    assert(textCell >= 0, 'logo combined: found an interior text cell');
+    // Blanking by PAINTING the backdrop char's own tile (a normal placement) → the $2722 word.
+    const backdropTile = lmeta.findIndex((m) => m?.char === 0x322);
+    const painted = lbase.cells.slice(); painted[textCell] = { tile: backdropTile, hflip: false, vflip: false };
+    const dp = diffTitleLogoCombined(ctx, lkeys, { ...lbase, cells: painted });
+    assert(dp.placement.length === 1 && dp.placement[0]!.value === 0x2722 && dp.erased === 0 && dp.pixels.length === 0,
+      `logo combined: painting the backdrop char tile → $2722 (got 0x${dp.placement[0]?.value.toString(16)}, erased ${dp.erased})`);
+    // ERASING a cell to the empty tile 0 → cell 0's backdrop word, and is counted in `erased`.
+    const erasedCells = lbase.cells.slice(); erasedCells[textCell] = { tile: 0 };
+    const de = diffTitleLogoCombined(ctx, lkeys, { ...lbase, cells: erasedCells });
+    assert(de.erased === 1 && de.placement.length === 1 && de.placement[0]!.offset === textCell && de.placement[0]!.value === 0x2722,
+      `logo combined: erasing a cell → cell 0's word 0x2722, erased=1 (got 0x${de.placement[0]?.value.toString(16)}, erased ${de.erased})`);
+    // Unedited backdrop cells (which reference a real tile, not the empty) → 0 erased.
+    assert(diffTitleLogoCombined(ctx, lkeys, lbase).erased === 0, 'logo combined: unedited → 0 erased');
+  }
 }
 
 // (7) Title floating island (Mode-7): exported, faithful, 256×256, slices back to
@@ -547,43 +574,28 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
     assert(d.sharedCells === (cellsPerChar.get(chosenChar)! - 1),
       `island edit reports the other cells reusing the edited tile (got ${d.sharedCells}, char used by ${cellsPerChar.get(chosenChar)})`);
   }
-  // Aseprite tilemap: the .aseprite flatten reproduces the assembled island byte-exact,
-  // and slices back to 0 edits (import path: decodeAsepriteRegion → diffTitleIslandTiles).
+  // Aseprite tilemap: tile 0 holds the blank (sky) char's real pixels (flag bit 4 cleared), so
+  // the flatten reproduces the assembled island byte-exact — sky backdrop included.
   const islandAse = decodeAsepriteRegion(titleIslandAseprite(ctx, canvas, islandTileChars(ctx)).bytes);
   assert(islandAse.width === canvas.width && islandAse.height === canvas.height, `island .aseprite canvas is ${canvas.width}×${canvas.height} (got ${islandAse.width}×${islandAse.height})`);
   assert(eq(islandAse.rgba, canvas.rgba), 'island .aseprite flatten reproduces the assembled island byte-exact');
-  assert(diffTitleIslandTiles(ctx, canvas, islandAse.rgba).edits.length === 0, 'island .aseprite round-trips to 0 tile edits');
+  assert(islandAse.rgba[3] === 255, 'island: cell 0 (sky backdrop) renders OPAQUE — it references the sky char tile, not the empty tile 0');
 
-  // PLACEMENT: the island tilemap (DATA_5F9800, 1 byte/cell Mode-7 char) is
-  // rearrangeable. Unedited → 0 byte edits; moving one cell to another char → exactly
-  // that one tilemap byte changes.
+  // Palette write-back: Mode-7 single palette (CGRAM 0-15, bpp 4 / default stride 16).
   const islandFull = titleIslandAseprite(ctx, canvas, islandTileChars(ctx));
   const istruct = decodeAsepriteStructural(islandFull.bytes);
-  assert(diffTitleIslandPlacement(ctx, istruct).length === 0, 'island placement round-trips (unedited → 0 byte edits)');
-  // Palette write-back: Mode-7 single palette (CGRAM 0-15, bpp 4 / default stride 16).
   assertPaletteRoundTrip('title island', istruct.palette, islandFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
-  let pi = -1, pj = -1;
-  for (let i = 0; i < istruct.cells.length && pj < 0; i++) for (let j = i + 1; j < istruct.cells.length; j++) {
-    if (istruct.cells[i]!.tile !== istruct.cells[j]!.tile) { pi = i; pj = j; break; }
-  }
-  if (pi >= 0) {
-    const moved = istruct.cells.slice(); moved[pi] = istruct.cells[pj]!;
-    const ed = diffTitleIslandPlacement(ctx, { ...istruct, cells: moved });
-    assert(ed.length === 1 && ed[0]!.offset === pi && ed[0]!.value === ctx.tilemap[pj],
-      `island 1-cell move → exactly that tilemap byte (got ${ed.length}, value ${ed[0]?.value} vs ${ctx.tilemap[pj]})`);
-  }
-  // AVAILABLE chars: unused $B1 chars are in the tileset (not on the canvas); placing
-  // one writes that char into DATA_5F9800.
-  const usedIslandTiles = new Set(istruct.cells.map((c) => c.tile));
-  let iav = -1;
-  for (let t = 1; t < istruct.numTiles; t++) if (!usedIslandTiles.has(t)) { iav = t; break; }
-  assert(iav > 0, `island export includes available (unused) $B1 chars (${istruct.numTiles - usedIslandTiles.size})`);
-  if (iav > 0) {
-    const cells2 = istruct.cells.slice(); cells2[0] = { tile: iav, hflip: false, vflip: false };
-    const ed2 = diffTitleIslandPlacement(ctx, { ...istruct, cells: cells2 });
+  // AVAILABLE chars: an unused $B1 char (in the tileset, not placed on the canvas) can be
+  // placed → its char writes to DATA_5F9800 (via the combined diff, the production path).
+  {
+    const t2c = islandTileChars(ctx);
     const usedChars = new Set(Array.from(ctx.tilemap));
-    assert(ed2.length === 1 && ed2[0]!.offset === 0 && !usedChars.has(ed2[0]!.value),
-      `island placing an available char → that unused char at cell 0 (got ${ed2.length}, value ${ed2[0]?.value})`);
+    let iav = -1; for (let t = 1; t < t2c.length; t++) if (!usedChars.has(t2c[t]!)) { iav = t; break; }
+    assert(iav > 0, 'island export includes available (unused) $B1 chars');
+    const cells2 = istruct.cells.slice(); cells2[0] = { tile: iav, hflip: false, vflip: false };
+    const d = diffTitleIslandCombined(ctx, t2c, { ...istruct, cells: cells2 });
+    assert(d.placement.some((p) => p.offset === 0 && p.value === t2c[iav] && !usedChars.has(p.value)),
+      `island placing an available char → that unused char at cell 0 (got ${d.placement.find((p) => p.offset === 0)?.value})`);
   }
 }
 
@@ -600,6 +612,13 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
   const baseStruct = decodeAsepriteStructural(titleIslandAseprite(ctx, canvas, t2c).bytes);
   const exportTileCount = t2c.length;
 
+  // Tile 0 = Aseprite's mandatory empty tile (-1); the $B1 CHR file follows 1:1 at tiles 1..N
+  // in char order (tile i = char i-1). Mode-7 → no palette/flip, so a char IS the tile identity.
+  assert(t2c[0] === -1, 'island tileset: tile 0 is the empty tile (-1)');
+  assert(t2c.length === Math.floor(ctx.b1cpc.length / 32) + 1, `island tileset: empty + full $B1 file (${t2c.length} entries)`);
+  assert((() => { for (let i = 1; i < t2c.length; i++) if (t2c[i] !== i - 1) return false; return true; })(),
+    'island tileset: tile i = char i-1 (CHR 1:1 at indices 1..N)');
+
   {
     const d = diffTitleIslandCombined(ctx, t2c, baseStruct);
     assert(d.placement.length === 0 && d.pixels.length === 0 && d.newTiles === 0 &&
@@ -607,9 +626,10 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
       'combined: unedited island → no edits of any kind');
   }
 
-  // in-place pixel edit on a USED tile → one char write, no placement
+  // in-place pixel edit on a USED tile → one char write, no placement. Pick a land cell (a
+  // body tile > 0); tile 0 is the blank/sky char (the empty tile) and isn't pixel-editable.
   {
-    const t0 = baseStruct.cells[0]!.tile;
+    const t0 = baseStruct.cells.find((c) => c.tile > 0)!.tile;
     const tp = baseStruct.tilePixels.slice();
     tp[t0 * 64] = (tp[t0 * 64]! + 1) & 0x0f;
     const d = diffTitleIslandCombined(ctx, t2c, { ...baseStruct, tilePixels: tp });
@@ -666,6 +686,20 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
       assert(d.skippedW6Tiles === 1 && d.pixels.length === 0,
         `combined: a world-6-only tile edit is skipped (got skipped=${d.skippedW6Tiles}, pixels=${d.pixels.length})`);
     }
+  }
+
+  // Erasing a cell to the empty tile 0 → cell 0's authored backdrop (sky) char, counted in
+  // `erased` so the importer can warn. Unedited → 0 erased.
+  {
+    const cell0 = ctx.tilemap[0]!; // cell 0 = the authored sky backdrop char
+    let landCell = -1; // an interior cell whose vanilla char is NOT the backdrop
+    for (let i = 0; i < baseStruct.cells.length; i++) { const gx = i % 32, gy = (i / 32) | 0; if (gx > 0 && gx < 31 && gy > 0 && gy < 31 && ctx.tilemap[i] !== cell0) { landCell = i; break; } }
+    assert(landCell >= 0, 'combined: found an interior land cell to erase');
+    const cells = baseStruct.cells.slice(); cells[landCell] = { tile: 0 };
+    const d = diffTitleIslandCombined(ctx, t2c, { ...baseStruct, cells });
+    assert(d.erased === 1 && d.placement.length === 1 && d.placement[0]!.offset === landCell && d.placement[0]!.value === cell0 && d.pixels.length === 0,
+      `combined: erasing a cell → cell 0's char 0x${cell0.toString(16)}, erased=1 (got 0x${d.placement[0]?.value.toString(16)}, erased ${d.erased})`);
+    assert(diffTitleIslandCombined(ctx, t2c, baseStruct).erased === 0, 'combined: unedited island → 0 erased');
   }
 }
 

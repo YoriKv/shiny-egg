@@ -51,6 +51,14 @@ import {
   type IslandTilemapEdit
 } from 'snes-framework/island-tilemap'
 import {
+  applyGradientEdits,
+  readGradientEdits,
+  readGradientTables,
+  gradientLabels,
+  GRADIENT_PTR_BANK_FILE,
+  type GradientEdit
+} from 'snes-framework/gradient-edit'
+import {
   applyLogoTilemapEdits,
   readLogoTilemapEdits,
   LOGO_TILEMAP_BANK_FILE,
@@ -1368,45 +1376,89 @@ export function loadIslandTilemapEdits(): IslandTilemapEdit[] {
   return readIslandTilemapEdits(baseText, overlayText)
 }
 
+// ── Backdrop-gradient editing ───────────────────────────────────────────────
+// The 16 BG colour-gradient tables also live inline in Bank57.asm, so a gradient
+// edit composes into the SAME overlay file as palette + island edits (below). The
+// table labels are named by the Bank01 pointer table (constant — never edited).
+
+/** The 16 gradient-table labels, parsed from the base Bank01 pointer table. */
+function gradientLabelsFromBase(): string[] {
+  const ptrText = readFileSync(path.join(frameworkWorkRoot(), GRADIENT_PTR_BANK_FILE), 'utf8')
+  return gradientLabels(ptrText)
+}
+
+/** The active project overlay's gradient stop edits vs base. */
+export function loadGradientEdits(): GradientEdit[] {
+  const projectId = getCurrentProjectId()
+  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
+  const overlayPath = projectId ? path.join(overlayRoot(projectId), PALETTE_BLOB_BANK_FILE) : null
+  const overlayText = overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : null
+  return readGradientEdits(baseText, overlayText, gradientLabelsFromBase())
+}
+
+/** The 16×24 PRISTINE base gradient colours (from base Bank57). The Palette
+ *  panel's gradient strip shows BASE ⊕ draft, so a reset reveals base without a
+ *  rebuild — the gradient twin of the live palette re-source. */
+export function loadGradientBaseColors(): number[][] {
+  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
+  return readGradientTables(baseText, gradientLabelsFromBase())
+}
+
 /** Rebuild the project's `Bank57.asm` overlay = base ⊕ palette colour edits ⊕ island
- *  tilemap edits (BOTH live in this one file, so a save of either must compose with the
- *  other's current edits or it would clobber them). Reborn from base each save (clean
- *  diffs, idempotent); both empty ⇒ remove the overlay. The renderer marks the build
- *  dirty on success (asm edits don't render live — same contract as string edits). */
+ *  tilemap edits ⊕ gradient stop edits (ALL THREE live in this one file, so a save of
+ *  any one must compose with the others' current edits or it would clobber them).
+ *  Reborn from base each save (clean diffs, idempotent); all empty ⇒ remove the
+ *  overlay. The renderer marks the build dirty on success (asm edits don't render
+ *  live — same contract as string edits). */
 async function saveBank57Overlay(
   projectId: string,
   paletteEdits: readonly PaletteEdit[],
-  islandEdits: readonly IslandTilemapEdit[]
+  islandEdits: readonly IslandTilemapEdit[],
+  gradientEdits: readonly GradientEdit[]
 ): Promise<SaveResourceResult> {
   const dest = path.join(overlayRoot(projectId), PALETTE_BLOB_BANK_FILE)
-  if (paletteEdits.length === 0 && islandEdits.length === 0) {
+  if (paletteEdits.length === 0 && islandEdits.length === 0 && gradientEdits.length === 0) {
     if (existsSync(dest)) await rm(dest)
     return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
   }
   const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
-  // The two edit sets touch disjoint `dw` runs (DATA_master_palette_rom_blob vs
-  // DATA_5F9800), so applying them in sequence composes cleanly.
-  const text = applyIslandTilemapEdits(applyPaletteEdits(baseText, paletteEdits), islandEdits)
+  // The three edit sets touch disjoint `dw` runs (DATA_master_palette_rom_blob vs
+  // DATA_5F9800 vs the 16 DATA_5FD6xx gradient tables) and are all length-preserving,
+  // so applying them in sequence composes cleanly.
+  const text = applyGradientEdits(
+    applyIslandTilemapEdits(applyPaletteEdits(baseText, paletteEdits), islandEdits),
+    gradientEdits,
+    gradientLabelsFromBase()
+  )
   await saveOverlayFile(projectId, PALETTE_BLOB_BANK_FILE, text)
   return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
 }
 
-/** Save the FULL palette-colour edit set, preserving any island-tilemap edits. */
+/** Save the FULL palette-colour edit set, preserving any island + gradient edits. */
 export async function savePaletteEdits(edits: PaletteEdit[]): Promise<SaveResourceResult> {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to save into.' }
   const compat = ensureProjectBaseCompatible(projectId)
   if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
-  return saveBank57Overlay(projectId, edits, loadIslandTilemapEdits())
+  return saveBank57Overlay(projectId, edits, loadIslandTilemapEdits(), loadGradientEdits())
 }
 
-/** Save the FULL island-tilemap (placement) edit set, preserving any palette edits. */
+/** Save the FULL island-tilemap (placement) edit set, preserving palette + gradient edits. */
 export async function saveIslandTilemap(edits: IslandTilemapEdit[]): Promise<SaveResourceResult> {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to save into.' }
   const compat = ensureProjectBaseCompatible(projectId)
   if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
-  return saveBank57Overlay(projectId, loadPaletteEdits(), edits)
+  return saveBank57Overlay(projectId, loadPaletteEdits(), edits, loadGradientEdits())
+}
+
+/** Save the FULL gradient-stop edit set, preserving any palette + island edits. */
+export async function saveGradientEdits(edits: GradientEdit[]): Promise<SaveResourceResult> {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+  return saveBank57Overlay(projectId, loadPaletteEdits(), loadIslandTilemapEdits(), edits)
 }
 
 /** The active project overlay's logo-tilemap (placement) edits vs base. (Bank0F.asm

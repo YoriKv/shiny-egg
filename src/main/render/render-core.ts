@@ -90,11 +90,98 @@ export function applyPaletteEdits(
   }
 }
 
+// ── Live palette → running emulator (CGRAM mirror) ───────────────────────────
+// The scene-detection + blob-patch orchestration lives in `render/palette-live.ts`;
+// render-core just owns the mirror constant + the pure provenance→runs coalescer
+// (reused by the palette panel's provenance model).
+
+/** CARTRAM byte-offset of YI's CGRAM mirror (`!s_cgram_mirror`, SNES $70:2000).
+ *  The NMI MAY DMA all 512 bytes of this mirror to PPU CGRAM each frame via
+ *  CODE_00D4E5 — but only the level/bonus/boss/cutscene NMI+IRQ handlers do;
+ *  `nmi_world_map_cutscene` (and the null handlers) do NOT (docs/enginecore.md §4.2).
+ *  So a live edit on a level must write HERE (a direct CGRAM poke is overwritten by
+ *  the next NMI), but on the world map / title the mirror is never re-uploaded, so
+ *  there the direct PPU `CGRAM` write is the one that shows. The live-palette path
+ *  writes BOTH to cover every scene. Indexed identically to CGRAM: byte address =
+ *  cgramIndex × 2 (256 × u16 LE BGR-15). */
+export const CGRAM_MIRROR_CARTRAM_OFFSET = 0x2000
+
+/** CARTRAM byte-offset of YI's SECONDARY CGRAM mirror / fade base (`$70:2D6C`, 256
+ *  words, written in parallel by `load_palettes`). The brightness-fade engine rescales
+ *  the live mirror FROM this base each step (yi-shiny scene-palettes.md §1.1/§4.2), so
+ *  a live edit only survives a fade if it's written here too. Same colour indexing as
+ *  the live mirror: byte address = base + cgramIndex × 2. */
+export const CGRAM_FADE_BASE_CARTRAM_OFFSET = 0x2d6c
+
+/** A contiguous run of bytes to write into the running emulator's memory.
+ *  `addr` is the domain offset (CGRAM mirror = already includes the mirror base;
+ *  blob patch = the CARTROM blob byte). */
+export interface CgramMirrorRun {
+  addr: number
+  bytes: Uint8Array
+}
+
+/** The CGRAM writes that apply the editor's palette edits to the running game's
+ *  CURRENT scene — for each CGRAM entry the scene fills (`provenance` ≥ 0, from
+ *  `loadLevelPalettes` / `loadScenePalettes`) whose backing blob offset is in
+ *  `offsetsToWrite`, write `draft[offset] ?? base[offset]`.
+ *
+ *  `offsetsToWrite` is the set the caller actually wants applied: the edited offsets
+ *  PLUS any offset undone/reset since the last sync (so it reverts to `base`). Only
+ *  those entries are touched — we never write an entry just because our static base
+ *  disagrees with the live palette (the backdrop's gradient/HDMA slot, a per-frame
+ *  `animation_palette` row, or any runtime palette effect), which is what caused
+ *  unrelated colours to change. `base` maps blob offset → pristine BGR-15
+ *  (`pristineBasePalette`). Coalesces the emitted indices into contiguous runs; `addr`
+ *  is the CGRAM-mirror byte (subtract `CGRAM_MIRROR_CARTRAM_OFFSET` for PPU CGRAM). */
+export function offsetCgramRuns(
+  provenance: Int32Array,
+  edits: PaletteEdit[] | undefined,
+  base: Map<number, number>,
+  offsetsToWrite: ReadonlySet<number>
+): CgramMirrorRun[] {
+  if (offsetsToWrite.size === 0) return []
+  const byOffset = new Map((edits ?? []).map((e) => [e.offset, e.value & 0xffff]))
+  const touched = new Map<number, number>() // CGRAM index → BGR-15 word (draft ?? base)
+  for (let i = 0; i < 256; i++) {
+    const off = provenance[i]!
+    if (off < 0 || !offsetsToWrite.has(off)) continue
+    const v = byOffset.get(off) ?? base.get(off)
+    if (v === undefined) continue
+    touched.set(i, v & 0xffff)
+  }
+  if (touched.size === 0) return []
+
+  const indices = [...touched.keys()].sort((a, b) => a - b)
+  const runs: CgramMirrorRun[] = []
+  let start = indices[0]!
+  const flush = (last: number): void => {
+    const count = last - start + 1
+    const bytes = new Uint8Array(count * 2)
+    for (let k = 0; k < count; k++) {
+      const word = touched.get(start + k)! // every index in [start,last] is touched (consecutive run)
+      bytes[k * 2] = word & 0xff
+      bytes[k * 2 + 1] = (word >>> 8) & 0xff
+    }
+    runs.push({ addr: CGRAM_MIRROR_CARTRAM_OFFSET + start * 2, bytes })
+  }
+  let prev = start
+  for (let n = 1; n < indices.length; n++) {
+    const idx = indices[n]!
+    if (idx === prev + 1) { prev = idx; continue }
+    flush(prev)
+    start = idx
+    prev = idx
+  }
+  flush(prev)
+  return runs
+}
+
 // Pristine base palette words (byte-offset → BGR-15), parsed from the framework's
 // base Bank57.asm. Static within a session (changes only on re-extract), so cache
 // per workRoot — `buildLevel*Cgram` re-sources from this every render.
 let basePalCache: { workRoot: string; words: Map<number, number> } | null = null
-function pristineBasePalette(workRoot: string): Map<number, number> {
+export function pristineBasePalette(workRoot: string): Map<number, number> {
   if (basePalCache?.workRoot === workRoot) return basePalCache.words
   let words: Map<number, number>
   try {

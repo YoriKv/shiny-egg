@@ -18,6 +18,7 @@ import {
   gfxBlobFileForId,
   readArenaFill,
   planGfxLayout,
+  applyGfxLayout,
   computeGfxGrowth,
   relocateGfxBlobs,
   encodeGfxBlob,
@@ -146,6 +147,50 @@ console.log('\n=== relocateGfxBlobs (overflow → free region) ===');
   let threw = false;
   try { relocateGfxBlobs(root, [{ file: 'Graphics/GFX_X.lz16', overlaySize: 500, baseSize: 0 }], [{ ...region51, capacityBytes: 100 }]); } catch { threw = true; }
   assert(threw, "doesn't-fit relocation throws");
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
+console.log('\n=== applyGfxLayout (boundary move composes with overlay edits in Bank57) ===');
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gfxapply-'));
+  const banks = path.join(root, 'Banks');
+  fs.mkdirSync(banks, { recursive: true });
+  // The build-tree's Bank57 = base ⊕ overlay: palette / gradient / island edits
+  // (a `dw` line whose value differs from base) live in the SAME bank as the gfx
+  // arena tail. Regression: the boundary move must KEEP that edit (it used to
+  // re-read the bank from pristine base and silently drop every Bank57 overlay edit).
+  const EDIT_LINE = '\tdw $01AB,$02CF,$03F5,$5951,$7A7B,$7AFF,$1D58,$467F';
+  const bankWith = (freeBytes: string): string =>
+    ['DATA_master_palette_rom_blob:', EDIT_LINE, '',
+     'DATA_gfx_blob:', '\tincbin "Graphics/GFX_X.lz2"', '',
+     `\t${freeBytes}`, ''].join('\n');
+
+  // growth 143 → the proven e2e boundary ($5F8AC5, 2235).
+  const plan = planGfxLayout(143, 2378);
+  eq(plan.mode, 'boundary-move', 'growth 143 within 2378 slack → boundary-move');
+
+  fs.writeFileSync(path.join(banks, 'Bank57.asm'), bankWith('%FREE_BYTES($5F8A36, 2378, $FF)'));
+  applyGfxLayout(root, plan);
+  let out = fs.readFileSync(path.join(banks, 'Bank57.asm'), 'utf8');
+  assert(out.includes('%FREE_BYTES($5F8AC5, 2235, $FF)'), 'boundary moved ($5F8A36+143, 2378-143)');
+  assert(!out.includes('%FREE_BYTES($5F8A36, 2378, $FF)'), 'pristine macro replaced');
+  assert(out.includes(EDIT_LINE), 'overlay palette/gradient/island edit PRESERVED through the move');
+
+  // Idempotent: re-applying onto a tree that already carries a stale move (the
+  // no-Bank57-overlay repeat-build case) normalizes back to pristine, then moves
+  // — same result, edit still intact.
+  fs.writeFileSync(path.join(banks, 'Bank57.asm'), bankWith('%FREE_BYTES($5F8AC5, 2235, $FF)'));
+  applyGfxLayout(root, plan);
+  out = fs.readFileSync(path.join(banks, 'Bank57.asm'), 'utf8');
+  assert(out.includes('%FREE_BYTES($5F8AC5, 2235, $FF)'), 'stale boundary normalized + re-moved → same value');
+  assert((out.match(/%FREE_BYTES/g) ?? []).length === 1, 'still exactly one %FREE_BYTES (no double-move)');
+  assert(out.includes(EDIT_LINE), 'overlay edit preserved on the idempotent re-apply too');
+
+  // data-only plan touches nothing (the merged tree is already correct).
+  fs.writeFileSync(path.join(banks, 'Bank57.asm'), bankWith('%FREE_BYTES($5F8A36, 2378, $FF)'));
+  applyGfxLayout(root, planGfxLayout(-10, 2378));
+  out = fs.readFileSync(path.join(banks, 'Bank57.asm'), 'utf8');
+  assert(out.includes('%FREE_BYTES($5F8A36, 2378, $FF)') && out.includes(EDIT_LINE), 'data-only leaves the merged tree untouched');
   fs.rmSync(root, { recursive: true, force: true });
 }
 

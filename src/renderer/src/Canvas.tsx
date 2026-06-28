@@ -173,6 +173,10 @@ export interface CanvasProps {
    *  as `paletteOverride` so the canvas previews unsaved palette edits live (no
    *  build). See hooks/useLevelRenderLayers. */
   paletteOverride: PaletteEdit[]
+  /** The current level's 24 backdrop-gradient stops (BASE ⊕ the gradient editor
+   *  draft), or null for a solid-backdrop level — fed to the render layers as
+   *  `gradientOverride` so the canvas previews unsaved gradient edits live. */
+  gradientOverride: number[] | null
   /** Bumped on every successful build — forces the render layers to re-fetch from
    *  the freshly-built ROM (asm/palette edits only reach the pixels via a rebuild,
    *  and nothing else in the render deps changes). See hooks/useLevelRenderLayers. */
@@ -236,6 +240,7 @@ export function Canvas({
   onSetTestSpawn,
   onClearTestSpawn,
   paletteOverride,
+  gradientOverride,
   renderRefresh,
   prngSeed,
   canvasBackground,
@@ -292,7 +297,7 @@ export function Canvas({
     bgLayers,
     collisionCanvas,
     renderVersion
-  } = useLevelRenderLayers(renderLevel, paletteOverride, renderRefresh, canvasBackground, prngSeed)
+  } = useLevelRenderLayers(renderLevel, paletteOverride, renderRefresh, canvasBackground, prngSeed, gradientOverride)
   const [loadError, setLoadError] = useState<string | null>(null)
   // Hover preview — objects show a chartreuse box; cel-backed sprites a
   // size-matched chartreuse box, marker/flag sprites a chartreuse ring.
