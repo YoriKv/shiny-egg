@@ -5,7 +5,7 @@
 // loads and saves through the `kind:'level'` backend).
 
 import * as path from 'node:path'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import {
   decodeLevelStreams,
@@ -40,19 +40,13 @@ import {
 } from 'snes-framework/pool-map'
 import { outputSfcName } from 'snes-framework/rom-versions'
 import { readExtractionState } from 'snes-framework/state'
+import { readPaletteEdits, PALETTE_BLOB_BANK_FILE } from 'snes-framework/palette-edit'
 import {
-  applyPaletteEdits,
-  readPaletteEdits,
-  PALETTE_BLOB_BANK_FILE
-} from 'snes-framework/palette-edit'
-import {
-  applyIslandTilemapEdits,
   readIslandTilemapEdits,
   ISLAND_TILEMAP_LABEL,
   type IslandTilemapEdit
 } from 'snes-framework/island-tilemap'
 import {
-  applyGradientEdits,
   readGradientEdits,
   readGradientTables,
   gradientLabels,
@@ -60,14 +54,13 @@ import {
   type GradientEdit
 } from 'snes-framework/gradient-edit'
 import {
-  applyLogoTilemapEdits,
   readLogoTilemapEdits,
-  readLogoTilemapWords,
   LOGO_TILEMAP_BANK_FILE,
   LOGO_TILEMAP_LABEL,
   type LogoTilemapEdit
 } from 'snes-framework/logo-tilemap'
-import { type SymbolMap } from 'snes-framework/symbol-map'
+import { composeBank0FOverlay, composeBank57Overlay } from 'snes-framework/overlay-data-editors'
+import { snesToPC, type SymbolMap } from 'snes-framework/symbol-map'
 import type {
   PaletteEdit,
   PoolBudgetReport,
@@ -108,7 +101,7 @@ import type {
   StringTableModel,
   WorldMapModel
 } from 'snes-framework/types'
-import { buildOutputDir, frameworkWorkRoot, overlayRoot } from './framework-paths'
+import { buildOutputDir, frameworkWorkRoot, overlayRoot, writeFileAtomicSync } from './framework-paths'
 import {
   ensureProjectBaseCompatible,
   getCurrentProjectId,
@@ -402,10 +395,7 @@ export function saveRawChrEdit(
       }
       buf.set(bytes, offset)
     }
-    mkdirSync(path.dirname(overlayP), { recursive: true })
-    const tmp = overlayP + '.tmp'
-    writeFileSync(tmp, buf)
-    renameSync(tmp, overlayP)
+    writeFileAtomicSync(overlayP, buf)
     written.push(path.join('assets', 'yi', binFile))
   }
   return { ok: true, files: written }
@@ -472,6 +462,57 @@ export function readRawChrOverlayFirst(binFile: string): Uint8Array {
 /** Read a raw-gfx `.bin`'s pristine BASE bytes (for the import's changed-vs-base check). */
 export function readRawChrBase(binFile: string): Uint8Array {
   return new Uint8Array(readFileSync(path.join(frameworkWorkRoot(), 'assets', 'yi', binFile)))
+}
+
+/** The raw `Graphics/SuperFX/DATA_<snesBase>.bin` CHR banks the dedicated map/title/sprite exports
+ *  read STRAIGHT FROM THE ROM (not via the lz-gfx `gfxLiveEdits` cache, since they're uncompressed
+ *  1-byte-per-pixel chunky data, not lz2/lz16 tiles): the world-map level-select icons (bank $53),
+ *  the dynamic-sprite glyph banks (bank $54/$55), and the title island 3D scenery (bank $56). Each
+ *  `.bin` is incbin'd at its filename SNES address, so the project's overlay copy splices straight
+ *  back at `snesToPC(snesBase)`. This is the raw twin of the lz-gfx live cache — it lets those
+ *  exports + their imports read base ⊕ raw-CHR edits (and reflect a reset, which removes the
+ *  overlay) without a rebuild. (Animation CHR `Graphics/*.bin` is loaded into VRAM via the normal
+ *  gfx path + `gfxLiveEdits`, so it's not here.) */
+const RAW_CHR_OVERLAY_TARGETS: { binFile: string; snesBase: number }[] = [
+  { binFile: 'Graphics/SuperFX/DATA_530000.bin', snesBase: 0x530000 }, // world-map level-select icons
+  { binFile: 'Graphics/SuperFX/DATA_538000.bin', snesBase: 0x538000 },
+  { binFile: 'Graphics/SuperFX/DATA_540000.bin', snesBase: 0x540000 }, // sprite glyphs (bank $54/$55)
+  { binFile: 'Graphics/SuperFX/DATA_548000.bin', snesBase: 0x548000 },
+  { binFile: 'Graphics/SuperFX/DATA_550000.bin', snesBase: 0x550000 },
+  { binFile: 'Graphics/SuperFX/DATA_558000.bin', snesBase: 0x558000 },
+  { binFile: 'Graphics/SuperFX/DATA_560000.bin', snesBase: 0x560000 } // title island 3D scenery
+]
+
+/** True if the active project has a raw-CHR overlay for any {@link RAW_CHR_OVERLAY_TARGETS} bank —
+ *  the cheap (stat-only) guard the export's `romWithLiveOverlays` uses before copying the ROM. */
+export function hasRawChrOverlays(): boolean {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return false
+  const root = path.join(overlayRoot(projectId), 'assets', 'yi')
+  return RAW_CHR_OVERLAY_TARGETS.some((t) => existsSync(path.join(root, t.binFile)))
+}
+
+/** Splice the active project's raw-CHR overlay banks into `rom` IN PLACE at their cart PCs, so a
+ *  read of those banks reflects unbuilt raw-CHR edits (and resets — reset deletes the overlay, so
+ *  the bank is left at its built/base bytes). Returns true if any bank was spliced. MUTATES `rom`,
+ *  so pass a COPY (never the cached built ROM). The export (`romWithLiveOverlays`) and the import
+ *  apply it to the SAME baseline, keeping the raw round-trip symmetric. */
+export function applyRawChrOverlays(rom: Uint8Array): boolean {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return false
+  const root = path.join(overlayRoot(projectId), 'assets', 'yi')
+  let changed = false
+  for (const t of RAW_CHR_OVERLAY_TARGETS) {
+    const p = path.join(root, t.binFile)
+    if (!existsSync(p)) continue
+    const bytes = new Uint8Array(readFileSync(p))
+    const pc = snesToPC(t.snesBase)
+    if (pc >= 0 && pc + bytes.length <= rom.length) {
+      rom.set(bytes, pc)
+      changed = true
+    }
+  }
+  return changed
 }
 
 /** Decompress a gfx file's BASE (vanilla) tiles — the base reference for the live
@@ -1436,16 +1477,14 @@ export async function saveAsmRegionResource(
 ): Promise<SaveResourceResult> {
   const def = ASM_REGIONS[id]
   if (!def) return { ok: false, error: `Unknown asm-region resource: "${id}".` }
-  const projectId = getCurrentProjectId()
-  if (!projectId) return { ok: false, error: 'No active project to save into.' }
-  const compat = ensureProjectBaseCompatible(projectId)
-  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+  const proj = requireWritableProject()
+  if (!proj.ok) return proj
 
   const { contentText, baseText } = readOverlayFirst(def.file)
   const result = def.serialize(contentText, baseText, model as StringTableModel, loadFontTable(frameworkWorkRoot()))
   if (!result.ok) return { ok: false, error: result.error }
 
-  await saveOverlayFile(projectId, def.file, result.text)
+  await saveOverlayFile(proj.projectId, def.file, result.text)
   return { ok: true, files: [def.file] }
 }
 
@@ -1457,19 +1496,13 @@ export async function saveAsmRegionResource(
 /** The active project overlay's current palette-color edits (offset → value),
  *  diffed from base. Empty when there's no overlay / no project. */
 export function loadPaletteEdits(): PaletteEdit[] {
-  const projectId = getCurrentProjectId()
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
-  const overlayPath = projectId ? path.join(overlayRoot(projectId), PALETTE_BLOB_BANK_FILE) : null
-  const overlayText = overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : null
+  const { baseText, overlayText } = readBaseAndOverlay(PALETTE_BLOB_BANK_FILE)
   return readPaletteEdits(baseText, overlayText)
 }
 
 /** The active project overlay's island-tilemap (placement) edits vs base. */
 export function loadIslandTilemapEdits(): IslandTilemapEdit[] {
-  const projectId = getCurrentProjectId()
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
-  const overlayPath = projectId ? path.join(overlayRoot(projectId), PALETTE_BLOB_BANK_FILE) : null
-  const overlayText = overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : null
+  const { baseText, overlayText } = readBaseAndOverlay(PALETTE_BLOB_BANK_FILE)
   return readIslandTilemapEdits(baseText, overlayText)
 }
 
@@ -1480,16 +1513,12 @@ export function loadIslandTilemapEdits(): IslandTilemapEdit[] {
 
 /** The 16 gradient-table labels, parsed from the base Bank01 pointer table. */
 function gradientLabelsFromBase(): string[] {
-  const ptrText = readFileSync(path.join(frameworkWorkRoot(), GRADIENT_PTR_BANK_FILE), 'utf8')
-  return gradientLabels(ptrText)
+  return gradientLabels(readBaseFile(GRADIENT_PTR_BANK_FILE))
 }
 
 /** The active project overlay's gradient stop edits vs base. */
 export function loadGradientEdits(): GradientEdit[] {
-  const projectId = getCurrentProjectId()
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
-  const overlayPath = projectId ? path.join(overlayRoot(projectId), PALETTE_BLOB_BANK_FILE) : null
-  const overlayText = overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : null
+  const { baseText, overlayText } = readBaseAndOverlay(PALETTE_BLOB_BANK_FILE)
   return readGradientEdits(baseText, overlayText, gradientLabelsFromBase())
 }
 
@@ -1497,8 +1526,7 @@ export function loadGradientEdits(): GradientEdit[] {
  *  panel's gradient strip shows BASE ⊕ draft, so a reset reveals base without a
  *  rebuild — the gradient twin of the live palette re-source. */
 export function loadGradientBaseColors(): number[][] {
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
-  return readGradientTables(baseText, gradientLabelsFromBase())
+  return readGradientTables(readBaseFile(PALETTE_BLOB_BANK_FILE), gradientLabelsFromBase())
 }
 
 /** Rebuild the project's `Bank57.asm` overlay = base ⊕ palette color edits ⊕ island
@@ -1518,12 +1546,10 @@ async function saveBank57Overlay(
     if (existsSync(dest)) await rm(dest)
     return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
   }
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
-  // The three edit sets touch disjoint `dw` runs (DATA_master_palette_rom_blob vs
-  // DATA_5F9800 vs the 16 DATA_5FD6xx gradient tables) and are all length-preserving,
-  // so applying them in sequence composes cleanly.
-  const text = applyGradientEdits(
-    applyIslandTilemapEdits(applyPaletteEdits(baseText, paletteEdits), islandEdits),
+  const text = composeBank57Overlay(
+    readBaseFile(PALETTE_BLOB_BANK_FILE),
+    paletteEdits,
+    islandEdits,
     gradientEdits,
     gradientLabelsFromBase()
   )
@@ -1533,39 +1559,30 @@ async function saveBank57Overlay(
 
 /** Save the FULL palette-color edit set, preserving any island + gradient edits. */
 export async function savePaletteEdits(edits: PaletteEdit[]): Promise<SaveResourceResult> {
-  const projectId = getCurrentProjectId()
-  if (!projectId) return { ok: false, error: 'No active project to save into.' }
-  const compat = ensureProjectBaseCompatible(projectId)
-  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
-  return saveBank57Overlay(projectId, edits, loadIslandTilemapEdits(), loadGradientEdits())
+  const proj = requireWritableProject()
+  if (!proj.ok) return proj
+  return saveBank57Overlay(proj.projectId, edits, loadIslandTilemapEdits(), loadGradientEdits())
 }
 
 /** Save the FULL island-tilemap (placement) edit set, preserving palette + gradient edits. */
 export async function saveIslandTilemap(edits: IslandTilemapEdit[]): Promise<SaveResourceResult> {
-  const projectId = getCurrentProjectId()
-  if (!projectId) return { ok: false, error: 'No active project to save into.' }
-  const compat = ensureProjectBaseCompatible(projectId)
-  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
-  return saveBank57Overlay(projectId, loadPaletteEdits(), edits, loadGradientEdits())
+  const proj = requireWritableProject()
+  if (!proj.ok) return proj
+  return saveBank57Overlay(proj.projectId, loadPaletteEdits(), edits, loadGradientEdits())
 }
 
 /** Save the FULL gradient-stop edit set, preserving any palette + island edits. */
 export async function saveGradientEdits(edits: GradientEdit[]): Promise<SaveResourceResult> {
-  const projectId = getCurrentProjectId()
-  if (!projectId) return { ok: false, error: 'No active project to save into.' }
-  const compat = ensureProjectBaseCompatible(projectId)
-  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
-  return saveBank57Overlay(projectId, loadPaletteEdits(), loadIslandTilemapEdits(), edits)
+  const proj = requireWritableProject()
+  if (!proj.ok) return proj
+  return saveBank57Overlay(proj.projectId, loadPaletteEdits(), loadIslandTilemapEdits(), edits)
 }
 
 /** The active project overlay's logo-tilemap (placement) edits vs base. (Bank0F.asm
  *  holds no other overlay-edited data, so this is a standalone base ⊕ logo overlay —
  *  unlike the island, which composes with palette edits in Bank57.asm.) */
 export function loadLogoTilemapEdits(): LogoTilemapEdit[] {
-  const projectId = getCurrentProjectId()
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), LOGO_TILEMAP_BANK_FILE), 'utf8')
-  const overlayPath = projectId ? path.join(overlayRoot(projectId), LOGO_TILEMAP_BANK_FILE) : null
-  const overlayText = overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : null
+  const { baseText, overlayText } = readBaseAndOverlay(LOGO_TILEMAP_BANK_FILE)
   return readLogoTilemapEdits(baseText, overlayText)
 }
 
@@ -1596,38 +1613,34 @@ export function applyScreenPlacementOverlays(rom: Uint8Array, symbols: SymbolMap
 }
 
 /**
- * Save the FULL logo-tilemap (placement) edit set onto the OVERLAY-first Bank0F
- * content. Bank0F also hosts the intro-story string region (a separate overlay
- * editor / ROM-import category), so this must NOT rebuild the whole bank from
- * base — that would clobber intro-story edits. Instead it splices only the logo
- * `dw` cells: revert the overlay's current logo edits to base, then apply the new
- * full set, leaving every other byte of the overlay (the intro region) intact. The
- * logo region still ends up = base ⊕ edits (idempotent, clean diffs); the overlay
- * is removed only when the result is byte-identical to base (no logo AND no intro
- * edits left). Asm edits don't render live, so the caller marks the build dirty.
+ * Save the FULL logo-tilemap (placement) edit set. BASE-FIRST (like
+ * `saveBank57Overlay`): apply the edits to a fresh base, so the overlay ALWAYS
+ * carries the `;@editable:logo-tilemap` markers (the drift checker only preserves
+ * marked regions — a marker-less inline edit false-drifts and an "upgrade" wipes
+ * it), reborn-from-base keeps diffs clean / idempotent, and an existing
+ * marker-less overlay is normalised in place (this is also what migrates old
+ * projects on the next logo save / ROM import). Bank0F also hosts the
+ * `;@editable:intro-story` string region (a separate overlay editor / ROM-import
+ * category), so re-splice the current overlay's intro-story body back in to keep
+ * those edits. The overlay is removed only when the result is byte-identical to
+ * base (no logo AND no intro edits left). Asm edits don't render live, so the
+ * caller marks the build dirty.
  */
 export async function saveLogoTilemap(edits: LogoTilemapEdit[]): Promise<SaveResourceResult> {
-  const projectId = getCurrentProjectId()
-  if (!projectId) return { ok: false, error: 'No active project to save into.' }
-  const compat = ensureProjectBaseCompatible(projectId)
-  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
-  const dest = path.join(overlayRoot(projectId), LOGO_TILEMAP_BANK_FILE)
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), LOGO_TILEMAP_BANK_FILE), 'utf8')
-  const overlayText = existsSync(dest) ? readFileSync(dest, 'utf8') : baseText
-  // Combined cell edits: first revert the overlay's existing logo edits back to
-  // base (so a removed edit reverts), then overlay the new full set on top.
-  const baseWords = readLogoTilemapWords(baseText)
-  const combined = new Map<number, number>()
-  for (const e of readLogoTilemapEdits(baseText, overlayText)) combined.set(e.offset, baseWords[e.offset]!)
-  for (const e of edits) combined.set(e.offset, e.value & 0xffff)
-  const editList: LogoTilemapEdit[] = [...combined].map(([offset, value]) => ({ offset, value }))
-  const text = applyLogoTilemapEdits(overlayText, editList)
+  const proj = requireWritableProject()
+  if (!proj.ok) return proj
+  const dest = path.join(overlayRoot(proj.projectId), LOGO_TILEMAP_BANK_FILE)
+  const baseText = readBaseFile(LOGO_TILEMAP_BANK_FILE)
+  // composeBank0FOverlay is base-first (so the overlay always carries the logo
+  // markers) and re-splices the current overlay's intro-story body to keep that
+  // sibling edit. See snes-framework/scripts/overlay-data-editors.ts.
+  const text = composeBank0FOverlay(baseText, edits, existsSync(dest) ? readFileSync(dest, 'utf8') : null)
   if (text === baseText) {
-    // No logo edits and no other (intro) overlay content → drop the overlay.
+    // No logo edits and no intro-story edits → overlay would equal base; drop it.
     if (existsSync(dest)) await rm(dest)
     return { ok: true, files: [LOGO_TILEMAP_BANK_FILE] }
   }
-  await saveOverlayFile(projectId, LOGO_TILEMAP_BANK_FILE, text)
+  await saveOverlayFile(proj.projectId, LOGO_TILEMAP_BANK_FILE, text)
   return { ok: true, files: [LOGO_TILEMAP_BANK_FILE] }
 }
 
@@ -1676,16 +1689,28 @@ async function writeAtomic(file: string, data: Buffer | string): Promise<void> {
   await rename(tmp, file)
 }
 
+/** Read a workRoot-relative base (framework) file as UTF-8 text. */
+function readBaseFile(file: string): string {
+  return readFileSync(path.join(frameworkWorkRoot(), file), 'utf8')
+}
+
+/** Read a workRoot-relative file as a base/overlay pair: pristine base, plus the
+ *  active project's overlay copy (null when there's no project or no overlay copy).
+ *  The diff readers (loadPaletteEdits etc.) compare the two; `readOverlayFirst`
+ *  derives overlay-or-base content from it. */
+function readBaseAndOverlay(file: string): { baseText: string; overlayText: string | null } {
+  const projectId = getCurrentProjectId()
+  const overlayPath = projectId ? path.join(overlayRoot(projectId), file) : null
+  const overlayText = overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : null
+  return { baseText: readBaseFile(file), overlayText }
+}
+
 /** Read a workRoot-relative asm/data file overlay-first: the active project's
  *  overlay copy when it exists, else the pristine base. Returns both — splice
  *  saves need the base to size the byte budget. */
 function readOverlayFirst(file: string): { contentText: string; baseText: string } {
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), file), 'utf8')
-  const projectId = getCurrentProjectId()
-  const overlayPath = projectId ? path.join(overlayRoot(projectId), file) : null
-  const contentText =
-    overlayPath && existsSync(overlayPath) ? readFileSync(overlayPath, 'utf8') : baseText
-  return { contentText, baseText }
+  const { baseText, overlayText } = readBaseAndOverlay(file)
+  return { contentText: overlayText ?? baseText, baseText }
 }
 
 /** Write spliced `text` to a file's overlay copy (atomic, parent dir created) —
@@ -1695,4 +1720,15 @@ async function saveOverlayFile(projectId: string, file: string, text: string): P
   const dest = path.join(overlayRoot(projectId), file)
   await mkdir(path.dirname(dest), { recursive: true })
   await writeAtomic(dest, text)
+}
+
+/** Resolve the active project for an overlay save, or a friendly error result —
+ *  the projectId + base-compatibility guard every overlay save shares (returns
+ *  the same messages they returned inline). */
+function requireWritableProject(): { ok: true; projectId: string } | { ok: false; error: string } {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+  return { ok: true, projectId }
 }

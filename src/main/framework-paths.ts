@@ -1,8 +1,18 @@
 import { app } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { cp, mkdir, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { asarBinName } from 'snes-framework/asar'
+
+/** Crash-safe synchronous write: `data` to `file` via a `.tmp` sibling + rename
+ *  (parent dirs created). The atomic-write helper the overlay save + migration
+ *  paths share (src/main/resources.ts, src/main/overlay-upgrade.ts). */
+export function writeFileAtomicSync(file: string, data: Buffer | string): void {
+  mkdirSync(dirname(file), { recursive: true })
+  const tmp = `${file}.tmp`
+  writeFileSync(tmp, data)
+  renameSync(tmp, file)
+}
 
 // Read-only template baked into the installer via electron-builder extraResources.
 export function frameworkSourceRoot(): string {

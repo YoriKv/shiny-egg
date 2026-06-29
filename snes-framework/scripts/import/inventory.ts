@@ -166,9 +166,49 @@ export interface InventoryOptions {
   /** PC extents `[start, end)` the level-placement import covers (base +
    *  foreign stream spans). */
   levelExtents: Array<[number, number]>;
+  /** Foreign cart `Ptrs:`-table stream targets (PC offsets, obj + spr, every
+   *  record). A hack that relocates a level stream into a vanilla free-space
+   *  tail leaves the walked stream itself claimed by `levelExtents`, but the
+   *  allocator's zero-fill padding around it (and any stream-edge bytes the
+   *  walker stops short of) would otherwise read as not-imported "Other data
+   *  tables". Each target whose BASE byte is filler marks a relocation
+   *  free-space block — the maximal vanilla-filler span containing it — and the
+   *  whole block is attributed to level data, since a `Ptrs` pointer into
+   *  vanilla free space IS the hack repacking level data there. See
+   *  `relocationBlocks`. */
+  levelPtrTargets?: number[];
   /** Full base-build symbol map (main + superfx merged) for tier-3 label
    *  attribution; absent ⇒ leftovers fall to coarse bank classification. */
   symbols?: SymbolMap;
+}
+
+/** A byte is "filler" when it's the unused-ROM fill the relocation allocator
+ *  carves free space out of (0x00 or 0xFF). */
+const isFiller = (b: number): boolean => b === 0x00 || b === 0xff;
+
+/**
+ * Relocation free-space blocks (tier 1.5): for each foreign `Ptrs` stream target
+ * whose BASE byte is filler — i.e. the hack pointed a level stream into vanilla
+ * free space — return the maximal contiguous run of base filler that contains it.
+ * Diff bytes inside such a block are the level-data relocation footprint (the
+ * stream plus its zero-fill padding), NOT a data table. Targets that land on real
+ * base data (an in-place edit, not a relocation) produce no block, so genuine
+ * engine-table edits are untouched. Returned spans may be merged (two targets in
+ * one filler run yield one block) and are scanned at most once each.
+ */
+function relocationBlocks(base: Buffer, targets: number[]): Array<[number, number]> {
+  const blocks: Array<[number, number]> = [];
+  let coveredTo = -1;
+  for (const t of [...new Set(targets)].sort((a, b) => a - b)) {
+    if (t <= coveredTo || t < 0 || t >= base.length || !isFiller(base[t])) continue;
+    let s = t;
+    let e = t;
+    while (s > 0 && isFiller(base[s - 1])) s--;
+    while (e < base.length && isFiller(base[e])) e++;
+    blocks.push([s, e]);
+    coveredTo = e - 1;
+  }
+  return blocks;
 }
 
 /**
@@ -181,6 +221,11 @@ export function diffInventory(
   opts: InventoryOptions
 ): RomImportInventory {
   const intervals = buildIntervals(opts.levelExtents);
+  // Relocated-level-data free-space blocks (Ptrs target sitting in vanilla
+  // filler) override the coarse bands + data-other fallback, like a level extent.
+  for (const [start, end] of relocationBlocks(base, opts.levelPtrTargets ?? [])) {
+    intervals.push({ start, end, key: 'level-data', priority: 3 });
+  }
   const tallies = new Map<string, Tally>();
   const tally = (key: string): Tally => {
     let t = tallies.get(key);

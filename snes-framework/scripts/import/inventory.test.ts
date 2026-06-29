@@ -54,3 +54,38 @@ for (const c of cases) {
     `${c.name} → [${c.key}] imported=${c.imported}`
   );
 }
+
+// ── Relocated level data in a free bank tail must read as level-data, not
+//    "Other data tables" (the EGGCELLENT bucket the Ptrs-target rule fixes). A
+//    hack points a level stream into vanilla filler; the stream's zero-fill
+//    padding + edges would otherwise fall to data-other.
+console.log('\n=== import inventory: relocated-stream free-space reclassification ===');
+{
+  const SZ = 0x200000;
+  const b = new Uint8Array(SZ);
+  for (let i = 0; i < SZ; i++) b[i] = i & 0xff;
+  // A vanilla free-space tail (all 0xFF) at 0xC0000 — no coarse band, no symbol,
+  // so a diff here defaults to data-other without the fix.
+  const REGION = 0xc0000;
+  for (let i = REGION; i < REGION + 0x1000; i++) b[i] = 0xff;
+  const f = b.slice();
+  // Relocated stream at +0x400 (real bytes) with 0x00 zero-fill padding before it.
+  for (let i = REGION; i < REGION + 0x400; i++) f[i] = 0x00; // padding (0xFF→0x00)
+  for (let i = REGION + 0x400; i < REGION + 0x600; i++) f[i] = 0x37; // stream body
+  const target = REGION + 0x400; // the Ptrs obj/spr pointer lands here
+  const DIFFS = 0x600;
+
+  const withPtr = diffInventory(Buffer.from(f), Buffer.from(b), {
+    levelExtents: [],
+    levelPtrTargets: [target]
+  });
+  const lvl = withPtr.categories.find((x) => x.key === 'level-data');
+  const other = withPtr.categories.find((x) => x.key === 'data-other');
+  assert(!!lvl && lvl.bytes >= DIFFS, `padding + stream → [level-data] (${lvl?.bytes ?? 0} B)`);
+  assert(!other || other.bytes === 0, `no [data-other] bytes when a Ptrs target is in the block`);
+
+  // Without the Ptrs target, the same bytes stay data-other (no level evidence).
+  const noPtr = diffInventory(Buffer.from(f), Buffer.from(b), { levelExtents: [] });
+  const other2 = noPtr.categories.find((x) => x.key === 'data-other');
+  assert(!!other2 && other2.bytes >= DIFFS, `no Ptrs target → bytes stay [data-other] (${other2?.bytes ?? 0} B)`);
+}

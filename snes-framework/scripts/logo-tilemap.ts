@@ -9,12 +9,15 @@
 //   applyLogoTilemapEdits — splice cell edits (wordIndex→word) into the BASE text
 //   readLogoTilemapEdits  — diff overlay-vs-base → the cell edits an overlay holds
 
-import { findDataWords, dataWordEdits } from './asm/data-words.ts';
+import { dataWordEdits, findRegionDataWords } from './asm/data-words.ts';
 import { applyEdits } from './asm/text-literals.ts';
 
 /** The asm file + label the logo tilemap lives in. */
 export const LOGO_TILEMAP_BANK_FILE = 'yi/Banks/Bank0F.asm';
 export const LOGO_TILEMAP_LABEL = 'DATA_title_screen_logo_tilemap';
+/** The `;@editable` region wrapping the block. Bank0F also hosts the
+ *  `;@editable:intro-story` string region; the two are disjoint. */
+export const LOGO_TILEMAP_REGION = 'logo-tilemap';
 /** 32×14 = 448 words. `findDataWords` keeps reading `dw` runs past the table, so cap
  *  to this (the words are contiguous from the base, so 0..447 are exactly the logo). */
 const LOGO_TILEMAP_WORDS = 448;
@@ -26,7 +29,7 @@ export interface LogoTilemapEdit { offset: number; value: number }
 /** The logo tilemap as 448 BG words from the asm `dw` table. */
 export function readLogoTilemapWords(text: string): Uint16Array {
   const out = new Uint16Array(LOGO_TILEMAP_WORDS);
-  for (const w of findDataWords(text, LOGO_TILEMAP_LABEL)) {
+  for (const w of findRegionDataWords(text, LOGO_TILEMAP_REGION, LOGO_TILEMAP_LABEL)) {
     const i = w.byteOffset >> 1; // one cell per dw word
     if (i >= LOGO_TILEMAP_WORDS) break; // past the logo table into the next run
     out[i] = w.value & 0xffff;
@@ -41,7 +44,7 @@ export function readLogoTilemapWords(text: string): Uint16Array {
  */
 export function applyLogoTilemapEdits(baseText: string, edits: readonly LogoTilemapEdit[]): string {
   if (edits.length === 0) return baseText;
-  const words = findDataWords(baseText, LOGO_TILEMAP_LABEL);
+  const words = findRegionDataWords(baseText, LOGO_TILEMAP_REGION, LOGO_TILEMAP_LABEL);
   const editByWord = new Map(edits.map((e) => [e.offset, e.value & 0xffff]));
   const changes = new Map<number, number>(); // byteOffset → new value
   for (const w of words) {

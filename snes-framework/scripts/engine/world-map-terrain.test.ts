@@ -262,5 +262,26 @@ assert(gctx.tilemap.length === 4096, `ground tilemap is 4096 bytes (got ${gctx.t
 }
 assert(hash(gctx.tilemap) !== hash(w0.bg1Tilemap), 'ground ($7E) differs from the world-0 BG1 map ($7C)');
 
+// 9. gfxOverride threading (the live-cache preview path): a tilemap override reaches
+//    decompTilemap and a CHR override reaches the scene-VRAM loadSceneGfx, so an export/diff
+//    reflects unbuilt CHR/tilemap edits + resets (gfx-png-export/import pass gfxLiveEdits() here).
+{
+  const base = buildWorldMapTerrainContext(rom, symbols, 0);
+  // (a) a tilemap override → bg1Tilemap is the override bytes verbatim (decompTilemap honored it).
+  const tm = base.bg1Tilemap.slice(); tm[100] = tm[100]! ^ 0xff;
+  const tmCtx = buildWorldMapTerrainContext(rom, symbols, 0, new Map([[`lz2/${base.bg1FileId}`, tm]]));
+  assert(hash(tmCtx.bg1Tilemap) === hash(tm), 'gfxOverride: a tilemap override reaches decompTilemap (bg1Tilemap = override bytes)');
+  // (b) a CHR override → the scene VRAM at that file's offset reflects it (loadSceneGfx applied it).
+  //     Use the LAST-loaded file so no later scene-gfx entry overwrites its window.
+  const e = base.scene.manifest[base.scene.manifest.length - 1]!;
+  const tiles = base.scene.vram.slice(e.vramByteOffset, e.vramByteOffset + e.sizeBytes); tiles[0] = tiles[0]! ^ 0xff;
+  const chrCtx = buildWorldMapTerrainContext(rom, symbols, 0, new Map([[`${e.format}/${e.fileId}`, tiles]]));
+  assert(chrCtx.scene.vram[e.vramByteOffset] === tiles[0], 'gfxOverride: a CHR override reaches the scene VRAM (loadSceneGfx applied it)');
+  // An empty override = the base path unchanged (so the existing base-only pins/tests stay valid).
+  const none = buildWorldMapTerrainContext(rom, symbols, 0, new Map());
+  assert(hash(none.bg1Tilemap) === hash(base.bg1Tilemap) && hash(none.scene.vram) === hash(base.scene.vram),
+    'gfxOverride: an empty override = base (default path unchanged)');
+}
+
 if (failures > 0) { console.error(`\n✗ ${failures} failure(s)`); process.exit(1); }
 console.log('\n✓ all world-map-terrain pins passed');

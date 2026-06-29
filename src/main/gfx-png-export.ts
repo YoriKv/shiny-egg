@@ -47,7 +47,9 @@ import {
   loadIslandTilemapEdits,
   applyScreenPlacementOverlays,
   fontSheetBinFiles,
-  readRawChrOverlayFirst
+  readRawChrOverlayFirst,
+  hasRawChrOverlays,
+  applyRawChrOverlays
 } from './resources'
 import { PALETTE_BLOB_LABEL } from 'snes-framework/palette-edit'
 import { type SymbolMap } from 'snes-framework/symbol-map'
@@ -104,13 +106,18 @@ export function gfxTrackFolder(opts: ExportGfxOptions): { folder: string; strip:
  *     tilemap. These are asm overlays that don't render live, so this is their ONLY preview
  *     path (there's no live canvas for the title screen); the import applies the SAME overlays
  *     to its diff baseline so the round-trip is symmetric.
+ *   • raw-CHR SuperFX banks (`applyRawChrOverlays`) — the world-map level-select icons (bank $53),
+ *     sprite glyph banks (bank $54/$55), and title scenery (bank $56) the dedicated exports read
+ *     straight from the ROM, so a re-export reflects unbuilt raw-CHR edits + resets. The import
+ *     splices the SAME banks into its diff baseline (gfx-png-import.ts), keeping the round-trip
+ *     symmetric. (lz-gfx CHR/tilemaps preview via `gfxLiveEdits` in the context builders instead.)
  * All patches are idempotent vs a fresh build (the build applies the same edits) and offset-
  * exact. Returns the original ROM untouched when there are no edits (no copy).
  */
 function romWithLiveOverlays(builtRom: Uint8Array, symbols: SymbolMap): Uint8Array {
   const paletteEdits = loadPaletteEdits()
   const hasPlacement = loadLogoTilemapEdits().length > 0 || loadIslandTilemapEdits().length > 0
-  if (paletteEdits.length === 0 && !hasPlacement) return builtRom // nothing live → no copy
+  if (paletteEdits.length === 0 && !hasPlacement && !hasRawChrOverlays()) return builtRom // nothing live → no copy
   const rom = builtRom.slice()
   const blobPC = symbols.pc(PALETTE_BLOB_LABEL)
   for (const { offset, value } of paletteEdits) {
@@ -118,6 +125,7 @@ function romWithLiveOverlays(builtRom: Uint8Array, symbols: SymbolMap): Uint8Arr
     rom[blobPC + offset + 1] = (value >> 8) & 0xff
   }
   applyScreenPlacementOverlays(rom, symbols)
+  applyRawChrOverlays(rom)
   return rom
 }
 
@@ -144,9 +152,13 @@ export function exportGfxPngsToDir(
   // the ROM's palette blob with the palette overlay (→ all CGRAM is base ⊕ edits). Title-screen
   // PLACEMENT (logo/island tilemaps): patched too, so a re-export of the logo/island .aseprite
   // shows unbuilt cell moves (their only preview path — asm overlays don't render live).
-  // Pixels: the screens track gets the live gfx-cache as `gfxOverride` (→ char-sheet VRAM is
-  // base ⊕ edits, matching the import's `liveTiles`). [Metasprites already pass it; the
-  // dedicated map/title tracks read built-ROM VRAM on BOTH sides, so they stay self-consistent.]
+  // Pixels: every CHR/tilemap track gets the live gfx-cache as `gfxOverride` (→ VRAM is
+  // base ⊕ edits, matching the import's `liveTiles`) — the screens + metasprite tracks, AND the
+  // dedicated world-map (terrain/icons/ground/M1TE2) + title (logo/island/storybook) tracks,
+  // which thread `gfxLiveEdits()` through their context builders on BOTH the export and import
+  // side (so the round-trip stays symmetric). A per-file reset points the cache at base bytes,
+  // so a reset reflects here too — not the last build. (Raw-`.bin` CHR — scenery, sprite glyphs,
+  // per-level icons — is handled separately by the raw-overlay splice in `romWithLiveOverlays`.)
   const rom = romWithLiveOverlays(builtRom, symbols)
   // Limit to the selected track(s); no filter ⇒ both tracks.
   const want = (t: GfxExportTrack): boolean => !opts.tracks || opts.tracks.includes(t)
@@ -254,7 +266,7 @@ export function exportGfxPngsToDir(
   // markers) — the normal marker + boss castle, per world in its tint. Faithful →
   // edits slice back to the shared $74/$75 BG tiles via saveGfxEdit. Level-invariant
   // (always exported). `format:'aseprite'` writes each icon as a single-image `.aseprite`.
-  const mapIcons = wantWorldMapPng ? exportWorldMapIcons(rom, symbols, { aseprite: aseFmt }) : []
+  const mapIcons = wantWorldMapPng ? exportWorldMapIcons(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() }) : []
   const mapIconManifest: MapIconManifestEntry[] = []
   for (const ic of mapIcons) {
     const useAse = aseFmt && ic.aseprite
@@ -283,7 +295,7 @@ export function exportGfxPngsToDir(
   // (Aseprite mode) is a 2-LAYER tilemap (BG1+BG2, one shared tileset), each layer
   // round-tripping to its $7C/$7D… LZ2 tilemap file via saveGfxEdit. (Map pixels edit via
   // the shared screens/map char sheets.)
-  const mapTerrain = wantWorldMapPng ? exportWorldMapTerrain(rom, symbols, { aseprite: aseFmt }) : []
+  const mapTerrain = wantWorldMapPng ? exportWorldMapTerrain(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() }) : []
   const mapTerrainManifest: MapTerrainManifestEntry[] = []
   for (const m of mapTerrain) {
     const useAse = aseFmt && m.aseprite
@@ -298,7 +310,7 @@ export function exportGfxPngsToDir(
   // common/ folder was removed); skipped in M1TE2 mode (ground is in the overworld .M1).
   let mapGroundManifest: MapGroundManifestEntry | null = null
   if (wantWorldMapPng) {
-    const g = exportWorldMapGround(rom, symbols, { aseprite: aseFmt })
+    const g = exportWorldMapGround(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() })
     const useAse = aseFmt && g.aseprite
     const file = rebase(useAse ? g.file.replace(/\.png$/, '.aseprite') : g.file)
     writeArtifact(outDir, file, useAse ? g.aseprite! : g.png)
@@ -314,7 +326,7 @@ export function exportGfxPngsToDir(
   // (world-map-m1te2.ts).
   let mapM1Manifest: MapM1Manifest | null = null
   if (wantWorldMap && m1Fmt) {
-    const m1Files = exportWorldMapM1(rom, symbols)
+    const m1Files = exportWorldMapM1(rom, symbols, gfxLiveEdits())
     const overworlds: MapM1Manifest['overworlds'] = []
     let icons: MapM1Manifest['icons'] = null
     for (const m of m1Files) {
@@ -332,7 +344,7 @@ export function exportGfxPngsToDir(
   // `format:'aseprite'` writes the assembled logo as a real Aseprite tilemap.
   let titleLogoManifest: TitleLogoManifestEntry | null = null
   if (wantSystemPng) {
-    const ctx = buildTitleLogoContext(rom, symbols)
+    const ctx = buildTitleLogoContext(rom, symbols, gfxLiveEdits())
     const canvas = renderTitleLogo(ctx)
     const useAse = aseFmt && canvas.faithful
     const file = rebase(`screens/title/logo.${useAse ? 'aseprite' : 'png'}`)
@@ -348,7 +360,7 @@ export function exportGfxPngsToDir(
   // import is COMBINED (pixels + placement + added tiles); a PNG is pixels-only.
   let titleIslandManifest: TitleIslandManifestEntry | null = null
   if (wantSystemPng) {
-    const ctx = buildTitleIslandContext(rom, symbols)
+    const ctx = buildTitleIslandContext(rom, symbols, gfxLiveEdits())
     const canvas = renderTitleIsland(ctx)
     const useAse = aseFmt && canvas.faithful
     const file = rebase(`screens/title/island.${useAse ? 'aseprite' : 'png'}`)
@@ -375,7 +387,7 @@ export function exportGfxPngsToDir(
   // storybook sheets are narrowed out; only f88 (raw char sheet) + this scene view ship.
   let storybookSceneManifest: StorybookSceneManifestEntry | null = null
   if (wantSystemPng) {
-    const scene = exportStorybookScene(rom, symbols, { aseprite: aseFmt })
+    const scene = exportStorybookScene(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() })
     const useAse = aseFmt && scene.aseprite && scene.faithful
     const file = rebase(useAse ? scene.file.replace(/\.png$/, '.aseprite') : scene.file)
     writeArtifact(outDir, file, useAse ? scene.aseprite! : scene.png)

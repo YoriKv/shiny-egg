@@ -17,14 +17,17 @@ import type {
 } from '../types.ts';
 import {
   implausibleLevelHeader,
+  LEVEL_COUNT,
   pointsAtValidObjStream,
   pointsAtValidSprStream,
   resolveAnchors,
+  SENTINEL_OBJ_SNES,
+  SENTINEL_SPR_SNES,
   vanillaAnchors
 } from './anchors.ts';
 import { readForeignStreams, type ForeignRecordStreams, type ForeignStreams } from './foreign-cart.ts';
 import { diffInventory } from './inventory.ts';
-import type { SymbolMap } from '../engine/symbol-map.ts';
+import { snesToPC, type SymbolMap } from '../engine/symbol-map.ts';
 
 /** Engine-driven records pre-blocked from import — their `Ptrs:` row does not
  *  hold a standard level stream, so decoding it as one yields garbage.
@@ -279,8 +282,25 @@ export function analyzeForeignRom(
       }
     }
   }
+  // Every foreign Ptrs stream target (obj + spr, all records), including records
+  // whose stream the walker above couldn't slice — the inventory uses these to
+  // reclaim a relocated stream's free-space padding from the data-other bucket.
+  const levelPtrTargets: number[] = [];
+  for (let id = 0; id < LEVEL_COUNT; id++) {
+    const entryPc = resolved.levelPtrsPc + id * 6;
+    if (entryPc + 6 > foreignCart.length) break;
+    for (const [snes, sentinel] of [
+      [u24le(foreignCart, entryPc), SENTINEL_OBJ_SNES],
+      [u24le(foreignCart, entryPc + 3), SENTINEL_SPR_SNES]
+    ] as const) {
+      if (snes === 0 || snes === sentinel) continue;
+      const pc = snesToPC(snes);
+      if (pc >= 0 && pc < foreignCart.length) levelPtrTargets.push(pc);
+    }
+  }
   const inventory = diffInventory(foreignCart, baseCart, {
     levelExtents,
+    levelPtrTargets,
     ...(opts.symbols ? { symbols: opts.symbols } : {})
   });
 

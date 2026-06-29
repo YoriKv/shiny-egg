@@ -83,6 +83,7 @@
     "./gradient-edit": "./scripts/gradient-edit.ts",
     "./palette-catalog": "./scripts/engine/palette-catalog.ts",
     "./island-tilemap": "./scripts/island-tilemap.ts",
-    "./logo-tilemap": "./scripts/logo-tilemap.ts"
+    "./logo-tilemap": "./scripts/logo-tilemap.ts",
+    "./overlay-data-editors": "./scripts/overlay-data-editors.ts"
   }
 }

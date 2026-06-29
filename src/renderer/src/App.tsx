@@ -1701,6 +1701,7 @@ export default function App(): JSX.Element {
               ) : w.kind === 'graphics' ? (
                 <GraphicsBody
                   level={levelState.level}
+                  projectScope={projectScope}
                   onMutated={onGfxEdited}
                   onPaletteImported={onPaletteImported}
                   paletteEditCount={paletteEditor.draft.length}

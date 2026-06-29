@@ -649,10 +649,10 @@ export interface StorybookSceneContext {
 /** Build the storybook scene's decode context: the gfx-bundle VRAM (which includes the
  *  first-scene BG3 tilemap at the BG3SC base + the f27 char tiles), the static palette-$50
  *  CGRAM, and the scene-regs ($24 — BG3 tilemap/char bases, mode, SC size). */
-export function buildStorybookSceneContext(rom: Uint8Array, symbols: SymbolMap): StorybookSceneContext {
+export function buildStorybookSceneContext(rom: Uint8Array, symbols: SymbolMap, gfxOverride?: ReadonlyMap<string, Uint8Array>): StorybookSceneContext {
   const vram = new Uint8Array(0x10000);
   const manifest: GfxFileEntry[] = [];
-  loadSceneGfx(rom, symbols, storybookVariant().gfx, vram, manifest);
+  loadSceneGfx(rom, symbols, storybookVariant().gfx, vram, manifest, gfxOverride);
   const cgram = new Uint8Array(512);
   const provenance = new Int32Array(256);
   loadScenePalettes(rom, symbols, storybookVariant().palette, cgram, provenance);
@@ -851,8 +851,8 @@ export interface StorybookScenePng {
  *  Aseprite tilemap when `aseprite`). Edits slice back to the f27 char tiles via
  *  saveGfxEdit (shared char ⇒ one edit repaints every cell reusing it). Color edits to the
  *  embedded palette round-trip to the master blob (via `paletteOffsets`). */
-export function exportStorybookScene(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean } = {}): StorybookScenePng {
-  const ctx = buildStorybookSceneContext(rom, symbols);
+export function exportStorybookScene(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean; gfxOverride?: ReadonlyMap<string, Uint8Array> } = {}): StorybookScenePng {
+  const ctx = buildStorybookSceneContext(rom, symbols, opts.gfxOverride);
   const canvas = renderStorybookScene(ctx);
   const ase = opts.aseprite ? storybookSceneAseprite(ctx, canvas) : undefined;
   return {
@@ -1227,11 +1227,11 @@ export interface TitleLogoContext {
 
 /** Build the title scene's decode context (its VRAM + CGRAM + gfx manifest), using
  *  the same normal-boot descriptors as the gfx-file export (`titleVariant`). */
-export function buildTitleLogoContext(rom: Uint8Array, symbols: SymbolMap): TitleLogoContext {
+export function buildTitleLogoContext(rom: Uint8Array, symbols: SymbolMap, gfxOverride?: ReadonlyMap<string, Uint8Array>): TitleLogoContext {
   const v = titleVariant(rom, symbols);
   const vram = new Uint8Array(0x10000);
   const manifest: GfxFileEntry[] = [];
-  loadSceneGfx(rom, symbols, v.gfx, vram, manifest);
+  loadSceneGfx(rom, symbols, v.gfx, vram, manifest, gfxOverride);
   const cgram = new Uint8Array(512);
   const provenance = new Int32Array(256); // loadScenePalettes fills it (-1 = no blob source)
   loadScenePalettes(rom, symbols, v.palette, cgram, provenance);

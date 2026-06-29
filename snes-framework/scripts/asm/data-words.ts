@@ -6,6 +6,7 @@
 // word survive byte-for-byte — a no-change save round-trips to the base exactly.
 
 import { stripComment, type TextEdit } from './text-literals.ts'
+import { findRegion } from './markers.ts'
 import { hex } from '../hex.ts'
 
 /** One `dw` word in a labelled data run. `byteOffset` is from the run's base
@@ -72,6 +73,35 @@ export function findDataWords(text: string, baseLabel: string): DataWord[] {
     }
   }
   return out
+}
+
+/**
+ * Like {@link findDataWords}, but SCOPED to an `;@editable:<regionId>` region —
+ * scans only the region body. The palette / island / gradient / logo blocks are
+ * all part of one contiguous `dw` run (in Bank57 the gradient tables even sit
+ * *inside* the master-palette blob), so a plain label scan over-reads past a
+ * block's end; the region boundary bounds it instead of an ad-hoc word cap. Each
+ * word's `hexStart`/`hexEnd` is translated to an ABSOLUTE offset into `text`
+ * (`+region.innerStart`), so the result drops straight into `dataWordEdits` →
+ * `applyEdits(text, …)` which splices the full `text`.
+ *
+ * Falls back to a plain {@link findDataWords} over the whole `text` when the
+ * region's marker pair is absent — so marker-less text still works: synthetic
+ * test fixtures, and the pre-migration overlays read during the one-time overlay
+ * migration (see overlay-upgrade.ts `migrateInlineDataOverlays`). `byteOffset`
+ * and `value` are label-relative and identical either way, so byteOffset-keyed
+ * readers and offset-based ROM splices (`applyScreenPlacementOverlays`) are
+ * invariant regardless of region presence.
+ */
+export function findRegionDataWords(text: string, regionId: string, baseLabel: string): DataWord[] {
+  const region = findRegion(text, regionId)
+  if (!region) return findDataWords(text, baseLabel)
+  const shift = region.innerStart
+  return findDataWords(region.inner, baseLabel).map((w) => ({
+    ...w,
+    hexStart: w.hexStart + shift,
+    hexEnd: w.hexEnd + shift
+  }))
 }
 
 /** Format a 16-bit value the way the blob is written (4 upper-hex digits). */

@@ -17,7 +17,7 @@
 // BackgroundColor. The tables are contiguous in Bank57, so `findDataWords` reads
 // PAST a table's own 24 words into the next; we always cap to the first 24.
 
-import { findDataWords, dataWordEdits } from './asm/data-words.ts';
+import { dataWordEdits, findRegionDataWords } from './asm/data-words.ts';
 import { applyEdits, stripComment } from './asm/text-literals.ts';
 import type { GradientEdit } from './types.ts';
 
@@ -27,6 +27,12 @@ export type { GradientEdit };
 export const GRADIENT_BLOB_BANK_FILE = 'yi/Banks/Bank57.asm';
 export const GRADIENT_PTR_BANK_FILE = 'yi/Banks/Bank01.asm';
 const GRADIENT_PTR_LABEL = 'DATA_bg_gradient_ptrs';
+/** The `;@editable` region wrapping all 16 tables. It's NESTED inside the master
+ *  palette blob's `palette-blob` region (the tables physically sit inside the
+ *  blob). All 16 share one region, so the per-table `slice(0, GRADIENT_STOPS)`
+ *  cap still bounds each table's run within the region. See palette-edit.ts
+ *  `PALETTE_BLOB_REGION`. */
+export const GRADIENT_REGION = 'bg-gradients';
 
 /** Stops per gradient table (24 BGR-15 words). */
 export const GRADIENT_STOPS = 24;
@@ -72,7 +78,7 @@ export function gradientLabels(ptrText: string): string[] {
 /** The 24 base BGR-15 stops for one gradient table. (`findDataWords` over-reads
  *  into the following table; cap to the first 24.) */
 function readTable(blobText: string, label: string): number[] {
-  return findDataWords(blobText, label)
+  return findRegionDataWords(blobText, GRADIENT_REGION, label)
     .slice(0, GRADIENT_STOPS)
     .map((w) => w.value);
 }
@@ -139,7 +145,7 @@ export function applyGradientEdits(
   const textEdits = [];
   for (const [gradientId, changes] of byTable) {
     const label = labels[gradientId]!;
-    const words = findDataWords(baseText, label).slice(0, GRADIENT_STOPS);
+    const words = findRegionDataWords(baseText, GRADIENT_REGION, label).slice(0, GRADIENT_STOPS);
     textEdits.push(...dataWordEdits(words, changes));
   }
   return applyEdits(baseText, textEdits);

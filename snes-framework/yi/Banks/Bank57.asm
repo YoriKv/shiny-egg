@@ -1533,6 +1533,7 @@ DATA_5F9380:								; Note: Title screen tilemap (sky layer).
 	dw $12EA,$12EA,$12EA,$12EA,$12EA,$12EA,$12EA,$12EA
 	dw $12EA,$12EA,$12EA,$12EA,$12EA,$12EA,$12EA,$12EA
 
+;@editable:island-tilemap begin
 DATA_5F9800:								; Note: Title screen island tilemap (worlds 1-5 variant).
 	dw $0E0E,$0E0E,$0E0E,$0E0E,$0E0E,$0E0E,$0E1E,$0E0E
 	dw $000E,$1E01,$000E,$0E01,$0E0E,$0E0E,$0E0E,$0E0E
@@ -1598,6 +1599,7 @@ DATA_5F9800:								; Note: Title screen island tilemap (worlds 1-5 variant).
 	dw $1E51,$0E1E,$2B26,$0E0E,$0E0E,$0E0E,$0E0E,$0E0E
 	dw $0E0E,$0E0E,$0E0E,$0E0E,$0E0E,$0E2E,$0E0E,$0E0E
 	dw $0E0E,$0E0E,$3B36,$0E0E,$0E0E,$0E0E,$0E0E,$0E0E
+;@editable:island-tilemap end
 
 DATA_5F9C00:								; Note: Title screen island tilemap (world 6 variant).
 	dw $7F7F,$7F7F,$7F7F,$7F7F,$7F7F,$7F7F,$7F7F,$4949
@@ -1678,6 +1680,7 @@ DATA_5F9C00:								; Note: Title screen island tilemap (world 6 variant).
 ; DO NOT bulk-edit -- each tweak is a targeted 2-byte palette colour swap; use
 ; the SMWC entry to pick the exact word.
 ;-----------------------------------------------------------------------------
+;@editable:palette-blob begin
 DATA_5FA000:
 DATA_master_palette_rom_blob:	; Master CGRAM/palette ROM blob ($3F:A000-$3F:FFFF, 24 KB). All level/sprite/UI BGR-15 palettes are emitted as offsets into this base; see Bank00.asm:5415+ for the LoadRegularPalette dispatch.
 	dw $0000
@@ -2694,6 +2697,7 @@ DATA_5FD488:
 	dw $564D,$55E8,$2CC4,$3949,$55EF,$5652,$56D6,$573B
 	dw $77DF,$1845
 
+;@editable:bg-gradients begin
 DATA_5FD64C:								; Note: BG "back area" colour-gradient table, entry 0 (header byte $10 variant). 24 word BGR-15 entries, ordered bottom-of-sublevel to top, interpolated with 15 scanlines between each colour. First entry of the DATA_bg_gradient_ptrs table at DATA_bg_gradient_ptrs; subsequent entries (DATA_5FD67C, $5FD6AC, ...) are sibling gradient palettes.
 	dw $0822,$0822,$0822,$0822,$0822,$0822,$0C43,$0C64
 	dw $1085,$14C7,$14E8,$1909,$192A,$1D4B,$1D4B,$192A
@@ -2773,6 +2777,7 @@ DATA_5FD91C:
 	dw $125F,$1E7F,$2EBF,$3ADF,$4B1F,$573F,$4F1F,$46FF
 	dw $3EDF,$36DF,$2ABF,$229F,$1A7F,$125F,$123F,$121F
 	dw $11FF,$11DF,$11BF,$119F,$115E,$0D1D,$0CDC,$089B
+;@editable:bg-gradients end
 
 DATA_5FD94C:
 	dw $001F,$0012,$0004,$7C1B,$000E,$0007,$0000,$03FF
@@ -3722,6 +3727,7 @@ DATA_5FFA5E:
 	dw $7FFF,$777B,$6AF7,$401F,$6AF7,$5E52,$55CE,$401F
 	dw $5E52,$55CE,$4929,$401F,$55CE,$4929,$3CA5,$401F
 	dw $4929,$3CA5,$3000
+;@editable:palette-blob end
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($5FFCE4, incbin, DATA_5FFCE4_YI_U2.bin)

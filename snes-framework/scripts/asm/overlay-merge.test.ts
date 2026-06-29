@@ -103,6 +103,61 @@ console.log('=== region removed from base reports a dropped edit ===');
   assert(!up.upgraded.includes('C-USER'), "base has no region c, so the user's c edit can't carry over");
 }
 
+console.log('=== nested regions (outer ⊃ inner, like palette-blob ⊃ bg-gradients) ===');
+{
+  // The base-asm reality for Bank57: the gradient region sits INSIDE the palette
+  // blob region. Both are unregistered (isEdited = () => true), so any region
+  // whose body differs is preserved — the merge must reconstruct the file exactly,
+  // never report spurious drift, and keep both marker pairs intact.
+  const nestedBase = [
+    '; header',
+    ';@editable:outer begin',
+    '\tOUTER-pre-base',
+    ';@editable:inner begin',
+    '\tINNER-base',
+    ';@editable:inner end',
+    '\tOUTER-post-base',
+    ';@editable:outer end',
+    '\tfooter'
+  ].join('\n') + '\n';
+  assert(
+    JSON.stringify(listEditableRegionIds(nestedBase)) === JSON.stringify(['outer', 'inner']),
+    'nested ids listed outer-then-inner (begin-marker order)'
+  );
+
+  // Inner edited → the outer body also differs (it contains inner). Both preserve.
+  const innerEdited = nestedBase.replace('\tINNER-base', '\tINNER-USER');
+  {
+    const up = computeOverlayUpgrade(nestedBase, innerEdited, () => true);
+    assert(!up.changed, 'inner-only edit: no spurious drift');
+    assert(up.upgraded === innerEdited, 'inner-only edit: reconstructs the overlay exactly');
+    assert(up.upgraded.includes('INNER-USER'), 'inner-only edit: keeps the inner edit');
+  }
+
+  // Outer body edited outside the inner region; inner untouched. Both preserve.
+  const outerEdited = nestedBase.replace('\tOUTER-pre-base', '\tOUTER-pre-USER');
+  {
+    const up = computeOverlayUpgrade(nestedBase, outerEdited, () => true);
+    assert(!up.changed, 'outer-only edit: no spurious drift');
+    assert(up.upgraded === outerEdited, 'outer-only edit: reconstructs the overlay exactly');
+    assert(
+      up.upgraded.includes(';@editable:inner begin') && up.upgraded.includes(';@editable:inner end'),
+      'outer-only edit: nested inner marker pair stays intact'
+    );
+  }
+
+  // Out-of-region base change (header) with both regions edited → adopt the new
+  // header, keep both edits, no add/drop.
+  const drifted = innerEdited.replace('; header', '; header-OLD').replace('\tfooter', '\tfooter-OLD');
+  {
+    const up = computeOverlayUpgrade(nestedBase, drifted, () => true);
+    assert(up.changed, 'nested + out-of-region drift detected');
+    assert(up.upgraded.includes('; header') && !up.upgraded.includes('; header-OLD'), 'adopts new header');
+    assert(up.upgraded.includes('INNER-USER'), 'keeps the inner edit through the adopt');
+    assert(up.regionsAdded.length === 0 && up.regionsDropped.length === 0, 'no add/drop for nested');
+  }
+}
+
 console.log(`\n${pass} pass, ${fail} fail`);
 console.log(process.exitCode ? '✗ failures above' : '✓ all overlay-merge tests pass');
 process.exit(fail === 0 ? 0 : 1);

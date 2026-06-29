@@ -116,7 +116,7 @@ import type { GfxFileEntry } from 'snes-framework/load-graphics'
 import type { RenderHeaderRequest } from '../shared/ipc-types'
 import { loadRomAndSymbols } from './render/rom-cache'
 import { gfxLiveEdits } from './gfx-live-cache'
-import { saveGfxEdit, saveRawChrEdit, saveIslandTilemap, saveLogoTilemap, loadPaletteEdits, savePaletteEdits, loadLogoTilemapEdits, loadIslandTilemapEdits, applyScreenPlacementOverlays, readRawChrBase } from './resources'
+import { saveGfxEdit, saveRawChrEdit, saveIslandTilemap, saveLogoTilemap, loadPaletteEdits, savePaletteEdits, loadLogoTilemapEdits, loadIslandTilemapEdits, applyScreenPlacementOverlays, applyRawChrOverlays, readRawChrBase } from './resources'
 import { frameworkWorkRoot } from './framework-paths'
 import {
   MANIFEST,
@@ -303,10 +303,17 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   // vs-base, so this is idempotent whether or not a build already baked it. Other tracks don't
   // read these tiny tilemap regions, so they see the built ROM unchanged. (NEVER mutate the
   // cached ROM in place — `applyScreenPlacementOverlays` works on the copy.)
+  // Raw-CHR diff baseline: also splice the raw SuperFX overlay banks (level-select icons $53,
+  // glyph banks $54/$55, scenery $56) into the copy, so the level-icon / glyph / scenery diffs run
+  // against base ⊕ raw edits — matching what the live export (`romWithLiveOverlays`) showed — and
+  // return only NEW pixels (a reset reverts to base on both sides). Same idempotent, build-state-
+  // independent shape as the placement baseline above.
   let rom = builtRom
   {
     const copy = builtRom.slice()
-    if (applyScreenPlacementOverlays(copy, symbols)) rom = copy
+    const placed = applyScreenPlacementOverlays(copy, symbols)
+    const raw = applyRawChrOverlays(copy)
+    if (placed || raw) rom = copy
   }
   let imported = 0, skipped = 0, missing = 0
   const errors: string[] = []
@@ -490,7 +497,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   // icon writes the same shared tiles — merges via savedFileTiles (last write wins).
   let iconImported = 0, iconSkipped = 0, iconMissing = 0
   if (mapIcons && mapIcons.length > 0) {
-    const ctxCache = makeCtxCache((w) => buildWorldMapIconContext(rom, symbols, w))
+    const ctxCache = makeCtxCache((w) => buildWorldMapIconContext(rom, symbols, w, gfxLiveEdits()))
     const filePatches: FilePatchMap = new Map()
     runAssembledTrack({
       entries: mapIcons, dir,
@@ -558,7 +565,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       if (!existsSync(p)) { mapTerrainMissing++; continue }
       if (!e.file.endsWith('.aseprite')) { mapTerrainSkipped++; continue } // PNG = view-only
       try {
-        const ctx = buildWorldMapTerrainContext(rom, symbols, e.world)
+        const ctx = buildWorldMapTerrainContext(rom, symbols, e.world, gfxLiveEdits())
         mapTerrainManifestRef = ctx.scene.manifest
         const ms = decodeAsepriteMultiStructural(readFileSync(p))
         // The per-tile (char,pal,prio) key list, read from the manifest (the file's own
@@ -648,7 +655,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       const p = join(dir, ov.file)
       if (!existsSync(p)) { mapTerrainMissing++; continue }
       try {
-        const ctx = buildWorldMapTerrainContext(rom, symbols, ov.world)
+        const ctx = buildWorldMapTerrainContext(rom, symbols, ov.world, gfxLiveEdits())
         m1Manifest = ctx.scene.manifest
         const d = diffOverworldM1(ctx, readFileSync(p))
         let entryChanged = false
@@ -696,7 +703,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       if (!existsSync(p)) { levelIconMissing++; iconMissing++ }
       else {
         try {
-          const d = diffIconsM1(rom, symbols, readFileSync(p))
+          const d = diffIconsM1(rom, symbols, readFileSync(p), gfxLiveEdits())
           if (d.levelWrites.length > 0) {
             const r = saveRawChrEdit(d.levelWrites)
             if (r.ok) levelIconImported += d.levelIconsChanged
@@ -728,7 +735,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     if (!existsSync(p)) { logoMissing++ }
     else if (!titleLogo.faithful) { /* preview-only: skip silently */ }
     else {
-      const ctx = buildTitleLogoContext(rom, symbols)
+      const ctx = buildTitleLogoContext(rom, symbols, gfxLiveEdits())
       const canvas = renderTitleLogo(ctx)
       if (!canvas.faithful) {
         errors.push(`${titleLogo.file}: title logo no longer faithfully reconstructable`)
@@ -788,7 +795,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     if (!existsSync(p)) { islandMissing++ }
     else if (!titleIsland.faithful) { /* preview-only: skip silently */ }
     else {
-      const ctx = buildTitleIslandContext(rom, symbols)
+      const ctx = buildTitleIslandContext(rom, symbols, gfxLiveEdits())
       const canvas = renderTitleIsland(ctx)
       if (!canvas.faithful) {
         errors.push(`${titleIsland.file}: title island no longer faithfully reconstructable`)
@@ -916,7 +923,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     else if (!storybookScene.faithful) { /* preview-only: skip silently */ }
     else {
       try {
-        const ctx = buildStorybookSceneContext(rom, symbols)
+        const ctx = buildStorybookSceneContext(rom, symbols, gfxLiveEdits())
         const canvas = renderStorybookScene(ctx)
         if (!canvas.faithful) {
           errors.push(`${storybookScene.file}: storybook scene no longer faithfully reconstructable`)
@@ -966,7 +973,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       try {
         const bytes = readFileSync(p)
         if (e.kind === 'island') {
-          const ctx = buildTitleIslandContext(rom, symbols)
+          const ctx = buildTitleIslandContext(rom, symbols, gfxLiveEdits())
           const d = diffTitleIslandM1(ctx, bytes)
           let changed = false
           if (d.charEdits.length > 0) {
@@ -985,7 +992,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
           accumScreenM1Palette(d.paletteEdits, ctx.provenance)
           if (changed) islandImported++; else islandSkipped++
         } else {
-          const ctx = buildStorybookSceneContext(rom, symbols)
+          const ctx = buildStorybookSceneContext(rom, symbols, gfxLiveEdits())
           const d = diffStorybookSceneM1(ctx, bytes)
           let changed = false
           if (d.chrEdits.length > 0) {

@@ -67,6 +67,10 @@ const gfxTracksOf = (t: ExportTarget): GfxExportTrack[] =>
 interface Props {
     /** The level currently loaded in the canvas — its palette colors the export. */
     level: LevelData | null
+    /** Active-project reload key (`${projectId}#${projectRev}`). Changes on a project
+     *  switch / ROM import — re-fetches the per-project exported-folders + changed-graphics
+     *  lists so the panel never shows the previous project's extracts. */
+    projectScope: string | null
     /** Called after an import or reset changes files (mark the build dirty). */
     onMutated: () => void
     /** Called after an import wrote master-palette colors (e.g. a recolor from M1TE), so
@@ -97,7 +101,7 @@ interface Props {
  * now; see the note at the top of this file.)
  */
 export function GraphicsBody({
-    level, onMutated, onPaletteImported, paletteEditCount, onResetPalette, bg1RegionRect, pickingRegion, onStartRegionPick, onClearRegion
+    level, projectScope, onMutated, onPaletteImported, paletteEditCount, onResetPalette, bg1RegionRect, pickingRegion, onStartRegionPick, onClearRegion
 }: Props): JSX.Element {
     const [busy, setBusy] = useState(false)
     const [status, setStatus] = useState<string | null>(null)
@@ -196,11 +200,20 @@ export function GraphicsBody({
         }
     }, [])
 
+    // Aseprite is a global setting (project-independent) — probe once on mount.
+    useEffect(() => {
+        window.shinyEgg.editor.getAsepriteExe().then(setAsepriteInfo).catch(() => setAsepriteInfo(null))
+    }, [])
+
+    // The exported-folders + changed-graphics lists are per-project. Re-fetch when the
+    // project changes (switch / ROM import bumps projectScope) so the panel never shows
+    // the previous project's extracts; clear the now-stale import log + status banner too.
     useEffect(() => {
         void refreshEdits()
         void refreshFolders()
-        window.shinyEgg.editor.getAsepriteExe().then(setAsepriteInfo).catch(() => setAsepriteInfo(null))
-    }, [refreshEdits, refreshFolders])
+        setImportLog(null)
+        setStatus(null)
+    }, [projectScope, refreshEdits, refreshFolders])
 
     // A pre-1.3 Aseprite can't open tilemap exports — fall the format back to PNG so a
     // stale 'aseprite' selection can't reach the export call (the radio is disabled too).

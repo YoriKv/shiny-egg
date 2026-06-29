@@ -8,12 +8,16 @@
 //   applyIslandTilemapEdits — splice cell edits (offset→char) into the BASE text
 //   readIslandTilemapEdits  — diff overlay-vs-base → the cell edits an overlay holds
 
-import { findDataWords, dataWordEdits } from './asm/data-words.ts';
+import { dataWordEdits, findRegionDataWords } from './asm/data-words.ts';
 import { applyEdits } from './asm/text-literals.ts';
 
 /** The asm file + label the island tilemap lives in. */
 export const ISLAND_TILEMAP_BANK_FILE = 'yi/Banks/Bank57.asm';
 export const ISLAND_TILEMAP_LABEL = 'DATA_5F9800';
+/** The `;@editable` region wrapping the worlds-1-5 block — bounds the scan to
+ *  exactly DATA_5F9800 (the world-6 variant DATA_5F9C00 follows it in the same
+ *  contiguous `dw` run, outside this region). */
+export const ISLAND_TILEMAP_REGION = 'island-tilemap';
 /** The worlds-1-5 island tilemap is 32×32 = 1024 cells. `findDataWords` keeps reading
  *  consecutive `dw` runs PAST the next label (`DATA_5F9C00`, the world-6 variant, etc.),
  *  so we cap to this — byteOffset is contiguous from the base, so cells 0..1023 are
@@ -27,7 +31,7 @@ export interface IslandTilemapEdit { offset: number; value: number }
 /** The island tilemap as a flat byte array (1 byte/cell) from the asm `dw` words. */
 export function readIslandTilemapBytes(text: string): Uint8Array {
   const bytes = new Uint8Array(ISLAND_TILEMAP_BYTES);
-  for (const w of findDataWords(text, ISLAND_TILEMAP_LABEL)) {
+  for (const w of findRegionDataWords(text, ISLAND_TILEMAP_REGION, ISLAND_TILEMAP_LABEL)) {
     if (w.byteOffset >= ISLAND_TILEMAP_BYTES) break; // past DATA_5F9800 into the next run
     bytes[w.byteOffset] = w.value & 0xff;
     if (w.byteOffset + 1 < ISLAND_TILEMAP_BYTES) bytes[w.byteOffset + 1] = (w.value >> 8) & 0xff;
@@ -42,7 +46,7 @@ export function readIslandTilemapBytes(text: string): Uint8Array {
  */
 export function applyIslandTilemapEdits(baseText: string, edits: readonly IslandTilemapEdit[]): string {
   if (edits.length === 0) return baseText;
-  const words = findDataWords(baseText, ISLAND_TILEMAP_LABEL);
+  const words = findRegionDataWords(baseText, ISLAND_TILEMAP_REGION, ISLAND_TILEMAP_LABEL);
   const editByte = new Map(edits.map((e) => [e.offset, e.value & 0xff]));
   const changes = new Map<number, number>();
   for (const w of words) {

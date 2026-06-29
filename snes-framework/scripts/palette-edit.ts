@@ -10,7 +10,7 @@
 // provenance reports per CGRAM entry. Editing a word is global — the blob is
 // shared by palette index across levels.
 
-import { findDataWords, dataWordEdits } from './asm/data-words.ts';
+import { dataWordEdits, findRegionDataWords } from './asm/data-words.ts';
 import { applyEdits } from './asm/text-literals.ts';
 import type { PaletteEdit } from './types.ts';
 
@@ -19,6 +19,11 @@ export type { PaletteEdit };
 /** The asm file + base label the palette blob lives in. */
 export const PALETTE_BLOB_BANK_FILE = 'yi/Banks/Bank57.asm';
 export const PALETTE_BLOB_LABEL = 'DATA_master_palette_rom_blob';
+/** The `;@editable` region wrapping the blob. The 16 BG-gradient tables sit
+ *  INSIDE this blob, so this region also encloses the nested `bg-gradients`
+ *  region; scanning it yields every blob word (palette colours both before and
+ *  after the gradients). See gradient-edit.ts `GRADIENT_REGION`. */
+export const PALETTE_BLOB_REGION = 'palette-blob';
 
 /**
  * The palette-color edits an overlay `Bank57.asm` holds vs the base — every
@@ -28,10 +33,10 @@ export const PALETTE_BLOB_LABEL = 'DATA_master_palette_rom_blob';
 export function readPaletteEdits(baseText: string, overlayText: string | null): PaletteEdit[] {
   if (overlayText === null) return [];
   const baseByOff = new Map(
-    findDataWords(baseText, PALETTE_BLOB_LABEL).map((w) => [w.byteOffset, w.value])
+    findRegionDataWords(baseText, PALETTE_BLOB_REGION, PALETTE_BLOB_LABEL).map((w) => [w.byteOffset, w.value])
   );
   const out: PaletteEdit[] = [];
-  for (const w of findDataWords(overlayText, PALETTE_BLOB_LABEL)) {
+  for (const w of findRegionDataWords(overlayText, PALETTE_BLOB_REGION, PALETTE_BLOB_LABEL)) {
     const bv = baseByOff.get(w.byteOffset);
     if (bv !== undefined && bv !== w.value) out.push({ offset: w.byteOffset, value: w.value });
   }
@@ -46,7 +51,7 @@ export function readPaletteEdits(baseText: string, overlayText: string | null): 
  * live cache's reset-to-base. `baseText` is the framework's base `Bank57.asm`.
  */
 export function basePaletteWords(baseText: string): Map<number, number> {
-  return new Map(findDataWords(baseText, PALETTE_BLOB_LABEL).map((w) => [w.byteOffset, w.value]));
+  return new Map(findRegionDataWords(baseText, PALETTE_BLOB_REGION, PALETTE_BLOB_LABEL).map((w) => [w.byteOffset, w.value]));
 }
 
 /**
@@ -57,7 +62,7 @@ export function basePaletteWords(baseText: string): Map<number, number> {
  */
 export function applyPaletteEdits(baseText: string, edits: readonly PaletteEdit[]): string {
   if (edits.length === 0) return baseText;
-  const words = findDataWords(baseText, PALETTE_BLOB_LABEL);
+  const words = findRegionDataWords(baseText, PALETTE_BLOB_REGION, PALETTE_BLOB_LABEL);
   const changes = new Map(edits.map((e) => [e.offset, e.value & 0xffff]));
   return applyEdits(baseText, dataWordEdits(words, changes));
 }
@@ -75,7 +80,7 @@ export function diffPaletteBlob(
   foreignAt: (byteOffset: number) => number
 ): PaletteEdit[] {
   const out: PaletteEdit[] = [];
-  for (const w of findDataWords(baseText, PALETTE_BLOB_LABEL)) {
+  for (const w of findRegionDataWords(baseText, PALETTE_BLOB_REGION, PALETTE_BLOB_LABEL)) {
     const fv = foreignAt(w.byteOffset) & 0xffff;
     if (fv !== w.value) out.push({ offset: w.byteOffset, value: fv });
   }

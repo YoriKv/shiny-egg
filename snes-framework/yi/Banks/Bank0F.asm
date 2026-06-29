@@ -11438,6 +11438,7 @@ DATA_0FF800:								; Note: Title screen tilemap
 	dw $16E6,$16E6,$16E6,$16E6,$16E6,$16E6,$16E6,$16E6
 	dw $16E6,$16E6,$16E6,$16E6,$12E4,$128A,$16E6,$16E6
 
+;@editable:logo-tilemap begin
 ; DATA_title_screen_logo_tilemap -- SMWC: Tilemap for the Title Screen logo (896 bytes).
 DATA_0FFC80:
 DATA_title_screen_logo_tilemap:
@@ -11497,6 +11498,7 @@ DATA_title_screen_logo_tilemap:
 	dw $2722,$2722,$2722,$2722,$2722,$2722,$2722,$2722
 	dw $2722,$2722,$2722,$2722,$2722,$2722,$2722,$2722
 	dw $2722,$2722,$2722,$2722,$2722,$2722,$2722,$2722
+;@editable:logo-tilemap end
 
 %BANK_END(<EndBank>)
 endmacro

@@ -275,7 +275,7 @@ function chunkyCellToPlanar(indices24: Uint8Array, tr: number, tc: number): Uint
  * beyond 8 rows (never in practice) falls back to row 0. Pixel edits round-trip in the
  * index/byte domain regardless, so the palette only affects display.
  */
-function buildIconLayout(rom: Uint8Array, symbols: SymbolMap): IconM1Layout {
+function buildIconLayout(rom: Uint8Array, symbols: SymbolMap, gfxOverride?: ReadonlyMap<string, Uint8Array>): IconM1Layout {
   const tiles: Uint8Array[] = [new Uint8Array(TILE4)]; // tile 0 = empty
   const byKey = new Map<string, number>();
   const tilemap = new Uint16Array(MAP_WORDS); // 64×64-stride doc grid (icons fill a 32-wide region)
@@ -323,7 +323,7 @@ function buildIconLayout(rom: Uint8Array, symbols: SymbolMap): IconM1Layout {
 
   // Marker + castle (world-0; pixels are world-invariant). Each CELL draws in its own BG palette
   // row (the word's palette bits OR'd with the world tint), so it's colored per cell.
-  const mcCtx = buildWorldMapIconContext(rom, symbols, 0);
+  const mcCtx = buildWorldMapIconContext(rom, symbols, 0, gfxOverride);
   for (const name of ['marker', 'castle'] as const) {
     const canvas = renderWorldMapIcon(mcCtx, name);
     if (!canvas || !canvas.faithful) continue;
@@ -348,8 +348,8 @@ function buildIconLayout(rom: Uint8Array, symbols: SymbolMap): IconM1Layout {
 }
 
 /** Build the combined icons `.M1` (all per-level icons in level order + marker + castle). */
-export function buildIconsM1(rom: Uint8Array, symbols: SymbolMap): Uint8Array {
-  const layout = buildIconLayout(rom, symbols);
+export function buildIconsM1(rom: Uint8Array, symbols: SymbolMap, gfxOverride?: ReadonlyMap<string, Uint8Array>): Uint8Array {
+  const layout = buildIconLayout(rom, symbols, gfxOverride);
   return encodeM1te2({
     mapWidth: 32, mapHeight: layout.mapHeight, tileSize: 8, palette: layout.palette,
     maps: [layout.tilemap, new Uint16Array(MAP_WORDS), new Uint16Array(MAP_WORDS)],
@@ -377,9 +377,9 @@ export interface IconsM1Diff {
  * back: per-level icons → bank-$53 nibble RMW (index domain, no palette round-trip);
  * marker/castle → their $74/$75 char tiles (direct planar byte compare).
  */
-export function diffIconsM1(rom: Uint8Array, symbols: SymbolMap, m1Bytes: Uint8Array): IconsM1Diff {
+export function diffIconsM1(rom: Uint8Array, symbols: SymbolMap, m1Bytes: Uint8Array, gfxOverride?: ReadonlyMap<string, Uint8Array>): IconsM1Diff {
   const doc = parseM1te2(m1Bytes);
-  const layout = buildIconLayout(rom, symbols);
+  const layout = buildIconLayout(rom, symbols, gfxOverride);
   const levelWrites: IconWrite[] = [];
   const mcByTile = new Map<string, Uint8Array>();
   let levelIconsChanged = 0, markerCastleChanged = 0, conflicts = 0;
@@ -439,16 +439,16 @@ export interface WorldMapM1File {
   bytes: Uint8Array;
 }
 
-export function exportWorldMapM1(rom: Uint8Array, symbols: SymbolMap): WorldMapM1File[] {
+export function exportWorldMapM1(rom: Uint8Array, symbols: SymbolMap, gfxOverride?: ReadonlyMap<string, Uint8Array>): WorldMapM1File[] {
   const out: WorldMapM1File[] = [];
   for (let world = 0; world < ICON_WORLDS; world++) {
-    const c = buildWorldMapTerrainContext(rom, symbols, world);
+    const c = buildWorldMapTerrainContext(rom, symbols, world, gfxOverride);
     const s = buildOverworldM1(c);
     out.push({
       file: `screens/map/${overworldM1Name(s.world)}`, kind: 'overworld',
       world: s.world, bg1FileId: s.bg1FileId, bg2FileId: s.bg2FileId, bg3FileId: s.bg3FileId, bytes: s.bytes
     });
   }
-  out.push({ file: `screens/map/${ICONS_M1_NAME}`, kind: 'icons', bytes: buildIconsM1(rom, symbols) });
+  out.push({ file: `screens/map/${ICONS_M1_NAME}`, kind: 'icons', bytes: buildIconsM1(rom, symbols, gfxOverride) });
   return out;
 }

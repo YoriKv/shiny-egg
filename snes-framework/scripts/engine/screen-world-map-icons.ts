@@ -68,11 +68,13 @@ export interface WorldMapIconContext {
   provenance: Int32Array;
 }
 
-/** Build a world's overworld decode context (its map VRAM + CGRAM + manifest). */
-export function buildWorldMapIconContext(rom: Uint8Array, symbols: SymbolMap, world: number): WorldMapIconContext {
+/** Build a world's overworld decode context (its map VRAM + CGRAM + manifest). A live gfx-cache
+ *  override (`gfxLiveEdits()`, keyed `${format}/${fileId}`) is applied as each scene gfx file is
+ *  decompressed into VRAM, so an export/diff reflects unbuilt CHR edits + resets, not the last build. */
+export function buildWorldMapIconContext(rom: Uint8Array, symbols: SymbolMap, world: number, gfxOverride?: ReadonlyMap<string, Uint8Array>): WorldMapIconContext {
   const vram = new Uint8Array(0x10000);
   const manifest: GfxFileEntry[] = [];
-  loadSceneGfx(rom, symbols, mapGfx(rom, symbols, world), vram, manifest);
+  loadSceneGfx(rom, symbols, mapGfx(rom, symbols, world), vram, manifest, gfxOverride);
   const cgram = new Uint8Array(512);
   const provenance = new Int32Array(256); // loadScenePalettes fills it (-1 = no blob source)
   loadScenePalettes(rom, symbols, mapPalette(rom, symbols, world), cgram, provenance);
@@ -285,10 +287,10 @@ export interface WorldMapIconPng {
  *  assembled, editable PNGs. Pixels are world-invariant (only the tint differs), so
  *  each world's copy shows its tint; edits to any one slice back to the SAME shared
  *  `$74/$75` tiles (the import reports the cross-world propagation). */
-export function exportWorldMapIcons(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean } = {}): WorldMapIconPng[] {
+export function exportWorldMapIcons(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean; gfxOverride?: ReadonlyMap<string, Uint8Array> } = {}): WorldMapIconPng[] {
   const out: WorldMapIconPng[] = [];
   for (let world = 0; world < WORLD_COUNT; world++) {
-    const ctx = buildWorldMapIconContext(rom, symbols, world);
+    const ctx = buildWorldMapIconContext(rom, symbols, world, opts.gfxOverride);
     for (const def of ICON_DEFS) {
       const canvas = renderWorldMapIcon(ctx, def.name);
       if (!canvas) continue;

@@ -56,8 +56,12 @@ const TILEMAP_BYTES = COLS * ROWS * 2; // 4096
  *  cols 32-63 at $400 (2 × 32×32 screens, the SNES SC=01 layout). */
 const wordIndex = (c: number, r: number): number => (c >= 32 ? 0x400 : 0) + r * 32 + (c & 31);
 
-/** Decompress a tilemap gfx file (LZ2) → its 4096 raw bytes (2048 BG words). */
-function decompTilemap(rom: Uint8Array, symbols: SymbolMap, fileId: number): Uint8Array {
+/** Decompress a tilemap gfx file (LZ2) → its 4096 raw bytes (2048 BG words). A live gfx-cache
+ *  override (decompressed tilemap bytes keyed `lz2/<fileId>`) takes precedence, so an export/diff
+ *  reflects unbuilt tilemap edits + resets rather than the last-built ROM. */
+function decompTilemap(rom: Uint8Array, symbols: SymbolMap, fileId: number, gfxOverride?: ReadonlyMap<string, Uint8Array>): Uint8Array {
+  const ov = gfxOverride?.get(`lz2/${fileId}`);
+  if (ov) return ov.subarray(0, Math.min(ov.length, TILEMAP_BYTES));
   const ptr = symbols.pc('DATA_lz2_compressed_gfx_ptrs');
   const pc = snesToPC(u24le(rom, ptr + fileId * 3));
   const dest = new Uint8Array(0x4000);
@@ -85,14 +89,14 @@ export interface WorldMapTerrainContext {
   bg2Tilemap: Uint8Array;
 }
 
-export function buildWorldMapTerrainContext(rom: Uint8Array, symbols: SymbolMap, world: number): WorldMapTerrainContext {
-  const scene = buildWorldMapIconContext(rom, symbols, world);
+export function buildWorldMapTerrainContext(rom: Uint8Array, symbols: SymbolMap, world: number, gfxOverride?: ReadonlyMap<string, Uint8Array>): WorldMapTerrainContext {
+  const scene = buildWorldMapIconContext(rom, symbols, world, gfxOverride);
   const bg1FileId = mapTilemapFileId(rom, symbols, world, 0);
   const bg2FileId = mapTilemapFileId(rom, symbols, world, 1);
   return {
     scene, world, bg1FileId, bg2FileId,
-    bg1Tilemap: decompTilemap(rom, symbols, bg1FileId),
-    bg2Tilemap: decompTilemap(rom, symbols, bg2FileId)
+    bg1Tilemap: decompTilemap(rom, symbols, bg1FileId, gfxOverride),
+    bg2Tilemap: decompTilemap(rom, symbols, bg2FileId, gfxOverride)
   };
 }
 
@@ -392,10 +396,10 @@ export interface WorldMapTerrainPng {
  * layout, each layer round-tripping to its `$7C`/`$7D`… tilemap file. Map PIXELS always
  * edit via the shared screens/map sheets ($74/$75/$4C).
  */
-export function exportWorldMapTerrain(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean } = {}): WorldMapTerrainPng[] {
+export function exportWorldMapTerrain(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean; gfxOverride?: ReadonlyMap<string, Uint8Array> } = {}): WorldMapTerrainPng[] {
   const out: WorldMapTerrainPng[] = [];
   for (let world = 0; world < 6; world++) {
-    const c = buildWorldMapTerrainContext(rom, symbols, world);
+    const c = buildWorldMapTerrainContext(rom, symbols, world, opts.gfxOverride);
     const png = worldMapTerrainPng(renderWorldMapTerrain(c));
     // One key list drives BOTH the embedded tileset order AND the serialized `tileKeys`,
     // so the import's tile→(char,pal,prio) mapping is exactly the file's.
@@ -434,11 +438,11 @@ export interface WorldMapGroundContext {
   tilemap: Uint8Array;
 }
 
-export function buildWorldMapGroundContext(rom: Uint8Array, symbols: SymbolMap): WorldMapGroundContext {
+export function buildWorldMapGroundContext(rom: Uint8Array, symbols: SymbolMap, gfxOverride?: ReadonlyMap<string, Uint8Array>): WorldMapGroundContext {
   return {
-    scene: buildWorldMapIconContext(rom, symbols, 0), // world-invariant → any world's load works
+    scene: buildWorldMapIconContext(rom, symbols, 0, gfxOverride), // world-invariant → any world's load works
     fileId: GROUND_TM_FILE_ID,
-    tilemap: decompTilemap(rom, symbols, GROUND_TM_FILE_ID)
+    tilemap: decompTilemap(rom, symbols, GROUND_TM_FILE_ID, gfxOverride)
   };
 }
 
@@ -589,8 +593,8 @@ export interface WorldMapGroundPng {
 
 /** Export the decorative ground as one shared editable layout: a composited PNG view +
  *  (when `opts.aseprite`) an Aseprite tilemap that round-trips LAYOUT edits to file $7E. */
-export function exportWorldMapGround(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean } = {}): WorldMapGroundPng {
-  const c = buildWorldMapGroundContext(rom, symbols);
+export function exportWorldMapGround(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean; gfxOverride?: ReadonlyMap<string, Uint8Array> } = {}): WorldMapGroundPng {
+  const c = buildWorldMapGroundContext(rom, symbols, opts.gfxOverride);
   const canvas = renderWorldMapGround(c);
   const keys = opts.aseprite ? groundTileKeys(c) : undefined;
   const ase = keys ? worldMapGroundAseprite(c, keys) : undefined;

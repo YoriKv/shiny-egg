@@ -70,9 +70,9 @@ export interface TitleIslandContext {
   addableChars: number[];
 }
 
-export function buildTitleIslandContext(rom: Uint8Array, symbols: SymbolMap): TitleIslandContext {
+export function buildTitleIslandContext(rom: Uint8Array, symbols: SymbolMap, gfxOverride?: ReadonlyMap<string, Uint8Array>): TitleIslandContext {
   const vram = new Uint8Array(0x10000);
-  loadSceneGfx(rom, symbols, titleVariant(rom, symbols).gfx, vram);
+  loadSceneGfx(rom, symbols, titleVariant(rom, symbols).gfx, vram, undefined, gfxOverride);
   const b1cpc = vram.slice(ISLAND_CHAR_VRAM, ISLAND_CHAR_VRAM + 0x1000); // $B1 decompressed (CPC)
   const cgram = new Uint8Array(512);
   const provenance = new Int32Array(256); // loadScenePalettes fills it (-1 = no blob source)

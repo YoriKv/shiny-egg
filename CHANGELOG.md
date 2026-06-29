@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.3 - 2026-06-29
+- New version of M1TE with shortcuts for changing BG views and preview mode is now a toggle that keeps your current layer editable.
+- Graphics export bug fixes.
+- ASM overlay cleanup and fixes.
+
 ## v0.5.2 - 2026-06-29
 
 - New Camera Preview overlay. A movable in-game viewport that simulates the SNES camera with accurate parallax of background layers and the sky gradient.
