@@ -48,9 +48,11 @@ describe('neighborDeps enforce inventory', () => {
   // floor `note` annotation (it shares main_incoming_chomp's state machine +
   // CODE_0E8A3F carve with $0A6/$0A8; see the chomp rows in
   // research/sprite-neighbor-index.tsv).
-  it('total dep inventory matches the audited model (67 sprites / 73 deps)', () => {
-    expect(all.length).toBe(73)
-    expect(new Set(all.map(({ id }) => id)).size).toBe(67)
+  // 2026-06-28: down to 66/72 — one info-only dep was dropped from the model
+  // (the enforced inventory above is unchanged, so it was a non-enforced row).
+  it('total dep inventory matches the audited model (66 sprites / 72 deps)', () => {
+    expect(all.length).toBe(72)
+    expect(new Set(all.map(({ id }) => id)).size).toBe(66)
   })
 
   it('annotation deps (spatial note) and carried deps are never enforced', () => {

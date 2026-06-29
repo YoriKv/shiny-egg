@@ -14,7 +14,7 @@
 // editable → the metatile is preview-only (edit those via the animations/ path or
 // the raw bg1-tileset/ sheet).
 //
-// BG vs OBJ palette: BG1 index 0 is an OPAQUE colour (the backdrop the cart shows
+// BG vs OBJ palette: BG1 index 0 is an OPAQUE color (the backdrop the cart shows
 // through in-game, but a real editable index here), unlike a sprite's transparent
 // index 0 — so the canvas + swatch are fully opaque (matches the faithful
 // bg1-tileset/ export's index0Transparent=false).
@@ -130,7 +130,7 @@ function palFor(ctx: MetatileContext, row: number): Uint32Array {
 
 /**
  * Slice one 8×8 quadrant back out of the canvas — the inverse of a blit.
- * Base-aware (a pixel still showing its base colour keeps its base index). No
+ * Base-aware (a pixel still showing its base color keeps its base index). No
  * owner gate is needed: a metatile's quadrants don't overlap. Returns 32 bytes.
  */
 function sliceQuadrant(
@@ -141,7 +141,7 @@ function sliceQuadrant(
   vflip: boolean,
   palette: Uint32Array,
   baseBytes: Uint8Array,
-  /** Optional miss counter: bumped for each opaque pixel whose colour is in no
+  /** Optional miss counter: bumped for each opaque pixel whose color is in no
    *  slot of this row's palette (a wrong-row / off-palette paint, clamped to 0). */
   miss?: { n: number }
 ): Uint8Array {

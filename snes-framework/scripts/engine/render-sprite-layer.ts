@@ -91,7 +91,7 @@ export interface RenderSpriteLayerArgs {
   manifest?: GfxFileEntry[];
   /** The level's sprite-palette id (`LevelHeaderSpritePaletteLo`, header field 8).
    *  Threaded to `resolveSpriteCel` for the Red Coin's level-state-dependent
-   *  runtime recolour; harmless to omit. */
+   *  runtime recolor; harmless to omit. */
   levelSpritePaletteId?: number;
   // NB: the per-sprite cel-format gate (Format-A/B), settled palette row (SP4) and rest frame
   // (SP3) are asm-fixed render facts now OWNED by the engine — see sprite-render-facts.ts. They
@@ -192,7 +192,7 @@ export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRende
     // Some sprites pick their PALETTE (not a different cel) from spawn-cell parity — the shy-guy
     // family ($01E/$133/$124/$192), stilt/fat/woozy guy, Mock-Up, Piscatory Pete (SPRITE_PARITY_
     // PALETTE). Like cel-variant parity these vary per placed cell, so they need placement passed
-    // to the resolver AND a parity-keyed cache slot — else every instance reuses one cached colour
+    // to the resolver AND a parity-keyed cache slot — else every instance reuses one cached color
     // (the $01E Shy Guy bug: it always rendered parity-0 green regardless of cell).
     const palParityIdx = SPRITE_PARITY_PALETTE[renderNum] !== undefined ? parityIndex(spr.x, spr.y) : null;
     const parityKeyIdx = parityIdx ?? palParityIdx;

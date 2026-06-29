@@ -48,7 +48,7 @@ export function spritePrizeAt(num: number, x: number, y: number): SpritePrizeKin
   return prizes.length === 1 ? prizes[0]! : (prizes[parityIndex(x, y)] ?? prizes[0]!)
 }
 
-/** Half-tile circular prize icon presentation (short label + colour). */
+/** Half-tile circular prize icon presentation (short label + color). */
 export const SPRITE_PRIZE_STYLE: Record<SpritePrizeKind, { label: string; color: string }> = {
   '1up': { label: '1UP', color: 'rgba(53, 200, 85, 1)' }, //   green
   stars: { label: '★', color: 'rgba(238, 204, 42, 1)' }, //    gold

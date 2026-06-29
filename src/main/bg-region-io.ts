@@ -20,7 +20,7 @@ import {
   renderBg1Region, diffBg1Region, buildBgRegionContext, renderBgRegion, diffBgRegionTiles, bgRegionPng,
   bg1RegionAseprite, bgRegionAseprite, bgRegionPlacementAseprite, diffBgRegionPlacement, diffBgRegionCombined,
   bgRegionM1te2, diffBgRegionM1te2, bg1RegionM1te2, diffBg1RegionM1te2,
-  type Bg1RegionCell, type BgSubCell, type MetatileTileEdit, type M1te2Screen
+  type Bg1RegionCell, type BgSubCell, type MetatileTileEdit, type M1te2Export
 } from 'snes-framework/bg-region'
 import { decodeAsepriteRegion, decodeAsepriteStructural } from 'snes-framework/aseprite'
 import { resolveBgTilemapSource, type BgTilemapSource } from 'snes-framework/load-bg-tilemaps'
@@ -44,21 +44,21 @@ const bgr15ToRgbArr = (c15: number): [number, number, number] =>
 /** ImageData-packed u32 (r|g<<8|b<<16|a<<24) → BGR-15 word (5 bits/channel). */
 const u32ToBgr15 = (u: number): number =>
   (((u >> 16) & 0xf8) << 7) | (((u >> 8) & 0xf8) << 2) | (((u & 0xff) >> 3))
-/** Snap an opaque pixel to the 5-bit SNES colour grid (no-op for transparent). */
+/** Snap an opaque pixel to the 5-bit SNES color grid (no-op for transparent). */
 function quantizeU32(u: number): number {
   if ((u >>> 24) === 0) return 0
   return ((0xff << 24) | (expand5(((u >> 16) & 0xff) >> 3) << 16) | (expand5(((u >> 8) & 0xff) >> 3) << 8) | expand5((u & 0xff) >> 3)) >>> 0
 }
 
 /** One exported palette entry, in used-rows compact order = the Aseprite palette
- *  index AND the PNG swatch cell — so import can detect a recoloured entry and
+ *  index AND the PNG swatch cell — so import can detect a recolored entry and
  *  write it back to the master palette blob. */
 interface SidecarPaletteEntry {
   cgramIndex: number
   /** Master-palette-blob byte offset (PaletteEdit.offset); -1 ⇒ not blob-sourced
    *  (not editable through the palette). */
   blobOffset: number
-  /** The exact 8-bit colour the export drew for this entry. */
+  /** The exact 8-bit color the export drew for this entry. */
   rgb: [number, number, number]
 }
 
@@ -75,7 +75,7 @@ interface BgRegionSidecar {
   cells?: Bg1RegionCell[]
   /** BG2/BG3 only. */
   subCells?: BgSubCell[]
-  /** Palette layout for colour-edit-back (absent on pre-palette-edit exports). */
+  /** Palette layout for color-edit-back (absent on pre-palette-edit exports). */
   palette?: SidecarPaletteEntry[]
   /** Which `.aseprite` flavour was exported, so import routes correctly:
    *  `'pixels'` = the 8×8-CHR pixel-edit tilemap (all layers; flatten → CHR slice);
@@ -87,19 +87,16 @@ interface BgRegionSidecar {
   placement?: boolean
 }
 
-/** Sidecar for an M1TE2 `.M1` export (written as `bg{1,2,3}-region[-r{y}c{x}].m1.json`,
- *  distinct from the PNG/Aseprite `.json` so the two never collide). Import rebuilds the
- *  region from `header` + this screen offset and re-derives the CHR/palette write-back, so
- *  the `.M1` itself carries no extra mapping. */
+/** Sidecar for an M1TE2 `.M1` export (written as `bg{1,2,3}-region.m1.json`, distinct from
+ *  the PNG/Aseprite `.json` so the two never collide). Import rebuilds the region from
+ *  `header` and re-derives the CHR/palette write-back, so the `.M1` itself carries no extra
+ *  mapping. One `.M1` per layer (M1TE2 v2 holds up to 64×64). */
 interface M1te2Sidecar {
   format: 'm1te2'
   layer: BgRegionLayer // 1 (BG1 area) | 2 | 3
   header: RenderHeaderRequest
   bpp: 2 | 4
   tileSize: 8 | 16
-  /** This `.M1`'s screen-block: a 32×32 tilemap screen (BG2/BG3) or a 16×16-Map16 block (BG1). */
-  screenX: number
-  screenY: number
   /** The FULL rendered region dims (for the region-rebuild sanity check). */
   width: number
   height: number
@@ -109,7 +106,7 @@ interface M1te2Sidecar {
 }
 
 /** Build the exported palette layout (used rows × stride) with each entry's CGRAM
- *  index, master-blob offset (for PaletteEdit), and exact exported colour. */
+ *  index, master-blob offset (for PaletteEdit), and exact exported color. */
 function buildSidecarPalette(
   rom: Uint8Array,
   symbols: SymbolMap,
@@ -153,7 +150,7 @@ function mergePaletteEdits(existing: PaletteEdit[], detected: PaletteEdit[]): Pa
 const fileBase = (layer: BgRegionLayer): string => `bg${layer}-region`
 
 /** Every `.M1` session file an export folder holds, walked up to two levels deep: the
- *  BG-region ones at the root (`bg{1,2,3}-region[-r…].M1`, layer parsed from the name); the
+ *  BG-region ones at the root (`bg{1,2,3}-region.M1`, layer parsed from the name); the
  *  World Map ones in `map/` (`overworld-*.M1`, `icons.M1`); and the system-screen ones in
  *  `screens/title/` + `screens/storybook/`. Non-BG-region files default to layer 1 (the
  *  BG1/slot-0 view M1TE opens to). Drives the Graphics panel's clickable "open in M1TE" list
@@ -184,8 +181,8 @@ export function listM1Files(dir: string): M1ExportFile[] {
  * pristine base blob ⊕ the saved palette draft (exactly what `render-core` does for the
  * canvas via `resourcePaletteToBase` + `applyPaletteEdits`). The engine contexts
  * (`buildBgRegionContext` / `buildMetatileContext`) load the BUILT ROM's palette, which
- * keeps pre-reset / pre-rebuild colours — so without this an export's colours diverge from
- * the canvas (a palette reset still shows the old colours) and a re-import isn't idempotent.
+ * keeps pre-reset / pre-rebuild colors — so without this an export's colors diverge from
+ * the canvas (a palette reset still shows the old colors) and a re-import isn't idempotent.
  * Re-loads palettes once to capture `provenance` (the blob-offset per CGRAM index), then
  * re-sources + overlays the draft. Gfx already tracks the live cache (`gfxLiveEdits`) on both
  * sides; this closes the palette half of "the export still shows the pre-reset visuals".
@@ -228,14 +225,14 @@ export function exportBgRegionToDir(
     let sidecar: BgRegionSidecar
     const base = fileBase(layer)
 
-    // M1TE2 ".M1" session — one file per screen-block (M1TE2's map is a fixed 32×32):
-    // a 32×32 tilemap screen for BG2/BG3, or a 16×16-Map16 block for BG1 (an 8×8-mode
-    // tilemap synthesized from the Map16 sub-tiles — pixel + palette editing only, no
-    // placement). Each .M1 bundles tilemap + CHR + palette; import rebuilds the region
-    // from the sidecar. (Its own dispatch — writes multiple files + a distinct `.m1.json`.)
+    // M1TE2 ".M1" session — ONE file for the whole layer (M1TE2 v2 holds up to 64×64): the
+    // full BG2/BG3 tilemap, or a ≤32×32-Map16 block for BG1 (an 8×8-mode tilemap synthesized
+    // from the Map16 sub-tiles — pixel + palette editing only, no placement). Each .M1 bundles
+    // tilemap + CHR + palette; import rebuilds the region from the sidecar. (Its own dispatch —
+    // writes the `.M1` + a distinct `.m1.json`.)
     if (format === 'm1te2') {
       mkdirSync(dir, { recursive: true })
-      let screens: M1te2Screen[]
+      let m1: M1te2Export
       let bpp: 2 | 4
       let tileSize: 8 | 16
       let regionWidth: number
@@ -251,16 +248,16 @@ export function exportBgRegionToDir(
         applyLivePreviewPalette(ctx.cgram, rom, symbols, mh)
         const region = renderBg1Region(ctx, decoded.state.levelDataBuffer, decoded.state.screenPageMap, rect)
         if (region.cells.length === 0) return { ok: false, error: 'The selected BG1 area is empty (no tiles to export).' }
-        screens = bg1RegionM1te2(ctx, region) // top-left 16×16-Map16 block only
+        m1 = bg1RegionM1te2(ctx, region) // top-left ≤32×32-Map16 block
         bpp = 4; tileSize = 8; regionWidth = region.width; regionHeight = region.height
         cells = region.cells
-        // M1TE's map is a fixed 16×16 Map16 cells — a larger selection is cropped to the
-        // top-left block (one .M1). Report it so the user knows the rest wasn't exported.
+        // M1TE2 v2 fits a 32×32-Map16 block (64×64 8×8 cells) — a larger selection is cropped
+        // to the top-left block (one .M1). Report it so the user knows the rest wasn't exported.
         const aCols = region.width / 16, aRows = region.height / 16
-        if (aCols > 16 || aRows > 16) {
-          cropWarning = `Selected area is ${aCols}×${aRows} cells; M1TE fits one 16×16 screen, so only the top-left 16×16 was exported.`
+        if (aCols > 32 || aRows > 32) {
+          cropWarning = `Selected area is ${aCols}×${aRows} cells; M1TE fits one 32×32-cell block, so only the top-left 32×32 was exported.`
         }
-        editableCount = region.cells.filter((c) => c.faithful && c.c < 16 && c.r < 16).length
+        editableCount = region.cells.filter((c) => c.faithful && c.c < 32 && c.r < 32).length
       } else {
         const bgCtx = buildBgRegionContext(rom, symbols, mh, gfxLiveEdits())
         applyLivePreviewPalette(bgCtx.cgram, rom, symbols, mh)
@@ -268,22 +265,18 @@ export function exportBgRegionToDir(
         if (region.width === 0 || region.subCells.length === 0) {
           return { ok: false, error: `BG${layer} has no editable tilemap in this level.` }
         }
-        screens = bgRegionM1te2(bgCtx, region)
+        m1 = bgRegionM1te2(bgCtx, region)
         bpp = region.bpp; tileSize = region.tileSize === 16 ? 16 : 8; regionWidth = region.width; regionHeight = region.height
         editableCount = region.subCells.filter((s) => s.gfx).length
       }
-      const single = screens.length === 1
-      for (const s of screens) {
-        const suffix = single ? '' : `-r${s.screenY}c${s.screenX}`
-        writeFileSync(join(dir, `${base}${suffix}.M1`), s.bytes)
-        const m1sc: M1te2Sidecar = {
-          format: 'm1te2', layer, header, bpp, tileSize,
-          screenX: s.screenX, screenY: s.screenY, width: regionWidth, height: regionHeight,
-          cells: layer === 1 ? cells : undefined
-        }
-        writeFileSync(join(dir, `${base}${suffix}.m1.json`), JSON.stringify(m1sc, null, 2))
+      writeFileSync(join(dir, `${base}.M1`), m1.bytes)
+      const m1sc: M1te2Sidecar = {
+        format: 'm1te2', layer, header, bpp, tileSize,
+        width: regionWidth, height: regionHeight,
+        cells: layer === 1 ? cells : undefined
       }
-      return { ok: true, file: single ? `${base}.M1` : `${base}-r0c0.M1`, cells: editableCount, dir, warning: cropWarning }
+      writeFileSync(join(dir, `${base}.m1.json`), JSON.stringify(m1sc, null, 2))
+      return { ok: true, file: `${base}.M1`, cells: editableCount, dir, warning: cropWarning }
     }
 
     if (layer === 1) {
@@ -343,8 +336,8 @@ export function exportBgRegionToDir(
   }
 }
 
-/** PNG swatch cell colour for palette entry `idx` — bgRegionPng draws used-row
- *  blocks as columns (each `cpr` colours tall) starting at x0 (= region width);
+/** PNG swatch cell color for palette entry `idx` — bgRegionPng draws used-row
+ *  blocks as columns (each `cpr` colors tall) starting at x0 (= region width);
  *  read the 8×8 cell's centre pixel. Undefined if off-image. */
 function swatchColorAt(img: ImageData, x0: number, cpr: number, idx: number): number | undefined {
   const x = x0 + Math.floor(idx / cpr) * 8 + 4
@@ -354,9 +347,9 @@ function swatchColorAt(img: ImageData, x0: number, cpr: number, idx: number): nu
   return ((img.rgba[o + 3]! << 24) | (img.rgba[o + 2]! << 16) | (img.rgba[o + 1]! << 8) | img.rgba[o]!) >>> 0
 }
 
-/** Detect recoloured palette entries: each imported colour vs the exported one. An
+/** Detect recolored palette entries: each imported color vs the exported one. An
  *  opaque difference ⇒ a PaletteEdit (blob offset → BGR-15) + an effective-CGRAM
- *  override (cgramIndex → BGR-15) used so pixels showing the new colour still match. */
+ *  override (cgramIndex → BGR-15) used so pixels showing the new color still match. */
 function detectPaletteEdits(
   palette: SidecarPaletteEntry[],
   imported: (idx: number) => number | undefined
@@ -378,7 +371,7 @@ function detectPaletteEdits(
   return { edits, effective, uneditable }
 }
 
-/** Clone `cgram` and overlay the effective palette-colour edits (cgramIndex → BGR-15). */
+/** Clone `cgram` and overlay the effective palette-color edits (cgramIndex → BGR-15). */
 function effectiveCgram(cgram: Uint8Array, edits: Map<number, number>): Uint8Array {
   const out = cgram.slice()
   for (const [i, v] of edits) { out[i * 2] = v & 0xff; out[i * 2 + 1] = (v >>> 8) & 0xff }
@@ -477,14 +470,14 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
           errors.push(`${scFile}: aseprite is ${struct.width}×${struct.height}, expected ${sc.width}×${sc.height} (canvas resized?)`)
           continue
         }
-        // Palette colour edits (recolours) are orthogonal to the index-based pixel/word
+        // Palette color edits (recolors) are orthogonal to the index-based pixel/word
         // write — detect + persist them to the master blob (same as the flatten path).
         if (sc.palette && sc.palette.length) {
           const det = detectPaletteEdits(sc.palette, (idx) => (idx < struct.palette.length ? struct.palette[idx]! : undefined))
           for (const pe of det.edits) paletteByOffset.set(pe.offset, pe.value)
-          if (det.edits.length) log.push(`${scFile}: ${det.edits.length} palette colour${det.edits.length === 1 ? '' : 's'} changed`)
+          if (det.edits.length) log.push(`${scFile}: ${det.edits.length} palette color${det.edits.length === 1 ? '' : 's'} changed`)
           if (det.uneditable > 0) {
-            errors.push(`${scFile}: ${det.uneditable} recoloured palette entr${det.uneditable === 1 ? 'y is' : 'ies are'} not editable through the palette (not master-blob-sourced — e.g. a transparent/backdrop slot)`)
+            errors.push(`${scFile}: ${det.uneditable} recolored palette entr${det.uneditable === 1 ? 'y is' : 'ies are'} not editable through the palette (not master-blob-sourced — e.g. a transparent/backdrop slot)`)
           }
         }
         const tmAddr = sc.layer === 2 ? bgCtx.regs.bg2TilemapAddr : bgCtx.regs.bg3TilemapAddr
@@ -524,7 +517,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
           (cd.newTiles ? `, ${cd.newTiles} new tile${cd.newTiles === 1 ? '' : 's'} skipped` : '') +
           (cd.incoherentWords ? `, ${cd.incoherentWords} word${cd.incoherentWords === 1 ? '' : 's'} not rewritable` : '')
         )
-        if (cd.mismatches > 0) errors.push(`${scFile}: ${cd.mismatches} pixel${cd.mismatches === 1 ? '' : 's'} used a colour not in their tile's palette row (wrong palette row?)`)
+        if (cd.mismatches > 0) errors.push(`${scFile}: ${cd.mismatches} pixel${cd.mismatches === 1 ? '' : 's'} used a color not in their tile's palette row (wrong palette row?)`)
         if (cd.newTiles > 0) errors.push(`${scFile}: ${cd.newTiles} Aseprite tile${cd.newTiles === 1 ? '' : 's'} beyond the export couldn't be mapped to a CHR slot — use Manual tileset mode (Auto-mode paints append tiles); add genuinely new art via the raw sheet`)
         continue // combined handled both pixels + positions; skip the flatten path below
       }
@@ -554,22 +547,22 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
       }
       const mh = toMetatileHeader(sc.header)
 
-      // Palette colour edits (recoloured Aseprite-palette / PNG-swatch entries) →
-      // master-blob write-back + an effective CGRAM so pixels showing the new colour
+      // Palette color edits (recolored Aseprite-palette / PNG-swatch entries) →
+      // master-blob write-back + an effective CGRAM so pixels showing the new color
       // still match (and don't read as off-palette).
       let effective = new Map<number, number>()
       if (sc.palette && sc.palette.length) {
         const det = detectPaletteEdits(sc.palette, importedPaletteAt)
         effective = det.effective
         for (const pe of det.edits) paletteByOffset.set(pe.offset, pe.value)
-        if (det.edits.length) log.push(`${scFile}: ${det.edits.length} palette colour${det.edits.length === 1 ? '' : 's'} changed`)
+        if (det.edits.length) log.push(`${scFile}: ${det.edits.length} palette color${det.edits.length === 1 ? '' : 's'} changed`)
         if (det.uneditable > 0) {
-          errors.push(`${scFile}: ${det.uneditable} recoloured palette entr${det.uneditable === 1 ? 'y is' : 'ies are'} not editable through the palette (not master-blob-sourced — e.g. a transparent/backdrop slot)`)
+          errors.push(`${scFile}: ${det.uneditable} recolored palette entr${det.uneditable === 1 ? 'y is' : 'ies are'} not editable through the palette (not master-blob-sourced — e.g. a transparent/backdrop slot)`)
         }
       }
       // SNES is 5-bit/channel: snap imported pixels to that grid so edited-palette
-      // colours match the effective row palette; genuine off-row paints snap to their
-      // own colour, which is still absent from the row → still flagged.
+      // colors match the effective row palette; genuine off-row paints snap to their
+      // own color, which is still absent from the row → still flagged.
       quantizeRegion(edited)
 
       let diff: { edits: MetatileTileEdit[]; conflicts: number; mismatches: number }
@@ -608,7 +601,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         (diff.conflicts ? `, ${diff.conflicts} shared-tile conflict${diff.conflicts === 1 ? '' : 's'}` : '')
       )
       if (diff.mismatches > 0) {
-        errors.push(`${scFile}: ${diff.mismatches} pixel${diff.mismatches === 1 ? '' : 's'} used a colour not in their tile's palette row — clamped to index 0 (wrong palette row?)`)
+        errors.push(`${scFile}: ${diff.mismatches} pixel${diff.mismatches === 1 ? '' : 's'} used a color not in their tile's palette row — clamped to index 0 (wrong palette row?)`)
       }
 
       addTilePatches(filePatches, diff.edits, tileBytes)
@@ -616,11 +609,10 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
     }
 
     // ── M1TE2 ".M1" session imports ─────────────────────────────────────────────
-    // Each `.m1.json` + its `.M1` carry one 32×32 screen of a BG2/BG3 layer. The .M1 is the
-    // new source of truth — diffed against the cart for CHR pixel bytes (a direct planar
-    // compare, no per-row views), tilemap WORDS, and palette colours. CHR edits join the
-    // shared per-file patch map; tilemap words accumulate per file (a layer's screens share
-    // the tilemap but write disjoint offsets) and splice once.
+    // Each `.m1.json` + its `.M1` carry one whole BG2/BG3 layer (v2 holds up to 64×64). The
+    // .M1 is the new source of truth — diffed against the cart for CHR pixel bytes (a direct
+    // planar compare, no per-row views), tilemap WORDS, and palette colors. CHR edits join the
+    // shared per-file patch map; tilemap words accumulate per file and splice once.
     const m1WordEdits = new Map<number, { src: BgTilemapSource; words: Map<number, number> }>()
     for (const scFile of m1Sidecars) {
       try {
@@ -637,7 +629,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
           const ctx = buildMetatileContext(rom, symbols, mh, gfxLiveEdits())
           applyLivePreviewPalette(ctx.cgram, rom, symbols, mh)
           const region = { rgba: new Uint8Array(0), width: sc.width, height: sc.height, cells: sc.cells ?? [], paletteRowsUsed: [] }
-          const d = diffBg1RegionM1te2(ctx, region, readFileSync(m1Path), sc.screenX, sc.screenY)
+          const d = diffBg1RegionM1te2(ctx, region, readFileSync(m1Path))
           regions++
           manifestRef = ctx.manifest
           addTilePatches(filePatches, d.tileEdits, 32)
@@ -653,11 +645,11 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
           }
           perRegion.push({ file: scFile, layer: 1, source: 'm1te2', tiles: d.tileEdits.length, mismatches: 0, conflicts: 0 })
           log.push(
-            `${scFile} (M1TE, BG1 screen ${sc.screenX},${sc.screenY}): ${d.tileEdits.length} tile${d.tileEdits.length === 1 ? '' : 's'} changed, ` +
-            `${d.paletteEdits.length - uneditable} palette colour${d.paletteEdits.length - uneditable === 1 ? '' : 's'}` +
+            `${scFile} (M1TE, BG1): ${d.tileEdits.length} tile${d.tileEdits.length === 1 ? '' : 's'} changed, ` +
+            `${d.paletteEdits.length - uneditable} palette color${d.paletteEdits.length - uneditable === 1 ? '' : 's'}` +
             (d.skippedTiles ? `, ${d.skippedTiles} non-editable tile${d.skippedTiles === 1 ? '' : 's'} skipped` : '')
           )
-          if (uneditable > 0) errors.push(`${scFile}: ${uneditable} recoloured palette entr${uneditable === 1 ? 'y is' : 'ies are'} not editable (not master-blob-sourced)`)
+          if (uneditable > 0) errors.push(`${scFile}: ${uneditable} recolored palette entr${uneditable === 1 ? 'y is' : 'ies are'} not editable (not master-blob-sourced)`)
           continue
         }
 
@@ -672,7 +664,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         const tmAddr = sc.layer === 2 ? bgCtx.regs.bg2TilemapAddr : bgCtx.regs.bg3TilemapAddr
         const src = resolveBgTilemapSource(rom, symbols, sc.layer, sc.layer === 2 ? mh.bg2Tileset : mh.bg3Tileset)
         const currentTilemap = src && tmAddr === src.vramBase ? (liveTiles('lz2', src.fileId) ?? src.bytes) : undefined
-        const d = diffBgRegionM1te2(bgCtx, region, readFileSync(m1Path), sc.screenX, sc.screenY, tmAddr, { currentTilemap })
+        const d = diffBgRegionM1te2(bgCtx, region, readFileSync(m1Path), tmAddr, { currentTilemap })
         regions++
         manifestRef = bgCtx.manifest
 
@@ -690,7 +682,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
           }
         }
 
-        // Palette colours → master-blob offsets via provenance (skip non-blob-sourced slots).
+        // Palette colors → master-blob offsets via provenance (skip non-blob-sourced slots).
         let uneditable = 0
         if (d.paletteEdits.length) {
           const provenance = new Int32Array(256)
@@ -704,12 +696,12 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
 
         perRegion.push({ file: scFile, layer: sc.layer, source: 'm1te2', tiles: d.tileEdits.length, mismatches: 0, conflicts: 0 })
         log.push(
-          `${scFile} (M1TE2, BG${sc.layer} screen ${sc.screenX},${sc.screenY}): ${d.tileEdits.length} tile${d.tileEdits.length === 1 ? '' : 's'} changed, ` +
-          `${d.wordEdits.length} repositioned, ${d.paletteEdits.length - uneditable} palette colour${d.paletteEdits.length - uneditable === 1 ? '' : 's'}` +
+          `${scFile} (M1TE2, BG${sc.layer}): ${d.tileEdits.length} tile${d.tileEdits.length === 1 ? '' : 's'} changed, ` +
+          `${d.wordEdits.length} repositioned, ${d.paletteEdits.length - uneditable} palette color${d.paletteEdits.length - uneditable === 1 ? '' : 's'}` +
           (d.skippedTiles ? `, ${d.skippedTiles} non-editable tile${d.skippedTiles === 1 ? '' : 's'} skipped` : '') +
           (d.skippedWords ? `, ${d.skippedWords} non-editable cell${d.skippedWords === 1 ? '' : 's'} skipped` : '')
         )
-        if (uneditable > 0) errors.push(`${scFile}: ${uneditable} recoloured palette entr${uneditable === 1 ? 'y is' : 'ies are'} not editable (not master-blob-sourced)`)
+        if (uneditable > 0) errors.push(`${scFile}: ${uneditable} recolored palette entr${uneditable === 1 ? 'y is' : 'ies are'} not editable (not master-blob-sourced)`)
       } catch (e) {
         errors.push(`${scFile}: ${e instanceof Error ? e.message : String(e)}`)
       }
@@ -731,14 +723,14 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
     })
     log.push(`Saved ${applied} gfx file${applied === 1 ? '' : 's'}.`)
 
-    // Persist palette colour edits to the master blob (merged with existing edits).
+    // Persist palette color edits to the master blob (merged with existing edits).
     let paletteChanged = 0
     if (paletteByOffset.size) {
       const detected: PaletteEdit[] = [...paletteByOffset].map(([offset, value]) => ({ offset, value }))
       const r = await savePaletteEdits(mergePaletteEdits(loadPaletteEdits(), detected))
       if (r.ok) {
         paletteChanged = detected.length
-        log.push(`Saved ${paletteChanged} palette colour${paletteChanged === 1 ? '' : 's'}.`)
+        log.push(`Saved ${paletteChanged} palette color${paletteChanged === 1 ? '' : 's'}.`)
       } else {
         errors.push(`palette: ${r.error}`)
       }

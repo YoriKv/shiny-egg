@@ -17,7 +17,7 @@ import type {
 import type {IncomingExit, LayerVisibility, Selection} from '../../types'
 import type {View} from '../view'
 import type {SpriteBoundsMap} from '../hit-test'
-import {CELL_PX, SCREEN_CELLS, screenCol, screenRow} from '../geometry'
+import {CELL_PX, SCREEN_CELLS, LEVEL_PX_W, LEVEL_PX_H, screenCol, screenRow} from '../geometry'
 import {linksFor, resolveEntityRef} from '../entity-links'
 import {objectSizeMode} from '../../data/object-record'
 import {drawScreenGrid} from './grid'
@@ -25,7 +25,10 @@ import {drawPaintOverlay} from './paint'
 import {drawObjects} from './objects'
 import {drawDecodedBg1} from './decoded-bg1'
 import {drawCollisionLayer} from './collision'
-import {drawBgLayers, drawBgOverlays, drawBgForeground, type BgLayerBitmaps} from './bg-layers'
+import {drawBgLayers, drawBgOverlays, drawBgForeground, type BgLayerBitmaps, type ParallaxDraw} from './bg-layers'
+import {parallaxOffsets, cameraOrigin, applyCameraSnap, clampCamera} from '../parallax'
+import {buildBandedGradient} from '../../lib/gradient-banded'
+import {drawCameraGradient, drawCameraOverlay, cameraBoxScreenRect, type CameraPreview, type BoxRect} from './camera-preview'
 import {drawSpriteGlyphs, drawSpriteOutlines} from './sprites'
 import {drawEntranceGlyphs} from './entrance-glyphs'
 import {drawCommandObjectBadges, drawCommandSpriteBadges} from './command-badges'
@@ -101,7 +104,7 @@ export interface SceneParams {
     view: View
     level: LevelData | null
     layers: LayerVisibility
-    /** Grid line colour (rgba string) — see canvas/draw/grid.ts. */
+    /** Grid line color (rgba string) — see canvas/draw/grid.ts. */
     gridColor: string
     bg1Canvas: HTMLCanvasElement | null
     spriteCanvas: HTMLCanvasElement | null
@@ -143,6 +146,10 @@ export interface SceneParams {
     incomingOverlay: IncomingOverlay | null
     marquee: Marquee | null
     paintDrag: PaintDrag | null
+    /** Camera Preview settings, or null when off. When set, the view zoom is pinned
+     *  to `.zoom` (caller-enforced) and BG2/BG3/gradient parallax-align to the virtual
+     *  camera box (centred, screen-snapped per `.snap`); `.mask` blacks out the rest. */
+    cameraPreview: CameraPreview | null
 }
 
 /** Paint the full scene. `canvas` may be null (effect runs before mount). */
@@ -182,7 +189,8 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         exitDrag,
         incomingOverlay,
         marquee,
-        paintDrag
+        paintDrag,
+        cameraPreview
     } = p
     if (!canvas) return
     const dpr = window.devicePixelRatio || 1
@@ -283,10 +291,48 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // has the toggle on. Backdrop has no cart-side hide flag.
         const bgLayerBg2 = !!bgLayers && layers.bg2 && bgLayers.bg2Layer.visible
         const bgLayerBg3 = !!bgLayers && layers.bg3 && bgLayers.bg3Layer.visible
+        // Camera Preview: a virtual 256×224 camera centred in the viewport (snapped
+        // to the screen grid per cameraPreview.snap), pinned at the chosen 1×–4× zoom.
+        // Derive the BG2/BG3/gradient parallax from where it sits over the level
+        // (canvas/parallax.ts) and remember the box's screen rect for the gradient +
+        // overlay. `parallax` re-offsets + both-axis-tiles BG2/BG3; null = normal draw.
+        let parallax: ParallaxDraw | null = null
+        let camGradientScroll: number | null = null
+        let camBox: BoxRect | null = null
+        if (cameraPreview) {
+            // Snap, then clamp the 256×224 camera inside the level extent so the
+            // preview never shows past the edges (clamp last keeps a snapped X on grid).
+            const cam = clampCamera(
+                applyCameraSnap(cameraOrigin(view, size), cameraPreview.snap),
+                LEVEL_PX_W,
+                LEVEL_PX_H
+            )
+            camBox = cameraBoxScreenRect(cam, view)
+            if (bgLayers) {
+                const off = parallaxOffsets(cam.x, cam.y, bgLayers.parallax)
+                const x0 = -view.panX / view.zoom
+                const y0 = -view.panY / view.zoom
+                parallax = {
+                    bg2: off.bg2,
+                    bg3: off.bg3,
+                    cover: { x0, y0, x1: x0 + size.w / view.zoom, y1: y0 + size.h / view.zoom }
+                }
+                if (bgLayers.backdrop.kind === 'gradient') camGradientScroll = off.gradientScroll
+            }
+        }
         if (bgLayers) {
             const backdrop = layers.backdrop
+            // Screen-relative sky gradient for Camera Preview — the full 24-keyframe
+            // ramp scrolled by camY/8 inside the box (the level-stretched strip would
+            // show a near-flat slice). Drawn first, behind the BG layers.
+            if (backdrop && camGradientScroll !== null && camBox && bgLayers.backdrop.kind === 'gradient') {
+                drawCameraGradient(
+                    ctx, dpr, size, camBox,
+                    buildBandedGradient(bgLayers.backdrop.stops), camGradientScroll, view.zoom
+                )
+            }
             if (bgLayerBg2 || bgLayerBg3 || backdrop) {
-                drawBgLayers(ctx, bgLayers, {bg2: bgLayerBg2, bg3: bgLayerBg3, backdrop})
+                drawBgLayers(ctx, bgLayers, {bg2: bgLayerBg2, bg3: bgLayerBg3, backdrop}, parallax)
             }
         }
         // Phase 6.2: decoded BG1 layer goes on top of BG2/BG3, under outlines.
@@ -300,14 +346,14 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // ABOVE BG1 (e.g. 1-1's foreground flowers). Source-over, above BG1 and
         // below the darkening overlay + sprites. Null planes (most levels) no-op.
         if (bgLayers && (bgLayerBg2 || bgLayerBg3)) {
-            drawBgForeground(ctx, bgLayers, {bg2: bgLayerBg2, bg3: bgLayerBg3})
+            drawBgForeground(ctx, bgLayers, {bg2: bgLayerBg2, bg3: bgLayerBg3}, parallax)
         }
         // Phase 6.3: BG2/BG3 darkening OVERLAYS — subscreen layers the cart's
         // color math subtracts from the foreground (e.g. mode-$0E cave-shadow
         // BG3). These composite ABOVE BG1 (multiply blend); a no-op for the
         // common modes whose BG2/BG3 are plain backgrounds.
         if (bgLayers && (bgLayerBg2 || bgLayerBg3)) {
-            drawBgOverlays(ctx, bgLayers, {bg2: bgLayerBg2, bg3: bgLayerBg3})
+            drawBgOverlays(ctx, bgLayers, {bg2: bgLayerBg2, bg3: bgLayerBg3}, parallax)
         }
         // Object-drag cell-highlight — above BG1, below the screen grid + outlines
         // so those stay readable on top of the translucent tint. Drag-only (the
@@ -510,6 +556,12 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             ctx.strokeStyle = selectionAccent(0.95)
             ctx.strokeRect(mx, my, mw, mh)
             ctx.restore()
+        }
+
+        // Camera Preview box (+ optional black mask) — a screen-space overlay on top
+        // of everything, at the camera box's screen rect.
+        if (cameraPreview && camBox) {
+            drawCameraOverlay(ctx, dpr, size, camBox, cameraPreview.mask)
         }
     }
 }

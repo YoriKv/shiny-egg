@@ -31,7 +31,7 @@ import type { FieldKind } from './property-schema'
  *  names every mode by purpose — superseding the old generic "Standard level"
  *  placeholders. Cross-validated against the per-level `.prm` usage AND the
  *  verified PPU-register captures in `snes-framework/docs/bg23rendering.md §3`:
- *    - 0x02 Underwater — only 3-3-3, which is also BG1 Pond (colour-math on).
+ *    - 0x02 Underwater — only 3-3-3, which is also BG1 Pond (color-math on).
  *    - 0x03 Lava (Mode 2) — the offset-per-tile BG3 "wavy" heat distortion.
  *    - 0x08 Snowfall — every World-5 snow stage.
  *    - 0x09 Mode-7 — Raphael's moon boss (record 0xCB only).
@@ -297,7 +297,7 @@ function en(
 
 export function headerFields(): HeaderField[] {
   return [
-    num(0, 'BG color', 'Backdrop colour. 0x00–0x0F = a solid colour; 0x10+ = a gradient preset.', true),
+    num(0, 'BG color', 'Backdrop color. 0x00–0x0F = a solid color; 0x10+ = a gradient preset.', true),
     en(
       1,
       'BG1 tileset',
@@ -318,7 +318,7 @@ export function headerFields(): HeaderField[] {
       9,
       'Level mode',
       LEVEL_MODES,
-      'PPU display / scene mode — selects the BG layout, colour-math, and IRQ. Names are the game’s own scene-mode table; 0x03 / 0x09 / 0x0A are the special ones (offset-per-tile lava / Mode-7 boss / autoscroll).',
+      'PPU display / scene mode — selects the BG layout, color-math, and IRQ. Names are the game’s own scene-mode table; 0x03 / 0x09 / 0x0A are the special ones (offset-per-tile lava / Mode-7 boss / autoscroll).',
       true
     ),
     num(10, 'Animation tileset', 'Which frame-0 tile-animation handler runs (water / clouds / lava / …).', true),

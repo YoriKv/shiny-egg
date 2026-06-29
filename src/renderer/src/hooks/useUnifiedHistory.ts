@@ -44,7 +44,7 @@ interface IncomingOverride {
 // defers to the per-level reducer's own undo snapshot (one token per real
 // commit, kept in lockstep via the reducer's `commits` counter); a `cross`
 // token carries the reversible cross-level edit; a `palette` token carries the
-// full overlay edit sets before/after a master-palette colour change (undo
+// full overlay edit sets before/after a master-palette color change (undo
 // re-saves `before`, redo re-saves `after`). Interleaving them here is what lets
 // a single Ctrl+Z undo whichever edit was actually the most recent — loaded-
 // level, cross-level, OR palette — across the session. Cleared on navigation

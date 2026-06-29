@@ -75,6 +75,17 @@ import {
 } from './canvas/view'
 import { useLevelRenderLayers } from './hooks/useLevelRenderLayers'
 import { drawScene } from './canvas/draw/scene'
+import type { CameraPreview } from './canvas/draw/camera-preview'
+import { CameraPreviewControl } from './canvas/CameraPreviewControl'
+import { persistedState } from './lib/persisted-state'
+
+/** Camera Preview popup settings (mask / zoom / snap) — persisted; the on/off
+ *  checkbox is session-only (a transient inspection mode). */
+const CAMERA_SETTINGS_STORE = persistedState<CameraPreview>('shinyEgg.cameraPreview.v1', {
+  mask: false,
+  zoom: 2,
+  snap: 'none'
+})
 
 export interface CanvasProps {
   hasAssets: boolean
@@ -169,7 +180,7 @@ export interface CanvasProps {
   /** Commit an absolute spawn cell to the entrance-table document (the marker
    *  drag's release). One undo step; the marker follows via `spawnOverride`. */
   onSpawnCommit: (x: number, y: number) => void
-  /** The palette colour-edit DRAFT (usePaletteEditor) — fed to the render layers
+  /** The palette color-edit DRAFT (usePaletteEditor) — fed to the render layers
    *  as `paletteOverride` so the canvas previews unsaved palette edits live (no
    *  build). See hooks/useLevelRenderLayers. */
   paletteOverride: PaletteEdit[]
@@ -185,10 +196,10 @@ export interface CanvasProps {
    *  the cosmetic random-tile variants. Changing it re-fetches bg1 + collision.
    *  `undefined` ⇒ the default deterministic seed. See hooks/useLevelRenderLayers. */
   prngSeed: number | undefined
-  /** App-wide canvas background colour (`#rrggbb`) — also used for the level-
+  /** App-wide canvas background color (`#rrggbb`) — also used for the level-
    *  switch wipe so that transient matches the surrounding background. */
   canvasBackground: string
-  /** App-wide grid line colour (rgba string, with alpha) — see draw/grid.ts. */
+  /** App-wide grid line color (rgba string, with alpha) — see draw/grid.ts. */
   gridColor: string
 }
 
@@ -250,6 +261,26 @@ export function Canvas({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [view, setView] = useState<View>(INITIAL_VIEW)
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
+  // Camera Preview: on/off is session-only (a transient inspection mode); the popup
+  // settings (mask / zoom / snap) persist. While on, the view zoom is pinned to the
+  // chosen 1×–4×.
+  const [cameraOn, setCameraOn] = useState(false)
+  const [cameraSettings, setCameraSettings] = useState<CameraPreview>(() => CAMERA_SETTINGS_STORE.load())
+  useEffect(() => {
+    CAMERA_SETTINGS_STORE.save(cameraSettings)
+  }, [cameraSettings])
+  const cameraOnRef = useRef(cameraOn)
+  cameraOnRef.current = cameraOn
+  // Pin the view zoom to the selected 1×–4× whenever Camera Preview is on. Zoom ABOUT
+  // THE VIEWPORT CENTRE (not by keeping pan) so the camera keeps the same level
+  // position when the zoom changes — the camera is the viewport-centre world point,
+  // and zoomAt holds that point fixed.
+  useEffect(() => {
+    if (!cameraOn) return
+    setView((v) =>
+      v.zoom === cameraSettings.zoom ? v : zoomAt(v, size.w / 2, size.h / 2, cameraSettings.zoom / v.zoom)
+    )
+  }, [cameraOn, cameraSettings.zoom, view.zoom, size])
   const level = levelState.level
   // Selection derivations. `primary` (the sole element when exactly one thing is
   // selected; null while multi) drives the single-entity interactions — move /
@@ -783,7 +814,8 @@ export function Canvas({
       size, view, level, layers, gridColor, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
       spriteBounds, neighborStatus, behaviorProbes, generatorThumbs, renderValidity, influence, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
       incoming, testSpawn, spawnOverride: spawnDragOverlay ?? spawnOverride, paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
-      exitDrag, incomingOverlay, marquee, paintDrag
+      exitDrag, incomingOverlay, marquee, paintDrag,
+      cameraPreview: cameraOn ? cameraSettings : null
     })
   }, [
     view,
@@ -822,7 +854,9 @@ export function Canvas({
     groupMove,
     paintTool,
     paintHeights,
-    paintDrag
+    paintDrag,
+    cameraOn,
+    cameraSettings
   ])
 
   /**
@@ -1615,6 +1649,8 @@ export function Canvas({
     if (!wrap) return
     const handler = (e: WheelEvent): void => {
       e.preventDefault()
+      // Zoom is pinned in Camera Preview — wheel-zoom is disabled there.
+      if (cameraOnRef.current) return
       const rect = wrap.getBoundingClientRect()
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
@@ -1906,19 +1942,24 @@ export function Canvas({
         <div className="se-canvas__coords">{coordsText}</div>
       )}
 
-      {/* Top-right reset button (shows once panned or zoomed) */}
-      {(view.panX !== INITIAL_VIEW.panX ||
-        view.panY !== INITIAL_VIEW.panY ||
-        view.zoom !== INITIAL_VIEW.zoom) && (
-        <button
-          type="button"
-          className="se-canvas__reset"
-          onClick={resetView}
-          title="Reset view"
-        >
-          Reset view
-        </button>
-      )}
+      {/* Top-right view controls: Camera Preview (left) + Reset view (right) */}
+      <div className="se-canvas__viewbtns">
+        {level && !level.empty && !level.special && (
+          <CameraPreviewControl
+            enabled={cameraOn}
+            onEnabledChange={setCameraOn}
+            settings={cameraSettings}
+            onSettingsChange={setCameraSettings}
+          />
+        )}
+        {(view.panX !== INITIAL_VIEW.panX ||
+          view.panY !== INITIAL_VIEW.panY ||
+          view.zoom !== INITIAL_VIEW.zoom) && (
+          <button type="button" className="se-canvas__reset" onClick={resetView} title="Reset view">
+            Reset view
+          </button>
+        )}
+      </div>
     </div>
   )
 }

@@ -1,24 +1,24 @@
 // Graphics ⇄ PNG round-trip for external editing. A gfx file's paletteless
 // indexed tiles are rendered to RGBA with a chosen palette, and a SWATCH strip
-// of that palette is appended on the right — the swatch IS the colour↔index
+// of that palette is appended on the right — the swatch IS the color↔index
 // contract, so the PNG is self-describing: import reads the swatch to recover
 // the palette, maps each tile pixel back to its index (exact RGB match; off-
 // palette or transparent → index 0), and re-encodes SNES tile bytes for
 // `saveGfxEdit`. Unedited tiles round-trip exactly when the palette has no
-// duplicate colours; a duplicate maps to the lowest index (visually identical).
+// duplicate colors; a duplicate maps to the lowest index (visually identical).
 //
 // Layout: tiles in a `tilesWide`-tile grid on the left, then a `GAP`px gutter,
 // then a vertical column of N opaque swatch cells (N = 16 for 4bpp, 4 for 2bpp).
 // The swatch cells are always opaque so a transparent index 0 stays eyedroppable.
 //
 // PER-TILE PALETTES (BG3 fidelity). A 2bpp BG3 sheet's tiles are drawn with
-// DIFFERENT 4-colour sub-palettes per tilemap cell (the cell's 3-bit palette
+// DIFFERENT 4-color sub-palettes per tilemap cell (the cell's 3-bit palette
 // field), but a tile pixel is still a single 0-3 index into ITS sub-palette —
 // the sub-palette is cell metadata, not in the tile. So `gfxToImage`/`imageToGfx`
-// accept an optional per-tile palette: each tile is coloured/decoded against its
+// accept an optional per-tile palette: each tile is colored/decoded against its
 // OWN sub-palette (passed by the caller from the BG3 tilemap), and the swatch is
 // widened (`swatchColors`) to a reference grid of every sub-palette. A global
-// colour→index swatch would be WRONG here — BG3 sub-palettes share colours at
+// color→index swatch would be WRONG here — BG3 sub-palettes share colors at
 // different column positions, so the same RGB can mean different indices in
 // different tiles; only per-tile decode is unambiguous.
 
@@ -36,9 +36,9 @@ export interface GfxImageLayout {
   /** Tile rows in the grid (lz16: rowCount; lz2: ceil(tileCount/tilesWide)). */
   tilesTall: number;
   bpp: 2 | 4;
-  /** Swatch cell count. Defaults to the bit-depth's per-tile colour count (16 for
+  /** Swatch cell count. Defaults to the bit-depth's per-tile color count (16 for
    *  4bpp, 4 for 2bpp). BG3's per-tile-fidelity export overrides this to span all
-   *  its sub-palettes (≥16 = 4 sub-palettes × 4) so every colour BG3 can use is in
+   *  its sub-palettes (≥16 = 4 sub-palettes × 4) so every color BG3 can use is in
    *  the swatch. Only affects swatch geometry — the tile grid is independent, so
    *  `imageToGfx` decodes correctly without it (it reads `img.width` + per-tile
    *  palettes). */
@@ -59,10 +59,10 @@ const layoutDims = (l: GfxImageLayout) => {
   };
 };
 
-/** Build the export image: tile grid coloured by `paletteRgba` (N×4 RGBA bytes,
- *  index i = colour i) + an opaque swatch column of those N colours.
+/** Build the export image: tile grid colored by `paletteRgba` (N×4 RGBA bytes,
+ *  index i = color i) + an opaque swatch column of those N colors.
  *
- *  `opts.tilePaletteRgba(t)` overrides the colouring of tile `t` with its own
+ *  `opts.tilePaletteRgba(t)` overrides the coloring of tile `t` with its own
  *  palette (BG3 per-tile fidelity). `paletteRgba` then only feeds the swatch
  *  (the reference grid of every sub-palette). The per-tile palette's alpha is
  *  honoured for tile pixels (BG3 index-0 transparent), but the swatch stays
@@ -113,7 +113,7 @@ export function gfxToImage(
 }
 
 /** Read the swatch palette out of an export-shaped PNG image (N RGB triples,
- *  index i = colour i). Sampled from each cell's centre. */
+ *  index i = color i). Sampled from each cell's centre. */
 export function readSwatchPalette(img: ImageData, layout: GfxImageLayout): number[] {
   const d = layoutDims(layout);
   const pal: number[] = [];
@@ -145,8 +145,8 @@ function tilesToIndexGrid(tiles: Uint8Array, layout: GfxImageLayout): Uint8Array
   return grid;
 }
 
-/** Build a colour→index map from a palette (RGB ints), lowest index winning a
- *  duplicate colour (visually identical, keeps the round-trip stable). */
+/** Build a color→index map from a palette (RGB ints), lowest index winning a
+ *  duplicate color (visually identical, keeps the round-trip stable). */
 function colorIndexMap(pal: readonly number[]): Map<number, number> {
   const map = new Map<number, number>();
   for (let i = pal.length - 1; i >= 0; i--) map.set(pal[i]!, i);
@@ -159,14 +159,14 @@ function colorIndexMap(pal: readonly number[]): Map<number, number> {
  * (transparent or off-palette → index 0).
  *
  * When `opts.base` (the original tile bytes) is given, a pixel still showing its
- * base colour keeps its ORIGINAL index — so an unedited file round-trips
- * byte-exact even if the palette has duplicate colours; only genuinely repainted
+ * base color keeps its ORIGINAL index — so an unedited file round-trips
+ * byte-exact even if the palette has duplicate colors; only genuinely repainted
  * pixels are remapped. `opts.index0Transparent` marks index 0 as the transparent
  * key (so a transparent pixel is "unchanged" only where the base was index 0).
  *
  * `opts.tilePalette(t)` decodes tile `t` against its OWN palette (BG3 per-tile
  * fidelity) — the swatch is then ignored (it can't disambiguate sub-palettes
- * that share colours). Each tile's palette is the same RGB list its sub-palette
+ * that share colors). Each tile's palette is the same RGB list its sub-palette
  * was rendered with at export, so unedited tiles still round-trip byte-exact.
  */
 export function imageToGfx(

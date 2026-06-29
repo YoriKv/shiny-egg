@@ -48,6 +48,7 @@ import {
 import {
   applyIslandTilemapEdits,
   readIslandTilemapEdits,
+  ISLAND_TILEMAP_LABEL,
   type IslandTilemapEdit
 } from 'snes-framework/island-tilemap'
 import {
@@ -61,7 +62,9 @@ import {
 import {
   applyLogoTilemapEdits,
   readLogoTilemapEdits,
+  readLogoTilemapWords,
   LOGO_TILEMAP_BANK_FILE,
+  LOGO_TILEMAP_LABEL,
   type LogoTilemapEdit
 } from 'snes-framework/logo-tilemap'
 import { type SymbolMap } from 'snes-framework/symbol-map'
@@ -425,6 +428,52 @@ export function resetGfxEdit(format: 'lz2' | 'lz16', fileId: number): { ok: bool
   return { ok: true, removed: true }
 }
 
+/** True when the active project already overlay-edits the compressed blob for
+ *  `format`/`fileId` — the ROM-import gfx overwrite warning (importing a sheet
+ *  overwrites the user's existing gfx edit for it). */
+export function gfxBlobOverlayExists(format: 'lz2' | 'lz16', fileId: number): boolean {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return false
+  const file = gfxBlobFileForId(path.join(frameworkWorkRoot(), 'yi'), format, fileId)
+  if (!file) return false
+  return existsSync(path.join(overlayRoot(projectId), 'assets', 'yi', file))
+}
+
+/** The Bank09 1bpp raw-gfx `.bin`s the Graphics panel exports/imports — the message
+ *  font (version-suffixed filename) + the message-box pictures — as `assets/yi`-
+ *  relative paths. Only those present in the extract are returned. */
+export function fontSheetBinFiles(): { key: 'message-font' | 'message-box-pictures'; binFile: string }[] {
+  const gfxDir = path.join(frameworkWorkRoot(), 'assets', 'yi', 'Graphics')
+  const out: { key: 'message-font' | 'message-box-pictures'; binFile: string }[] = []
+  try {
+    const font = readdirSync(gfxDir).find((f) => /^GFX_1BPPFont_.*\.bin$/i.test(f))
+    if (font) out.push({ key: 'message-font', binFile: `Graphics/${font}` })
+  } catch {
+    /* no Graphics dir → nothing */
+  }
+  if (existsSync(path.join(gfxDir, 'GFX_1BPPMesaageBoxPictures.bin'))) {
+    out.push({ key: 'message-box-pictures', binFile: 'Graphics/GFX_1BPPMesaageBoxPictures.bin' })
+  }
+  return out
+}
+
+/** Read a raw-gfx `.bin` (an `assets/yi`-relative path) overlay-first — the active
+ *  project's overlay copy if it exists, else the pristine base. So an export reflects
+ *  unbuilt raw-CHR edits (the round-trip the import diffs against). */
+export function readRawChrOverlayFirst(binFile: string): Uint8Array {
+  const projectId = getCurrentProjectId()
+  if (projectId) {
+    const ov = path.join(overlayRoot(projectId), 'assets', 'yi', binFile)
+    if (existsSync(ov)) return new Uint8Array(readFileSync(ov))
+  }
+  return new Uint8Array(readFileSync(path.join(frameworkWorkRoot(), 'assets', 'yi', binFile)))
+}
+
+/** Read a raw-gfx `.bin`'s pristine BASE bytes (for the import's changed-vs-base check). */
+export function readRawChrBase(binFile: string): Uint8Array {
+  return new Uint8Array(readFileSync(path.join(frameworkWorkRoot(), 'assets', 'yi', binFile)))
+}
+
 /** Decompress a gfx file's BASE (vanilla) tiles — the base reference for the live
  *  preview (the gfx analogue of the palette base blob). Reads the asar-input blob
  *  under `assets/yi/` (`Graphics/` or `Tilemaps/`, validated by `gfxBlobFileForId`). */
@@ -602,6 +651,54 @@ function gfxRoleIndex(): Map<string, Set<string>> {
     }
   } catch { /* leave whatever was built */ }
   gfxRoleCache = map
+  return map
+}
+
+/** Cart-structural `format/fileId` → decompressed size + lz16 row count, the size
+ *  source the ROM-import gfx diff needs to decode foreign lz16 sheets (lz2 self-
+ *  terminates, so it doesn't need this). Built by walking every distinct level
+ *  tileset-combo's gfx manifest — same walk as `gfxRoleIndex`. Static for the cart,
+ *  so cached for the session. Empty when there's no build/.sym (gfx diff then
+ *  covers lz2 only). */
+export interface GfxSizeEntry { format: 'lz2' | 'lz16'; fileId: number; sizeBytes: number; rowCount?: number }
+let gfxSizeCache: Map<string, GfxSizeEntry> | null = null
+export function gfxSizeRegistry(): Map<string, GfxSizeEntry> {
+  if (gfxSizeCache) return gfxSizeCache
+  const map = new Map<string, GfxSizeEntry>()
+  try {
+    const { rom, symbols } = loadRomAndSymbols()
+    const workRoot = frameworkWorkRoot()
+    const lvlMap = loadLevelMapPublic(workRoot)
+    const seen = new Set<string>()
+    for (let rec = 0; rec <= 0xdb; rec++) {
+      let base: ReturnType<typeof loadLevel>
+      try { base = loadLevel({ workRoot, levelRecordId: rec }) } catch { continue }
+      if (base.empty || base.special || base.header.length < 15) continue
+      const h = base.header
+      const combo = `${h[1]},${h[3]},${h[5]},${h[7]},${h[9]}` // bg1/bg2/bg3/sprite tileset + mode
+      if (seen.has(combo)) continue
+      seen.add(combo)
+      const header = {
+        bg1Tileset: h[1] ?? 0, bg2Tileset: h[3] ?? 0, bg3Tileset: h[5] ?? 0, spriteTileset: h[7] ?? 0,
+        bgColor: h[0] ?? 0, bg1Palette: h[2] ?? 0, bg2Palette: h[4] ?? 0, bg3Palette: h[6] ?? 0,
+        spritePalette: h[8] ?? 0, yoshiColor: 0, isWorld6: isWorld6Record(lvlMap, rec), levelMode: h[9] ?? 0
+      }
+      const manifest: GfxFileEntry[] = []
+      try { loadLevelGfx(rom, symbols, header as never, new Uint8Array(0x10000), manifest) } catch { continue }
+      for (const e of manifest) {
+        const key = `${e.format}/${e.fileId}`
+        if (!map.has(key)) {
+          map.set(key, {
+            format: e.format,
+            fileId: e.fileId,
+            sizeBytes: e.sizeBytes,
+            rowCount: e.format === 'lz16' ? e.sizeBytes / 512 : undefined
+          })
+        }
+      }
+    }
+  } catch { /* no build / sym → empty (gfx diff then covers lz2 only) */ }
+  gfxSizeCache = map
   return map
 }
 
@@ -1352,12 +1449,12 @@ export async function saveAsmRegionResource(
   return { ok: true, files: [def.file] }
 }
 
-// ── Palette-colour editing (§B10) ───────────────────────────────────────────
-// The master palette blob is inline `dw` in yi/Banks/Bank57.asm, so a colour
+// ── Palette-color editing (§B10) ───────────────────────────────────────────
+// The master palette blob is inline `dw` in yi/Banks/Bank57.asm, so a color
 // edit is an asm edit → overlay/yi/Banks/Bank57.asm (build-tree path, build
 // dirty) — same overlay shape as the asm-region string editor above.
 
-/** The active project overlay's current palette-colour edits (offset → value),
+/** The active project overlay's current palette-color edits (offset → value),
  *  diffed from base. Empty when there's no overlay / no project. */
 export function loadPaletteEdits(): PaletteEdit[] {
   const projectId = getCurrentProjectId()
@@ -1377,7 +1474,7 @@ export function loadIslandTilemapEdits(): IslandTilemapEdit[] {
 }
 
 // ── Backdrop-gradient editing ───────────────────────────────────────────────
-// The 16 BG colour-gradient tables also live inline in Bank57.asm, so a gradient
+// The 16 BG color-gradient tables also live inline in Bank57.asm, so a gradient
 // edit composes into the SAME overlay file as palette + island edits (below). The
 // table labels are named by the Bank01 pointer table (constant — never edited).
 
@@ -1396,7 +1493,7 @@ export function loadGradientEdits(): GradientEdit[] {
   return readGradientEdits(baseText, overlayText, gradientLabelsFromBase())
 }
 
-/** The 16×24 PRISTINE base gradient colours (from base Bank57). The Palette
+/** The 16×24 PRISTINE base gradient colors (from base Bank57). The Palette
  *  panel's gradient strip shows BASE ⊕ draft, so a reset reveals base without a
  *  rebuild — the gradient twin of the live palette re-source. */
 export function loadGradientBaseColors(): number[][] {
@@ -1404,7 +1501,7 @@ export function loadGradientBaseColors(): number[][] {
   return readGradientTables(baseText, gradientLabelsFromBase())
 }
 
-/** Rebuild the project's `Bank57.asm` overlay = base ⊕ palette colour edits ⊕ island
+/** Rebuild the project's `Bank57.asm` overlay = base ⊕ palette color edits ⊕ island
  *  tilemap edits ⊕ gradient stop edits (ALL THREE live in this one file, so a save of
  *  any one must compose with the others' current edits or it would clobber them).
  *  Reborn from base each save (clean diffs, idempotent); all empty ⇒ remove the
@@ -1434,7 +1531,7 @@ async function saveBank57Overlay(
   return { ok: true, files: [PALETTE_BLOB_BANK_FILE] }
 }
 
-/** Save the FULL palette-colour edit set, preserving any island + gradient edits. */
+/** Save the FULL palette-color edit set, preserving any island + gradient edits. */
 export async function savePaletteEdits(edits: PaletteEdit[]): Promise<SaveResourceResult> {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to save into.' }
@@ -1472,22 +1569,65 @@ export function loadLogoTilemapEdits(): LogoTilemapEdit[] {
   return readLogoTilemapEdits(baseText, overlayText)
 }
 
-/** Save the FULL logo-tilemap (placement) edit set as the Bank0F overlay (base ⊕ edits,
- *  reborn from base each save — clean diffs, idempotent; empty ⇒ remove the overlay).
- *  Asm edits don't render live, so the caller marks the build dirty (same contract as the
- *  island/string edits). */
+/**
+ * Splice the project's logo + island tilemap-PLACEMENT overlays into a ROM **copy** (mutates
+ * in place — the caller MUST pass a copy, never the shared cached ROM). This is the screen-
+ * placement twin of the live palette/gradient overrides: title-screen placement edits are asm
+ * overlays (Bank0F logo / Bank57 island) that don't render live, so without this the screen
+ * export + the import's diff baseline would read the LAST-BUILT tilemap and lose unbuilt
+ * placement edits. Both overlays are full-set-vs-base, so applying them is idempotent vs a
+ * build that already baked them. Returns true iff anything was applied (no edits ⇒ untouched).
+ *
+ *   logo   — DATA_title_screen_logo_tilemap, one full 16-bit BG word per cell (offset*2 bytes)
+ *   island — DATA_5F9800, one Mode-7 char byte per cell (offset bytes)
+ */
+export function applyScreenPlacementOverlays(rom: Uint8Array, symbols: SymbolMap): boolean {
+  const logo = loadLogoTilemapEdits()
+  const island = loadIslandTilemapEdits()
+  if (logo.length === 0 && island.length === 0) return false
+  const logoPC = symbols.pc(LOGO_TILEMAP_LABEL)
+  for (const { offset, value } of logo) {
+    rom[logoPC + offset * 2] = value & 0xff
+    rom[logoPC + offset * 2 + 1] = (value >> 8) & 0xff
+  }
+  const islandPC = symbols.pc(ISLAND_TILEMAP_LABEL)
+  for (const { offset, value } of island) rom[islandPC + offset] = value & 0xff
+  return true
+}
+
+/**
+ * Save the FULL logo-tilemap (placement) edit set onto the OVERLAY-first Bank0F
+ * content. Bank0F also hosts the intro-story string region (a separate overlay
+ * editor / ROM-import category), so this must NOT rebuild the whole bank from
+ * base — that would clobber intro-story edits. Instead it splices only the logo
+ * `dw` cells: revert the overlay's current logo edits to base, then apply the new
+ * full set, leaving every other byte of the overlay (the intro region) intact. The
+ * logo region still ends up = base ⊕ edits (idempotent, clean diffs); the overlay
+ * is removed only when the result is byte-identical to base (no logo AND no intro
+ * edits left). Asm edits don't render live, so the caller marks the build dirty.
+ */
 export async function saveLogoTilemap(edits: LogoTilemapEdit[]): Promise<SaveResourceResult> {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to save into.' }
   const compat = ensureProjectBaseCompatible(projectId)
   if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
   const dest = path.join(overlayRoot(projectId), LOGO_TILEMAP_BANK_FILE)
-  if (edits.length === 0) {
+  const baseText = readFileSync(path.join(frameworkWorkRoot(), LOGO_TILEMAP_BANK_FILE), 'utf8')
+  const overlayText = existsSync(dest) ? readFileSync(dest, 'utf8') : baseText
+  // Combined cell edits: first revert the overlay's existing logo edits back to
+  // base (so a removed edit reverts), then overlay the new full set on top.
+  const baseWords = readLogoTilemapWords(baseText)
+  const combined = new Map<number, number>()
+  for (const e of readLogoTilemapEdits(baseText, overlayText)) combined.set(e.offset, baseWords[e.offset]!)
+  for (const e of edits) combined.set(e.offset, e.value & 0xffff)
+  const editList: LogoTilemapEdit[] = [...combined].map(([offset, value]) => ({ offset, value }))
+  const text = applyLogoTilemapEdits(overlayText, editList)
+  if (text === baseText) {
+    // No logo edits and no other (intro) overlay content → drop the overlay.
     if (existsSync(dest)) await rm(dest)
     return { ok: true, files: [LOGO_TILEMAP_BANK_FILE] }
   }
-  const baseText = readFileSync(path.join(frameworkWorkRoot(), LOGO_TILEMAP_BANK_FILE), 'utf8')
-  await saveOverlayFile(projectId, LOGO_TILEMAP_BANK_FILE, applyLogoTilemapEdits(baseText, edits))
+  await saveOverlayFile(projectId, LOGO_TILEMAP_BANK_FILE, text)
   return { ok: true, files: [LOGO_TILEMAP_BANK_FILE] }
 }
 

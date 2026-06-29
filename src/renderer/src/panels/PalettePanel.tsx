@@ -23,8 +23,13 @@ import { type GradientEditorApi } from '../edit-session/useGradientEditor'
 import { useEmulatorRunning } from '../hooks/useEmulatorRunning'
 import { useThrottledCallback } from '../lib/throttle'
 import { fillGradient, gradientOffset, GRADIENT_BLACK, GRADIENT_STOPS } from '../lib/gradient'
+import { persistedState } from '../lib/persisted-state'
 
-/** Throttle for the live colour preview while dragging the picker. This caps the
+/** Persisted "Auto Sync" toggle — when on, each committed color change is pushed
+ *  to the running emulator automatically. UI pref, versioned key. */
+const AUTO_SYNC_STORE = persistedState<boolean>('shinyEgg.paletteAutoSync.v1', false)
+
+/** Throttle for the live color preview while dragging the picker. This caps the
  *  rate of draft updates → swatch-grid + App re-renders. It does NOT gate the
  *  canvas render queue — `useLevelRenderLayers` coalesces those (one render in
  *  flight, always re-issued with the latest, so the queue can't back up
@@ -34,7 +39,7 @@ const PALETTE_PREVIEW_THROTTLE_MS = 200
 
 /** First CGRAM index the palette interpreter writes (provenance ≥ 0) — the
  *  auto-selected swatch so the editor is never in a "nothing selected" state.
- *  Note: row-0 indices (0, 16, 32, …, 240) hold real colours and ARE editable —
+ *  Note: row-0 indices (0, 16, 32, …, 240) hold real colors and ARE editable —
  *  in YI palette index 0 is not a transparency marker; transparency is PPU
  *  layer-blending behaviour, not a palette-index property. */
 function firstEditable(prov: Int32Array): number | null {
@@ -51,7 +56,7 @@ export interface PaletteRowUsage {
   bg3: number[]
 }
 
-/** One per-row indicator chip. `kind` selects the chip colour (CSS
+/** One per-row indicator chip. `kind` selects the chip color (CSS
  *  `se-palette__tag is-<kind>`); `title` is the hover tooltip. */
 interface RowTag {
   kind: 'backdrop' | 'bg1' | 'bg2' | 'bg3' | 'sprite' | 'unused'
@@ -67,9 +72,9 @@ interface PaletteBodyProps {
   rowUsage: PaletteRowUsage | null
   /** BG palette rows (0..7) the selected object's blocks use — outlined. */
   highlightRows: Set<number> | null
-  /** The App-level palette colour-edit document (usePaletteEditor). */
+  /** The App-level palette color-edit document (usePaletteEditor). */
   editor: PaletteEditorApi
-  /** The App-level backdrop-gradient colour-edit document (useGradientEditor) —
+  /** The App-level backdrop-gradient color-edit document (useGradientEditor) —
    *  drives the gradient strip shown for a gradient-backdrop level. */
   gradientEditor: GradientEditorApi
   /** Bumped on every successful build (and gfx edit). Re-fetches the BASE CGRAM
@@ -92,10 +97,10 @@ interface PaletteBodyProps {
  * **Editing (§B10):** the panel fetches the level's BASE CGRAM + per-entry blob
  * provenance, and overlays the App-level edit DRAFT (`usePaletteEditor`) for
  * display. The first editable swatch is auto-selected; click another to switch.
- * Dragging the colour picker previews **live + throttled** (the draft feeds the
+ * Dragging the color picker previews **live + throttled** (the draft feeds the
  * canvas via the render `paletteOverride`, like the reorder slider) and commits
  * **one undo step per drag** on release. **Edits are global** — the blob is
- * shared by palette *index*, so a colour changes every level that uses it.
+ * shared by palette *index*, so a color changes every level that uses it.
  * Nothing is written until **Save** (or the global Save / Test Level), which
  * persists the delta to the overlay and rebuilds.
  *
@@ -105,7 +110,7 @@ interface PaletteBodyProps {
  *
  * This is the **"Level Palette" tab**; the sibling {@link AllPalettesView} is the
  * whole-game catalog. Both are mounted by the {@link PaletteBody} tab wrapper and
- * share the App-level colour-edit document (`editor`).
+ * share the App-level color-edit document (`editor`).
  */
 function LevelPaletteView({
   selectedLevelRecordId,
@@ -117,7 +122,7 @@ function LevelPaletteView({
   headerVersion
 }: PaletteBodyProps): JSX.Element {
   // Base (unedited) CGRAM + provenance for the selected level. Fetched on level
-  // change only — the draft is applied locally for display, so a colour edit
+  // change only — the draft is applied locally for display, so a color edit
   // never re-fetches.
   const [cgram, setCgram] = useState<Uint8Array | null>(null)
   const [provenance, setProvenance] = useState<Int32Array | null>(null)
@@ -171,9 +176,9 @@ function LevelPaletteView({
   // (The "palette out of date" warning now lives at the canvas top, unified with
   // the graphics-out-of-date warning — see App's `visualsStale` / BlockerBar.)
 
-  // After a rebuild the built ROM's colours changed, so re-fetch the BASE CGRAM
+  // After a rebuild the built ROM's colors changed, so re-fetch the BASE CGRAM
   // (e.g. a reset's swatches refresh from blue back to yellow). Updates only the
-  // colours — selection / status are preserved (the layout is unchanged). Skips
+  // colors — selection / status are preserved (the layout is unchanged). Skips
   // the initial render (the level-load effect above already fetched).
   const prevRefreshRef = useRef(renderRefresh)
   useEffect(() => {
@@ -197,10 +202,10 @@ function LevelPaletteView({
   }, [renderRefresh, selectedLevelRecordId])
 
   // Live header refresh: editing a palette-relevant header field (BG color, the
-  // BG1/BG2/BG3/sprite palette rows, or level mode) reloads a different colour
+  // BG1/BG2/BG3/sprite palette rows, or level mode) reloads a different color
   // block into CGRAM — the canvas re-skins immediately via the override, and this
   // keeps the swatch grid in lockstep. The edit rides the in-memory `override`,
-  // so re-fetch the override-aware CGRAM and update only the colours (selection /
+  // so re-fetch the override-aware CGRAM and update only the colors (selection /
   // status preserved, like the rebuild refresh above). `override` sits in deps
   // for closure freshness, but the `headerVersion` guard limits the actual fetch
   // to a header change: an object edit (which also changes the override identity)
@@ -237,7 +242,7 @@ function LevelPaletteView({
   }, [headerVersion, selectedLevelRecordId, override])
 
   /** The displayed BGR-15 word for CGRAM index `i` = the draft edit if any, else
-   *  the base colour. */
+   *  the base color. */
   const wordAt = useCallback(
     (i: number): number => {
       if (!cgram) return 0
@@ -262,7 +267,7 @@ function LevelPaletteView({
     return out
   }, [cgram, wordAt])
 
-  // Per-row "belongs to" indicators (to the right of each colour row). Row 0 is
+  // Per-row "belongs to" indicators (to the right of each color row). Row 0 is
   // the backdrop; BG rows 1-7 list the layer(s) that reference them (or Unused);
   // sprite rows 8-15 are the OBJ palette region. BG usage comes from `rowUsage`
   // (null ⇒ usage unknown, so BG rows show no layer chips).
@@ -274,11 +279,11 @@ function LevelPaletteView({
         return [{ kind: 'sprite', label: 'Sprite', title: `Sprite OBJ palette ${obj}` }]
       }
       // Row 0 always carries the backdrop (CGRAM index 0); BG layers can still
-      // use its colours 1-15, so append any layer chips after it. Rows 1-7 are
+      // use its colors 1-15, so append any layer chips after it. Rows 1-7 are
       // BG-only — chip per referencing layer, or Unused if none.
       const tags: RowTag[] = []
       if (row === 0)
-        tags.push({ kind: 'backdrop', label: 'Backdrop', title: 'Backdrop colour (CGRAM index 0)' })
+        tags.push({ kind: 'backdrop', label: 'Backdrop', title: 'Backdrop color (CGRAM index 0)' })
       if (rowUsage) {
         if (rowUsage.bg1.includes(row)) tags.push({ kind: 'bg1', label: 'BG1', title: 'Used by BG1 (main level tiles)' })
         if (rowUsage.bg2.includes(row)) tags.push({ kind: 'bg2', label: 'BG2', title: 'Used by BG2 background' })
@@ -325,11 +330,11 @@ function LevelPaletteView({
     if (el) el.addEventListener('change', pickerChangeRef.current)
   }, [])
 
-  // Keep the (uncontrolled) picker's value synced to the selected swatch's colour
-  // when the selection / committed colour changes — done IMPERATIVELY (no
+  // Keep the (uncontrolled) picker's value synced to the selected swatch's color
+  // when the selection / committed color changes — done IMPERATIVELY (no
   // setState) so a per-frame drag doesn't re-render the 256-swatch grid every
   // tick (that, not the throttled canvas re-decode, was the drag slowdown).
-  // Skipped mid-drag so it doesn't disturb the open OS colour dialog.
+  // Skipped mid-drag so it doesn't disturb the open OS color dialog.
   useEffect(() => {
     const el = pickerRef.current
     if (el && dragStartRef.current === null) el.value = selColor
@@ -340,7 +345,7 @@ function LevelPaletteView({
   }
 
   // Double-click a swatch → jump straight to editing: select it, then open the
-  // OS colour picker. A color input's `.click()` opens its dialog without a
+  // OS color picker. A color input's `.click()` opens its dialog without a
   // preserved user gesture, so a deferred rAF (after the input mounts) is fine;
   // the value is set explicitly since rAF runs before the passive value-sync.
   const openCellEdit = (i: number): void => {
@@ -455,7 +460,7 @@ function LevelPaletteView({
       <p className="se-palette__hint">
         {message}
         {editCount > 0 &&
-          ` · ${editCount} colour edit${editCount === 1 ? '' : 's'}${editor.dirty ? ' (unsaved)' : ''}`}
+          ` · ${editCount} color edit${editCount === 1 ? '' : 's'}${editor.dirty ? ' (unsaved)' : ''}`}
       </p>
       <div className="se-palette__toolbar">
         <button
@@ -463,7 +468,7 @@ function LevelPaletteView({
           className="se-palette__reset-btn is-save"
           disabled={!editor.dirty || editor.saving}
           onClick={() => void editor.save()}
-          title="Save palette colour edits to the project (rebuilds on Test Level / Launch)"
+          title="Save palette color edits to the project (rebuilds on Test Level / Launch)"
         >
           {editor.saving ? 'Saving…' : 'Save'}
         </button>
@@ -472,13 +477,13 @@ function LevelPaletteView({
           className="se-palette__reset-btn"
           disabled={!selectedHasEdit}
           onClick={resetSelectedColor}
-          title="Revert just the selected colour to its base cart value"
+          title="Revert just the selected color to its base cart value"
         >
           Reset Color
         </button>
         {confirmReset ? (
           <span className="se-palette__reset-confirm">
-            Discard all colour edits?
+            Discard all color edits?
             <button
               type="button"
               className="se-palette__reset-btn is-danger"
@@ -503,7 +508,7 @@ function LevelPaletteView({
             className="se-palette__reset-btn"
             disabled={editCount === 0}
             onClick={() => setConfirmReset(true)}
-            title="Revert every colour edit to the base cart palette"
+            title="Revert every color edit to the base cart palette"
           >
             Reset all colors{editCount > 0 ? ` (${editCount})` : ''}
           </button>
@@ -516,7 +521,7 @@ function LevelPaletteView({
 /**
  * The level's backdrop gradient (24 BGR-15 stops) — shown only for a gradient
  * backdrop (BackgroundColor header byte $10..$1F); a solid backdrop has no table.
- * Each stop is a clickable swatch (double-click opens the OS colour picker); a
+ * Each stop is a clickable swatch (double-click opens the OS color picker); a
  * drag previews live and commits one undo step on release, exactly like the CGRAM
  * swatch picker. Generate controls: **Clear** (all stops black) and **Fill
  * gradient** (interpolate between sequential non-black stops). Edits are global
@@ -574,7 +579,7 @@ function GradientStrip({
     if (el) el.addEventListener('change', pickerChangeRef.current)
   }, [])
 
-  // Keep the uncontrolled picker synced to the selected stop's colour, except mid-drag.
+  // Keep the uncontrolled picker synced to the selected stop's color, except mid-drag.
   useEffect(() => {
     const el = pickerRef.current
     if (el && dragStartRef.current === null) el.value = selColor
@@ -600,7 +605,7 @@ function GradientStrip({
         <p className="se-palette__hint">
           {bgColor === null
             ? 'Pick a level to see its backdrop gradient.'
-            : 'This level uses a solid backdrop colour (BackgroundColor below 0x10) — no gradient table.'}
+            : 'This level uses a solid backdrop color (BackgroundColor below 0x10) — no gradient table.'}
         </p>
       </>
     )
@@ -664,7 +669,7 @@ function GradientStrip({
             </div>
           ) : (
             <div className="se-palette__editor-dim">
-              Click a stop to select; double-click for the colour picker.
+              Click a stop to select; double-click for the color picker.
             </div>
           )}
           <div className="se-palette__editor-warn">
@@ -703,7 +708,7 @@ function GradientStrip({
           className="se-palette__reset-btn"
           disabled={editsHere === 0}
           onClick={() => editor.resetTable(gradientId)}
-          title="Revert this gradient to the base cart colours"
+          title="Revert this gradient to the base cart colors"
         >
           Reset{editsHere > 0 ? ` (${editsHere})` : ''}
         </button>
@@ -716,10 +721,10 @@ function GradientStrip({
 /**
  * Palette panel body — a three-tab wrapper. **Level Palette**
  * ({@link LevelPaletteView}) is the per-level CGRAM editor; **Level Gradient**
- * ({@link GradientStrip}) is the per-level backdrop colour-gradient editor (its own
+ * ({@link GradientStrip}) is the per-level backdrop color-gradient editor (its own
  * `gradientEditor` document); **All Palettes** ({@link AllPalettesView}) is the
  * whole-game catalog (every master-blob palette by pointer table + by scene). The
- * two palette tabs edit the SAME global colour-edit document (`editor`), so a colour
+ * two palette tabs edit the SAME global color-edit document (`editor`), so a color
  * changed in either previews on the canvas and bakes on Save / Test Level identically.
  */
 export function PaletteBody(props: PaletteBodyProps): JSX.Element {
@@ -728,18 +733,26 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
   const emulatorRunning = useEmulatorRunning()
   const [syncing, setSyncing] = useState(false)
   const [syncStatus, setSyncStatus] = useState<string | null>(null)
+  // "Auto Sync": when on, color edits re-sync to the emulator live as you drag —
+  // on the same throttled cadence as the on-canvas preview (every draft change),
+  // not just on release. Persisted UI pref; success is kept silent (no popup spam
+  // during active editing — errors still surface).
+  const [autoSync, setAutoSync] = useState<boolean>(() => AUTO_SYNC_STORE.load())
+  useEffect(() => {
+    AUTO_SYNC_STORE.save(autoSync)
+  }, [autoSync])
 
   // Blob offsets the last successful sync wrote — so the next sync can REVERT any
-  // since undone/reset (write them back to base), without disturbing colours the
+  // since undone/reset (write them back to base), without disturbing colors the
   // user never touched.
   const lastSyncedOffsets = useRef<Set<number>>(new Set())
 
-  // "Sync to Emulator": apply the current colour edits to the CGRAM of the screen the
+  // "Sync to Emulator": apply the current color edits to the CGRAM of the screen the
   // emulator is showing right now (main detects the game mode). Writes only the edited
   // entries + reverts of ones undone since the last sync — nothing else. Per-screen
   // only (the master blob is read-only ROM); re-sync after switching screens. Manual,
   // so it never competes with gameplay; the button only enables while EmuHawk runs.
-  const handleSync = useCallback(async () => {
+  const handleSync = useCallback(async (opts?: { silentOnSuccess?: boolean }) => {
     setSyncing(true)
     setSyncStatus(null)
     try {
@@ -750,9 +763,17 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
         setSyncStatus('Emulator not running.')
       } else if (r.scene) {
         lastSyncedOffsets.current = currentOffsets
-        setSyncStatus(`Synced to ${r.scene} screen (${r.bytesWritten ?? 0} B). Re-sync after switching screens.`)
+        if (!opts?.silentOnSuccess)
+          setSyncStatus(`Synced to ${r.scene} screen (${r.bytesWritten ?? 0} B). Re-sync after switching screens.`)
       } else {
-        setSyncStatus('Current screen not recognized — nothing written. Try on a level or the world map.')
+        const reason =
+          r.detail ??
+          (r.gamemode !== undefined
+            ? `game mode 0x${r.gamemode.toString(16).padStart(2, '0').toUpperCase()}`
+            : 'screen not classified')
+        setSyncStatus(
+          `Current screen not recognized — ${reason}. Nothing written; try on a level or the world map.`
+        )
       }
     } catch (e) {
       setSyncStatus(`Sync failed — ${(e as Error).message}`)
@@ -767,6 +788,37 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
     const t = setTimeout(() => setSyncStatus(null), 6000)
     return () => clearTimeout(t)
   }, [syncStatus])
+
+  // ── Auto Sync ──────────────────────────────────────────────────────────────
+  // When on, push edits to the emulator on the SAME cadence as the live canvas
+  // preview: every DRAFT change re-syncs — the throttled picker-drag frames AND the
+  // release commit — so the emulator tracks the color live as you drag (it used to
+  // fire only on the undo-checkpoint beat, i.e. release). Keyed on the draft
+  // reference, which changes only when the draft actually does (the throttled
+  // `preview` frames + commits), so unrelated re-renders don't re-sync. handleSync
+  // is held in a ref so the effect re-runs on a real draft change / toggle, not
+  // every render. A change that lands while a sync is in flight sets `pendingResync`;
+  // the second effect fires one trailing sync once it finishes — coalescing a burst
+  // into the latest state (the emulator round-trip, not the throttle, is the real cap).
+  const handleSyncRef = useRef(handleSync)
+  handleSyncRef.current = handleSync
+  const lastSyncedDraft = useRef(editor.draft)
+  const pendingResync = useRef(false)
+  useEffect(() => {
+    if (lastSyncedDraft.current === editor.draft) return
+    lastSyncedDraft.current = editor.draft
+    if (!autoSync || !emulatorRunning) return
+    if (syncing) {
+      pendingResync.current = true
+      return
+    }
+    void handleSyncRef.current({ silentOnSuccess: true })
+  }, [editor.draft, autoSync, emulatorRunning, syncing])
+  useEffect(() => {
+    if (syncing || !pendingResync.current) return
+    pendingResync.current = false
+    if (autoSync && emulatorRunning) void handleSyncRef.current({ silentOnSuccess: true })
+  }, [syncing, autoSync, emulatorRunning])
 
   return (
     <div className="se-palette-tabs">
@@ -783,7 +835,7 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
           type="button"
           className={`se-palette-tabs__tab${tab === 'gradient' ? ' is-active' : ''}`}
           onClick={() => setTab('gradient')}
-          title="The selected level's backdrop colour gradient (gradient backdrops only)"
+          title="The selected level's backdrop color gradient (gradient backdrops only)"
         >
           Lvl Gradient
         </button>
@@ -796,11 +848,17 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
           All Palettes
         </button>
         <div className="se-palette-sync__wrap">
-          {syncStatus && (
-            <div className="se-palette-sync__status" role="status">
-              {syncStatus}
-            </div>
-          )}
+          <label
+            className="se-palette-sync__auto"
+            title="Continuously sync color edits to the running emulator as you drag — live, at the same cadence as the on-canvas preview"
+          >
+            <input
+              type="checkbox"
+              checked={autoSync}
+              onChange={(e) => setAutoSync(e.target.checked)}
+            />
+            Auto Sync
+          </label>
           <button
             type="button"
             className="se-palette-sync"
@@ -816,10 +874,27 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
           </button>
         </div>
       </div>
+      {/* Transient sync-result popup, pinned to the panel's right edge (not above the
+          sync button, where it rendered off the top of the panel and was clipped).
+          Click to dismiss, or it auto-dismisses on the 6 s timer below. */}
+      {syncStatus && (
+        <div
+          className="se-palette-sync__status"
+          title="Click to dismiss"
+          onClick={() => setSyncStatus(null)}
+        >
+          {syncStatus}
+        </div>
+      )}
       {tab === 'level' ? (
         <LevelPaletteView {...props} />
       ) : tab === 'gradient' ? (
         <div className="se-palette">
+          <p className="se-palette__warn">
+            ⚠ “Sync to Emulator” doesn’t apply backdrop-gradient edits — use the in-editor preview
+            instead (gradient changes show live on the canvas; Save, then Test Level, to see them
+            in-game).
+          </p>
           <GradientStrip editor={props.gradientEditor} bgColor={props.override?.header?.[0] ?? null} />
         </div>
       ) : (
@@ -831,18 +906,18 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
 
 // ── All Palettes tab ─────────────────────────────────────────────────────────
 
-/** Render a master-blob BGR-15 word as a CSS colour (5→8-bit expansion via the
+/** Render a master-blob BGR-15 word as a CSS color (5→8-bit expansion via the
  *  shared `bgr15ToHex`, the same the picker uses, so swatch ≡ picker value). */
 function bgr15Css(word: number): string {
   return bgr15ToHex(word)
 }
 
-/** Colour-picker mechanics for the All-Palettes tab, keyed on a master-blob
+/** Color-picker mechanics for the All-Palettes tab, keyed on a master-blob
  *  byte-offset. The offset twin of {@link LevelPaletteView}'s CGRAM-index picker
  *  — same throttled-preview / one-undo-per-drag model (a drag previews live and
  *  commits a single undo step on release). */
 /** A selected swatch: its primary blob offset, any mirror offsets that take the
- *  same edit (World-map panels), and its base colour. */
+ *  same edit (World-map panels), and its base color. */
 interface CatalogSel {
   offset: number
   mirrors: number[]
@@ -852,7 +927,7 @@ interface CatalogSel {
 function useCatalogPicker(editor: PaletteEditorApi): {
   sel: CatalogSel | null
   setSel: (s: CatalogSel | null) => void
-  /** Select a swatch AND open the OS colour picker (double-click). */
+  /** Select a swatch AND open the OS color picker (double-click). */
   selectAndOpen: (s: CatalogSel) => void
   selColor: string
   selHasEdit: boolean
@@ -893,7 +968,7 @@ function useCatalogPicker(editor: PaletteEditorApi): {
     if (el) el.addEventListener('change', changeRef.current)
   }, [])
 
-  // Keep the (uncontrolled) picker synced to the selected colour, except mid-drag.
+  // Keep the (uncontrolled) picker synced to the selected color, except mid-drag.
   useEffect(() => {
     const el = pickerRef.current
     if (el && dragStartRef.current === null) el.value = selColor
@@ -930,7 +1005,7 @@ function useCatalogPicker(editor: PaletteEditorApi): {
  * master-blob palette, by pointer table (BG1/BG2/BG3/sprite/Yoshi/backdrop +
  * fixed/universal) and by scene (system screens / world maps), each labelled with
  * what the graphics pipeline knows. Swatches are **editable** — a click selects
- * its blob offset and the picker writes the SAME global colour-edit document as
+ * its blob offset and the picker writes the SAME global color-edit document as
  * the level tab (a change propagates everywhere that offset is used). Groups are
  * collapsible; only expanded groups render swatches (keeps the DOM light).
  */
@@ -949,7 +1024,7 @@ function AllPalettesView({
   const picker = useCatalogPicker(editor)
 
   // Fetch the catalog on mount + after each build (renderRefresh) — a rebuild can
-  // change the base blob, so re-source the base colours (the draft overlays).
+  // change the base blob, so re-source the base colors (the draft overlays).
   useEffect(() => {
     let cancelled = false
     setStatus('Loading palette catalog…')
@@ -982,7 +1057,7 @@ function AllPalettesView({
     })
   }, [])
 
-  // Click delegation: read the blob offset + colour off the clicked swatch.
+  // Click delegation: read the blob offset + color off the clicked swatch.
   // Single click selects; double-click (e.detail >= 2) opens the OS picker.
   const { setSel, selectAndOpen } = picker
   const onGridClick = useCallback(
@@ -1026,7 +1101,7 @@ function AllPalettesView({
               )}
             </div>
             <div className="se-palette__editor-warn">
-              Global — changes every palette using this colour. Previewed live; Save to keep it.
+              Global — changes every palette using this color. Previewed live; Save to keep it.
             </div>
           </div>
         </div>
@@ -1069,9 +1144,9 @@ function AllPalettesView({
       <p className="se-palette__hint">
         {status && catalog
           ? status
-          : 'Single-click selects a swatch; double-click opens the colour picker. Edits are global.'}
+          : 'Single-click selects a swatch; double-click opens the color picker. Edits are global.'}
         {editCount > 0 &&
-          ` · ${editCount} colour edit${editCount === 1 ? '' : 's'}${editor.dirty ? ' (unsaved)' : ''}`}
+          ` · ${editCount} color edit${editCount === 1 ? '' : 's'}${editor.dirty ? ' (unsaved)' : ''}`}
       </p>
       <div className="se-palette__toolbar">
         <button
@@ -1079,7 +1154,7 @@ function AllPalettesView({
           className="se-palette__reset-btn is-save"
           disabled={!editor.dirty || editor.saving}
           onClick={() => void editor.save()}
-          title="Save palette colour edits to the project (rebuilds on Test Level / Launch)"
+          title="Save palette color edits to the project (rebuilds on Test Level / Launch)"
         >
           {editor.saving ? 'Saving…' : 'Save'}
         </button>
@@ -1088,13 +1163,13 @@ function AllPalettesView({
           className="se-palette__reset-btn"
           disabled={!picker.selHasEdit}
           onClick={picker.resetSelected}
-          title="Revert just the selected colour to its base cart value"
+          title="Revert just the selected color to its base cart value"
         >
           Reset Color
         </button>
         {confirmReset ? (
           <span className="se-palette__reset-confirm">
-            Discard all colour edits?
+            Discard all color edits?
             <button
               type="button"
               className="se-palette__reset-btn is-danger"
@@ -1115,7 +1190,7 @@ function AllPalettesView({
             className="se-palette__reset-btn"
             disabled={editCount === 0}
             onClick={() => setConfirmReset(true)}
-            title="Revert every colour edit to the base cart palette"
+            title="Revert every color edit to the base cart palette"
           >
             Reset all colors{editCount > 0 ? ` (${editCount})` : ''}
           </button>

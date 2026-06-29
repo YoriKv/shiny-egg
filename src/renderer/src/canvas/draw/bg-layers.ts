@@ -13,11 +13,22 @@
 
 import type { BgLayersResult } from '../../../../preload/api'
 import { LEVEL_PX_W, LEVEL_PX_H } from '../geometry'
+import type { LayerOffset } from '../parallax'
 
 /** Per-layer approximate-color-math compositing descriptor (visibility + blend
  *  + draw role), derived engine-side. Aliased from the IPC payload so the
  *  renderer never re-declares the shape. */
 type BgLayerDescriptor = BgLayersResult['bg2Layer']
+
+/** Camera-Preview parallax draw params: per-layer world-px draw offsets + the
+ *  visible world rect to tile over. When present, BG2/BG3 are positioned at their
+ *  parallax offset and tiled on BOTH axes (the in-game tilemap wraps) instead of
+ *  bottom-anchored, so they align inside the camera box. */
+export interface ParallaxDraw {
+  bg2: LayerOffset
+  bg3: LayerOffset
+  cover: { x0: number; y0: number; x1: number; y1: number }
+}
 
 /** Cache the most recent BG layers' ImageBitmaps so re-renders don't
  *  re-decode the buffers per frame. Keyed by levelRecordId via the caller. */
@@ -29,11 +40,15 @@ export interface BgLayerBitmaps {
    *  they reuse bg2Width/Height + bg3Width/Height. */
   bg2Front: ImageBitmap | null
   bg3Front: ImageBitmap | null
+  /** BG3 MID plane (priority-1 water band) on screen-designation levels — drawn
+   *  IN FRONT of BG2 but BEHIND BG1 (between `drawBgLayers` and BG1). Same
+   *  dimensions as bg3 (same tilemap). Null on every non-screen-des level. */
+  bg3Mid: ImageBitmap | null
   /** Either a CSS color (solid backdrop) or an ImageBitmap of the
    *  1×2048 gradient strip (the renderer tiles it horizontally). */
   backdrop:
     | { kind: 'solid'; css: string }
-    | { kind: 'gradient'; bitmap: ImageBitmap; width: number; height: number }
+    | { kind: 'gradient'; bitmap: ImageBitmap; width: number; height: number; stops: number[] }
   // Native (un-scaled) dimensions for both layers.
   bg2Width: number
   bg2Height: number
@@ -44,6 +59,8 @@ export interface BgLayerBitmaps {
    *  `.role` (background vs darkening overlay), `.blend`, and `.alpha`. */
   bg2Layer: BgLayerDescriptor
   bg3Layer: BgLayerDescriptor
+  /** BG2/BG3 parallax rates (raw 8.8) — for the Camera Preview overlay. */
+  parallax: BgLayersResult['parallax']
 }
 
 /**
@@ -88,7 +105,11 @@ export async function buildBgLayerBitmaps(
     plane && plane.width > 0 && plane.height > 0
       ? createImageBitmap(new ImageData(new Uint8ClampedArray(plane.rgba), plane.width, plane.height))
       : null
-  const [bg2Front, bg3Front] = await Promise.all([toBitmap(result.bg2Front), toBitmap(result.bg3Front)])
+  const [bg2Front, bg3Front, bg3Mid] = await Promise.all([
+    toBitmap(result.bg2Front),
+    toBitmap(result.bg3Front),
+    toBitmap(result.bg3Mid)
+  ])
 
   let backdrop: BgLayerBitmaps['backdrop']
   if (result.backdrop.kind === 'gradient') {
@@ -96,7 +117,8 @@ export async function buildBgLayerBitmaps(
       kind: 'gradient',
       bitmap: decoded[2],
       width: result.backdrop.width,
-      height: result.backdrop.height
+      height: result.backdrop.height,
+      stops: result.backdrop.stops
     }
   } else {
     backdrop = { kind: 'solid', css: result.backdrop.css }
@@ -107,13 +129,15 @@ export async function buildBgLayerBitmaps(
     bg3,
     bg2Front,
     bg3Front,
+    bg3Mid,
     backdrop,
     bg2Width: result.bg2.width,
     bg2Height: result.bg2.height,
     bg3Width: result.bg3.width,
     bg3Height: result.bg3.height,
     bg2Layer: result.bg2Layer,
-    bg3Layer: result.bg3Layer
+    bg3Layer: result.bg3Layer,
+    parallax: result.parallax
   }
 }
 
@@ -137,7 +161,8 @@ const LEVEL_H = LEVEL_PX_H
 export function drawBgLayers(
   ctx: CanvasRenderingContext2D,
   layers: BgLayerBitmaps,
-  which: { bg2: boolean; bg3: boolean; backdrop: boolean }
+  which: { bg2: boolean; bg3: boolean; backdrop: boolean },
+  parallax?: ParallaxDraw | null
 ): void {
   ctx.save()
 
@@ -150,7 +175,7 @@ export function drawBgLayers(
     if (layers.backdrop.kind === 'solid') {
       ctx.fillStyle = layers.backdrop.css
       ctx.fillRect(0, 0, LEVEL_W, LEVEL_H)
-    } else {
+    } else if (!parallax) {
       const grad = layers.backdrop
       // The gradient is a 1px-wide vertical strip (varies by Y only) — stretch
       // it across the full width in ONE drawImage blit. We deliberately avoid
@@ -162,20 +187,31 @@ export function drawBgLayers(
       // plain blit with no such per-transform cache.
       ctx.drawImage(grad.bitmap, 0, 0, grad.width, grad.height, 0, 0, LEVEL_W, grad.height)
     }
+    // Camera Preview (parallax) gradient is drawn screen-relative by the scene so
+    // it shows the full ramp + camY/8 scroll inside the box — skip the strip here.
   }
 
-  // 2. BG3 (furthest back), then 3. BG2 (mid). Both bottom-anchored and tiled
-  //    horizontally only — their real Y is camera-driven (BG3VOFS/BG2VOFS), so
-  //    any static anchor is a simulation; matching the two keeps the parallax
-  //    surfaces consistent. Filler rows YI pads its BG2 tilemap with (e.g. tile
-  //    $EE in 1-2) are color-0 → alpha=0 upstream, so only real scenery shows.
-  //    Skip a layer here if it's actually a darkening OVERLAY (drawn above BG1
-  //    by drawBgOverlays instead).
+  // 2. BG3 (furthest back), then 3. BG2 (mid). Normally both are bottom-anchored
+  //    and tiled horizontally only (no gameplay camera). Under Camera Preview the
+  //    virtual camera drives BG3VOFS/BG2VOFS, so each is positioned at its parallax
+  //    offset and tiled on both axes. Filler rows YI pads its BG2 tilemap with are
+  //    color-0 → alpha=0 upstream, so only real scenery shows. Skip a layer here if
+  //    it's actually a darkening OVERLAY (drawn above BG1 by drawBgOverlays).
   if (which.bg3 && layers.bg3 && layers.bg3Layer.role === 'background') {
-    drawBgLayerStrip(ctx, layers.bg3, layers.bg3Width, layers.bg3Height, layers.bg3Layer)
+    if (parallax) drawBgTiled(ctx, layers.bg3, layers.bg3Width, layers.bg3Height, parallax.bg3, parallax.cover, layers.bg3Layer.blend, layers.bg3Layer.alpha)
+    else drawBgLayerStrip(ctx, layers.bg3, layers.bg3Width, layers.bg3Height, layers.bg3Layer)
   }
   if (which.bg2 && layers.bg2 && layers.bg2Layer.role === 'background') {
-    drawBgLayerStrip(ctx, layers.bg2, layers.bg2Width, layers.bg2Height, layers.bg2Layer)
+    if (parallax) drawBgTiled(ctx, layers.bg2, layers.bg2Width, layers.bg2Height, parallax.bg2, parallax.cover, layers.bg2Layer.blend, layers.bg2Layer.alpha)
+    else drawBgLayerStrip(ctx, layers.bg2, layers.bg2Width, layers.bg2Height, layers.bg2Layer)
+  }
+  // 3b. BG3 MID plane (screen-designation water band) — priority-1 BG3 the cart's
+  //     per-scanline TM/TS HDMA keeps IN FRONT of BG2 but BEHIND BG1. Drawn here
+  //     (after BG2, before Canvas draws BG1) with a plain source-over. Null on every
+  //     non-screen-des level → no-op. Positioned like BG3 (same tilemap extent).
+  if (which.bg3 && layers.bg3Mid && layers.bg3Layer.visible) {
+    if (parallax) drawBgTiled(ctx, layers.bg3Mid, layers.bg3Width, layers.bg3Height, parallax.bg3, parallax.cover, 'source-over', 1)
+    else drawBgStripAtBottom(ctx, layers.bg3Mid, layers.bg3Width, layers.bg3Height, LEVEL_W, LEVEL_H)
   }
 
   ctx.restore()
@@ -190,14 +226,17 @@ export function drawBgLayers(
 export function drawBgOverlays(
   ctx: CanvasRenderingContext2D,
   layers: BgLayerBitmaps,
-  which: { bg2: boolean; bg3: boolean }
+  which: { bg2: boolean; bg3: boolean },
+  parallax?: ParallaxDraw | null
 ): void {
   ctx.save()
   if (which.bg3 && layers.bg3 && layers.bg3Layer.role === 'overlay') {
-    drawBgLayerStrip(ctx, layers.bg3, layers.bg3Width, layers.bg3Height, layers.bg3Layer)
+    if (parallax) drawBgTiled(ctx, layers.bg3, layers.bg3Width, layers.bg3Height, parallax.bg3, parallax.cover, layers.bg3Layer.blend, layers.bg3Layer.alpha)
+    else drawBgLayerStrip(ctx, layers.bg3, layers.bg3Width, layers.bg3Height, layers.bg3Layer)
   }
   if (which.bg2 && layers.bg2 && layers.bg2Layer.role === 'overlay') {
-    drawBgLayerStrip(ctx, layers.bg2, layers.bg2Width, layers.bg2Height, layers.bg2Layer)
+    if (parallax) drawBgTiled(ctx, layers.bg2, layers.bg2Width, layers.bg2Height, parallax.bg2, parallax.cover, layers.bg2Layer.blend, layers.bg2Layer.alpha)
+    else drawBgLayerStrip(ctx, layers.bg2, layers.bg2Width, layers.bg2Height, layers.bg2Layer)
   }
   ctx.restore()
 }
@@ -213,16 +252,51 @@ export function drawBgOverlays(
 export function drawBgForeground(
   ctx: CanvasRenderingContext2D,
   layers: BgLayerBitmaps,
-  which: { bg2: boolean; bg3: boolean }
+  which: { bg2: boolean; bg3: boolean },
+  parallax?: ParallaxDraw | null
 ): void {
   ctx.save()
   ctx.globalCompositeOperation = 'source-over'
   ctx.globalAlpha = 1
   if (which.bg2 && layers.bg2Front && layers.bg2Layer.visible) {
-    drawBgStripAtBottom(ctx, layers.bg2Front, layers.bg2Width, layers.bg2Height, LEVEL_W, LEVEL_H)
+    if (parallax) drawBgTiled(ctx, layers.bg2Front, layers.bg2Width, layers.bg2Height, parallax.bg2, parallax.cover, 'source-over', 1)
+    else drawBgStripAtBottom(ctx, layers.bg2Front, layers.bg2Width, layers.bg2Height, LEVEL_W, LEVEL_H)
   }
   if (which.bg3 && layers.bg3Front && layers.bg3Layer.visible) {
-    drawBgStripAtBottom(ctx, layers.bg3Front, layers.bg3Width, layers.bg3Height, LEVEL_W, LEVEL_H)
+    if (parallax) drawBgTiled(ctx, layers.bg3Front, layers.bg3Width, layers.bg3Height, parallax.bg3, parallax.cover, 'source-over', 1)
+    else drawBgStripAtBottom(ctx, layers.bg3Front, layers.bg3Width, layers.bg3Height, LEVEL_W, LEVEL_H)
+  }
+  ctx.restore()
+}
+
+/** Position + tile one BG layer at a parallax world offset, covering the visible
+ *  world rect on BOTH axes (the in-game tilemap wraps), with the given color-math
+ *  blend + alpha. The Camera-Preview twin of `drawBgStripAtBottom`. */
+function drawBgTiled(
+  ctx: CanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  bw: number,
+  bh: number,
+  off: LayerOffset,
+  cover: ParallaxDraw['cover'],
+  blend: GlobalCompositeOperation,
+  alpha: number
+): void {
+  if (bw <= 0 || bh <= 0) return
+  ctx.save()
+  ctx.globalCompositeOperation = blend
+  ctx.globalAlpha = alpha
+  ctx.translate(off.x, off.y)
+  // World [cover.x0, x1] maps to bitmap-local [cover.x0 - off.x, …]; snap the first
+  // tile back to the wrap grid so tiling stays aligned regardless of the offset.
+  const x0 = Math.floor((cover.x0 - off.x) / bw) * bw
+  const y0 = Math.floor((cover.y0 - off.y) / bh) * bh
+  const xEnd = cover.x1 - off.x
+  const yEnd = cover.y1 - off.y
+  for (let x = x0; x < xEnd; x += bw) {
+    for (let y = y0; y < yEnd; y += bh) {
+      ctx.drawImage(bitmap, x, y)
+    }
   }
   ctx.restore()
 }

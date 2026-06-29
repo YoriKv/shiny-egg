@@ -55,6 +55,26 @@ export function applyIslandTilemapEdits(baseText: string, edits: readonly Island
   return applyEdits(baseText, dataWordEdits(words, changes));
 }
 
+/**
+ * Diff the base island tilemap against the SAME-layout bytes of a foreign cart →
+ * the cell edits reproducing the foreign tilemap. Used by the ROM importer:
+ * `foreignAt(byteOffset)` reads the foreign cart's char byte at that cell offset
+ * (the tilemap sits at a fixed cart address, `DATA_5F9800`). Mirrors palette-edit.ts
+ * `diffPaletteBlob`; the result is always a valid {@link applyIslandTilemapEdits} input.
+ */
+export function diffForeignIslandTilemap(
+  baseText: string,
+  foreignAt: (byteOffset: number) => number
+): IslandTilemapEdit[] {
+  const base = readIslandTilemapBytes(baseText);
+  const out: IslandTilemapEdit[] = [];
+  for (let i = 0; i < base.length; i++) {
+    const fv = foreignAt(i) & 0xff;
+    if (fv !== base[i]) out.push({ offset: i, value: fv });
+  }
+  return out;
+}
+
 /** The cell edits an overlay `Bank57.asm` holds vs base (every cell whose char differs). */
 export function readIslandTilemapEdits(baseText: string, overlayText: string | null): IslandTilemapEdit[] {
   if (overlayText === null) return [];

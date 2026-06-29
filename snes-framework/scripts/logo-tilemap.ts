@@ -52,6 +52,26 @@ export function applyLogoTilemapEdits(baseText: string, edits: readonly LogoTile
   return applyEdits(baseText, dataWordEdits(words, changes));
 }
 
+/**
+ * Diff the base logo tilemap against a foreign cart's logo words → the cell edits
+ * reproducing the foreign tilemap. Used by the ROM importer: `foreignWord(wordIndex)`
+ * reads the foreign cart's BG word at that cell (the tilemap sits at a fixed cart
+ * address, `DATA_title_screen_logo_tilemap`). Mirrors palette-edit.ts `diffPaletteBlob`;
+ * the result is always a valid {@link applyLogoTilemapEdits} input.
+ */
+export function diffForeignLogoTilemap(
+  baseText: string,
+  foreignWord: (wordIndex: number) => number
+): LogoTilemapEdit[] {
+  const base = readLogoTilemapWords(baseText);
+  const out: LogoTilemapEdit[] = [];
+  for (let i = 0; i < base.length; i++) {
+    const fv = foreignWord(i) & 0xffff;
+    if (fv !== base[i]) out.push({ offset: i, value: fv });
+  }
+  return out;
+}
+
 /** The cell edits an overlay `Bank0F.asm` holds vs base (every cell whose word differs). */
 export function readLogoTilemapEdits(baseText: string, overlayText: string | null): LogoTilemapEdit[] {
   if (overlayText === null) return [];

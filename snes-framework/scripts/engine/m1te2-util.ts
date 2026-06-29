@@ -5,7 +5,7 @@
 
 import type { GfxFileEntry } from './load-graphics.ts';
 
-/** M1TE2 force-zeroes colour 0 of 4bpp palette rows 1–7 on load (these CGRAM indices) — the
+/** M1TE2 force-zeroes color 0 of 4bpp palette rows 1–7 on load (these CGRAM indices) — the
  *  SNES per-row transparent slots. A "change" there is the editor blanking, not an edit, so
  *  the palette diff skips them (an unedited round-trip then writes no palette). */
 export const M1TE2_BLACKED = new Set([16, 32, 48, 64, 80, 96, 112]);
@@ -39,11 +39,11 @@ export function fileForVramByteBpp(
   return null;
 }
 
-/** A changed CGRAM colour an `.M1` import detected — the caller maps `cgramIndex` → the
+/** A changed CGRAM color an `.M1` import detected — the caller maps `cgramIndex` → the
  *  master-palette-blob offset (via the scene's provenance) for the write-back. */
 export interface M1tePaletteEdit { cgramIndex: number; bgr15: number }
 
-/** The palette half of every `.M1` diff: changed CGRAM colours in rows 0-7 (the 128 colours
+/** The palette half of every `.M1` diff: changed CGRAM colors in rows 0-7 (the 128 colors
  *  M1TE2 holds), skipping the auto-blacked transparent slots so an unedited round-trip writes
  *  nothing. Compares the 15-bit BGR words (bit15 masked). */
 export function diffM1tePalette(docPalette: Uint8Array, cgram: Uint8Array): M1tePaletteEdit[] {

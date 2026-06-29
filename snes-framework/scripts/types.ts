@@ -762,11 +762,11 @@ export interface LevelMap16Usage {
   totalCells: number;
 }
 
-// ── Palette-colour editing (§B10) ───────────────────────────────────────────
+// ── Palette-color editing (§B10) ───────────────────────────────────────────
 
-/** One edited BGR-15 colour in the master palette blob — `offset` is the byte
+/** One edited BGR-15 color in the master palette blob — `offset` is the byte
  *  offset from the blob base (= `loadLevelPalettes` provenance value), `value`
- *  the new 16-bit colour. A global edit (the blob is shared by palette index). */
+ *  the new 16-bit color. A global edit (the blob is shared by palette index). */
 export interface PaletteEdit {
   offset: number;
   value: number;
@@ -776,7 +776,7 @@ export interface PaletteEdit {
  *  into the virtual 16-table gradient blob — `gradientId * GRADIENT_STRIDE_BYTES +
  *  stopIndex * 2` — so the 16 tables (one per BackgroundColor $10..$1F) share one
  *  flat `{offset,value}` shape with `PaletteEdit`. `value` is the new 16-bit
- *  colour. A global edit (the table is shared by every level using that
+ *  color. A global edit (the table is shared by every level using that
  *  BackgroundColor). See `gradient-edit.ts`. */
 export interface GradientEdit {
   offset: number;
@@ -789,18 +789,18 @@ export interface PaletteCatalogSwatch {
    *  edit writes (and the live-draft key). `-1` = not blob-backed (display-only,
    *  e.g. a scene CGRAM entry the interpreter loaded from a non-blob source). */
   offset: number;
-  /** Base (pristine, pre-edit) BGR-15 colour word; the UI overlays the live edit
+  /** Base (pristine, pre-edit) BGR-15 color word; the UI overlays the live edit
    *  draft on top by `offset`. */
   base: number;
-  /** Additional blob byte-offsets that hold the SAME colour and should receive
+  /** Additional blob byte-offsets that hold the SAME color and should receive
    *  the same edit (so one swatch edit updates every copy). Used by the World-map
-   *  panels group, where worlds 4–6 store their panel colour once per world
+   *  panels group, where worlds 4–6 store their panel color once per world
    *  palette. Absent/empty ⇒ a plain single-offset swatch. */
   mirrors?: number[];
 }
 
 /** One selectable palette in the catalog (a labelled strip of swatches) — e.g.
- *  "BG1 #0x05", a single backdrop colour, or a whole composed scene CGRAM. */
+ *  "BG1 #0x05", a single backdrop color, or a whole composed scene CGRAM. */
 export interface PaletteCatalogEntry {
   /** Primary label, e.g. `#0x05`, `World 4 map`, `Title screen`. */
   label: string;
@@ -1014,6 +1014,10 @@ export interface ForeignLevelDiff {
   base: LevelStreamCounts | null;
   /** Foreign-cart decode summary (null if the foreign slot is empty). */
   foreign: LevelStreamCounts | null;
+  /** The hack cleanly EMPTIED/removed this record (its streams are gone) while
+   *  base had real level data — distinct from an abandoned/clobbered slot. The
+   *  importer removes these from the project by default, matching the hack. */
+  emptied?: boolean;
 }
 
 /** One category row of the detect-only diff inventory: bytes that differ from
@@ -1027,7 +1031,7 @@ export interface InventoryCategory {
   /** Contiguous diff runs (a rough "how scattered" signal). */
   runs: number;
   /** True when a semantic import already covers this category (level data,
-   *  palette colours, strings, world map) — the diff is expected, not dropped. */
+   *  palette colors, strings, world map) — the diff is expected, not dropped. */
   imported: boolean;
   /** Up to 3 sample locations, `'label+0x12 (34 B)'`. */
   examples: string[];

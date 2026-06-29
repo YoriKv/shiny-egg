@@ -837,7 +837,7 @@ LDA $70E2,x : AND #$0010 : LSR x3 : ... : STA $7400,x  (or $76,x or $18,x)
 The pixel-X bit 4 (= the "right vs left half of a tile") is the
 variant selector. Two variants per sprite-ID using this scheme. This
 is the same DP-mod-encoded variant trick described in
-`docs/family-shyguys.md §3` for Shy Guy colour variants.
+`docs/family-shyguys.md §3` for Shy Guy color variants.
 
 ### 6.2 Pattern B: separate sprite-ID with fall-through Init
 

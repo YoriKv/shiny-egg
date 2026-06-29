@@ -1,5 +1,5 @@
 // Always-on badges for GENERATOR sprites: a purple square (matching the
-// "generator" category label colour — App.css `.se-props__cat--generator`,
+// "generator" category label color — App.css `.se-props__cat--generator`,
 // #a855f7) with a thumbnail of the enemy the generator spawns inside it.
 // Generator STOPPERS get the same badge plus a red X across the front.
 //

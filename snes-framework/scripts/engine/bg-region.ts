@@ -30,7 +30,7 @@ import { deriveDescriptors } from './bg-layers-compose.ts';
 import { resolveCellMap16 } from './cell-grid.ts';
 import { encodePng } from './png.ts';
 import { encodeAseprite, type AsepriteCell, type AsepriteStructural } from './aseprite.ts';
-import { encodeM1te2, parseM1te2 } from './m1te2.ts';
+import { encodeM1te2, parseM1te2, MAP_STRIDE } from './m1te2.ts';
 import { diffM1tePalette, type M1tePaletteEdit } from './m1te2-util.ts';
 import { decodeMap16Alloc } from './map16.ts';
 import type { SymbolMap } from './symbol-map.ts';
@@ -50,7 +50,7 @@ export interface BgRegionDiff {
   /** Two cells wrote the same (fileId,fileTile) different bytes (shared tile,
    *  edited inconsistently — last write wins, surfaced like the metatile diff). */
   conflicts: number;
-  /** Opaque pixels whose colour is in no slot of their cell's palette row (a
+  /** Opaque pixels whose color is in no slot of their cell's palette row (a
    *  wrong-row / off-palette paint, clamped to index 0) — surfaced as import errors. */
   mismatches: number;
 }
@@ -382,7 +382,7 @@ export function renderBgRegion(ctx: BgRegionContext, layer: 2 | 3): BgRegionResu
 
 /**
  * Slice an edited BG2/BG3 region back to CHR tile edits. Per editable sub-cell:
- * base-aware (a pixel still at its base colour keeps its base index), per-row,
+ * base-aware (a pixel still at its base color keeps its base index), per-row,
  * un-flipped, bpp-correct re-plane. Non-editable sub-cells (gfx === null) skipped.
  */
 export function diffBgRegionTiles(
@@ -421,7 +421,7 @@ export function diffBgRegionTiles(
         if (u === palette[bIdx]) r = bIdx;
         else {
           r = paletteIndexOf(palette, u, colorsPerRow);
-          // index 0 is this layer's transparent slot; an opaque colour that lands
+          // index 0 is this layer's transparent slot; an opaque color that lands
           // there (and isn't palette[0]) is in no slot of the cell's row → mismatch.
           if (r === 0 && u !== palette[0] && (u >>> 24) !== 0) mismatches++;
         }
@@ -480,13 +480,13 @@ export function bgRegionPng(
  * Compose a BG1 region as an `.aseprite` tilemap document: each distinct Map16
  * block becomes one 16×16 tile in the tileset; the level grid becomes the tilemap;
  * the palette is ONLY the CGRAM rows the region actually uses (each 4bpp sub-tile
- * draws from one 16-colour row), compacted, + a trailing transparent slot — so the
- * artist sees just the colours these tiles can reach, not all 256. Flattening the
+ * draws from one 16-color row), compacted, + a trailing transparent slot — so the
+ * artist sees just the colors these tiles can reach, not all 256. Flattening the
  * result (decodeAsepriteRegion) reproduces `region.rgba` byte-for-byte, so the
  * existing `diffBg1Region` slice consumes it unchanged.
  *
  * Pixels (not the Aseprite index) are the round-trip contract: we map each region
- * pixel to ANY palette entry holding its exact colour (lowest index wins). Empty
+ * pixel to ANY palette entry holding its exact color (lowest index wins). Empty
  * cells reference the structural empty tile (id 0). BG1 has no within-tile
  * transparency (index 0 is the opaque backdrop); only out-of-range quadrant pixels
  * (transparent in the render) map to the transparent slot, flattening back
@@ -504,9 +504,9 @@ export function bg1RegionAseprite(ctx: MetatileContext, region: Bg1RegionResult)
   // flatten reproduces region.rgba byte-for-byte and feeds diffBg1Region (per-block
   // 8×8 quadrant slice).
   //
-  // Compact palette: only the rows this region uses, each a full 16-colour block
+  // Compact palette: only the rows this region uses, each a full 16-color block
   // (opaque index 0, as BG1 renders), + one transparent slot for empty / non-faithful
-  // quadrants. A colour→index reverse map resolves the preview pixels of those.
+  // quadrants. A color→index reverse map resolves the preview pixels of those.
   const usedRows = region.paletteRowsUsed;
   const TRANSPARENT = usedRows.length * 16;
   const palette = new Uint32Array(TRANSPARENT + 1);
@@ -579,7 +579,7 @@ export function bg1RegionAseprite(ctx: MetatileContext, region: Bg1RegionResult)
  * each tilemap cell references it with the cell's H/V flip flags (so an h-flipped
  * reuse shares the tile — exactly how the SNES tilemap works). The palette is ONLY
  * the CGRAM rows the region uses, compacted at the layer stride (BG2 4bpp → 16/row;
- * BG3 2bpp → 4/row) — the artist sees just the colours these tiles can reach. Each
+ * BG3 2bpp → 4/row) — the artist sees just the colors these tiles can reach. Each
  * row's local index 0 composites transparent, so we collapse every used row's
  * local-0 to the single transparent index 0; opaque pixels (local > 0) map to their
  * row's compact block. Each tile pixel is decoded straight from VRAM as its true
@@ -780,7 +780,7 @@ function bgRegionPlacementBuild(ctx: BgRegionContext, region: BgRegionResult): B
       }
     }
     if (!accessible) continue;
-    // Decode the quad's local indices ONCE; recolour per row.
+    // Decode the quad's local indices ONCE; recolor per row.
     for (let sy = 0; sy < subPerSide; sy++) {
       for (let sx = 0; sx < subPerSide; sx++) {
         const vb = (charAddr + ((baseTile + sx + sy * 16) & 0x3ff) * tileBytes) & 0xffff;
@@ -873,7 +873,7 @@ export function diffBgRegionPlacement(
 //   1. PIXELS — every Aseprite tileset tile's indexed pixels are written to the CHR tile
 //      it maps to (the export's deterministic `(charTile,paletteRow)` dedup, rebuilt here
 //      so the index→CHR identity is identical on both sides). Index-based, so duplicate-
-//      palette-colour and base-aware ambiguity disappear; an unedited tile re-encodes to
+//      palette-color and base-aware ambiguity disappear; an unedited tile re-encodes to
 //      its base bytes (idempotent, no churn).
 //
 //      A CHR used under N palette rows is exported as N SEPARATE Aseprite tiles (one per
@@ -1106,21 +1106,18 @@ export function diffBgRegionCombined(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // M1TE2 ".M1" session export/import — the whole BG2/BG3 layer (tilemap + CHR +
-// palette) bundled into one file editable in M1TE2 (m1te2.ts). Everything maps
+// palette) bundled into ONE file editable in M1TE2 (m1te2.ts). Everything maps
 // VERBATIM (research/graphics-editing/bg-region-edit.md): a YI 16×16 tilemap word IS
 // an M1TE2 16×16-mode word (it expands base+{0,1,16,17} with the word's flips, like
 // the YI PPU); VRAM CHR IS raw SNES planar (a byte copy); CGRAM IS BGR555 (a byte
-// copy). BG2 (4bpp) → M1TE2 map slot 1; BG3 (2bpp) → slot 2. M1TE2's map is a fixed
-// 32×32, so a larger layer is emitted as one .M1 per 32×32 screen-block (CHR + palette
-// shared). Round-trips: edit in M1TE2 → CHR pixel writes + tilemap-word writes +
-// palette writes back into the cart.
+// copy). BG2 (4bpp) → M1TE2 map slot 1; BG3 (2bpp) → slot 2. M1TE2 v2 supports up to a
+// 64×64 map, which covers any in-level BG layer (max 64×64 words), so the whole layer is
+// ONE .M1 — no screen-block split. Round-trips: edit in M1TE2 → CHR pixel writes +
+// tilemap-word writes + palette writes back into the cart.
 
-/** One 32×32 screen-block of a BG layer, as an `.M1` session file. */
-export interface M1te2Screen {
-  /** Screen-block column/row within the layer's de-interleaved tilemap (0-based). */
-  screenX: number;
-  screenY: number;
-  /** Cells actually filled in this screen (≤32 each — the last block may be partial). */
+/** A BG layer exported as one `.M1` session file. */
+export interface M1te2Export {
+  /** The layer's tilemap-word grid dimensions (≤ 64 each). */
   cols: number;
   rows: number;
   bytes: Uint8Array;
@@ -1154,13 +1151,12 @@ function bgWordCells(region: BgRegionResult): { cols: number; rows: number; cell
 }
 
 /**
- * Export a BG2/BG3 layer as one M1TE2 `.M1` session per 32×32 tilemap screen-block. The
- * tilemap goes in the layer's canonical M1TE2 map slot (BG2 → 1, BG3 → 2), the CHR in
- * the matching depth block (4bpp / 2bpp), and the palette is CGRAM verbatim — all
- * byte-for-byte (see the section header). CHR + palette are identical across the layer's
- * screens; only the tilemap differs.
+ * Export a BG2/BG3 layer as one M1TE2 `.M1` session (v2 holds up to 64×64, so the whole
+ * layer fits one file). The tilemap goes in the layer's canonical M1TE2 map slot (BG2 → 1,
+ * BG3 → 2) at the doc's 64-stride; the CHR in the matching depth block (4bpp / 2bpp); the
+ * palette is CGRAM verbatim — all byte-for-byte (see the section header).
  */
-export function bgRegionM1te2(ctx: BgRegionContext, region: BgRegionResult): M1te2Screen[] {
+export function bgRegionM1te2(ctx: BgRegionContext, region: BgRegionResult): M1te2Export {
   const { layer, bpp } = region;
   const tileBytes = bpp === 4 ? 32 : 16;
   const charAddr = layer === 2 ? ctx.regs.bg2CharAddr : ctx.regs.bg3CharAddr;
@@ -1170,35 +1166,26 @@ export function bgRegionM1te2(ctx: BgRegionContext, region: BgRegionResult): M1t
   const chr = bgChrWindow(ctx.vram, charAddr, tileBytes);
   const chr4bpp = bpp === 4 ? chr : new Uint8Array(32768);
   const chr2bpp = bpp === 2 ? chr : new Uint8Array(16384);
-  const palette = ctx.cgram.slice(0, 256); // 128 colours; encodeM1te2 masks bit15
+  const palette = ctx.cgram.slice(0, 256); // 128 colors; encodeM1te2 masks bit15
 
   const { cols, rows, cells } = bgWordCells(region);
-  const screensX = Math.max(1, Math.ceil(cols / 32));
-  const screensY = Math.max(1, Math.ceil(rows / 32));
-  const out: M1te2Screen[] = [];
-  for (let sy = 0; sy < screensY; sy++) {
-    for (let sx = 0; sx < screensX; sx++) {
-      const localCols = Math.min(32, cols - sx * 32);
-      const localRows = Math.min(32, rows - sy * 32);
-      const map = new Uint16Array(1024);
-      for (let lr = 0; lr < localRows; lr++) {
-        for (let lc = 0; lc < localCols; lc++) {
-          const wc = cells[(sy * 32 + lr) * cols + (sx * 32 + lc)];
-          if (wc) map[lr * 32 + lc] = wc.entry & 0xffff;
-        }
-      }
-      const maps: [Uint16Array, Uint16Array, Uint16Array] = [new Uint16Array(1024), new Uint16Array(1024), new Uint16Array(1024)];
-      maps[slot] = map;
-      out.push({
-        screenX: sx, screenY: sy, cols: localCols, rows: localRows,
-        bytes: encodeM1te2({ mapHeight: localRows, tileSize, palette, maps, chr4bpp, chr2bpp })
-      });
+  const map = new Uint16Array(MAP_STRIDE * MAP_STRIDE);
+  for (let r = 0; r < rows; r++) {
+    for (let cc = 0; cc < cols; cc++) {
+      const wc = cells[r * cols + cc];
+      if (wc) map[r * MAP_STRIDE + cc] = wc.entry & 0xffff;
     }
   }
-  return out;
+  const maps: [Uint16Array, Uint16Array, Uint16Array] =
+    [new Uint16Array(MAP_STRIDE * MAP_STRIDE), new Uint16Array(MAP_STRIDE * MAP_STRIDE), new Uint16Array(MAP_STRIDE * MAP_STRIDE)];
+  maps[slot] = map;
+  return {
+    cols, rows,
+    bytes: encodeM1te2({ mapWidth: cols <= 32 ? 32 : 64, mapHeight: rows, tileSize, palette, maps, chr4bpp, chr2bpp })
+  };
 }
 
-/** A changed CGRAM colour an `.M1` import detected (caller maps `cgramIndex` → the
+/** A changed CGRAM color an `.M1` import detected (caller maps `cgramIndex` → the
  *  master-palette-blob offset for the write-back). Aliased to the shared M1TE2 util type so
  *  every `.M1` producer (BG region / world map / screens) emits one palette-edit shape. */
 export type M1te2PaletteEdit = M1tePaletteEdit;
@@ -1208,7 +1195,7 @@ export interface M1te2Diff {
   tileEdits: MetatileTileEdit[];
   /** Tilemap WORD writes (`fileOffset` = byte offset within the decompressed tilemap file). */
   wordEdits: BgPlacementEdit[];
-  /** Changed CGRAM colours (excludes M1TE2's auto-blacked per-row transparent slots). */
+  /** Changed CGRAM colors (excludes M1TE2's auto-blacked per-row transparent slots). */
   paletteEdits: M1te2PaletteEdit[];
   /** CHR tiles changed but not writable (wraparound / not this layer's files). */
   skippedTiles: number;
@@ -1217,19 +1204,17 @@ export interface M1te2Diff {
 }
 
 /**
- * Diff an edited M1TE2 `.M1` screen against the cart → CHR pixel edits + tilemap word
- * edits + palette colour edits. CHR is a direct byte compare (the .M1 CHR is the same raw
- * planar format as VRAM, so no decode/re-plane — and there are no per-row "views" to
- * reconcile, unlike the Aseprite path). Tilemap words compare against the CURRENT word
- * (live overlay ⊕ built, via `currentTilemap`) so an already-applied move isn't
- * re-reported. `screenX/screenY` locate this `.M1`'s cells within the layer.
+ * Diff an edited M1TE2 `.M1` against the cart → CHR pixel edits + tilemap word edits +
+ * palette color edits. CHR is a direct byte compare (the .M1 CHR is the same raw planar
+ * format as VRAM, so no decode/re-plane — and there are no per-row "views" to reconcile,
+ * unlike the Aseprite path). Tilemap words compare against the CURRENT word (live overlay
+ * ⊕ built, via `currentTilemap`) so an already-applied move isn't re-reported. The whole
+ * layer is one `.M1` (v2), read at the doc's 64-stride.
  */
 export function diffBgRegionM1te2(
   ctx: BgRegionContext,
   region: BgRegionResult,
   m1Bytes: Uint8Array,
-  screenX: number,
-  screenY: number,
   tilemapAddr: number,
   opts: { currentTilemap?: Uint8Array } = {}
 ): M1te2Diff {
@@ -1258,16 +1243,14 @@ export function diffBgRegionM1te2(
     tileEdits.push({ format: f.format, fileId: f.fileId, fileTile: f.fileTile, bytes });
   }
 
-  // ── Tilemap words — this screen's cells vs the current word at each rendered position.
-  const { cols, cells } = bgWordCells(region);
+  // ── Tilemap words — every cell vs the current word at each rendered position.
+  const { cols, rows, cells } = bgWordCells(region);
   const wordEdits: BgPlacementEdit[] = [];
   let skippedWords = 0;
-  const localCols = Math.min(32, cols - screenX * 32);
-  const localRows = Math.min(32, region.height / region.tileSize - screenY * 32);
-  for (let lr = 0; lr < localRows; lr++) {
-    for (let lc = 0; lc < localCols; lc++) {
-      const wc = cells[(screenY * 32 + lr) * cols + (screenX * 32 + lc)];
-      const docWord = map[lr * 32 + lc]! & 0xffff;
+  for (let r = 0; r < rows; r++) {
+    for (let cc = 0; cc < cols; cc++) {
+      const wc = cells[r * cols + cc];
+      const docWord = map[r * MAP_STRIDE + cc]! & 0xffff;
       if (!wc) { if (docWord !== 0) skippedWords++; continue; } // edit on an empty cell — can't place
       const fileOffset = wc.off - tilemapAddr;
       const curWord = opts.currentTilemap && fileOffset >= 0 && fileOffset + 1 < opts.currentTilemap.length
@@ -1282,7 +1265,7 @@ export function diffBgRegionM1te2(
     }
   }
 
-  // ── Palette — changed CGRAM colours, skipping the auto-blacked transparent slots.
+  // ── Palette — changed CGRAM colors, skipping the auto-blacked transparent slots.
   const paletteEdits = diffM1tePalette(doc.palette, ctx.cgram);
 
   return { tileEdits, wordEdits, paletteEdits, skippedTiles, skippedWords };
@@ -1307,21 +1290,22 @@ interface Bg1M1Build {
   /** Per tile: its CHR write-back target — null for the empty tile / non-faithful
    *  (animated / unloaded / borrowed) preview tiles, which render but are never written. */
   tileBits: ({ fileId: number; format: 'lz2' | 'lz16'; fileTile: number } | null)[];
-  /** 32×32 M1TE word map (slot 0); cells outside this screen / empty stay 0. */
+  /** The M1TE word map (slot 0) at the doc's 64-stride; cells outside the block / empty stay 0. */
   map: Uint16Array;
   localCols: number;
   localRows: number;
 }
 
-/** Build the BG1 8×8 tileset + word map for one 16×16-Map16 screen-block. Deterministic
- *  (region.cells row-major order, first-seen dedup) so the export and import agree on every
- *  tile index → CHR target. Shared by `bg1RegionM1te2` and `diffBg1RegionM1te2`. */
-function bg1M1Build(ctx: MetatileContext, region: Bg1RegionResult, screenX: number, screenY: number): Bg1M1Build {
+/** Build the BG1 8×8 tileset + word map for the top-left ≤32×32-Map16 block (≤64×64 8×8
+ *  cells, the M1TE2 v2 max). Deterministic (region.cells row-major order, first-seen dedup)
+ *  so the export and import agree on every tile index → CHR target. Shared by
+ *  `bg1RegionM1te2` and `diffBg1RegionM1te2`. */
+function bg1M1Build(ctx: MetatileContext, region: Bg1RegionResult): Bg1M1Build {
   const rectCols = region.width / CELL_PX;   // Map16 cells across the whole region
   const rectRows = region.height / CELL_PX;
-  const localCols = Math.max(0, Math.min(32, (rectCols - screenX * 16) * 2)); // 8×8 cells in this screen
-  const localRows = Math.max(0, Math.min(32, (rectRows - screenY * 16) * 2));
-  const map = new Uint16Array(1024);
+  const localCols = Math.max(0, Math.min(MAP_STRIDE, rectCols * 2)); // 8×8 cells in the block (≤64)
+  const localRows = Math.max(0, Math.min(MAP_STRIDE, rectRows * 2));
+  const map = new Uint16Array(MAP_STRIDE * MAP_STRIDE);
   const tiles: Uint8Array[] = [new Uint8Array(TILE_BYTES_4BPP)]; // tile 0 = empty
   const tileBits: Bg1M1Build['tileBits'] = [null];
   const faithfulKey = new Map<string, number>(); // (fileId,fileTile) → dedup index
@@ -1329,13 +1313,13 @@ function bg1M1Build(ctx: MetatileContext, region: Bg1RegionResult, screenX: numb
   const MAX_TILES = 1024;
 
   for (const cell of region.cells) {
-    if (cell.c < screenX * 16 || cell.c >= screenX * 16 + 16 || cell.r < screenY * 16 || cell.r >= screenY * 16 + 16) continue;
+    if (cell.c * 2 >= localCols || cell.r * 2 >= localRows) continue; // cell beyond the top-left block
     let subs;
     try { subs = decodeMap16Alloc(ctx.map16Tables, cell.map16Id); } catch { continue; }
     for (let q = 0; q < 4; q++) {
       const sub = subs[q]!;
-      const localCol = (cell.c - screenX * 16) * 2 + (q & 1);
-      const localRow = (cell.r - screenY * 16) * 2 + (q >> 1);
+      const localCol = cell.c * 2 + (q & 1);
+      const localRow = cell.r * 2 + (q >> 1);
       if (localCol >= localCols || localRow >= localRows) continue;
       const vramByte = (ctx.bg1CharAddr + sub.tileIndex * TILE_BYTES_4BPP) & 0xffff;
       const inVram = vramByte + TILE_BYTES_4BPP <= ctx.vram.length;
@@ -1369,7 +1353,7 @@ function bg1M1Build(ctx: MetatileContext, region: Bg1RegionResult, screenX: numb
         }
         tileIdx = idx;
       }
-      map[localRow * 32 + localCol] = (tileIdx & 0x3ff) | ((sub.paletteRow & 7) << 10) | (sub.hflip ? 0x4000 : 0) | (sub.vflip ? 0x8000 : 0);
+      map[localRow * MAP_STRIDE + localCol] = (tileIdx & 0x3ff) | ((sub.paletteRow & 7) << 10) | (sub.hflip ? 0x4000 : 0) | (sub.vflip ? 0x8000 : 0);
     }
   }
   return { tiles, tileBits, map, localCols, localRows };
@@ -1377,31 +1361,31 @@ function bg1M1Build(ctx: MetatileContext, region: Bg1RegionResult, screenX: numb
 
 /** Export a BG1 area as a single M1TE `.M1` session — an 8×8-mode tilemap of the Map16
  *  sub-tiles (slot 0, 4bpp), the area's distinct CHR, and the CGRAM palette verbatim. Pixel
- *  + palette editing only — placement is the level editor. M1TE's map is a fixed 32×32 (8×8
- *  cells) = a 16×16-Map16 block, so a larger selected area is CROPPED to the top-left block;
- *  the caller (`exportBgRegionToDir`) detects that from the region dims and warns. */
-export function bg1RegionM1te2(ctx: MetatileContext, region: Bg1RegionResult): M1te2Screen[] {
+ *  + palette editing only — placement is the level editor. M1TE2 v2 fits up to a 64×64 8×8
+ *  cell map = a 32×32-Map16 block, so a larger selected area is CROPPED to the top-left
+ *  block; the caller (`exportBgRegionToDir`) detects that from the region dims and warns. */
+export function bg1RegionM1te2(ctx: MetatileContext, region: Bg1RegionResult): M1te2Export {
   const palette = ctx.cgram.slice(0, 256);
-  const b = bg1M1Build(ctx, region, 0, 0); // top-left 16×16-Map16 block only
+  const b = bg1M1Build(ctx, region); // top-left ≤32×32-Map16 block only
   const chr4bpp = new Uint8Array(32768);
   for (let t = 0; t < b.tiles.length && t < 1024; t++) chr4bpp.set(b.tiles[t]!, t * TILE_BYTES_4BPP);
-  const maps: [Uint16Array, Uint16Array, Uint16Array] = [b.map, new Uint16Array(1024), new Uint16Array(1024)];
-  return [{
-    screenX: 0, screenY: 0, cols: b.localCols, rows: b.localRows,
-    bytes: encodeM1te2({ mapHeight: Math.max(1, b.localRows), tileSize: 8, palette, maps, chr4bpp, chr2bpp: new Uint8Array(16384) })
-  }];
+  const maps: [Uint16Array, Uint16Array, Uint16Array] = [b.map, new Uint16Array(MAP_STRIDE * MAP_STRIDE), new Uint16Array(MAP_STRIDE * MAP_STRIDE)];
+  return {
+    cols: b.localCols, rows: b.localRows,
+    bytes: encodeM1te2({ mapWidth: b.localCols <= 32 ? 32 : 64, mapHeight: Math.max(1, b.localRows), tileSize: 8, palette, maps, chr4bpp, chr2bpp: new Uint8Array(16384) })
+  };
 }
 
 /**
- * Diff an edited BG1-area `.M1` screen against the cart → CHR pixel edits + palette edits.
- * Rebuilds the deterministic dedup tileset (same as the export) so each .M1 4bpp tile maps
- * back to its BG1 CHR file; a byte difference vs the current CHR → a write. Empty / non-
- * faithful tiles are skipped. NO tilemap words (BG1 placement is the level editor), so a
- * tile rearrangement in M1TE is ignored — pixels at each fixed CHR tile are what's sliced.
+ * Diff an edited BG1-area `.M1` against the cart → CHR pixel edits + palette edits. Rebuilds
+ * the deterministic dedup tileset (same as the export) so each .M1 4bpp tile maps back to
+ * its BG1 CHR file; a byte difference vs the current CHR → a write. Empty / non-faithful
+ * tiles are skipped. NO tilemap words (BG1 placement is the level editor), so a tile
+ * rearrangement in M1TE is ignored — pixels at each fixed CHR tile are what's sliced.
  */
-export function diffBg1RegionM1te2(ctx: MetatileContext, region: Bg1RegionResult, m1Bytes: Uint8Array, screenX: number, screenY: number): M1te2Diff {
+export function diffBg1RegionM1te2(ctx: MetatileContext, region: Bg1RegionResult, m1Bytes: Uint8Array): M1te2Diff {
   const doc = parseM1te2(m1Bytes);
-  const b = bg1M1Build(ctx, region, screenX, screenY); // canonical (current-cart) tiles + tileBits
+  const b = bg1M1Build(ctx, region); // canonical (current-cart) tiles + tileBits
   const tileEdits: MetatileTileEdit[] = [];
   let skippedTiles = 0;
   for (let t = 1; t < b.tiles.length && t < 1024; t++) {
@@ -1414,7 +1398,7 @@ export function diffBg1RegionM1te2(ctx: MetatileContext, region: Bg1RegionResult
     if (changed) tileEdits.push({ format: bits.format, fileId: bits.fileId, fileTile: bits.fileTile, bytes });
   }
 
-  // Palette — changed CGRAM colours, skipping M1TE2's auto-blacked transparent slots.
+  // Palette — changed CGRAM colors, skipping M1TE2's auto-blacked transparent slots.
   const paletteEdits = diffM1tePalette(doc.palette, ctx.cgram);
 
   return { tileEdits, wordEdits: [], paletteEdits, skippedTiles, skippedWords: 0 };

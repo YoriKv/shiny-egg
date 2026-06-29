@@ -62,8 +62,8 @@ export interface WorldMapIconContext {
   manifest: GfxFileEntry[];
   tintRow: number;
   palettes: (Uint32Array | undefined)[];
-  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source), from the
-   *  scene palette load — lets a palette-colour edit (terrain/ground/icon) round-trip to the
+  /** CGRAM color index → master-palette-blob byte-offset (`-1` = no blob source), from the
+   *  scene palette load — lets a palette-color edit (terrain/ground/icon) round-trip to the
    *  blob. Shared by every track that builds off this scene context. */
   provenance: Int32Array;
 }
@@ -80,7 +80,7 @@ export function buildWorldMapIconContext(rom: Uint8Array, symbols: SymbolMap, wo
 }
 
 /** BG palette row `row` (0..7) as ARGB, opaque index 0 (BG composites index 0 as a
- *  real colour) — cached per context. */
+ *  real color) — cached per context. */
 function iconPalFor(ctx: WorldMapIconContext, row: number): Uint32Array {
   let p = ctx.palettes[row];
   if (!p) {
@@ -105,7 +105,7 @@ export function iconFileForVramByte(
 }
 
 /** Slice one 8×8 cell back out of the icon canvas (inverse of the blit), base-aware
- *  (a pixel still showing its base colour keeps its base index). Returns 32 bytes. */
+ *  (a pixel still showing its base color keeps its base index). Returns 32 bytes. */
 function sliceIconCell(
   rgbaU32: Uint32Array,
   cellX: number,
@@ -227,7 +227,7 @@ export function diffWorldMapIconTiles(
 }
 
 /** Encode an icon canvas to a PNG: the 24×24 icon (opaque) + a self-describing
- *  BG-palette swatch column per used row (full 16-colour, opaque), to the right.
+ *  BG-palette swatch column per used row (full 16-color, opaque), to the right.
  *  Import reads only the top-left `width×height`. */
 export function worldMapIconPng(ctx: WorldMapIconContext, canvas: WorldMapIconCanvas): Uint8Array {
   const rows = canvas.paletteRowsUsed;
@@ -252,13 +252,13 @@ export function worldMapIconPng(ctx: WorldMapIconContext, canvas: WorldMapIconCa
 }
 
 /** The assembled icon as a "single image with palette" `.aseprite` (no tilemap): the
- *  24×24 indexed image coloured in its used BG rows (the same colours the PNG swatch shows).
+ *  24×24 indexed image colored in its used BG rows (the same colors the PNG swatch shows).
  *  Import flattens it back to the canvas RGBA → `diffWorldMapIconTiles`, like the PNG. */
 export function worldMapIconAseprite(ctx: WorldMapIconContext, canvas: WorldMapIconCanvas): { bytes: Uint8Array; paletteOffsets: number[] } {
   const pal: number[] = [];
   for (const row of canvas.paletteRowsUsed) { const rp = iconPalFor(ctx, row); for (let i = 0; i < 16; i++) pal.push(rp[i]!); }
   const bytes = imageAseprite({ rgba: canvas.rgba, width: canvas.width, height: canvas.height, palette: pal, index0Transparent: false, layerName: `icon-${canvas.name}` });
-  // Colour write-back map — the SAME used BG rows concatenated (16-colour, opaque + trailing slot).
+  // Color write-back map — the SAME used BG rows concatenated (16-color, opaque + trailing slot).
   const paletteOffsets = imagePaletteOffsets({ provenance: ctx.provenance, rows: canvas.paletteRowsUsed, index0Transparent: false });
   return { bytes, paletteOffsets };
 }
@@ -277,7 +277,7 @@ export interface WorldMapIconPng {
   /** The same icon as a single-image `.aseprite` (built only when `aseprite` is requested). */
   aseprite?: Uint8Array;
   /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
-   *  editing the embedded palette writes those colours back to the blob. Aseprite mode only. */
+   *  editing the embedded palette writes those colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[];
 }
 
@@ -295,7 +295,7 @@ export function exportWorldMapIcons(rom: Uint8Array, symbols: SymbolMap, opts: {
       const ase = opts.aseprite && canvas.faithful ? worldMapIconAseprite(ctx, canvas) : undefined;
       out.push({
         file: `screens/map/world-${world}/icon-${def.name}.png`,
-        description: `map level-slot icon — ${def.label} (world ${world} tint; shared tiles across worlds). Editing the embedded palette writes those colours back to the master palette blob.`,
+        description: `map level-slot icon — ${def.label} (world ${world} tint; shared tiles across worlds). Editing the embedded palette writes those colors back to the master palette blob.`,
         world,
         name: def.name,
         faithful: canvas.faithful,

@@ -82,26 +82,26 @@ function lcg(seed: number): () => number {
 
 console.log('=== LZ16 encode/decode round-trip ===');
 
-// Uniform tiles (one colour everywhere) — single 128-px run per row.
+// Uniform tiles (one color everywhere) — single 128-px run per row.
 roundTrip(new Uint8Array(512).fill(0x00), 1, 'all-zero, 1 tile-row');
-roundTrip(new Uint8Array(512).fill(0xff), 1, 'all-0xFF (colour 15 everywhere)');
+roundTrip(new Uint8Array(512).fill(0xff), 1, 'all-0xFF (color 15 everywhere)');
 roundTrip(new Uint8Array(4 * 512).fill(0x00), 4, 'all-zero, 4 tile-rows');
 
-// > 7 distinct colours forces the index-7 escape path.
+// > 7 distinct colors forces the index-7 escape path.
 {
   const rng = lcg(0xbeef);
-  // 4bpp: each byte holds two pixels, all 16 colours appear.
+  // 4bpp: each byte holds two pixels, all 16 colors appear.
   roundTrip(Uint8Array.from({ length: 2 * 512 }, () => rng() & 0xff), 2, 'random nibbles, 2 tile-rows');
 }
 
-// Exactly 8 distinct colours (7 cached + 1 escaped).
+// Exactly 8 distinct colors (7 cached + 1 escaped).
 {
   const buf = new Uint8Array(512);
   for (let i = 0; i < buf.length; i++) buf[i] = ((i & 7) << 4) | ((i + 1) & 7);
-  roundTrip(buf, 1, '8-colour gradient');
+  roundTrip(buf, 1, '8-color gradient');
 }
 
-// Horizontal bands (long single-colour runs → best-case RLE).
+// Horizontal bands (long single-color runs → best-case RLE).
 {
   const tiles = new Uint8Array(2 * 512);
   // Build via the pixel domain then pack to tiles by encoding+decoding is

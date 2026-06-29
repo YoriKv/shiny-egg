@@ -17,7 +17,7 @@ import { SCREEN_PAGE_UNALLOCATED, LRU_PAGE_MASK, PAGES } from '../cell-grid.ts';
 /** One recorded cell of the provenance target, in absolute cell coords.
  *  `neighbor` = a touch-up the object wrote into a non-footprint cell;
  *  `buried` = a later object overdrew it. The IPC layer maps the
- *  (neighbor, buried) pair to a colour class. */
+ *  (neighbor, buried) pair to a color class. */
 export interface ProvenanceCell {
   x: number;
   y: number;

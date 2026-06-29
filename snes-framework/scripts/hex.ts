@@ -5,7 +5,7 @@
 // zero-padded (CLAUDE.md "Hex display"); prefixed forms use `0x` for
 // identifiers/UI and `$` for asm/disassembly addresses.
 //
-// NB: deliberately NOT for lowercase hex (CSS colours, some asm dumps) — those
+// NB: deliberately NOT for lowercase hex (CSS colors, some asm dumps) — those
 // would change output, so they keep their own local formatting.
 
 /** Uppercase hex, zero-padded to `width`, no prefix. e.g. `hex(0x4a)` → `"4A"`. */

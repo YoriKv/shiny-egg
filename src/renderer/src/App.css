@@ -799,7 +799,7 @@ h3 { margin: 0; }
   align-items: center;
   gap: 1px;
 }
-/* Tiny caption above a colour swatch ("BG" / "Grid"). */
+/* Tiny caption above a color swatch ("BG" / "Grid"). */
 .se-toolbar__swatch-label {
   font-size: 9px;
   line-height: 1;
@@ -824,8 +824,8 @@ h3 { margin: 0; }
   border-radius: 2px;
 }
 
-/* Colour-with-opacity picker (ColorAlphaButton): a swatch showing the solid RGB
-   colour that opens a popover holding the native RGB picker + an opacity slider. */
+/* Color-with-opacity picker (ColorAlphaButton): a swatch showing the solid RGB
+   color that opens a popover holding the native RGB picker + an opacity slider. */
 .se-colorpick {
   position: relative;
   display: inline-flex;
@@ -1059,10 +1059,15 @@ h3 { margin: 0; }
   font-variant-numeric: tabular-nums; /* digits don't jitter as coords change */
 }
 
-.se-canvas__reset {
+/* Top-right view-control group: Camera Preview + Reset view. */
+.se-canvas__viewbtns {
   position: absolute;
   top: 12px;
   right: 12px;
+  display: flex;
+  gap: 8px;
+}
+.se-canvas__reset {
   height: 26px;
   padding: 0 10px;
   font-size: 11px;
@@ -1075,6 +1080,99 @@ h3 { margin: 0; }
 .se-canvas__reset:hover {
   color: var(--ink);
   border-color: var(--line-strong);
+}
+/* Camera Preview control: an on/off checkbox toggle + a "▾" options button, with a
+   settings popover (mask / zoom / snap). */
+.se-campreview {
+  position: relative;
+  display: flex;
+}
+.se-campreview__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 3px 0 0 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.se-campreview__toggle.is-active {
+  color: var(--ink);
+}
+.se-campreview__toggle input,
+.se-campreview__check input,
+.se-campreview__radio input {
+  margin: 0;
+  cursor: pointer;
+}
+.se-campreview__caret {
+  height: 26px;
+  padding: 0 7px;
+  font-size: 10px;
+  color: var(--ink-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 0 3px 3px 0;
+  cursor: pointer;
+}
+.se-campreview__caret:hover,
+.se-campreview__caret.is-open {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.se-campreview__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+}
+.se-campreview__check,
+.se-campreview__radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.se-campreview__group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.se-campreview__grouplabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.se-campreview__radios {
+  display: flex;
+  gap: 10px;
+}
+.se-campreview__radios--col {
+  flex-direction: column;
+  gap: 5px;
 }
 
 /* Top-left minimap overlay: a half-transparent BG1 render of the whole level,
@@ -1404,6 +1502,12 @@ h3 { margin: 0; }
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Scroll INTERNALLY (like .se-palcat on the All Palettes tab) so the tab bar —
+   * a sibling above this in the .se-palette-tabs flex column — stays pinned at the
+   * top instead of scrolling away with the content. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .se-palette__section-label {
   font-size: 10px;
@@ -1456,7 +1560,7 @@ h3 { margin: 0; }
   gap: 3px;
   white-space: nowrap;
 }
-/* Per-row indicator chip — colour-coded by what the row belongs to. */
+/* Per-row indicator chip — color-coded by what the row belongs to. */
 .se-palette__tag {
   flex: 0 0 auto;
   font-size: 9px;
@@ -1518,6 +1622,16 @@ h3 { margin: 0; }
   color: var(--ink-3);
   line-height: 1.4;
 }
+.se-palette__warn {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-left: 2px solid #e0a23a;
+  border-radius: 3px;
+  color: #e0b15a;
+  font-size: 11px;
+  line-height: 1.4;
+}
 /* Palette editing aid: outline the selected object's rows (what each row
  * belongs to is now shown by the per-row indicator chips, not by dimming). */
 .se-palette__cell.is-sel {
@@ -1526,8 +1640,8 @@ h3 { margin: 0; }
   position: relative;
   z-index: 1;
 }
-/* Palette-colour editing: the swatch being edited gets a bright ring; the
- * footer holds the colour picker + the "global edit" warning. */
+/* Palette-color editing: the swatch being edited gets a bright ring; the
+ * footer holds the color picker + the "global edit" warning. */
 .se-palette__cell.is-editing {
   outline: 2px solid var(--ink);
   outline-offset: -1px;
@@ -1595,7 +1709,7 @@ h3 { margin: 0; }
   position: relative;
   z-index: 2;
 }
-/* "Built ROM palette is out of date" banner — a saved colour edit/reset that
+/* "Built ROM palette is out of date" banner — a saved color edit/reset that
  * hasn't been rebuilt, so the swatches (read from the built ROM) can lag. Amber,
  * matching .se-blocker--warn. */
 .se-palette__stale-warn {
@@ -1608,7 +1722,7 @@ h3 { margin: 0; }
   font-size: 11px;
   line-height: 1.4;
 }
-/* Colour editor sits at the top of the panel (a swatch is always auto-selected);
+/* Color editor sits at the top of the panel (a swatch is always auto-selected);
  * the Reset Color / Reset all toolbar at the bottom. */
 .se-palette__toolbar {
   display: flex;
@@ -1656,6 +1770,9 @@ h3 { margin: 0; }
   gap: 8px;
   height: 100%;
   min-height: 0;
+  /* Positioning anchor for the transient sync-result popup pinned to the panel's
+   * right edge (.se-palette-sync__status). */
+  position: relative;
 }
 .se-palette-tabs__bar {
   display: flex;
@@ -1684,13 +1801,30 @@ h3 { margin: 0; }
   border-bottom-color: var(--accent);
 }
 /* "Sync to Emulator" — right-aligned in the tab bar; accent-outlined when enabled,
- * dimmed when EmuHawk isn't running. Wrapped so the transient status floats as a
- * popup above the button (positioning anchor) rather than displacing tab content. */
+ * dimmed when EmuHawk isn't running. (The transient result popup is no longer
+ * anchored here — it pins to the panel via .se-palette-tabs; see
+ * .se-palette-sync__status.) */
 .se-palette-sync__wrap {
-  position: relative;
   margin-left: auto;
   align-self: center;
   display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* "Auto Sync" checkbox label, sitting just left of the Sync button. */
+.se-palette-sync__auto {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--ink-3);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.se-palette-sync__auto input {
+  margin: 0;
+  cursor: pointer;
 }
 .se-palette-sync {
   font: inherit;
@@ -1712,43 +1846,38 @@ h3 { margin: 0; }
   color: var(--ink-3);
   border-color: var(--line);
 }
-/* Transient sync result — a popup floating just above the button, right-aligned to
- * it, with a little downward caret. Auto-dismissed by the 6 s timer in PaletteBody. */
+/* Transient sync result — a popup pinned to the panel's top-right edge, just below
+ * the tab bar (anchored on .se-palette-tabs). It previously floated ABOVE the sync
+ * button, but the button sits at the panel's top edge, so the popup rendered off
+ * the top of the panel and was clipped out of view. Slides in from the right and is
+ * auto-dismissed by the 6 s timer in PaletteBody. */
 .se-palette-sync__status {
   position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
+  top: 34px;
+  right: 8px;
   z-index: 30;
   width: max-content;
-  max-width: 260px;
+  max-width: 220px;
   font-size: 10px;
   line-height: 1.35;
   color: var(--ink-2);
   background: var(--bg-elevated);
   border: 1px solid var(--line);
   border-radius: 4px;
-  padding: 6px 8px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-  animation: se-palette-sync-pop 120ms ease-out;
-}
-/* Caret pointing down at the button. */
-.se-palette-sync__status::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  right: 14px;
-  border: 5px solid transparent;
-  border-top-color: var(--bg-elevated);
+  padding: 6px 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  cursor: pointer;
+  animation: se-palette-sync-pop 140ms ease-out;
 }
 @keyframes se-palette-sync-pop {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateX(8px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(0);
   }
 }
 
@@ -1877,7 +2006,7 @@ h3 { margin: 0; }
 .se-palcat__cell:not(.is-editable) {
   opacity: 0.4;
 }
-/* Edited swatch — a small corner dot so changed colours stand out at a glance. */
+/* Edited swatch — a small corner dot so changed colors stand out at a glance. */
 .se-palcat__cell.is-edited {
   outline: 1px solid var(--ink);
   outline-offset: -1px;
@@ -1888,7 +2017,7 @@ h3 { margin: 0; }
   position: relative;
   z-index: 2;
 }
-/* World-map panels group: one larger swatch per world (the dominant panel colour),
+/* World-map panels group: one larger swatch per world (the dominant panel color),
  * so the per-world tints are easy to compare and click. */
 .se-palcat__group[data-group='scene-world-panels'] .se-palcat__cell {
   width: 26px;
@@ -3881,6 +4010,22 @@ h3 { margin: 0; }
   font-size: 11px;
   color: var(--danger);
 }
+/* Text input inside a modal (e.g. the new-project name prompt). */
+.se-modal__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+/* Naming-rule / inline-validation line under a modal input. */
+.se-modal__hint {
+  margin: 6px 0 14px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-modal__hint.is-error {
+  color: var(--danger);
+}
 .se-modal__actions {
   display: flex;
   justify-content: flex-end;
@@ -4154,6 +4299,17 @@ h3 { margin: 0; }
   color: var(--ink-3);
   text-align: right;
 }
+/* Full-diff-inventory rows: name | bytes | runs | imported-tag. The tag column is
+   content-sized (max-content) so the tag never overflows the box, and the name
+   truncates instead of pushing the tag out. */
+.se-import__anchorrow--inv {
+  grid-template-columns: minmax(0, 1fr) 60px 68px max-content;
+}
+.se-import__anchorrow--inv .se-import__anchorname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .se-import__selrow {
   display: flex;
@@ -4355,10 +4511,25 @@ h3 { margin: 0; }
   text-overflow: ellipsis;
 }
 .se-import__tag {
-  padding: 0 6px;
-  border-radius: 8px;
+  justify-self: start;
+  padding: 1px 7px;
+  border-radius: 9px;
   font-size: 9px;
+  line-height: 1.5;
+  white-space: nowrap;
   border: 1px solid var(--line-strong);
+}
+/* Diff-inventory tags — matched to the count-pill color language above:
+   "imported above" reads like se-import__pill--full (accent = covered),
+   "not imported" like --blocked (muted neutral = informational, not alarming). */
+.se-import__tag--imported {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  background: var(--accent-glow);
+}
+.se-import__tag--notimported {
+  color: var(--ink-3);
+  border-color: var(--line-strong);
 }
 .se-import__tag--raw {
   color: #e0b15a;
@@ -4859,7 +5030,7 @@ h3 { margin: 0; }
   color: var(--ink);
 }
 
-/* Region-import log: per-region change lines + colour-mismatch errors. */
+/* Region-import log: per-region change lines + color-mismatch errors. */
 .se-graphics__log {
   display: flex;
   flex-direction: column;

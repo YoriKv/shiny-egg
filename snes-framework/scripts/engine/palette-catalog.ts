@@ -2,7 +2,7 @@
 // master palette blob (`DATA_master_palette_rom_blob`), organised two ways:
 //
 //   • catalog — by the cart's palette POINTER TABLES: each BG1 / BG2 / BG3 /
-//     sprite / Yoshi id, every backdrop colour, plus the fixed/universal literal
+//     sprite / Yoshi id, every backdrop color, plus the fixed/universal literal
 //     rows. The complete set of selectable palettes, labelled with what the
 //     graphics pipeline knows (see research/graphics-editing/palettes.md).
 //   • scenes — the composed CGRAM for each known non-level CONTEXT (boot, title,
@@ -16,7 +16,7 @@
 // The category layout is derived (not hardcoded) from the in-level palette
 // program: `mapPaletteProgram` walks `scene_palette_layout` exactly like the
 // cart's `CODE_load_palettes` (load-palettes.ts `runPaletteProgram`), recording
-// for each CGRAM colour index which DP slot (BG1/BG2/…) or literal source backs
+// for each CGRAM color index which DP slot (BG1/BG2/…) or literal source backs
 // it. So a level-1 BG1 palette = the slot-1 cells offset by the BG1 pointer; the
 // fixed sprite rows = the program's literal cells. Robust to the program /
 // pointer tables shifting under an asm edit.
@@ -33,7 +33,7 @@ import type {
 } from '../types.ts';
 
 const PROGRAM_END = 0xffff;
-/** First backdrop colour's blob byte-offset; 256 consecutive BGR-15 words. */
+/** First backdrop color's blob byte-offset; 256 consecutive BGR-15 words. */
 const BACKDROP_BASE_OFFSET = 0x0130;
 /** The BG1-alt (DP `$1A`) pointer = BG1 pointer + this (load-palettes.ts). The
  *  in-level program's slot-5 reads here — the object-tint tail of a BG1 palette. */
@@ -47,7 +47,7 @@ const IN_LEVEL_PROGRAM_START = 0;
  *  module stays file-free; the UI overlays the live edit draft on top. */
 export type BaseWord = (offset: number) => number;
 
-/** Where one CGRAM colour index's value comes from in the palette program. */
+/** Where one CGRAM color index's value comes from in the palette program. */
 interface ProgramCell {
   /** DP slot 0..6 (0 backdrop, 1 BG1, 2 BG2, 3 BG3, 4 sprite, 5 BG1-alt, 6 Yoshi),
    *  or `-1` for a literal source. */
@@ -57,7 +57,7 @@ interface ProgramCell {
   src: number;
 }
 
-/** A CGRAM colour index + the byte offset (relative to a pointer) that fills it. */
+/** A CGRAM color index + the byte offset (relative to a pointer) that fills it. */
 interface CellRef {
   idx: number;
   relOff: number;
@@ -65,9 +65,9 @@ interface CellRef {
 
 /**
  * Walk the `scene_palette_layout` program from `startOffset`, recording for each
- * of the 256 CGRAM colour indices which palette SOURCE backs it. Mirrors
+ * of the 256 CGRAM color indices which palette SOURCE backs it. Mirrors
  * `runPaletteProgram`'s address math but records provenance instead of copying
- * colours (last write wins, like the cart). Indices the program never writes
+ * colors (last write wins, like the cart). Indices the program never writes
  * stay `null`.
  */
 function mapPaletteProgram(
@@ -120,7 +120,7 @@ function cellsForSlot(cells: (ProgramCell | null)[], slot: number): CellRef[] {
 }
 
 /** Display width = the widest single CGRAM row the cells span (= the cart's
- *  colours-per-row), so a strip lays out one CGRAM row per display row. */
+ *  colors-per-row), so a strip lays out one CGRAM row per display row. */
 function rowWidth(cells: CellRef[]): number {
   const perRow = new Map<number, number>();
   for (const c of cells) {
@@ -216,7 +216,7 @@ const SLOT_TABLES: SlotTable[] = [
   {
     id: 'yoshi',
     label: 'Yoshi palettes',
-    note: 'Per Yoshi colour → OBJ palette 5 (CGRAM row 13).',
+    note: 'Per Yoshi color → OBJ palette 5 (CGRAM row 13).',
     symbol: 'DATA_yoshi_palette_ptrs',
     count: 8,
     slot: 6,
@@ -235,10 +235,10 @@ function fixedBlockLabel(firstRow: number, lastRow: number): { label: string; su
   if (firstRow >= 8 && firstRow <= 12) {
     return {
       label: 'Fixed sprite palettes (OBJ 0–4)',
-      sublabel: `CGRAM rows ${firstRow}–${lastRow} · global sprite colours (level-invariant)`
+      sublabel: `CGRAM rows ${firstRow}–${lastRow} · global sprite colors (level-invariant)`
     };
   }
-  return { label: 'Fixed colours', sublabel: `CGRAM rows ${firstRow}–${lastRow}` };
+  return { label: 'Fixed colors', sublabel: `CGRAM rows ${firstRow}–${lastRow}` };
 }
 
 /** Literal cells → entries, split into runs of contiguous source offsets (each
@@ -271,7 +271,7 @@ function buildFixedGroup(cells: (ProgramCell | null)[], baseWord: BaseWord): Pal
   flush();
   return {
     id: 'fixed',
-    label: 'Fixed / universal colours',
+    label: 'Fixed / universal colors',
     note: 'Loaded from literal sources in the palette program — the same for every level (not header-selected).',
     entries
   };
@@ -286,7 +286,7 @@ function buildCatalogGroups(
 ): PaletteCatalogGroup[] {
   const groups: PaletteCatalogGroup[] = [];
 
-  // Backdrop — 256 single colours, selected by the header backdrop index.
+  // Backdrop — 256 single colors, selected by the header backdrop index.
   const backdrop: PaletteCatalogSwatch[] = [];
   for (let i = 0; i < 256; i++) {
     const offset = (BACKDROP_BASE_OFFSET + i * 2) & 0xffff;
@@ -294,9 +294,9 @@ function buildCatalogGroups(
   }
   groups.push({
     id: 'backdrop',
-    label: 'Backdrop colours',
-    note: 'The 256 selectable background (CGRAM index 0) colours — header BackgroundColor picks one.',
-    entries: [{ label: 'Backdrop palette', sublabel: '256 colours · header BackgroundColor', cols: 16, swatches: backdrop }]
+    label: 'Backdrop colors',
+    note: 'The 256 selectable background (CGRAM index 0) colors — header BackgroundColor picks one.',
+    entries: [{ label: 'Backdrop palette', sublabel: '256 colors · header BackgroundColor', cols: 16, swatches: backdrop }]
   });
 
   // Pointer tables.
@@ -327,15 +327,15 @@ function buildCatalogGroups(
 }
 
 /**
- * The per-world dominant level-icon panel background colour (the "World map
+ * The per-world dominant level-icon panel background color (the "World map
  * panels" group). Each world's level-select panel draws at a per-world palette
  * ROW — the `DATA_17C9EA` tint (`value >> 10`: W1→3, W2→4, W3→5, W4→0, W5→1,
  * W6→2) — and the panel's background fill is column 12 of that row. So a world's
- * panel colour is CGRAM[`tintRow*16 + 12`] on its own map screen.
+ * panel color is CGRAM[`tintRow*16 + 12`] on its own map screen.
  *
  * Worlds whose tint row is 3–6 read from the SHARED literal block (one blob
- * offset → one edit recolours everywhere). Worlds whose tint row is 0–2 read
- * from the PER-WORLD sub-palettes, and the cart stores the same colour once in
+ * offset → one edit recolors everywhere). Worlds whose tint row is 0–2 read
+ * from the PER-WORLD sub-palettes, and the cart stores the same color once in
  * each of the 6 world palettes (so every world's tab renders correctly on every
  * screen) — those get `mirrors` so one swatch edit syncs all copies.
  *
@@ -393,7 +393,7 @@ function buildWorldPanelGroup(
   return {
     id: 'scene-world-panels',
     label: 'World map panels',
-    note: 'Dominant level-icon panel background colour per world (its world-tab tinted into a palette row). Worlds 4–6 store the colour once per world palette; editing one swatch updates every copy.',
+    note: 'Dominant level-icon panel background color per world (its world-tab tinted into a palette row). Worlds 4–6 store the color once per world palette; editing one swatch updates every copy.',
     entries
   };
 }
@@ -407,7 +407,7 @@ interface SceneDesc {
 
 /** Build the scene CGRAM snapshot groups (the context axis). Each scene's full
  *  256-entry CGRAM is rendered as one entry; non-blob entries (`offset -1`) keep
- *  their composed colour and are display-only. */
+ *  their composed color and are display-only. */
 function buildSceneGroups(rom: Uint8Array, symbols: SymbolMap, baseWord: BaseWord): PaletteCatalogGroup[] {
   // Boot + story-cutscene palette programs are literal-only (no DP slots). Title +
   // map carry per-scene DP pointer slots, resolved by the exported helpers. The
@@ -454,7 +454,7 @@ function buildSceneGroups(rom: Uint8Array, symbols: SymbolMap, baseWord: BaseWor
   };
 
   // Storybook intro (gm38/gm39) — a bespoke CGRAM fill, NOT a scene_palette_layout
-  // program (Bank10.asm:10716, yi-shiny scene-palettes.md §3.4): OBJ half (colours
+  // program (Bank10.asm:10716, yi-shiny scene-palettes.md §3.4): OBJ half (colors
   // $80–$FF) ← blob DATA_5FED4A in order; BG half = white-literal pages (display-only).
   const storybookEntry = (): PaletteCatalogEntry | null => {
     let objOff: number;
@@ -495,7 +495,7 @@ function buildSceneGroups(rom: Uint8Array, symbols: SymbolMap, baseWord: BaseWor
     groups.push({
       id: 'scene-maps',
       label: 'World maps',
-      note: 'Per-world overworld palette (tinted level-select). Shares blob colours with levels.',
+      note: 'Per-world overworld palette (tinted level-select). Shares blob colors with levels.',
       entries: mapEntries
     });
   }

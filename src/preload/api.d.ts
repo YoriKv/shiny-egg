@@ -310,8 +310,9 @@ export interface ProjectsAPI {
   list: () => Promise<ProjectSummary[]>
   /** Current project, auto-creating the default `new-shiny-00` if none. */
   ensureCurrent: () => Promise<ProjectSummary>
-  /** Create the next `new-shiny-NN` and make it current. */
-  create: () => Promise<ProjectSummary>
+  /** Create a project and make it current. With a `name`, uses it (validated +
+   *  uniqueness-checked main-side); without one, auto-names the next `new-shiny-NN`. */
+  create: (name?: string) => Promise<ProjectSummary>
   /** Make an existing project current (persisted across launches). */
   switch: (id: string) => Promise<ProjectSummary>
   info: (id: string) => Promise<ProjectInfo>
@@ -392,7 +393,7 @@ export interface BizHawkAPI {
    *  Lets callers push live edits only when there's something to push to. */
   isRunning: () => Promise<boolean>
   /**
-   * Apply the unsaved palette colour edits to the screen the RUNNING emulator is
+   * Apply the unsaved palette color edits to the screen the RUNNING emulator is
    * showing now (level / world map / title / …, detected from live state), with NO
    * rebuild. Writes ONLY the edited entries plus `revertOffsets` (offsets undone or
    * reset since the last sync, written back to base) — nothing else is touched.
@@ -447,7 +448,7 @@ export interface RenderAPI {
   spriteLayer: (req: LevelRenderRequest) => Promise<SpriteLayerResponse | null>
   /** Live 512-byte CGRAM for the level. Null for empty/special slots. */
   cgram: (req: LevelRenderRequest) => Promise<Uint8Array | null>
-  /** Palette-colour editing: CGRAM (overlay-patched) + per-entry blob
+  /** Palette-color editing: CGRAM (overlay-patched) + per-entry blob
    *  provenance + the project's current palette edits. Null for empty/special. */
   editablePalette: (req: LevelRenderRequest) => Promise<DecodedPalette | null>
   /** Whole-game palette catalog (the Palette panel's "All Palettes" tab): every
@@ -515,9 +516,9 @@ export interface EditorAPI {
     resource: EditableResource,
     model: unknown
   ) => Promise<SaveResourceResult>
-  /** The saved overlay's palette-colour edit set (the usePaletteEditor baseline). */
+  /** The saved overlay's palette-color edit set (the usePaletteEditor baseline). */
   loadPaletteEdits: () => Promise<PaletteEdit[]>
-  /** Persist the full palette-colour edit set (offset → value) to the project
+  /** Persist the full palette-color edit set (offset → value) to the project
    *  overlay (Bank57.asm). Caller marks the build dirty on success. */
   savePaletteEdits: (edits: PaletteEdit[]) => Promise<SaveResourceResult>
   /** The saved overlay's backdrop-gradient stop edits (the useGradientEditor baseline). */
@@ -525,7 +526,7 @@ export interface EditorAPI {
   /** Persist the full gradient stop edit set to the project overlay (Bank57.asm).
    *  Caller marks the build dirty on success. */
   saveGradientEdits: (edits: GradientEdit[]) => Promise<SaveResourceResult>
-  /** The 16×24 pristine base gradient colours (BackgroundColor $10..$1F × 24 stops);
+  /** The 16×24 pristine base gradient colors (BackgroundColor $10..$1F × 24 stops);
    *  the panel overlays the live draft on these for display. */
   gradientBaseColors: () => Promise<number[][]>
   /** Live byte-budget for a level's shared bank pool(s) — drives the editor's

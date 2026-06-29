@@ -1,5 +1,5 @@
 // Reusable asm primitive for editing inline `dw $XXXX` data tables — the numeric
-// counterpart to text-literals.ts. Edits the master palette colour blob
+// counterpart to text-literals.ts. Edits the master palette color blob
 // (Bank57.asm `DATA_master_palette_rom_blob`) and (future) the Map16 / collision
 // data tables. Format-preserving: only the hex digits of a CHANGED word are
 // spliced, so interspersed labels, comments, indentation, and every untouched

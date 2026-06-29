@@ -227,7 +227,7 @@ export function renderVramGrid(
  *
  * Sub-tile tile-index is a 10-bit value (0..1023) addressing tiles at
  * `bg1CharAddr` (resolved from the level's BG mode via scene-regs). The tile
- * stride + decoder follow that mode's BG1 colour depth — 32-byte 4bpp in BG
+ * stride + decoder follow that mode's BG1 color depth — 32-byte 4bpp in BG
  * Mode 1/2, 16-byte 2bpp in BG Mode 0 (level mode $0A) — via `bgLayerBpp`.
  */
 /**
@@ -260,13 +260,13 @@ function renderMap16CellList(
   const tables: Map16Tables = loadMap16Tables(rom, symbols);
   const regs = loadSceneRegs(rom, symbols, header.levelMode ?? 0);
   const bg1CharAddr = regs.bg1CharAddr;
-  // BG1 colour depth from the scene's BG mode (2bpp in BG Mode 0 / level mode
+  // BG1 color depth from the scene's BG mode (2bpp in BG Mode 0 / level mode
   // $0A) — NOT a hardcoded 4bpp (which jumbled $6B's Map16 tiles). See bgLayerBpp.
   const bpp = bgLayerBpp(regs.bgmodeMode, 'bg1');
   const tileBytes = bpp === 4 ? TILE_BYTES_4BPP : TILE_BYTES_2BPP;
   const blit = bpp === 4 ? blit4bppTile : blit2bppTile;
 
-  // Pre-build all 8 palette rows/groups for fast per-sub-tile lookup (16 colours
+  // Pre-build all 8 palette rows/groups for fast per-sub-tile lookup (16 colors
   // per row at 4bpp, 4 per group at 2bpp).
   const palettes: Uint32Array[] = [];
   for (let r = 0; r < 8; r++) {

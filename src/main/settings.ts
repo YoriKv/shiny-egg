@@ -51,7 +51,7 @@ function migrate(): void {
   if (s.canvasBgDefaultMigrated) return
   const patch: Partial<Settings> = { canvasBgDefaultMigrated: true }
   // Bump the legacy pure-black default to the new grey (only the old default —
-  // any other chosen colour, including a deliberate black re-pick later, stays).
+  // any other chosen color, including a deliberate black re-pick later, stays).
   if (s.canvasBackgroundColor === LEGACY_CANVAS_BG) {
     patch.canvasBackgroundColor = NEW_DEFAULT_CANVAS_BG
   }

@@ -1,4 +1,4 @@
-// Backdrop-gradient editing — pure text helpers over the 16 BG colour-gradient
+// Backdrop-gradient editing — pure text helpers over the 16 BG color-gradient
 // tables' inline `dw` words in `yi/Banks/Bank57.asm`. The numeric twin of
 // palette-edit.ts (same data-words splice), but for the 24-stop gradient tables
 // (`DATA_5FD64C`, `DATA_5FD67C`, …) that `backdrop.ts` reads for a level whose
@@ -7,7 +7,7 @@
 //
 //   gradientLabels    — the 16 table labels, in BackgroundColor order, parsed
 //                       from the `DATA_bg_gradient_ptrs` pointer table (Bank01)
-//   readGradientTables— the 16×24 base colours (pristine, for the live preview)
+//   readGradientTables— the 16×24 base colors (pristine, for the live preview)
 //   readGradientEdits — diff overlay-vs-base → the stop edits (offset→value)
 //   applyGradientEdits— splice an edit set into the BASE text → edited text
 //
@@ -78,7 +78,7 @@ function readTable(blobText: string, label: string): number[] {
 }
 
 /**
- * The 16×24 pristine gradient colours from the BASE Bank57 text. The render path
+ * The 16×24 pristine gradient colors from the BASE Bank57 text. The render path
  * re-sources the live preview from these (BASE ⊕ draft, independent of the built
  * ROM) so a reset shows base immediately — the gradient twin of `basePaletteWords`.
  */
@@ -143,4 +143,32 @@ export function applyGradientEdits(
     textEdits.push(...dataWordEdits(words, changes));
   }
   return applyEdits(baseText, textEdits);
+}
+
+/**
+ * Diff the base gradient tables against a foreign cart's gradient stops, returning
+ * the stop edits that reproduce the foreign gradients. Used by the ROM importer:
+ * `foreignStop(gradientId, stop)` reads the foreign cart's BGR-15 word for that
+ * table + stop (the importer resolves each table's foreign address by FOLLOWING
+ * the foreign cart's `DATA_bg_gradient_ptrs` table, so a hack that relocated the
+ * gradient blobs still aligns), or `undefined` when that table's address can't be
+ * resolved (→ the table is skipped). The gradient twin of palette-edit.ts
+ * `diffPaletteBlob`; the result is always a valid {@link applyGradientEdits} input.
+ */
+export function diffForeignGradient(
+  baseText: string,
+  labels: readonly string[],
+  foreignStop: (gradientId: number, stop: number) => number | undefined
+): GradientEdit[] {
+  const out: GradientEdit[] = [];
+  labels.forEach((label, gradientId) => {
+    const base = readTable(baseText, label);
+    for (let stop = 0; stop < GRADIENT_STOPS; stop++) {
+      const fv = foreignStop(gradientId, stop);
+      if (fv !== undefined && (fv & 0xffff) !== base[stop]) {
+        out.push({ offset: gradientOffset(gradientId, stop), value: fv & 0xffff });
+      }
+    }
+  });
+  return out;
 }

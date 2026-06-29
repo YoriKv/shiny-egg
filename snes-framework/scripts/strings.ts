@@ -989,3 +989,129 @@ export function readForeignMessages(
   }
   return out
 }
+
+/** A foreign glyph-line body (intro story / ending text) decoded from a cart. */
+export interface ForeignGlyphEntry {
+  /** Decoded text lines — one markup string per glyph run (matches the editor
+   *  model's one-line-per-quoted-`db` structure). Empty when `ok` is false. */
+  lines: string[]
+  /** True when a terminator was reached within bounds (a sane body). */
+  ok: boolean
+}
+
+/** Control-byte layout of a glyph-line table's binary form. Intro uses single
+ *  bytes ($FE/$FD/$FC + 1 param, $FB alone) and a 1-byte $FF terminator; ending
+ *  (message-style) uses `dw $XXFF` control words and a `dw $FFFF` terminator. */
+interface GlyphLineFormat {
+  /** True ⇒ a `$FF` byte introduces a 2-byte control word and `$FF,$FF` terminates
+   *  (ending). False ⇒ $FE/$FD/$FC take one param byte, $FB is alone, a lone `$FF`
+   *  terminates (intro). */
+  wordControls: boolean
+}
+
+const GLYPH_LINE_FORMATS: Record<string, GlyphLineFormat> = {
+  [INTRO_STORY_ID]: { wordControls: false },
+  [ENDING_TEXT_ID]: { wordControls: true }
+}
+
+/** Max bytes scanned for one glyph-line body (guards a missing terminator). */
+const MAX_GLYPH_LINE_BYTES = 4096
+
+/**
+ * Decode one glyph-line body at `start` into its text lines. The body interleaves
+ * glyph runs with layout control bytes; the editor's model has one line per quoted
+ * `db "..."` run (controls sit between lines, preserved by the splice), so we split
+ * the byte stream into glyph RUNS at every control boundary. `fmt` selects the
+ * control layout. A run of glyph bytes becomes one markup line (byte→char via
+ * `fontMap`; an unmapped byte → `[$xx]`). Empty runs (back-to-back controls) are
+ * dropped, matching `parseGlyphLineRegion`. `ok` is set on a terminator in bounds.
+ */
+function decodeGlyphLineBody(
+  bytes: Uint8Array | Buffer,
+  start: number,
+  fontMap: Map<number, string>,
+  fmt: GlyphLineFormat
+): ForeignGlyphEntry {
+  const lines: string[] = []
+  let run = ''
+  const flush = (): void => {
+    if (run !== '') {
+      lines.push(run)
+      run = ''
+    }
+  }
+  let p = start
+  const cap = Math.min(bytes.length, start + MAX_GLYPH_LINE_BYTES)
+  let ok = false
+  while (p < cap) {
+    const b = bytes[p]!
+    if (fmt.wordControls) {
+      if (b === 0xff) {
+        const cmd = bytes[p + 1]
+        if (cmd === undefined) break
+        if (cmd === 0xff) {
+          ok = true
+          p += 2
+          break // dw $FFFF terminator
+        }
+        flush() // dw $XXFF control word ends the current text run
+        p += 2
+        continue
+      }
+    } else {
+      if (b === 0xff) {
+        ok = true
+        p += 1
+        break // db $FF terminator
+      }
+      if (b === 0xfe || b === 0xfd || b === 0xfc) {
+        flush() // single-byte control + one param byte
+        p += 2
+        continue
+      }
+      if (b === 0xfb) {
+        flush() // lone single-byte control
+        p += 1
+        continue
+      }
+    }
+    const ch = fontMap.get(b)
+    run += ch !== undefined ? ch : `[$${b.toString(16).padStart(2, '0')}]`
+    p += 1
+  }
+  flush()
+  return { lines, ok }
+}
+
+/**
+ * Decode a foreign cart's glyph-line text table (intro story / ending text),
+ * keyed by base asm label. Each editable body is read at the address its
+ * auto-named label encodes (`DATA_<bank><offset>` → SNES bank:offset), so an
+ * in-place edit (the common case) aligns. There's no pointer table to follow
+ * (unlike messages), so a hack that RELOCATED a body decodes as garbage / no
+ * terminator and the caller skips it. The ROM importer diffs this against base +
+ * the editable model (importing only entries whose binary form matches the model,
+ * so layout-control or special-glyph entries are skipped rather than corrupted).
+ */
+export function readForeignGlyphTable(
+  cart: Buffer | Uint8Array,
+  baseText: string,
+  ft: FontTable,
+  id: string
+): Map<string, ForeignGlyphEntry> {
+  const out = new Map<string, ForeignGlyphEntry>()
+  const fmt = GLYPH_LINE_FORMATS[id]
+  const region = findRegion(baseText, id)
+  if (!fmt || !region) return out
+  for (const e of parseGlyphLineRegion(region.inner)) {
+    const addrLabel = [e.label, ...e.labels].find((l) => /^DATA_[0-9A-Fa-f]{6}$/.test(l))
+    if (!addrLabel) continue
+    const addr = snesToPC(parseInt(addrLabel.slice(5), 16))
+    if (addr < 0 || addr >= cart.length) {
+      out.set(e.label, { lines: [], ok: false })
+      continue
+    }
+    out.set(e.label, decodeGlyphLineBody(cart, addr, ft.byteToChar, fmt))
+  }
+  return out
+}

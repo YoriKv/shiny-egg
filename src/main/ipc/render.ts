@@ -26,6 +26,7 @@ import {
   resolveProvenanceCells
 } from 'snes-framework/object-decode'
 import { composeBgLayers } from 'snes-framework/bg-layers-compose'
+import { readParallaxRates } from 'snes-framework/parallax-rates'
 import { renderBg1, renderBg1Patch } from 'snes-framework/render-bg1'
 import {
   buildSpriteRenderModel,
@@ -223,8 +224,8 @@ export function registerRenderIpc(): void {
     }
   )
 
-  // Palette-colour editing (§B10): PRISTINE base CGRAM + per-entry provenance (the
-  // blob word that backs each swatch). The panel overlays its live colour draft for
+  // Palette-color editing (§B10): PRISTINE base CGRAM + per-entry provenance (the
+  // blob word that backs each swatch). The panel overlays its live color draft for
   // the swatches; the canvas previews the same draft via `paletteOverride` (both are
   // BASE ⊕ draft — see `resourcePaletteToBase`), so palette edits (incl. resets)
   // show live without a rebuild. Test Level / Launch bake them into the .sfc.
@@ -276,17 +277,26 @@ export function registerRenderIpc(): void {
       // (draft value) plus offsets undone/reset since the last sync (`revertOffsets`,
       // written back to base). We deliberately do NOT write entries just because our
       // static base differs from the live palette — that path stomped the backdrop's
-      // gradient slot, animated rows, and runtime palette effects ("wrong colours").
+      // gradient slot, animated rows, and runtime palette effects ("wrong colors").
       let scene: PaletteLiveResult['scene'] = null
       let bytesWritten = 0
+      // The live game mode ($0118) — reported back even on the unrecognized-screen
+      // path so the panel's error can name it ("game mode 0xXX"), turning an opaque
+      // "screen not recognized" into a self-diagnosing message.
+      let gamemode: number | undefined
+      let detail: string | undefined
       const live = wram ? liveSceneProvenance(rom, symbols, wram) : null
       if (live) {
+        gamemode = live.gamemode
+        detail = live.detail
+      }
+      if (live && live.scene) {
         scene = live.scene
         const base = pristineBasePalette(frameworkWorkRoot())
         const offsetsToWrite = new Set<number>(revertOffsets ?? [])
         for (const e of edits ?? []) offsetsToWrite.add(e.offset)
         for (const run of offsetCgramRuns(live.provenance, edits, base, offsetsToWrite)) {
-          const cgramByte = run.addr - CGRAM_MIRROR_CARTRAM_OFFSET // colour index × 2
+          const cgramByte = run.addr - CGRAM_MIRROR_CARTRAM_OFFSET // color index × 2
           // Live mirror ($2000, NMI-DMA'd on most scenes) + fade base ($2D6C, what a
           // brightness fade rescales from) + PPU CGRAM direct (for scenes whose NMI
           // doesn't re-DMA the mirror — world map / title). Covers every case.
@@ -296,14 +306,14 @@ export function registerRenderIpc(): void {
           bytesWritten += run.bytes.length
         }
       }
-      return { applied: true, scene, bytesWritten }
+      return { applied: true, scene, bytesWritten, gamemode, detail }
     }
   )
 
   // Whole-game palette catalog (the Palette panel's "All Palettes" tab): every
   // palette the cart can select out of the master blob, organised by the pointer
   // tables + by scene, each swatch carrying its blob byte-offset so it reuses the
-  // SAME global edit model as editablePalette. Colours are PRISTINE base (the
+  // SAME global edit model as editablePalette. Colors are PRISTINE base (the
   // panel overlays the live draft), so it's independent of build freshness.
   ipcMain.handle('render:paletteCatalog', async (): Promise<PaletteCatalog | null> => {
     const { rom, symbols } = loadRomAndSymbols()
@@ -380,7 +390,7 @@ export function registerRenderIpc(): void {
         // level's table (24 stops). Replaces the ROM-read gradient without a rebuild.
         gradientOverride: req.gradientOverride ?? undefined
       })
-      const { bg2, bg3, bg2Front, bg3Front, bg2Layer, bg3Layer, regs } = composed
+      const { bg2, bg3, bg2Front, bg3Front, bg3Mid, bg2Layer, bg3Layer, regs } = composed
       const backdrop: BgLayersResult['backdrop'] =
         composed.backdrop.kind === 'solid'
           ? { kind: 'solid', css: cssFromBgr15(composed.backdrop.color15) }
@@ -388,14 +398,18 @@ export function registerRenderIpc(): void {
               kind: 'gradient',
               rgba: composed.backdrop.rgba,
               width: composed.backdrop.width,
-              height: composed.backdrop.height
+              height: composed.backdrop.height,
+              stops: composed.backdrop.stops
             }
+      // Parallax rates for the Camera Preview overlay (BGScrollSetting = header[12]).
+      const parallax = readParallaxRates(rom, symbols, level.header[12] ?? 0)
 
       return {
         bg2,
         bg3,
         bg2Front,
         bg3Front,
+        bg3Mid,
         backdrop,
         levelMode,
         bg2Layer,
@@ -405,7 +419,8 @@ export function registerRenderIpc(): void {
           bg3TilemapAddr: regs.bg3TilemapAddr,
           bg2CharAddr: regs.bg2CharAddr,
           bg3CharAddr: regs.bg3CharAddr
-        }
+        },
+        parallax
       }
     }
   )

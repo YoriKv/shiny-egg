@@ -149,7 +149,7 @@ console.log(`Loaded symbol map: ${symbols.size} labels`);
 }
 
 // --- Test 5: BG palette base rows from scene_palette_layout --------------
-// The paletteless gfx-file preview colours a BG sheet with its layer's own
+// The paletteless gfx-file preview colors a BG sheet with its layer's own
 // CGRAM row (not row 0, which holds the backdrop + BG3). The stock program
 // loads BG1 → row 4, BG2 → row 6, BG3 → row 0; pin those so a program/loader
 // change that shifts them is caught (BG1/BG2 sheets would preview in the wrong

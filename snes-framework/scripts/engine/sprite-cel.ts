@@ -58,7 +58,7 @@ export interface SpriteCelTile {
   /** This record's palette row is FIXED and must survive the whole-sprite palette
    *  override (spawn-cell parity / settled / runtime). For a sub-element the handler
    *  draws with its own palette independent of the body's variant tint — e.g. the
-   *  Lantern Ghost's $11b flame stays pal1 (flame) while its body recolours by parity. */
+   *  Lantern Ghost's $11b flame stays pal1 (flame) while its body recolors by parity. */
   lockPalette?: boolean;
   /** Render this record as a normal STATIC VRAM tile even when its `tile` value would
    *  otherwise read as a dynamic-body placeholder (tile 0 or ≥256). For a handler-drawn

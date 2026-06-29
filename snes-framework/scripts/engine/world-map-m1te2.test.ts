@@ -1,9 +1,9 @@
 // M1TE2 ".M1" world-map export/import (world-map-m1te2.ts). Pins:
-//   1. exportWorldMapM1 emits 12 overworld halves (6 worlds × left/right) + 1 icons file,
-//      each a valid 55568-byte .M1.
+//   1. exportWorldMapM1 emits 6 overworlds (one per world, the full 64×32 screen) + 1 icons
+//      file, each a valid 74000-byte v2 .M1.
 //   2. OVERWORLD: an unedited .M1 round-trips to ZERO edits; a 1-tile CHR edit → exactly
-//      that map-char file edit; a 1-word edit → exactly that tilemap word; a 1-colour edit
-//      → exactly that CGRAM colour.
+//      that map-char file edit; a 1-word edit → exactly that tilemap word; a 1-color edit
+//      → exactly that CGRAM color.
 //   3. ICONS: an unedited .M1 round-trips to zero edits; a per-level-icon pixel edit routes
 //      to a bank-$53 write; a marker/castle pixel edit routes to a $74/$75 char edit; the
 //      grid is laid out in level order (6 world-rows + the marker/castle row beneath).
@@ -11,7 +11,7 @@
 // Run: node snes-framework/scripts/engine/world-map-m1te2.test.ts (reference-cart-gated).
 
 import { loadDevCart } from './dev-cart.ts';
-import { M1TE2_SIZE, parseM1te2, encodeM1te2 } from './m1te2.ts';
+import { M1TE2_SIZE, MAP_STRIDE, MAP_WORDS, parseM1te2, encodeM1te2 } from './m1te2.ts';
 import { buildWorldMapTerrainContext, terrainLayerFileId } from './world-map-terrain.ts';
 import { buildLevelIconContext, renderWorldMapLevelIcon } from './world-map-level-icons.ts';
 import {
@@ -28,34 +28,33 @@ const { rom, symbols } = loadDevCart();
 const files = exportWorldMapM1(rom, symbols);
 const overworlds = files.filter((f) => f.kind === 'overworld');
 const iconsFiles = files.filter((f) => f.kind === 'icons');
-assert(overworlds.length === 12, `12 overworld halves exported (got ${overworlds.length})`);
+assert(overworlds.length === 6, `6 overworlds exported, one per world (got ${overworlds.length})`);
 assert(iconsFiles.length === 1, `1 icons file exported (got ${iconsFiles.length})`);
-assert(files.every((f) => f.bytes.length === M1TE2_SIZE), 'every .M1 is the fixed 55568-byte size');
-assert(files.some((f) => f.file === `screens/map/${overworldM1Name(0, 0)}`) && files.some((f) => f.file === `screens/map/${overworldM1Name(5, 1)}`),
-  'overworld files are named per world + half (left/right)');
+assert(files.every((f) => f.bytes.length === M1TE2_SIZE), 'every .M1 is the v2 74000-byte size');
+assert(files.some((f) => f.file === `screens/map/${overworldM1Name(0)}`) && files.some((f) => f.file === `screens/map/${overworldM1Name(5)}`),
+  'overworld files are named per world (no left/right half)');
 assert(iconsFiles[0]!.file === `screens/map/${ICONS_M1_NAME}`, 'icons file is screens/map/icons.M1');
 
 // ── (2) OVERWORLD round-trip (world 0) ───────────────────────────────────────
 const c = buildWorldMapTerrainContext(rom, symbols, 0);
-const halves = buildOverworldM1(c);
-assert(halves.length === 2, 'world 0 → 2 halves (left/right)');
-const left = halves[0]!;
-assert(left.bg1FileId === terrainLayerFileId(c, 0) && left.bg2FileId === terrainLayerFileId(c, 1) && left.bg3FileId === 0x7e,
-  'overworld half wires BG1→$7C-class, BG2→$7D-class, BG3→$7E');
+const ov = buildOverworldM1(c);
+assert(ov.world === 0, 'world 0 → one overworld .M1');
+assert(ov.bg1FileId === terrainLayerFileId(c, 0) && ov.bg2FileId === terrainLayerFileId(c, 1) && ov.bg3FileId === 0x7e,
+  'overworld wires BG1→$7C-class, BG2→$7D-class, BG3→$7E');
 
 // Unedited → zero edits of any kind.
 {
-  const d = diffOverworldM1(c, left.bytes, 0);
+  const d = diffOverworldM1(c, ov.bytes);
   assert(d.chrEdits.length === 0 && d.wordEdits.length === 0 && d.paletteEdits.length === 0,
     `unedited overworld .M1 → 0 edits (chr ${d.chrEdits.length}, word ${d.wordEdits.length}, pal ${d.paletteEdits.length})`);
 }
 
 // A 1-tile CHR edit (tile 0x180 = VRAM $7000 = the $74 terrain char) → exactly that file/tile.
 {
-  const doc = parseM1te2(left.bytes);
+  const doc = parseM1te2(ov.bytes);
   const T = 0x180;
   doc.chr4bpp[T * 32] = doc.chr4bpp[T * 32]! ^ 0xff; // perturb one bitplane row of one tile
-  const d = diffOverworldM1(c, encodeM1te2(doc), 0);
+  const d = diffOverworldM1(c, encodeM1te2(doc));
   assert(d.chrEdits.length === 1, `a 1-tile overworld CHR edit → exactly one char edit (got ${d.chrEdits.length})`);
   assert(d.chrEdits[0]?.fileTile === 0, `the CHR edit targets tile 0 of the $74 file (vram $7000; got fileTile ${d.chrEdits[0]?.fileTile})`);
   assert(d.wordEdits.length === 0 && d.paletteEdits.length === 0, 'a CHR-only edit reports no word/palette edits');
@@ -63,35 +62,46 @@ assert(left.bg1FileId === terrainLayerFileId(c, 0) && left.bg2FileId === terrain
 
 // A 1-word edit (BG1 cell 0) → exactly that tilemap word, on the $7C-class file at offset 0.
 {
-  const doc = parseM1te2(left.bytes);
+  const doc = parseM1te2(ov.bytes);
   doc.maps[0][0] = (doc.maps[0][0]! ^ 1) & 0xffff; // change the char of BG1 cell (0,0)
-  const d = diffOverworldM1(c, encodeM1te2(doc), 0);
-  assert(d.wordEdits.length === 1 && d.wordEdits[0]!.fileId === left.bg1FileId && d.wordEdits[0]!.fileOffset === 0,
+  const d = diffOverworldM1(c, encodeM1te2(doc));
+  assert(d.wordEdits.length === 1 && d.wordEdits[0]!.fileId === ov.bg1FileId && d.wordEdits[0]!.fileOffset === 0,
     `a 1-word BG1 edit → exactly that tilemap word (got ${d.wordEdits.length}, file 0x${d.wordEdits[0]?.fileId.toString(16)}, off ${d.wordEdits[0]?.fileOffset})`);
   assert(d.wordEdits[0]!.word === doc.maps[0][0], 'the word edit carries the verbatim SNES word');
   assert(d.chrEdits.length === 0, 'a word-only edit reports no CHR edits');
 }
 
-// A 1-colour palette edit (CGRAM index 1, not an auto-blacked slot) → exactly that colour.
+// A 1-word edit in the RIGHT half (col 32, row 0) → the BG1 file at the right-screen offset
+// ($400 words in). Proves the consolidated 64-wide map reaches both screen-blocks.
 {
-  const doc = parseM1te2(left.bytes);
-  doc.palette[2] = doc.palette[2]! ^ 0x10; // index 1's low byte
-  const d = diffOverworldM1(c, encodeM1te2(doc), 0);
-  assert(d.paletteEdits.length === 1 && d.paletteEdits[0]!.cgramIndex === 1,
-    `a 1-colour overworld edit → exactly that CGRAM colour (got ${d.paletteEdits.length}, index ${d.paletteEdits[0]?.cgramIndex})`);
+  const doc = parseM1te2(ov.bytes);
+  const idx = 0 * MAP_STRIDE + 32; // (col 32, row 0) in the doc's stride-64 grid
+  doc.maps[0][idx] = (doc.maps[0][idx]! ^ 1) & 0xffff;
+  const d = diffOverworldM1(c, encodeM1te2(doc));
+  assert(d.wordEdits.length === 1 && d.wordEdits[0]!.fileId === ov.bg1FileId && d.wordEdits[0]!.fileOffset === 0x400 * 2,
+    `a right-half BG1 edit → the BG1 file at the right-screen offset (got off ${d.wordEdits[0]?.fileOffset}, want ${0x400 * 2})`);
 }
 
-// A different world / half has different content (sanity: not a constant).
+// A 1-color palette edit (CGRAM index 1, not an auto-blacked slot) → exactly that color.
+{
+  const doc = parseM1te2(ov.bytes);
+  doc.palette[2] = doc.palette[2]! ^ 0x10; // index 1's low byte
+  const d = diffOverworldM1(c, encodeM1te2(doc));
+  assert(d.paletteEdits.length === 1 && d.paletteEdits[0]!.cgramIndex === 1,
+    `a 1-color overworld edit → exactly that CGRAM color (got ${d.paletteEdits.length}, index ${d.paletteEdits[0]?.cgramIndex})`);
+}
+
+// A different world has different content (sanity: not a constant), and round-trips clean.
 {
   const c5 = buildWorldMapTerrainContext(rom, symbols, 5);
-  const r = buildOverworldM1(c5)[1]!;
-  assert(r.world === 5 && r.half === 1, 'world 5 right half is addressable');
-  assert(diffOverworldM1(c5, r.bytes, 1).wordEdits.length === 0, 'world 5 right half round-trips to 0 words too');
+  const r = buildOverworldM1(c5);
+  assert(r.world === 5, 'world 5 is addressable');
+  assert(diffOverworldM1(c5, r.bytes).wordEdits.length === 0, 'world 5 round-trips to 0 words too');
 }
 
 // ── (3) ICONS round-trip ─────────────────────────────────────────────────────
 const icons = buildIconsM1(rom, symbols);
-assert(icons.length === M1TE2_SIZE, 'icons .M1 is the fixed size');
+assert(icons.length === M1TE2_SIZE, 'icons .M1 is the v2 size');
 {
   const d = diffIconsM1(rom, symbols, icons);
   assert(d.levelWrites.length === 0 && d.markerCastleEdits.length === 0 && d.levelIconsChanged === 0 && d.markerCastleChanged === 0,
@@ -99,32 +109,34 @@ assert(icons.length === M1TE2_SIZE, 'icons .M1 is the fixed size');
 }
 
 // Layout: per-world rows fill rows 0-17 (6 worlds × 3 cells) + a marker/castle row at 18.
+// The icons fill a 32-wide region of the doc's 64-stride grid.
 const idoc = parseM1te2(icons);
-const tileAt = (row: number, col: number): number => idoc.maps[0][row * 32 + col]! & 0x3ff;
+const tileAt = (row: number, col: number): number => idoc.maps[0][row * MAP_STRIDE + col]! & 0x3ff;
 const rowHasContent = (row: number): boolean => { for (let c0 = 0; c0 < 32; c0++) if (tileAt(row, c0) !== 0) return true; return false; };
 assert(rowHasContent(0) && rowHasContent(17), 'icons grid fills the first (world 0) and last (world 5) per-level rows');
 assert(rowHasContent(18), 'icons grid has the marker/castle row beneath the worlds (level order)');
 assert(!rowHasContent(24), 'icons grid stops after the marker/castle row');
 
-// Palette FAITHFULNESS: each icon is coloured in its REAL palette, deduped into ≤8 M1TE2 rows
-// (not the old "every world → OBJ row 8" scheme that miscoloured the row-9 icons). World 0's
+// Palette FAITHFULNESS: each icon is colored in its REAL palette, deduped into ≤8 M1TE2 rows
+// (not the old "every world → OBJ row 8" scheme that miscolored the row-9 icons). World 0's
 // slot 0 (OBJ row 8) and slot 1 (OBJ row 9) must land in DIFFERENT palette rows, each holding
-// that icon's actual OBJ colours.
+// that icon's actual OBJ colors.
 {
   const lctx = buildLevelIconContext(rom, symbols, 0);
   const s0 = renderWorldMapLevelIcon(lctx, 0)!; // paletteRow 0 → OBJ row 8
   const s1 = renderWorldMapLevelIcon(lctx, 1)!; // paletteRow 1 → OBJ row 9
   assert(s0.paletteRow !== s1.paletteRow, 'precondition: world-0 slots 0 and 1 use different OBJ rows');
-  const palRowOf = (cell: number): number => (idoc.maps[0][cell]! >> 10) & 7; // top-left cell of each icon
-  const r0 = palRowOf(0); // slot 0 top-left = grid (row 0, col 0)
-  const r1 = palRowOf(3); // slot 1 top-left = grid (row 0, col 3) — each icon is 3 cells wide
+  const palRowOf = (row: number, col: number): number => (idoc.maps[0][row * MAP_STRIDE + col]! >> 10) & 7; // top-left cell of each icon
+  const r0 = palRowOf(0, 0); // slot 0 top-left = grid (row 0, col 0)
+  const r1 = palRowOf(0, 3); // slot 1 top-left = grid (row 0, col 3) — each icon is 3 cells wide
   assert(r0 !== r1, 'the row-8 and row-9 icons land in DIFFERENT .M1 palette rows (faithful, not collapsed)');
-  const colour = (buf: Uint8Array, row: number, i: number): number => (buf[row * 32 + i * 2]! | (buf[row * 32 + i * 2 + 1]! << 8)) & 0x7fff;
-  const blockMatches = (m1Row: number, cgRow: number): boolean => { for (let i = 0; i < 16; i++) if (colour(idoc.palette, m1Row, i) !== colour(lctx.cgram, cgRow, i)) return false; return true; };
-  assert(blockMatches(r0, 8 + s0.paletteRow) && blockMatches(r1, 8 + s1.paletteRow), 'each icon\'s .M1 palette row holds its real OBJ colours');
+  // Palette buffer stride is 16 colors × 2 bytes = 32 (NOT the map stride).
+  const color = (buf: Uint8Array, row: number, i: number): number => (buf[row * 32 + i * 2]! | (buf[row * 32 + i * 2 + 1]! << 8)) & 0x7fff;
+  const blockMatches = (m1Row: number, cgRow: number): boolean => { for (let i = 0; i < 16; i++) if (color(idoc.palette, m1Row, i) !== color(lctx.cgram, cgRow, i)) return false; return true; };
+  assert(blockMatches(r0, 8 + s0.paletteRow) && blockMatches(r1, 8 + s1.paletteRow), 'each icon\'s .M1 palette row holds its real OBJ colors');
   // Distinct non-empty palette rows used ≤ 8 (fits) — and > 1 (proves the row split).
   const usedRows = new Set<number>();
-  for (let c = 0; c < 1024; c++) { const w = idoc.maps[0][c]!; if ((w & 0x3ff) !== 0 || ((w >> 10) & 7) !== 0) usedRows.add((w >> 10) & 7); }
+  for (let c0 = 0; c0 < MAP_WORDS; c0++) { const w = idoc.maps[0][c0]!; if ((w & 0x3ff) !== 0 || ((w >> 10) & 7) !== 0) usedRows.add((w >> 10) & 7); }
   assert(usedRows.size > 1 && usedRows.size <= 8, `icons use a faithful set of palette rows (got ${usedRows.size}, expect 2..8)`);
 }
 

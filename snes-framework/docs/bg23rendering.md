@@ -110,7 +110,7 @@ The table below is the **live in-level config** captured per LevelMode (the
 color math). CGADSUB `$20` = color-math disabled-ish (backdrop only); `$B3`/`$45`/`$24`
 = active add/subtract selecting specific layers.
 
-**BGMODE low 3 bits → SNES BG mode → per-layer COLOUR DEPTH.** This is easy to
+**BGMODE low 3 bits → SNES BG mode → per-layer COLOR DEPTH.** This is easy to
 miss: a layer's bit depth is set by the BG mode, NOT fixed per layer, and it
 drives every tile renderer's byte stride (16 vs 32), decoder, and palette-group
 size. Almost every LevelMode is **BG Mode 1** (BGMODE low nibble `$9`): BG1/BG2
@@ -295,6 +295,43 @@ fog phase) — see `bossengine.md §2.2 / §4.2`.
 > **Correction to `renderingpipeline.md §5.2`:** `FXCODE_08AA7F` is `CODE_ram_byte_copy`
 > (a generic byte-copy the fog raster *uses*), not a dedicated "fog renderer." The fog
 > is the Bank01 Hookbill state machine + its per-line raster.
+
+### 6.7 BG3 screen-designation HDMA — the per-scanline main/sub z-split (water line)
+
+A **subset of BG3 tilesets** run a per-scanline HDMA that rewrites **TM *and* TS**
+(`$212C`/`$212D`, the main/sub-screen layer-enable) down the frame — moving BG3
+between the **main screen** (where, with the mode-1 BG3-priority bit, its priority-1
+tiles render in FRONT of BG1) and the **subscreen** (composited via color math →
+BEHIND BG1 / translucent). So one priority-1 BG3 band is **behind BG1 above the water
+line** (water body / reflection) and **in front below it** (foreground bank) — a
+z-order that the per-tile priority bit alone cannot express.
+
+- **Trigger (per BG3 tileset, not LevelMode):** `CODE_load_bg3_tilemap` reads a
+  "special-action byte" from `DATA_bg3_tilemap_table` (`$01:E90A`, 3-byte rows; action
+  = 3rd byte) and dispatches `JSR (DATA_bg3_special_routine,x)` (`$01:EB29`). Action
+  bytes with bit 7 set `ASL` into the table; the two that arm the TM/TS HDMA are
+  **`$82` → `CODE_setup_bg3_screen_des_hdma`** (`$01:EC7F`) and **`$83` →
+  `CODE_setup_bg3_clouds_mist_hdma`** (`$01:ED77`). Both route through
+  `CODE_setup_special_hdma`, which sets the channel's destination to
+  `!REGISTER_MainScreenLayers` (`$212C`) with a 2-register (TM+TS) transfer.
+- **Companion effect:** `CODE_setup_bg3_transparency` (`$2130=$A0` subtract+half,
+  `$2131=$64`) makes the subscreen-BG3 see-through — the "water/mist" translucency.
+- **Scope:** BG3 tileset **`$20`** (`screen_des`) and **`$22`** (`clouds_mist`). In the
+  playable catalog only two levels arm it, both tileset `$20`: **1-3 "The Cave Of Chomp
+  Rock"** (`0x02`) and **3-8 "Naval Piranha's Castle"** (`0x19`). Every other BG3 tileset
+  has action `$00`/`$FF` (no main-screen split) — BG3 is a pure deep-parallax background.
+- **Static-render handling:** the editor can't run the per-scanline HDMA, but the
+  pre-rendered BG3 tilemap is **per-tileset**, so the water line is a fixed tilemap row.
+  On these levels the renderer splits BG3 into **three** z-planes (instead of the usual
+  deep/front two), keyed on the per-tileset water-line row (tileset `$20` → row 28):
+    - **deep** — priority-0 (clouds): behind BG2.
+    - **mid** — priority-1, rows `< 28` (water/reflection band): IN FRONT of BG2, BEHIND
+      BG1. This is the subscreen band; in the editor it's the `bg3Mid` plane drawn between
+      BG2 and BG1.
+    - **front** — priority-1, rows `>= 28` (foreground bank): in front of BG1.
+  See `bg-layers-compose.ts` `BG3_FOREGROUND_MIN_ROW` + `nonEmpty` (empty planes collapse
+  to `null` so they cost no UI resources), and `render-bg-layers.ts` `foregroundMinRow` /
+  the `'low'`/`'mid'`/`'high'` priority filter.
 
 ---
 

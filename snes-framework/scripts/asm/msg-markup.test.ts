@@ -215,7 +215,7 @@ console.log('\n=== strings: intro (Bank0F) + ending (Bank0D) cutscene text round
   // terminator) must equal the budget on vanilla data, else a pristine cart reads
   // as over budget. (Regression: markupByteSize's +2 $FFFF terminator over-counted
   // every glyph line.)
-  const glyphUsed = (m) =>
+  const glyphUsed = (m: ReturnType<typeof parseIntroStory>): number =>
     m.entries.reduce((s, e) => s + e.lines.reduce((t, l) => t + markupBodyByteSize(l), 0), 0);
 
   const intro = parseIntroStory(bank0F, bank0F, ft);

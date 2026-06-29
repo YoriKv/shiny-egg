@@ -47,7 +47,7 @@ const f75 = map.find((s) => /f75\.png$/i.test(s.file));
 assert(!!f74?.perTilePalette, 'f74 exports with a per-tile palette');
 assert(!!f75?.perTilePalette, 'f75 exports with a per-tile palette');
 assert((f74?.perTilePalette?.subPalettes.length ?? 0) >= 2, `f74 exposes multiple palette rows (got ${f74?.perTilePalette?.subPalettes.length})`);
-// the BG terrain files are opaque (BG1 index 0 is a real colour), not sprite-transparent.
+// the BG terrain files are opaque (BG1 index 0 is a real color), not sprite-transparent.
 assert(f74?.index0Transparent === false, 'f74 renders BG index 0 opaque');
 
 // 3. per-tile round-trip byte-exact.

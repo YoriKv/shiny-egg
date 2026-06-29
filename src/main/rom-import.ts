@@ -21,26 +21,58 @@ import {
 import { loadLevelMapPublic, levelMapEntry } from 'snes-framework/level'
 import { newSlotRows } from 'snes-framework/pool-map'
 import { diffPaletteBlob, PALETTE_BLOB_BANK_FILE } from 'snes-framework/palette-edit'
+import {
+  diffForeignGradient,
+  gradientLabels,
+  GRADIENT_PTR_BANK_FILE,
+  type GradientEdit
+} from 'snes-framework/gradient-edit'
+import { diffForeignIslandTilemap, type IslandTilemapEdit } from 'snes-framework/island-tilemap'
+import {
+  diffForeignLogoTilemap,
+  LOGO_TILEMAP_BANK_FILE,
+  type LogoTilemapEdit
+} from 'snes-framework/logo-tilemap'
 import { readForeignLevelNames, loadFontMap } from 'snes-framework/levels-catalog'
 import {
+  ENDING_TEXT_ID,
+  INTRO_STORY_ID,
   levelNameSlotLabels,
   loadFontTable,
+  parseEndingText,
+  parseIntroStory,
   parseLevelNameStrings,
   parseMessageText,
+  readForeignGlyphTable,
   readForeignMessages,
+  serializeEndingText,
+  serializeIntroStory,
   serializeLevelNameStrings,
-  serializeMessageText
+  serializeMessageText,
+  type FontTable,
+  type SerializeResult
 } from 'snes-framework/strings'
-import { vendoredV10SymbolMap } from 'snes-framework/symbol-map'
+import {
+  diffForeignGfx,
+  diffForeignRawGfx,
+  type GfxDiffItem,
+  type RawChrWrite
+} from './rom-import-gfx'
+import { applyLevelRemoval } from './level-removal'
+import { snesToPC, vendoredV10SymbolMap } from 'snes-framework/symbol-map'
 import type { PaletteEdit, StringTableModel, WorldMapModel } from 'snes-framework/types'
 import type {
   RomImportApplyResult,
+  RomImportGfx,
+  RomImportGlyphText,
+  RomImportGradient,
   RomImportLevel,
   RomImportMessages,
   RomImportNames,
   RomImportPalette,
   RomImportReport,
   RomImportSelection,
+  RomImportTilemap,
   RomImportWorldMap
 } from '../shared/ipc-types'
 import { frameworkWorkRoot, overlayRoot, referenceCartPath } from './framework-paths'
@@ -50,13 +82,22 @@ import { loadBaseSym } from './patches'
 import {
   autoMigrateImportedLevels,
   exceptionalSaveBlockReason,
+  gfxBlobOverlayExists,
   registerNewSlotLevel,
+  loadGradientEdits,
+  loadIslandTilemapEdits,
+  loadLogoTilemapEdits,
   loadPaletteEdits,
   loadWorldMapResource,
   poolViolationMessage,
   saveAsmRegionResource,
+  saveGfxEdit,
+  saveRawChrEdit,
+  saveGradientEdits,
+  saveIslandTilemap,
   saveLevelRawResource,
   saveLevelResource,
+  saveLogoTilemap,
   savePaletteEdits,
   saveWorldMapResource
 } from './resources'
@@ -66,6 +107,9 @@ const LEVEL_DATA_REL = path.join('assets', 'yi', 'LevelData')
 const NAME_BANK_REL = path.join('yi', 'SuperFX', 'Banks', 'Bank51.asm')
 /** The DATATABLE asm the world-map entrance editor backs onto. */
 const WORLD_MAP_REL = path.join('yi', 'Routines', 'DATATABLE_YI_LevelDataPtrsAndEntranceData.asm')
+/** The Bank asm files the cutscene-text editors back onto (ASM_REGIONS). */
+const INTRO_BANK_REL = path.join('yi', 'Banks', 'Bank0F.asm')
+const ENDING_BANK_REL = path.join('yi', 'Banks', 'Bank0D.asm')
 
 interface CachedAnalysis {
   foreignPath: string
@@ -78,7 +122,7 @@ interface CachedAnalysis {
   /** NEW-SLOT records (`0xDA`/`0xDB`): no base map entry, importable as a brand
    *  new level — apply writes the overlay blobs + flags the project slot. */
   newSlotIds: Set<number>
-  /** Master-palette colour edits to import (offset → BGR-15). */
+  /** Master-palette color edits to import (offset → BGR-15). */
   paletteEdits: PaletteEdit[]
   /** Level-name model with imported changes applied, or null when none/can't apply. */
   nameModel: StringTableModel | null
@@ -92,13 +136,32 @@ interface CachedAnalysis {
   worldMapEntrances: number
   worldMapMidway: number
   worldMapIndexRemaps: number
+  /** Backdrop-gradient stop edits to import (offset → BGR-15), or empty. */
+  gradientEdits: GradientEdit[]
+  /** Title-island tilemap cell edits to import, or empty. */
+  islandEdits: IslandTilemapEdit[]
+  /** Title-logo tilemap cell edits to import, or empty. */
+  logoEdits: LogoTilemapEdit[]
+  /** Intro-story model with imported changes applied, or null when none/can't apply. */
+  introModel: StringTableModel | null
+  introChanges: number
+  /** Ending-text model with imported changes applied, or null when none/can't apply. */
+  endingModel: StringTableModel | null
+  endingChanges: number
+  /** Changed GFX sheets to import (decompressed tiles), or empty. */
+  gfxItems: GfxDiffItem[]
+  /** Changed raw-CHR `.bin` patches (banks $52–$56) to import, or empty. */
+  rawGfxWrites: RawChrWrite[]
+  /** Records the hack cleanly emptied/removed — taken out of the project by
+   *  default on apply (so the project matches the hack's level set). */
+  emptiedIds: number[]
 }
 
 function sameLines(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((l, i) => l === b[i])
 }
 
-/** Diff the foreign cart's master-palette blob against base → the colour edits to
+/** Diff the foreign cart's master-palette blob against base → the color edits to
  *  import, plus how many overlap the project's existing palette edits. */
 function analyzePalette(foreign: Buffer): { edits: PaletteEdit[]; conflicts: number } {
   try {
@@ -408,6 +471,220 @@ function analyzeWorldMap(foreign: Buffer, base: Buffer, projectId: string | null
   }
 }
 
+interface GradientAnalysis extends RomImportGradient {
+  edits: GradientEdit[]
+}
+
+/**
+ * Diff the foreign cart's 16 backdrop-gradient tables against base → the stop
+ * edits to import, plus how many overlap the project's existing gradient edits.
+ * Resolves each table's foreign address by FOLLOWING the foreign cart's
+ * `DATA_bg_gradient_ptrs` table (fixed address), so a hack that relocated the
+ * gradient blobs still aligns. The gradient twin of {@link analyzePalette}.
+ */
+function analyzeGradient(foreign: Buffer): GradientAnalysis {
+  const empty: GradientAnalysis = { edits: [], changedStops: 0, conflicts: 0 }
+  try {
+    const sym = vendoredV10SymbolMap()
+    const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
+    const ptrText = readFileSync(path.join(frameworkWorkRoot(), GRADIENT_PTR_BANK_FILE), 'utf8')
+    const labels = gradientLabels(ptrText)
+    const ptrPc = sym.pc('DATA_bg_gradient_ptrs')
+    // Each ptr-table entry is `dw bank, offset` (4 bytes) → a table address.
+    const tablePcOf = (gradientId: number): number | null => {
+      const off = ptrPc + gradientId * 4
+      if (off < 0 || off + 4 > foreign.length) return null
+      const pc = snesToPC((foreign.readUInt16LE(off) << 16) | foreign.readUInt16LE(off + 2))
+      return pc >= 0 && pc < foreign.length ? pc : null
+    }
+    const edits = diffForeignGradient(baseText, labels, (gradientId, stop) => {
+      const pc = tablePcOf(gradientId)
+      if (pc === null) return undefined
+      const at = pc + stop * 2
+      return at + 1 < foreign.length ? foreign.readUInt16LE(at) : undefined
+    })
+    const existing = new Set(loadGradientEdits().map((e) => e.offset))
+    return {
+      edits,
+      changedStops: edits.length,
+      conflicts: edits.filter((e) => existing.has(e.offset)).length
+    }
+  } catch {
+    return empty
+  }
+}
+
+interface IslandAnalysis extends RomImportTilemap {
+  edits: IslandTilemapEdit[]
+}
+
+/** Diff the foreign cart's title-island tilemap (`DATA_5F9800`, 1024 Mode-7 char
+ *  bytes) against base → the cell edits to import + overlap with existing edits. */
+function analyzeIslandTilemap(foreign: Buffer): IslandAnalysis {
+  const empty: IslandAnalysis = { edits: [], changedCells: 0, conflicts: 0 }
+  try {
+    const pc = vendoredV10SymbolMap().pc('DATA_5F9800')
+    if (pc < 0 || pc + 1024 > foreign.length) return empty
+    const baseText = readFileSync(path.join(frameworkWorkRoot(), PALETTE_BLOB_BANK_FILE), 'utf8')
+    const edits = diffForeignIslandTilemap(baseText, (off) => foreign[pc + off]!)
+    const existing = new Set(loadIslandTilemapEdits().map((e) => e.offset))
+    return {
+      edits,
+      changedCells: edits.length,
+      conflicts: edits.filter((e) => existing.has(e.offset)).length
+    }
+  } catch {
+    return empty
+  }
+}
+
+interface LogoAnalysis extends RomImportTilemap {
+  edits: LogoTilemapEdit[]
+}
+
+/** Diff the foreign cart's title-logo tilemap (`DATA_title_screen_logo_tilemap`,
+ *  448 BG words) against base → the cell edits to import + overlap with existing. */
+function analyzeLogoTilemap(foreign: Buffer): LogoAnalysis {
+  const empty: LogoAnalysis = { edits: [], changedCells: 0, conflicts: 0 }
+  try {
+    const pc = vendoredV10SymbolMap().pc('DATA_title_screen_logo_tilemap')
+    if (pc < 0 || pc + 448 * 2 > foreign.length) return empty
+    const baseText = readFileSync(path.join(frameworkWorkRoot(), LOGO_TILEMAP_BANK_FILE), 'utf8')
+    const edits = diffForeignLogoTilemap(baseText, (wordIndex) => foreign.readUInt16LE(pc + wordIndex * 2))
+    const existing = new Set(loadLogoTilemapEdits().map((e) => e.offset))
+    return {
+      edits,
+      changedCells: edits.length,
+      conflicts: edits.filter((e) => existing.has(e.offset)).length
+    }
+  } catch {
+    return empty
+  }
+}
+
+interface GlyphTextAnalysis extends RomImportGlyphText {
+  /** The model to save (changed entries applied), or null when nothing applies. */
+  model: StringTableModel | null
+  changes: number
+}
+
+/**
+ * Decode a foreign cart's glyph-line text table (intro story / ending text) and
+ * map well-formed, representable changes onto the editable (overlay-first) model.
+ * Mirrors {@link analyzeNames}, with the cutscene-specific gate: an entry imports
+ * ONLY when its BASE binary form decodes exactly to the editable model's lines
+ * (so layout-control / inline-special-glyph / relocated entries are skipped, never
+ * corrupted) and the foreign line count matches. Budget is pre-flighted by
+ * serializing; an over-budget set can't apply.
+ */
+function analyzeGlyphText(
+  foreign: Buffer,
+  base: Buffer,
+  projectId: string | null,
+  id: string,
+  bankFile: string,
+  parse: (contentText: string, budgetText: string, ft: FontTable) => StringTableModel,
+  serialize: (
+    contentText: string,
+    budgetText: string,
+    model: StringTableModel,
+    ft: FontTable
+  ) => SerializeResult
+): GlyphTextAnalysis {
+  const empty: GlyphTextAnalysis = {
+    model: null,
+    changes: 0,
+    changed: 0,
+    skipped: 0,
+    overBudget: false,
+    hasConflict: false
+  }
+  try {
+    const workRoot = frameworkWorkRoot()
+    const baseText = readFileSync(path.join(workRoot, bankFile), 'utf8')
+    const overlayPath = projectId ? path.join(overlayRoot(projectId), bankFile) : null
+    const hasConflict = !!(overlayPath && existsSync(overlayPath))
+    // Overlay-first so existing edits are preserved + the import layers on top.
+    const contentText = hasConflict ? readFileSync(overlayPath!, 'utf8') : baseText
+    const ft = loadFontTable(workRoot)
+
+    const model = parse(contentText, baseText, ft) // the model we mutate + save
+    const baseModel = parse(baseText, baseText, ft) // base asm — the representability gate
+    const byLabel = new Map(model.entries.map((e) => [e.label, e]))
+    const baseByLabel = new Map(baseModel.entries.map((e) => [e.label, e]))
+
+    const foreignDec = readForeignGlyphTable(foreign, baseText, ft, id)
+    const baseDec = readForeignGlyphTable(base, baseText, ft, id)
+
+    let changed = 0
+    let skipped = 0
+    for (const [label, f] of foreignDec) {
+      const b = baseDec.get(label)
+      if (b && b.ok && sameLines(b.lines, f.lines)) continue // unchanged from base
+      if (!f.ok) {
+        skipped++ // foreign body unreadable (no terminator — likely relocated)
+        continue
+      }
+      const baseEntry = baseByLabel.get(label)
+      const entry = byLabel.get(label)
+      // Only import entries whose BASE binary form matches the editable model
+      // exactly — a layout-control / inline-special-glyph entry won't, so it's
+      // skipped instead of being mis-decoded into the quoted-text model.
+      if (!entry || !baseEntry || !b || !b.ok || !sameLines(b.lines, baseEntry.lines)) {
+        skipped++
+        continue
+      }
+      if (f.lines.length !== baseEntry.lines.length) {
+        skipped++ // line structure changed — can't splice
+        continue
+      }
+      entry.lines = f.lines
+      changed++
+    }
+
+    if (changed === 0) return { ...empty, skipped, hasConflict }
+
+    const res = serialize(contentText, baseText, model, ft)
+    if (!res.ok) {
+      return { model: null, changes: changed, changed, skipped, overBudget: true, hasConflict }
+    }
+    return { model, changes: changed, changed, skipped, overBudget: false, hasConflict }
+  } catch {
+    return empty
+  }
+}
+
+interface GfxAnalysis extends RomImportGfx {
+  items: GfxDiffItem[]
+  rawWrites: RawChrWrite[]
+}
+
+/** Diff the foreign cart's graphics against base — compressed sheets (decompressed
+ *  tiles) + raw-CHR `.bin`s (banks $52–$56) — plus how many overlap existing edits. */
+function analyzeGfx(foreign: Buffer, base: Buffer): GfxAnalysis {
+  const empty: GfxAnalysis = { items: [], rawWrites: [], changed: 0, rawFiles: 0, skipped: 0, conflicts: 0 }
+  try {
+    const { changed, skipped } = diffForeignGfx(foreign, base, vendoredV10SymbolMap())
+    const { writes } = diffForeignRawGfx(foreign, base)
+    const projectId = getCurrentProjectId()
+    const overlayAssets = projectId ? path.join(overlayRoot(projectId), 'assets', 'yi') : null
+    const sheetConflicts = changed.filter((it) => gfxBlobOverlayExists(it.format, it.fileId)).length
+    const rawConflicts = overlayAssets
+      ? writes.filter((w) => existsSync(path.join(overlayAssets, w.binFile))).length
+      : 0
+    return {
+      items: changed,
+      rawWrites: writes,
+      changed: changed.length,
+      rawFiles: writes.length,
+      skipped,
+      conflicts: sheetConflicts + rawConflicts
+    }
+  } catch {
+    return empty
+  }
+}
+
 // One analysis at a time (the import is a modal flow). apply() consumes this.
 let cached: CachedAnalysis | null = null
 
@@ -467,6 +744,12 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     indexSkipped: 0,
     hasConflict: false
   }
+  const gradient: RomImportGradient = { changedStops: 0, conflicts: 0 }
+  const islandTilemap: RomImportTilemap = { changedCells: 0, conflicts: 0 }
+  const logoTilemap: RomImportTilemap = { changedCells: 0, conflicts: 0 }
+  const introStory: RomImportGlyphText = { changed: 0, skipped: 0, overBudget: false, hasConflict: false }
+  const endingText: RomImportGlyphText = { changed: 0, skipped: 0, overBudget: false, hasConflict: false }
+  const graphics: RomImportGfx = { changed: 0, rawFiles: 0, skipped: 0, conflicts: 0 }
   let paletteEdits: PaletteEdit[] = []
   let nameModel: StringTableModel | null = null
   let nameChanges = 0
@@ -477,6 +760,15 @@ export function analyzeRom(foreignPath: string): RomImportReport {
   let worldMapEntrances = 0
   let worldMapMidway = 0
   let worldMapIndexRemaps = 0
+  let gradientEdits: GradientEdit[] = []
+  let islandEdits: IslandTilemapEdit[] = []
+  let logoEdits: LogoTilemapEdit[] = []
+  let introModel: StringTableModel | null = null
+  let introChanges = 0
+  let endingModel: StringTableModel | null = null
+  let endingChanges = 0
+  let gfxItems: GfxDiffItem[] = []
+  let rawGfxWrites: RawChrWrite[] = []
   if (analysis.baseDerived) {
     const p = analyzePalette(foreign)
     paletteEdits = p.edits
@@ -509,6 +801,44 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     worldMap.indexRemaps = wm.indexRemaps
     worldMap.indexSkipped = wm.indexSkipped
     worldMap.hasConflict = wm.hasConflict
+
+    const grad = analyzeGradient(foreign)
+    gradientEdits = grad.edits
+    gradient.changedStops = grad.changedStops
+    gradient.conflicts = grad.conflicts
+    const isl = analyzeIslandTilemap(foreign)
+    islandEdits = isl.edits
+    islandTilemap.changedCells = isl.changedCells
+    islandTilemap.conflicts = isl.conflicts
+    const logo = analyzeLogoTilemap(foreign)
+    logoEdits = logo.edits
+    logoTilemap.changedCells = logo.changedCells
+    logoTilemap.conflicts = logo.conflicts
+    const intro = analyzeGlyphText(
+      foreign, base, projectId, INTRO_STORY_ID, INTRO_BANK_REL, parseIntroStory, serializeIntroStory
+    )
+    introModel = intro.model
+    introChanges = intro.changes
+    introStory.changed = intro.changed
+    introStory.skipped = intro.skipped
+    introStory.overBudget = intro.overBudget
+    introStory.hasConflict = intro.hasConflict
+    const ending = analyzeGlyphText(
+      foreign, base, projectId, ENDING_TEXT_ID, ENDING_BANK_REL, parseEndingText, serializeEndingText
+    )
+    endingModel = ending.model
+    endingChanges = ending.changes
+    endingText.changed = ending.changed
+    endingText.skipped = ending.skipped
+    endingText.overBudget = ending.overBudget
+    endingText.hasConflict = ending.hasConflict
+    const gfx = analyzeGfx(foreign, base)
+    gfxItems = gfx.items
+    rawGfxWrites = gfx.rawWrites
+    graphics.changed = gfx.changed
+    graphics.rawFiles = gfx.rawFiles
+    graphics.skipped = gfx.skipped
+    graphics.conflicts = gfx.conflicts
   }
 
   // Mutated by the level classification below (same reference shared with the
@@ -530,7 +860,17 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     worldMapModel,
     worldMapEntrances,
     worldMapMidway,
-    worldMapIndexRemaps
+    worldMapIndexRemaps,
+    gradientEdits,
+    islandEdits,
+    logoEdits,
+    introModel,
+    introChanges,
+    endingModel,
+    endingChanges,
+    gfxItems,
+    rawGfxWrites,
+    emptiedIds: analysis.levels.filter((l) => l.emptied).map((l) => l.recordId)
   }
 
   const map = loadLevelMapPublic(frameworkWorkRoot())
@@ -610,6 +950,12 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     names,
     messages,
     worldMap,
+    gradient,
+    islandTilemap,
+    logoTilemap,
+    introStory,
+    endingText,
+    graphics,
     ...(analysis.inventory ? { inventory: analysis.inventory } : {})
   }
 }
@@ -624,12 +970,16 @@ const UNBLOCK_ACTIONS = new Map<number, 'migrate' | 'decouple'>([
   [0xcb, 'decouple']
 ])
 
-/** Merge imported palette edits over the project's existing edits (imported wins
- *  per colour offset) — savePaletteEdits rewrites the FULL set from base. */
-function mergePaletteEdits(existing: PaletteEdit[], imported: PaletteEdit[]): PaletteEdit[] {
-  const m = new Map(existing.map((e) => [e.offset, e.value]))
+/** Merge imported `{offset,value}` edits over the project's existing edits (imported
+ *  wins per offset) — the save paths rewrite the FULL set from base, so we hand
+ *  them the union. Shared by palette / gradient / island / logo edits. */
+function mergeOffsetEdits<T extends { offset: number; value: number }>(
+  existing: readonly T[],
+  imported: readonly T[]
+): T[] {
+  const m = new Map<number, number>(existing.map((e) => [e.offset, e.value]))
   for (const e of imported) m.set(e.offset, e.value)
-  return [...m.entries()].map(([offset, value]) => ({ offset, value }))
+  return [...m.entries()].map(([offset, value]) => ({ offset, value }) as T)
 }
 
 /** Apply the user-selected records to the active project's overlay. */
@@ -723,7 +1073,7 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
 
   const palette = { applied: false, words: 0, error: undefined as string | undefined }
   if (sel.palette && cached.paletteEdits.length > 0) {
-    const merged = mergePaletteEdits(loadPaletteEdits(), cached.paletteEdits)
+    const merged = mergeOffsetEdits(loadPaletteEdits(), cached.paletteEdits)
     const r = await savePaletteEdits(merged)
     if (r.ok) {
       palette.applied = true
@@ -784,6 +1134,107 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
     }
   }
 
+  // Backdrop gradient + title-island both write Bank57.asm, composing with the
+  // palette write above (each save reborns base ⊕ palette ⊕ island ⊕ gradient
+  // from the OTHER two's current on-disk sets, so applying them after palette
+  // preserves it and each other). Merge imported over existing per offset.
+  const gradient = { applied: false, stops: 0, error: undefined as string | undefined }
+  if (sel.gradient && cached.gradientEdits.length > 0) {
+    const r = await saveGradientEdits(mergeOffsetEdits(loadGradientEdits(), cached.gradientEdits))
+    if (r.ok) {
+      gradient.applied = true
+      gradient.stops = cached.gradientEdits.length
+    } else {
+      gradient.error = r.error
+    }
+  }
+
+  const islandTilemap = { applied: false, cells: 0, error: undefined as string | undefined }
+  if (sel.islandTilemap && cached.islandEdits.length > 0) {
+    const r = await saveIslandTilemap(mergeOffsetEdits(loadIslandTilemapEdits(), cached.islandEdits))
+    if (r.ok) {
+      islandTilemap.applied = true
+      islandTilemap.cells = cached.islandEdits.length
+    } else {
+      islandTilemap.error = r.error
+    }
+  }
+
+  // Bank0F hosts BOTH the logo tilemap and the intro-story text. Both saves now
+  // splice onto the overlay-first content (disjoint regions), so they coexist —
+  // order is immaterial.
+  const logoTilemap = { applied: false, cells: 0, error: undefined as string | undefined }
+  if (sel.logoTilemap && cached.logoEdits.length > 0) {
+    const r = await saveLogoTilemap(mergeOffsetEdits(loadLogoTilemapEdits(), cached.logoEdits))
+    if (r.ok) {
+      logoTilemap.applied = true
+      logoTilemap.cells = cached.logoEdits.length
+    } else {
+      logoTilemap.error = r.error
+    }
+  }
+
+  const introStory = { applied: false, changed: 0, error: undefined as string | undefined }
+  if (sel.introStory && cached.introModel) {
+    const r = await saveAsmRegionResource(INTRO_STORY_ID, cached.introModel)
+    if (r.ok) {
+      introStory.applied = true
+      introStory.changed = cached.introChanges
+    } else {
+      introStory.error = r.error
+    }
+  }
+
+  // Ending text writes its own bank (Bank0D), independent of the rest.
+  const endingText = { applied: false, changed: 0, error: undefined as string | undefined }
+  if (sel.endingText && cached.endingModel) {
+    const r = await saveAsmRegionResource(ENDING_TEXT_ID, cached.endingModel)
+    if (r.ok) {
+      endingText.applied = true
+      endingText.changed = cached.endingChanges
+    } else {
+      endingText.error = r.error
+    }
+  }
+
+  // Graphics: one saveGfxEdit per changed compressed sheet + one saveRawChrEdit
+  // batch for the raw-CHR banks ($52–$56). Per-file errors are collected, not fatal.
+  const graphics = { applied: false, files: 0, rawFiles: 0, error: undefined as string | undefined }
+  if (sel.graphics && (cached.gfxItems.length > 0 || cached.rawGfxWrites.length > 0)) {
+    let saved = 0
+    const errs: string[] = []
+    for (const it of cached.gfxItems) {
+      const r = saveGfxEdit(it.format, it.fileId, it.tiles, it.rowCount)
+      if (r.ok) saved++
+      else errs.push(`0x${it.fileId.toString(16)} (${it.format}): ${r.error}`)
+    }
+    if (cached.rawGfxWrites.length > 0) {
+      const rr = saveRawChrEdit(cached.rawGfxWrites)
+      if (rr.ok) graphics.rawFiles = rr.files.length
+      else errs.push(`raw CHR: ${rr.error}`)
+    }
+    graphics.files = saved
+    graphics.applied = saved > 0 || graphics.rawFiles > 0
+    if (errs.length > 0) graphics.error = errs.join('; ')
+  }
+
+  // DEFAULT cleanup: remove the levels the hack itself emptied/removed, so the
+  // project matches the hack's level set and frees their bytes at the next build.
+  // Runs AFTER the world-map import so the rewire operates on the imported map.
+  // applyLevelRemoval filters engine-protected/already-removed records itself.
+  const emptiedRemoved = { removed: [] as number[], error: undefined as string | undefined }
+  if (cached.emptiedIds.length > 0) {
+    try {
+      const r = await applyLevelRemoval(cached.emptiedIds)
+      if (r.ok) emptiedRemoved.removed = r.removed
+      // "Nothing to remove" (every emptied record was engine-protected / already
+      // removed) is benign — don't surface it as a failure.
+      else if (!/^Nothing to remove/.test(r.error)) emptiedRemoved.error = r.error
+    } catch (err) {
+      emptiedRemoved.error = (err as Error).message
+    }
+  }
+
   return {
     ok: true,
     applied: full + rawOnly,
@@ -796,6 +1247,13 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
     palette,
     names,
     messages,
-    worldMap
+    worldMap,
+    gradient,
+    islandTilemap,
+    logoTilemap,
+    introStory,
+    endingText,
+    graphics,
+    emptiedRemoved
   }
 }

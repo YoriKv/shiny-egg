@@ -4,7 +4,7 @@
 //
 // Re-exported from the canonical engine module (`snes-framework/hex`) so the
 // renderer and the engine/CLIs share ONE implementation. NOTE: this is for
-// *identifiers*; the 6-digit lowercase CSS-colour helper in PalettePanel
+// *identifiers*; the 6-digit lowercase CSS-color helper in PalettePanel
 // deliberately renders lowercase and keeps its own formatting.
 
 export { hex, hex0x } from 'snes-framework/hex'

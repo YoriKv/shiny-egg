@@ -15,7 +15,7 @@ function assert(cond: boolean, msg: string): void {
   if (cond) { console.log(`  ✓ ${msg}`); } else { console.error(`  ✗ ${msg}`); failures++; }
 }
 
-// Synthetic CGRAM: 256 distinct BGR-15 colours.
+// Synthetic CGRAM: 256 distinct BGR-15 colors.
 const cgram = new Uint8Array(512);
 for (let i = 0; i < 256; i++) {
   const c15 = ((i * 7) & 0x7fff); // spread across the 15-bit space
@@ -24,7 +24,7 @@ for (let i = 0; i < 256; i++) {
 }
 
 // Build a 4bpp tile blob: 40 tiles, each with a recognisable index pattern. The
-// faithful sheet colours every tile in ONE render row (here row 4).
+// faithful sheet colors every tile in ONE render row (here row 4).
 const TILES = 40;
 const ROW = 4;
 const tileData = new Uint8Array(TILES * 32);
@@ -40,7 +40,7 @@ for (const index0Transparent of [false, true]) {
   const dec = decodeAsepriteRegion(ase);
   assert(dec.width === 16 * 8, `[${tag}] grid is 16 tiles wide (${dec.width}px)`);
 
-  // Expected flatten: every tile coloured in ROW (index 0 → transparent when
+  // Expected flatten: every tile colored in ROW (index 0 → transparent when
   // index0Transparent, else opaque). Tiles laid out 16-wide.
   const pal = buildPaletteRow(cgram, ROW, index0Transparent, 'expand', 16);
   const exp = new Uint32Array(dec.width * dec.height);

@@ -3,7 +3,7 @@
 // The storybook is a runtime-streamed, multi-page scripted cutscene (gm$05 load
 // -> gm$07 tick, `CODE_gm05_load_cutscene` $0F:BDBE; 51 story beats). Its art
 // lives in shared char files — f87/f88 (BG 4bpp), f8A/f4A (OBJ sprites), f27
-// (BG3 2bpp) — that EACH scene colours with DIFFERENT palette rows. A static
+// (BG3 2bpp) — that EACH scene colors with DIFFERENT palette rows. A static
 // decode only reproduces the initial Nintendo-logo frame, so most char tiles
 // would default to row 0 (the wrong palette, and for the OBJ sprite sheets the
 // wrong HALF of CGRAM entirely). This is the same runtime-streamed-tilemap
@@ -19,12 +19,12 @@
 // Mode-0 title logo (BG2 -> CGRAM 32). The captured rows ARE the per-tile fact;
 // only the palette HALF (BG 0-7 vs OBJ 8-15) is fixed per file class.
 //
-// COLOURS: the export uses the cart's static palette-$50 load (no captured
-// colours committed, provenance-clean like the world map). The settled intro
+// COLORS: the export uses the cart's static palette-$50 load (no captured
+// colors committed, provenance-clean like the world map). The settled intro
 // frames are byte-identical to that load, but the cutscene STREAMS page-specific
-// colours into most BG rows (2-7) and OBJ row 0 as illustrations appear — so a
+// colors into most BG rows (2-7) and OBJ row 0 as illustrations appear — so a
 // tile on a re-streamed row (e.g. f87's rows 2-3, the clouds) shows the settled
-// placeholder colours, not its per-page colours. That's a known limit of a static
+// placeholder colors, not its per-page colors. That's a known limit of a static
 // export of a streamed cutscene; editing is INDEX-based so it round-trips byte-exact
 // regardless (paletteAnimated). f89 is omitted: loaded into VRAM but never referenced
 // across the entire cutscene (the storybook analogue of the world-map fold-only files).

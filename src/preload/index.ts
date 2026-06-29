@@ -175,7 +175,7 @@ const api = {
      *  used instead of reading from disk. */
     cgram: (req: LevelRenderRequest): Promise<Uint8Array | null> =>
       ipcRenderer.invoke('render:cgram', req),
-    /** Palette-colour editing: live CGRAM (overlay-patched) + per-entry blob
+    /** Palette-color editing: live CGRAM (overlay-patched) + per-entry blob
      *  provenance + the project's current palette edits. Null for empty/special
      *  slots. */
     editablePalette: (req: LevelRenderRequest): Promise<DecodedPalette | null> =>
@@ -291,7 +291,7 @@ const api = {
     list: (): Promise<ProjectSummary[]> => ipcRenderer.invoke('project:list'),
     ensureCurrent: (): Promise<ProjectSummary> =>
       ipcRenderer.invoke('project:ensureCurrent'),
-    create: (): Promise<ProjectSummary> => ipcRenderer.invoke('project:create'),
+    create: (name?: string): Promise<ProjectSummary> => ipcRenderer.invoke('project:create', name),
     switch: (id: string): Promise<ProjectSummary> =>
       ipcRenderer.invoke('project:switch', id),
     info: (id: string): Promise<ProjectInfo> =>
@@ -329,10 +329,10 @@ const api = {
       model: unknown
     ): Promise<SaveResourceResult> =>
       ipcRenderer.invoke('editor:saveResource', resource, model),
-    /** Palette-colour editing: the saved overlay's edit set (usePaletteEditor
+    /** Palette-color editing: the saved overlay's edit set (usePaletteEditor
      *  baseline). */
     loadPaletteEdits: (): Promise<PaletteEdit[]> => ipcRenderer.invoke('editor:loadPaletteEdits'),
-    /** Palette-colour editing: persist the full edit set (offset → value) to the
+    /** Palette-color editing: persist the full edit set (offset → value) to the
      *  project overlay (Bank57.asm). Caller marks the build dirty on success. */
     savePaletteEdits: (edits: PaletteEdit[]): Promise<SaveResourceResult> =>
       ipcRenderer.invoke('editor:savePaletteEdits', edits),
@@ -343,7 +343,7 @@ const api = {
      *  project overlay (Bank57.asm). Caller marks the build dirty on success. */
     saveGradientEdits: (edits: GradientEdit[]): Promise<SaveResourceResult> =>
       ipcRenderer.invoke('editor:saveGradientEdits', edits),
-    /** The 16×24 pristine base gradient colours; the panel overlays the draft for
+    /** The 16×24 pristine base gradient colors; the panel overlays the draft for
      *  display so a reset reveals base without a rebuild. */
     gradientBaseColors: (): Promise<number[][]> => ipcRenderer.invoke('editor:gradientBaseColors'),
     levelBudget: (

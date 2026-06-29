@@ -1,6 +1,6 @@
 // IPC handlers for the generic editable-resource layer (editor:*): the
 // load/save resource dispatch (the registry the level editor + every overlay
-// tool save through), palette-colour edits, the live level-data byte budget +
+// tool save through), palette-color edits, the live level-data byte budget +
 // pool overview, free-space migration / de-couple state, level reset, and the
 // cross-level warp-exit destination edit. Split out of framework.ts so each API
 // namespace maps 1:1 to an ipc/*.ts file. Registered once from main/index.
@@ -118,7 +118,7 @@ export function registerEditorIpc(): void {
     ): Promise<SaveResourceResult> => saveResource(resource, model)
   )
 
-  // Palette-colour editing (§B10): the saved overlay's edit set (the
+  // Palette-color editing (§B10): the saved overlay's edit set (the
   // usePaletteEditor baseline) + the full-set save back into Bank57.asm → project
   // overlay. Renderer marks the build dirty on save (asm edit).
   ipcMain.handle('editor:loadPaletteEdits', async (): Promise<PaletteEdit[]> => loadPaletteEdits())
@@ -130,7 +130,7 @@ export function registerEditorIpc(): void {
 
   // Backdrop-gradient editing: the saved overlay's gradient stop edits (the
   // useGradientEditor baseline) + the full-set save (also into Bank57.asm), plus
-  // the 16×24 pristine base colours the panel overlays the draft on for display.
+  // the 16×24 pristine base colors the panel overlays the draft on for display.
   ipcMain.handle('editor:loadGradientEdits', async (): Promise<GradientEdit[]> => loadGradientEdits())
   ipcMain.handle(
     'editor:saveGradientEdits',

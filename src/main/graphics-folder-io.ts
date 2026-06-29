@@ -18,11 +18,12 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   push(r.levelIconImported, 'level icon')
   push(r.mapTerrainImported, 'overworld map')
   push(r.glyphImported, 'glyph')
+  push(r.fontImported, 'font/picture sheet')
   if (r.logoImported > 0) log.push('title logo changed')
   if (r.islandImported > 0) log.push(`title island changed${r.islandNewTiles > 0 ? ` (${r.islandNewTiles} new tile${r.islandNewTiles === 1 ? '' : 's'})` : ''}`)
   if (r.sceneryImported > 0) log.push('title scenery changed')
   if (r.sceneImported > 0) log.push('storybook scene changed')
-  push(r.paletteImported, 'screen palette colour')
+  push(r.paletteImported, 'screen palette color')
   if (r.skipped > 0 || r.imported > 0) log.push(`${r.skipped} unchanged`)
 
   const errors = [...r.errors]
@@ -30,10 +31,10 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   if (r.glyphShared > 0) errors.push(`${r.glyphShared} other sprite${r.glyphShared === 1 ? '' : 's'} share an edited glyph.`)
   if (r.islandSharedCells > 0) errors.push(`Island tiles are shared — your edit also changed ${r.islandSharedCells} other island cell${r.islandSharedCells === 1 ? '' : 's'}.`)
   if (r.iconImported > 0) errors.push('Map-icon edits apply to all worlds (the marker/castle tiles are shared).')
-  if (r.paletteImported > 0) errors.push('Screen-palette colour edits write to the shared master palette blob — a colour also used by another screen or level changes there too.')
+  if (r.paletteImported > 0) errors.push('Screen-palette color edits write to the shared master palette blob — a color also used by another screen or level changes there too.')
 
   const changed = r.imported + r.spriteImported + r.iconImported +
-    r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.sceneImported + r.glyphImported + r.paletteImported
+    r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.sceneImported + r.glyphImported + r.fontImported + r.paletteImported
   return { log, errors, changed, paletteChanged: r.paletteImported }
 }
 

@@ -20,7 +20,7 @@
 // The init seeds $A1 with either $0000 (no leaf-tint) or $000B (leaf-
 // tint bias) via PRNG bit 1, then picks the per-cell handler by
 // bit-0 of $15 via DATA_1295A6. The $A1 value is read by both per-cell
-// handlers to recolour foliage variants:
+// handlers to recolor foliage variants:
 //   * _with_branches's "miss" fallback paths add $0 (no leaf) or $2
 //     (leaf-tint) to the $00AC base via CODE_139745.
 //   * _with_branches's $920F-edge override adds $A1 to the tile via

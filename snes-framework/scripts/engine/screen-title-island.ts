@@ -15,15 +15,15 @@ import { TILE_PX, titleVariant } from './screen-scene.ts';
 // TITLE FLOATING ISLAND (Mode-7) — the editable view of the title's island/sea.
 // SOLVED statically (no emulator/trace): file $B1 (LZ2 → VRAM $0000) IS the island
 // char, stored CPC-packed — each byte holds TWO 8bpp pixels (low nibble = even
-// pixel, high nibble = odd), 16 colours (CGRAM 0-15). The GSU just unpacks those
+// pixel, high nibble = odd), 16 colors (CGRAM 0-15). The GSU just unpacks those
 // nibbles into Mode-7 8bpp char. The tilemap is `DATA_5F9800` (worlds 1-5) /
 // `DATA_5F9C00` (world 6) — a 32×32 grid of char indices. So:
-//   island = unpack($B1) → 128 char tiles, placed by DATA_5F9800, coloured CGRAM 0-15.
+//   island = unpack($B1) → 128 char tiles, placed by DATA_5F9800, colored CGRAM 0-15.
 // Verified byte-exact: $B1 unpacked == the title-render trace's `title.m7char.bin`
 // (128/128 island tiles), and the assembled render matches `title.m7-flat.png`.
 // This assembles the 256×256 island and slices edits back to $B1 (re-pack the
 // nibbles) → `saveGfxEdit`. The title CGRAM shimmers in-game, so the exported
-// colours are one frame; editing pixel indices is byte-safe regardless.
+// colors are one frame; editing pixel indices is byte-safe regardless.
 
 const ISLAND_TILEMAP_SYM = 'DATA_5F9800'; // title island, worlds 1-5
 const ISLAND_TILEMAP_W6_SYM = 'DATA_5F9C00'; // title island, world 6 (SAME $B1 char file)
@@ -60,9 +60,9 @@ export interface TitleIslandContext {
   b1cpc: Uint8Array;
   tilemap: Uint8Array;
   palette: Uint32Array; // 16 ARGB (CGRAM 0-15)
-  cgram: Uint8Array; // for the Aseprite tilemap export (palette = row 0, 16 colours)
-  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source) — lets an
-   *  island (Mode-7, CGRAM 0-15) palette-colour edit round-trip to the blob. */
+  cgram: Uint8Array; // for the Aseprite tilemap export (palette = row 0, 16 colors)
+  /** CGRAM color index → master-palette-blob byte-offset (`-1` = no blob source) — lets an
+   *  island (Mode-7, CGRAM 0-15) palette-color edit round-trip to the blob. */
   provenance: Int32Array;
   /** $B1 char slots referenced by NEITHER island tilemap (worlds 1-5 AND world 6),
    *  so writing new art to them can't corrupt the other world. The combined import's
@@ -128,7 +128,7 @@ export function renderTitleIsland(ctx: TitleIslandContext): TitleIslandCanvas {
 export interface IslandTileEdit { char: number; bytes: Uint8Array }
 
 /** Diff an edited island canvas vs its base → the changed $B1 char tiles (CPC bytes),
- *  base-aware (a pixel still showing its base colour keeps its base index). A
+ *  base-aware (a pixel still showing its base color keeps its base index). A
  *  `conflict` is two cells writing the same char different bytes (the char is reused
  *  in the tilemap; last write wins). `sharedCells` is the count of OTHER island cells
  *  that reuse an edited char and so ALSO change in-game — the island is a 32×32
@@ -170,7 +170,7 @@ export function diffTitleIslandTiles(
   return { edits: [...byChar].map(([char, bytes]) => ({ char, bytes })), conflicts, sharedCells };
 }
 
-/** Encode the island canvas to a PNG: the 256×256 island (opaque) + a 16-colour
+/** Encode the island canvas to a PNG: the 256×256 island (opaque) + a 16-color
  *  swatch column to the right. Import reads only the top-left `width×height`. */
 export function titleIslandPng(ctx: TitleIslandContext, canvas: TitleIslandCanvas): Uint8Array {
   const width = canvas.width + TILE_PX;
@@ -184,7 +184,7 @@ export function titleIslandPng(ctx: TitleIslandContext, canvas: TitleIslandCanva
 
 /** The title island as a real Aseprite **tilemap** (tileset of distinct CPC char
  *  tiles + a 32×32 cell grid). Mode-7 cells have no flip and index CGRAM 0-15
- *  directly, so the tileset is a single 16-colour (4bpp-sized) palette. The flatten
+ *  directly, so the tileset is a single 16-color (4bpp-sized) palette. The flatten
  *  reproduces `renderTitleIsland`'s canvas byte-exact, so the import path is
  *  `decodeAsepriteRegion` → `diffTitleIslandTiles`. */
 /** Aseprite tile index → island char. **Tile 0 is Aseprite's mandatory empty tile** (`-1`);
@@ -218,7 +218,7 @@ export function titleIslandAseprite(ctx: TitleIslandContext, _canvas: TitleIslan
     tilesAcross: ISLAND_COLS, tilesDown: ISLAND_ROWS, index0Transparent: false,
     layerName: 'island', tilesetName: 'island-tiles'
   });
-  // Colour write-back map — Mode-7 single palette row 0, 16 colours (bpp 4, default stride 16).
+  // Color write-back map — Mode-7 single palette row 0, 16 colors (bpp 4, default stride 16).
   const paletteOffsets = tilesetPaletteOffsets({ tiles, bpp: 4, index0Transparent: false, provenance: ctx.provenance });
   return { bytes, paletteOffsets };
 }

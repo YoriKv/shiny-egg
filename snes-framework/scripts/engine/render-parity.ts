@@ -51,6 +51,9 @@ export interface LevelHashes {
    *  regression that adds/changes one is caught (see the priority-split work). */
   bg2Front: string;
   bg3Front: string;
+  /** BG3 MID plane (priority-1 water band, in front of BG2 / behind BG1) on BG3
+   *  screen-designation levels; `'none'` otherwise. */
+  bg3Mid: string;
   /** `'none'` when the sprite renderer declines for the level. */
   sprite: string;
   collision: string;
@@ -64,7 +67,7 @@ export interface LevelHashes {
 // locks in is the decode-parity result verified byte-exact vs the live cart
 // (219/219) — i.e. the BG1 decode+render work — plus bg2/bg3/collision, which
 // are stable. Add 'sprite' here once the sprite work lands and stabilises.
-export const PINNED_LAYERS = ['decode', 'bg1', 'bg2', 'bg3', 'bg2Front', 'bg3Front', 'collision'] as const;
+export const PINNED_LAYERS = ['decode', 'bg1', 'bg2', 'bg3', 'bg2Front', 'bg3Front', 'bg3Mid', 'collision'] as const;
 
 /** A level's pinned-layer hashes (LevelHashes minus the volatile sprite layer). */
 export type PinnedHashes = Pick<LevelHashes, (typeof PINNED_LAYERS)[number]>;
@@ -73,7 +76,7 @@ export type PinnedHashes = Pick<LevelHashes, (typeof PINNED_LAYERS)[number]>;
 export function pinnedHashes(h: LevelHashes): PinnedHashes {
   return {
     decode: h.decode, bg1: h.bg1, bg2: h.bg2, bg3: h.bg3,
-    bg2Front: h.bg2Front, bg3Front: h.bg3Front, collision: h.collision
+    bg2Front: h.bg2Front, bg3Front: h.bg3Front, bg3Mid: h.bg3Mid, collision: h.collision
   };
 }
 
@@ -101,6 +104,7 @@ export function renderLevelHashes(
     bg3: sha(r.bg3.rgba),
     bg2Front: r.bg2Front ? sha(r.bg2Front.rgba) : 'none',
     bg3Front: r.bg3Front ? sha(r.bg3Front.rgba) : 'none',
+    bg3Mid: r.bg3Mid ? sha(r.bg3Mid.rgba) : 'none',
     sprite: r.sprite ? sha(r.sprite.rgba) : 'none',
     collision: sha(r.collision.rgba)
   };

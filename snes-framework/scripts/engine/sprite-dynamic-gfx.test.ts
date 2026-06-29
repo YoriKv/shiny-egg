@@ -234,7 +234,7 @@ assert(!isFormatAOnlySprite(rom, sym, 0x9e), '$09E chomp is NOT Format-A-only (h
   // $1640/$1642 with no centering). A regression to a centred (-8) record would
   // shift 1×1 items up-left by half a tile.
   assert(r !== null && r.cel[0]!.dx === 0 && r.cel[0]!.dy === 0, '$065 record is top-left-anchored (dx=dy=0)');
-  // Runtime recolour: the Red Coin's Init recomputes its palette from DATA_0CE9FE
+  // Runtime recolor: the Red Coin's Init recomputes its palette from DATA_0CE9FE
   // (normal play, sprite-pal != 2 → palette 2, the gold coin row 10), NOT the
   // static $7042 seed (palette 0, green row 8). Without the override the editor
   // renders a green coin.

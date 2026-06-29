@@ -3,7 +3,7 @@ import type { LevelData, Map16SubTileEdit, Map16BlockPreview } from '../../../pr
 import { headerFromLevel } from './TilesPanel'
 
 interface Props {
-  /** The loaded level — its header colours + sources the BG1 tiles. */
+  /** The loaded level — its header colors + sources the BG1 tiles. */
   level: LevelData | null
   /** Mark the build dirty after a save/reset (Map16 edits apply on rebuild). */
   onMutated: () => void

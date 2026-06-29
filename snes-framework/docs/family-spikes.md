@@ -64,7 +64,7 @@ relatedness.
 | `$0A2` | `ThunderLakituFireball` | 0E | `$0E:B1B2` shared (RTL) | `$0E:B1BE` own Main (sub-routine of family Main) | `head_bop_common` | Lightning-ball projectile thrown by Cloud Drop's Lakitu. Trails AmbSpr20F per 4 frames; on contact splits into 3 `$0049` chunks via `CODE_0EB302`. **Cross-ref doc: `docs/family-clouds.md`.** |
 | `$0E4` | `HeadingCactus` | 05 | `$05:E0F8` `init_heading_cactus` | `$05:E13D` `main_heading_cactus` | `head_bop_common` | Charging cactus. On init, spawns a permanently-linked `$0E5` needlenose held to its forehead via slot link `$18,x`. 6-state machine (idle / wind-up / spit / cooldown / hit / defeat). |
 | `$0E5` | `GreenNeedlenose` | 0E | `$0E:B1B2` shared (RTL) | `$0E:B1B3` shared `main_needlenose_family` | `head_bop_common` | Small spiky porcupine-fish projectile. Spawned by Heading Cactus, Cactus Jack, Spike, and as a standalone enemy. Damages Yoshi on contact via `CODE_03A858`. |
-| `$0F9` | `YellowNeedlenose` | 0E | `$0E:B1B2` shared (RTL) | `$0E:B1B3` shared `main_needlenose_family` | `head_bop_common` | Yellow colour variant of `$0E5`. Spawned by Blow Hard ($0F8/$04C) and Ptooie ($09F) -- see `docs/family-piranhas.md` §3, §4. Behaviour identical to `$0E5` (in-Main branch falls into same ambient-spawn path). |
+| `$0F9` | `YellowNeedlenose` | 0E | `$0E:B1B2` shared (RTL) | `$0E:B1B3` shared `main_needlenose_family` | `head_bop_common` | Yellow color variant of `$0E5`. Spawned by Blow Hard ($0F8/$04C) and Ptooie ($09F) -- see `docs/family-piranhas.md` §3, §4. Behaviour identical to `$0E5` (in-Main branch falls into same ambient-spawn path). |
 | `$10C` | `ChainedSpikeBall` | 0D | `$0D:89FF` `init_chained_spike_ball` | `$0D:8AF1` `main_chained_spike_ball` | `head_bop_common` | Ceiling-hung spiked ball on a chain. Init runs slot-leader pattern via global `$0FB7`/`$0FB9`, recursively spawns `$010D` chain-segment children counted in `$0FBB`; queries `FXCODE_0ACDFA` to measure ceiling-to-spike distance + render the chain. |
 | `$11D` | `SpinyEgg` (alt ID) | 0E | `$0E:B1B2` shared (RTL) | `$0E:B1B3` shared `main_needlenose_family` | `head_bop_common` | Alt Spiny Egg ID used by other handlers to spawn a 2nd Spiny Egg instance (Wall Lakitu's projectile, second-spawn slot). Falls into the same `$1DF` ambient-spawn path as `$099`/`$0E5`/`$0F9`. **Cross-ref doc: `docs/family-clouds.md`.** |
 | `$156` | `CactusJack` | 0E | `$0E:B839` `init_cactus_jack` | `$0E:B92E` `main_cactus_jack` | `head_bop_common` | Tall stationary cactus enemy. Init probes terrain via `FXCODE_0ACE2F` to find a ground anchor. 8-entry state ptr `DATA_0EB91E`. Spawns spike-ball projectiles via `CODE_0EC858`. Head-bop transitions state to `$03` via `$7AF6` timer. |
@@ -486,7 +486,7 @@ The three globals at the level scope:
 | Address | Meaning |
 |---------|---------|
 | `$0FB7` | **Slot index of the current chain leader** ($FFFF if no chain alive). Updated each time a higher-slot $10C spawns. The leader is the *visible spike head* that hangs on the chain; chain segments are non-leader $10D children. |
-| `$0FB9` | **Leader's palette / style** (`$7722` mirror). Used so subsequently spawning segments inherit the same colour. |
+| `$0FB9` | **Leader's palette / style** (`$7722` mirror). Used so subsequently spawning segments inherit the same color. |
 | `$0FBB` | **Total number of $10D chain segments currently alive.** Incremented on segment spawn; decremented when a segment despawns. When it hits 0, `$0FB7` is cleared (no leader). |
 
 When a $10C Init runs, it competes for leadership: if its slot index

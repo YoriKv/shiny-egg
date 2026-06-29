@@ -17,7 +17,7 @@ import type { PaletteEdit } from '../types.ts';
 const TILE_PX = 8;
 
 /** One tileset tile: its UN-flipped indexed pixels (local 0..colorsPerRow-1) + the
- *  CGRAM palette row it's coloured in (so the flat palette + transparency are right). */
+ *  CGRAM palette row it's colored in (so the flat palette + transparency are right). */
 export interface TilesetTile {
   indices: Uint8Array; // tileW*tileH local indices
   paletteRow: number;  // 0..15
@@ -31,18 +31,18 @@ export interface TileEdit {
 
 /** The distinct CGRAM palette rows a tileset uses, ascending — the order the `.aseprite`
  *  palette flattens them in (block k = `usedPaletteRows[k]`). Shared by `buildAsepriteTileset`
- *  + `tilesetPaletteOffsets` so the colour layout and the offset map can't drift. */
+ *  + `tilesetPaletteOffsets` so the color layout and the offset map can't drift. */
 export function usedPaletteRows(tiles: readonly TilesetTile[]): number[] {
   return [...new Set(tiles.map((t) => t.paletteRow))].sort((a, b) => a - b);
 }
 
 /**
  * Per-`.aseprite`-palette-entry master-palette-blob byte-offset for a `buildAsepriteTileset`
- * palette — the colour analog of the tileset `tileKeys`, so the import can write an edited
- * colour back to the blob without re-deriving. `provenance` is the scene's CGRAM-index →
+ * palette — the color analog of the tileset `tileKeys`, so the import can write an edited
+ * color back to the blob without re-deriving. `provenance` is the scene's CGRAM-index →
  * blob-offset map (from `loadScenePalettes`/`loadLevelPalettes`, `-1` = no blob source). The
- * entry at `k*cpr + i` is CGRAM colour index `usedPaletteRows[k]*stride + i` (the exact index
- * `buildPaletteRow` read). Transparent slots map to `-1` (their colour isn't editable):
+ * entry at `k*cpr + i` is CGRAM color index `usedPaletteRows[k]*stride + i` (the exact index
+ * `buildPaletteRow` read). Transparent slots map to `-1` (their color isn't editable):
  * index-0-transparent ⇒ each row's local-0; opaque ⇒ the single trailing slot.
  */
 export function tilesetPaletteOffsets(args: {
@@ -71,7 +71,7 @@ export function tilesetPaletteOffsets(args: {
  * no-tileset) analog of {@link tilesetPaletteOffsets}, for tracks that export via
  * `imageAseprite` (world-map icons, level icons, title scenery, screen region crops). The
  * image palette is the CGRAM `rows` concatenated in emit order (`colorsPerRow` each, read at
- * `rowStride`), exactly as the track built it; entry `k*colorsPerRow + i` ⇒ CGRAM colour
+ * `rowStride`), exactly as the track built it; entry `k*colorsPerRow + i` ⇒ CGRAM color
  * index `rows[k]*rowStride + i` → `provenance`. Mirrors `imageAseprite`'s index assignment:
  * `index0Transparent` ⇒ the single GLOBAL index 0 is the transparent key (`-1`, no trailing
  * slot); opaque ⇒ every entry maps + one trailing transparent slot (`-1`).
@@ -97,11 +97,11 @@ export function imagePaletteOffsets(args: {
 }
 
 /**
- * Diff an edited `.aseprite`/PNG palette against the master palette blob → the colour edits
+ * Diff an edited `.aseprite`/PNG palette against the master palette blob → the color edits
  * to write back (via `savePaletteEdits`). `asePalette` is the file's embedded palette (RGBA
  * u32 per index); `paletteOffsets[i]` is that entry's blob byte-offset (`-1` = transparent /
  * non-blob, skipped); `baseBlobWords` is the blob's current `offset → BGR-15` map. Base-aware:
- * emits an edit only where the entry's colour DIFFERS from the blob (so an unedited palette →
+ * emits an edit only where the entry's color DIFFERS from the blob (so an unedited palette →
  * 0 edits, byte-exact). Deduped by offset (entries sharing an offset must agree; first wins).
  */
 export function diffAsepritePalette(
@@ -129,14 +129,14 @@ export function diffAsepritePalette(
  * empty) + CGRAM. Palette = the rows the tiles use, flattened at the bpp stride.
  * Transparency (§1): `index0Transparent` (sprites/BG2/BG3) ⇒ each row's local-0
  * collapses to the single transparent index 0; else (BG1-opaque) index 0 is a real
- * colour and a trailing transparent slot covers empty cells. Flatten reproduces the
- * rendered RGBA byte-for-byte (every entry resolves to a palette colour with the
+ * color and a trailing transparent slot covers empty cells. Flatten reproduces the
+ * rendered RGBA byte-for-byte (every entry resolves to a palette color with the
  * cell flip re-applied the same way `decode{2,4}bppTile` does).
  */
 /**
  * Build the flattened CGRAM palette + the index-remapped `.aseprite` tileset (tile 0 =
  * empty) from a tileset + transparency rule — the shared core of the single- and
- * multi-layer tilemap exports, so both colour tiles identically. See `tilesAseprite` for
+ * multi-layer tilemap exports, so both color tiles identically. See `tilesAseprite` for
  * the §1 transparency semantics.
  */
 function buildAsepriteTileset(args: {
@@ -167,7 +167,7 @@ function buildAsepriteTileset(args: {
     });
     transparentIndex = 0;
   } else {
-    // Index 0 is an opaque colour (BG1 backdrop); append one transparent slot for
+    // Index 0 is an opaque color (BG1 backdrop); append one transparent slot for
     // empty cells / out-of-range pixels.
     transparentIndex = usedRows.length * cpr;
     palette = new Uint32Array(transparentIndex + 1);
@@ -201,9 +201,9 @@ export function tilesAseprite(args: {
   tilesAcross: number;
   tilesDown: number;
   index0Transparent: boolean;
-  /** CGRAM colours per palette-row STEP, when the cart loads rows at a wider stride
+  /** CGRAM colors per palette-row STEP, when the cart loads rows at a wider stride
    *  than the tile reads (`buildPaletteRow`'s `rowStride`). Defaults to the tight
-   *  bpp stride (16 @ 4bpp, 4 @ 2bpp). The Mode-0 title logo uses the tight 4-colour
+   *  bpp stride (16 @ 4bpp, 4 @ 2bpp). The Mode-0 title logo uses the tight 4-color
    *  stride too, but reads from the BG2 palette region — the caller offsets each
    *  tile's `paletteRow` by 8 (see screen-scene.ts `LOGO_BG2_PALETTE_BASE`) rather
    *  than widening the stride. */
@@ -221,7 +221,7 @@ export function tilesAseprite(args: {
 }
 
 /**
- * Multi-layer twin of `tilesAseprite`: ONE shared tileset (colouring every layer) +
+ * Multi-layer twin of `tilesAseprite`: ONE shared tileset (coloring every layer) +
  * several tilemap `layers`, each `{name, cells}` indexing that shared tileset. `layers`
  * are bottom-to-top (so the in-Aseprite composite mirrors the hardware layer order). Used
  * by the overworld terrain to put BG1+BG2 in one file sharing a unified tileset.
@@ -250,9 +250,9 @@ export function tilesAsepriteMulti(args: {
 
 /**
  * A "single image with palette" `.aseprite` (no tileset/tilemap) from an assembled RGBA
- * view + the meaningful CGRAM palette colours (the same the PNG swatch shows) — for the
+ * view + the meaningful CGRAM palette colors (the same the PNG swatch shows) — for the
  * non-tilemap exports (world/level icons, title scenery, metasprites, metatiles). Each
- * pixel is reverse-mapped to its palette index by EXACT colour (transparent pixels → the
+ * pixel is reverse-mapped to its palette index by EXACT color (transparent pixels → the
  * transparent index), so `decodeAsepriteImage` reproduces the RGBA byte-for-byte and the
  * existing RGBA base-aware slicers consume it unchanged — the import contract is the
  * render, exactly like the PNG path (no swatch needed; the palette is embedded).
@@ -265,7 +265,7 @@ export function imageAseprite(args: {
   rgba: Uint8Array;
   width: number;
   height: number;
-  /** Meaningful colours (e.g. the used CGRAM rows), ImageData u32 form (`r|g<<8|b<<16|a<<24`). */
+  /** Meaningful colors (e.g. the used CGRAM rows), ImageData u32 form (`r|g<<8|b<<16|a<<24`). */
   palette: Uint32Array | readonly number[];
   index0Transparent: boolean;
   layerName?: string;
@@ -299,7 +299,7 @@ export function imageAseprite(args: {
 
 /**
  * A faithful gfx sheet as an `.aseprite`: the file's tiles laid out in a
- * `cellsPerRow`-wide grid (tile N → cell N), each coloured in its palette row.
+ * `cellsPerRow`-wide grid (tile N → cell N), each colored in its palette row.
  * `paletteRowPerTile(t)` is the CGRAM row for file-tile `t` (a single row for most
  * files; the per-tile row for BG2/BG3). `index0Transparent` matches the PNG export's
  * flag (true for sprites/BG2/BG3, false for BG1/HUD).
@@ -337,7 +337,7 @@ export function gfxFileAseprite(args: {
 /**
  * Slice an edited faithful-sheet `.aseprite` flatten (RGBA, `cellsPerRow*8` wide)
  * back to changed CHR tiles — the `.aseprite` twin of `imageToGfx`. Base-aware (a
- * pixel still at its base colour keeps its base index), bpp-correct. `palette` is the
+ * pixel still at its base color keeps its base index), bpp-correct. `palette` is the
  * file's single render row — pass the `.aseprite`'s own palette (decodeAsepriteRegion
  * `palette`; its first `colorsPerRow` entries ARE that row), so no cart context is
  * needed. `baseTileData` is the file's current decompressed tiles. Returns only the

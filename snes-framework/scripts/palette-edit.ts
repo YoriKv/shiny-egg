@@ -1,8 +1,8 @@
-// Palette-colour editing (§B10) — pure text helpers over the master palette
+// Palette-color editing (§B10) — pure text helpers over the master palette
 // blob's inline `dw` words in `yi/Banks/Bank57.asm`. The app layer reads/writes
 // the files + overlay; these stay Node-free and round-trippable.
 //
-//   readPaletteEdits  — diff overlay-vs-base → the colour edits (offset→value)
+//   readPaletteEdits  — diff overlay-vs-base → the color edits (offset→value)
 //   applyPaletteEdits — splice an edit set into the BASE text → edited text
 //
 // A "palette edit" is one BGR-15 word at a byte-offset from the blob base
@@ -21,7 +21,7 @@ export const PALETTE_BLOB_BANK_FILE = 'yi/Banks/Bank57.asm';
 export const PALETTE_BLOB_LABEL = 'DATA_master_palette_rom_blob';
 
 /**
- * The palette-colour edits an overlay `Bank57.asm` holds vs the base — every
+ * The palette-color edits an overlay `Bank57.asm` holds vs the base — every
  * blob word whose value differs. `overlayText === null` (no overlay) ⇒ `[]`.
  * Matched by byte-offset, so it's robust to the splice being format-preserving.
  */
@@ -42,7 +42,7 @@ export function readPaletteEdits(baseText: string, overlayText: string | null): 
  * The pristine base blob's words as a byte-offset → BGR-15 value map (the cart's
  * original palette, before any project overlay). The render path re-sources the
  * live preview from these so it shows BASE ⊕ draft (independent of the built ROM),
- * which makes a colour reset show base immediately — the palette twin of the gfx
+ * which makes a color reset show base immediately — the palette twin of the gfx
  * live cache's reset-to-base. `baseText` is the framework's base `Bank57.asm`.
  */
 export function basePaletteWords(baseText: string): Map<number, number> {
@@ -64,7 +64,7 @@ export function applyPaletteEdits(baseText: string, edits: readonly PaletteEdit[
 
 /**
  * Diff the base blob (its inline `dw` words) against the SAME-layout bytes of a
- * foreign cart, returning the colour edits that reproduce the foreign blob. Used
+ * foreign cart, returning the color edits that reproduce the foreign blob. Used
  * by the ROM importer: `foreignAt(byteOffset)` reads the foreign cart's BGR-15
  * word at that byte offset into the blob (the blob sits at a fixed cart address).
  * Only the blob's actual word boundaries are compared, so the result is always a

@@ -51,6 +51,7 @@ function layerHashes(r: RenderedLevelLayers): Record<string, string> {
     // drop above-BG1 BG2/BG3 content. '(none)' = no foreground tiles.
     bg2Front: r.bg2Front ? md5(r.bg2Front.rgba) : '(none)',
     bg3Front: r.bg3Front ? md5(r.bg3Front.rgba) : '(none)',
+    bg3Mid: r.bg3Mid ? md5(r.bg3Mid.rgba) : '(none)',
     sprite: r.sprite ? md5(r.sprite.rgba) : '(none)',
     collision: md5(r.collision.rgba)
   };

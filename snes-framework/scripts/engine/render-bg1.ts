@@ -22,7 +22,7 @@
 // `render-gallery.ts`: decode each Map16 cell to 4 sub-tile descriptors
 // (TL, TR, BL, BR), each with a tile index + palette row + flips; blit
 // each 8×8 tile from VRAM into a 16×16 cell region of the output. The tile
-// colour depth is NOT fixed — it follows the scene's BG mode (`bg1Bpp`): 4bpp
+// color depth is NOT fixed — it follows the scene's BG mode (`bg1Bpp`): 4bpp
 // in BG Mode 1/2 (the 218 standard levels), 2bpp in BG Mode 0 (level mode $0A /
 // level $6B). Decoding 2bpp as 4bpp scrambles every tile — see `bg1Bpp` below.
 //
@@ -98,10 +98,10 @@ interface RenderBg1Args {
   /** Axis the `bands` cells index along: 'x' (columns, default — horizontal
    *  levels) or 'y' (rows — vertically-scrolling levels like 0x2B). */
   bandAxis?: 'x' | 'y';
-  /** BG1 colour depth. `4` (default) = BG Mode 1/2 (the 218 standard levels);
+  /** BG1 color depth. `4` (default) = BG Mode 1/2 (the 218 standard levels);
    *  `2` = BG Mode 0 (level mode $0A / level $6B), where BG1 tiles are 2bpp
-   *  (16 bytes each) and the sub-tile's 3-bit palette field selects a 4-colour
-   *  group (CGRAM `[g*4 .. g*4+3]`) instead of a 16-colour row. Decoding 2bpp
+   *  (16 bytes each) and the sub-tile's 3-bit palette field selects a 4-color
+   *  group (CGRAM `[g*4 .. g*4+3]`) instead of a 16-color row. Decoding 2bpp
    *  data as 4bpp scrambles every tile — derive this from the scene's BGMODE
    *  (`loadSceneRegs(...).bgmodeMode === 0 ? 2 : 4`). Mirrors the cart's
    *  Mode-0 BG1 (and GoldenEgg's `Header[9]==10 ? 2bpp`). */
@@ -109,7 +109,7 @@ interface RenderBg1Args {
 }
 
 /** Build the 8 BG palette rows from a CGRAM buffer. `colorsPerRow` is 16 for
- *  4bpp (CGRAM[row*16..]) or 4 for 2bpp (CGRAM[row*4..], the 4-colour groups a
+ *  4bpp (CGRAM[row*16..]) or 4 for 2bpp (CGRAM[row*4..], the 4-color groups a
  *  BG-Mode-0 tile's palette field selects). */
 function buildPalettes(cgram: Uint8Array, colorsPerRow: number): Uint32Array[] {
   const out: Uint32Array[] = [];
@@ -175,9 +175,9 @@ type Bg1CellRenderer = (
 function makeBg1CellRenderer(args: RenderBg1Args): Bg1CellRenderer {
   const { vram, cgram, map16Tables, levelDataBuffer, screenPageMap, bg1CharAddr } = args;
 
-  // BG1 colour depth: 4bpp (BG Mode 1/2, default) or 2bpp (BG Mode 0, level
+  // BG1 color depth: 4bpp (BG Mode 1/2, default) or 2bpp (BG Mode 0, level
   // mode $0A). Drives tile stride (32 vs 16 bytes), the tile decoder, and the
-  // palette group size (16- vs 4-colour rows).
+  // palette group size (16- vs 4-color rows).
   const bpp = args.bg1Bpp ?? 4;
   const tileBytes = bpp === 4 ? TILE_BYTES_4BPP : TILE_BYTES_2BPP;
   const decodeTile = bpp === 4 ? decode4bppTile : decode2bppTile;

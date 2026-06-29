@@ -52,6 +52,7 @@
     "./scene-regs": "./scripts/engine/scene-regs.ts",
     "./render-bg-layers": "./scripts/engine/render-bg-layers.ts",
     "./bg-layers-compose": "./scripts/engine/bg-layers-compose.ts",
+    "./parallax-rates": "./scripts/engine/parallax-rates.ts",
     "./render-bg1": "./scripts/engine/render-bg1.ts",
     "./bg1-regions": "./scripts/engine/bg1-regions.ts",
     "./bg1-band-gfx": "./scripts/engine/bg1-band-gfx.ts",

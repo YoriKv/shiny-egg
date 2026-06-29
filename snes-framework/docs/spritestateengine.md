@@ -766,7 +766,7 @@ selects, grouped by frequency:
   (reach), `$146` PinkSluggy (activation range).
 - **2-bit content index** -- `$0AD` MessageBox (X+Y -> one of 4 dialog slots).
 - **Palette (the minority)** -- `$01E` ShyGuy (X+Y -> `DATA_shy_guy_palette_indices`,
-  4 colours, `CODE_048A18`; also re-derived by the rider Shy Guys `$15E` spawns on its
+  4 colors, `CODE_048A18`; also re-derived by the rider Shy Guys `$15E` spawns on its
   4 corners), `$0A5` NepEnut/GargantuaBlargg (X -> palette variant), `$0F2`
   ShyGuyOnStilts (X+Y -> 4 OAM palettes), `$181` CrazeeDayzee (X -> OAM palette attr).
 - **Cosmetic / no-op** -- `$10D` PulleyGuy (X -> OAM h-flip only), `$0DB` SoftBlock

@@ -1,4 +1,4 @@
-// The backdrop-gradient colour-edit document — an App-level overlay-document hook
+// The backdrop-gradient color-edit document — an App-level overlay-document hook
 // (sibling of usePaletteEditor) on the shared useOverlayDocument engine, so it
 // gets draft/dirty/save/discard, EditSession registration (global Save / Test
 // Level flush it before the build) AND unified undo/redo. Its `draft` (BASE ⊕
@@ -31,7 +31,7 @@ export interface GradientEditorApi {
   draft: GradientEdit[]
   /** Draft as a Map for O(1) stop lookups. */
   draftMap: Map<number, number>
-  /** The 16×24 pristine base gradient colours (null until loaded); the panel
+  /** The 16×24 pristine base gradient colors (null until loaded); the panel
    *  overlays the draft on these to display + to compute minimal diffs. */
   baseColors: number[][] | null
   dirty: boolean
@@ -70,7 +70,7 @@ export function useGradientEditor(
     history
   })
 
-  // The pristine base colours are constant per project — fetched once (not part
+  // The pristine base colors are constant per project — fetched once (not part
   // of the editable document), keyed on the project.
   const [baseColors, setBaseColors] = useState<number[][] | null>(null)
   useEffect(() => {

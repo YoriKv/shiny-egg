@@ -6,12 +6,12 @@ underlying per-sprite engine the whole family rides on) and `docs/leveldataengin
 (how slots are populated from level data).
 
 The family is unusually large: 30+ sprite IDs across roughly 8 banks, with
-shared state machines, shared Init/Main bodies, palette-modulated colour
+shared state machines, shared Init/Main bodies, palette-modulated color
 variants, and several specialty enemies that just borrow the basic walker
 shape with a single behaviour override. This doc catalogues them all,
 explains the shared 9-state machine the canonical walker runs, and documents
 the DP-mod (pixel-position-derived) variant-encoding mechanism the family
-uses for colours and sub-types.
+uses for colors and sub-types.
 
 Source of truth: framework asm. Specifically:
 
@@ -48,7 +48,7 @@ and the family taxonomy).
 | `$044` | Green Giant Shyguy | (shared with $043) | `main_giant_shyguy` Bank02:8783 | Mini-boss; stomp-swallow. |
 | `$047` | Shy Guy pushing Roger | `init` Bank0C:12958 | `main` Bank0C:13013 | Pair-pusher of the Roger ghost pot. |
 | `$072` | Train Bandit | `init` Bank0C:14363 | `main` Bank0C:14386 | Chalk Shy Guy attacking train-Yoshi. |
-| `$08D` | Flyguy | `init_flyguy` Bank03:14227 | `main_flyguy` Bank03:14273 | Balloon-carrier; 4 colour variants. |
+| `$08D` | Flyguy | `init_flyguy` Bank03:14227 | `main_flyguy` Bank03:14273 | Balloon-carrier; 4 color variants. |
 | `$09B` | Mace Guy | `init_mace_guy` Bank04:10356 | `main_mace_guy` Bank04:10393 | Spawns child mace $09C; reverts to $01E on stun. |
 | `$0AA` | Background Shyguy | `init_background_shyguy` ROUTINE | `main_background_shyguy` ROUTINE | BG2-anchored parallax walker. |
 | `$0EC` | Jumping Flamer Guy | `init_flamer_guy` Bank05:8542 | `main_flamer_guy` Bank05:8584 | Shared 7-state with $0ED; reverts to $01E. |
@@ -271,7 +271,7 @@ entrance-sprite warp documented in `docs/family-pipes-signs.md`.
 ## 3. Variant-encoding mechanism (DP-mod tile grid)
 
 The Shy Guy family uses a clever zero-RAM-cost trick to give level
-designers four colour variants per sprite ID without a dedicated palette
+designers four color variants per sprite ID without a dedicated palette
 byte: the variant index is read out of the pixel-X / pixel-Y spawn
 coordinates' bit 4. This is the two-axis form of an engine-wide idiom
 (see `docs/spritestateengine.md` §10.2 Pattern A for the full catalog of
@@ -307,7 +307,7 @@ STA $701902,x          ; cache for subsequent frames
 The four palette indices (`$0001/$0003/$0005/$0009`) map to Shy-Guy
 palette rows in CGRAM via the OAM palette field. SMWC documents them as
 Green / Red / Yellow / Pink respectively (this matches the in-game
-colours).
+colors).
 
 The cache write to `$701902,x` (a generic per-slot byte) ensures the
 expensive XY-bit shuffle runs only on the first frame; subsequent frames
@@ -322,7 +322,7 @@ ORA #$0020             ; set bit 5 (Shy-Guy fixed-palette-row flag)
 STA $7042,x            ; OAM attribute word for this slot
 ```
 
-So the level designer chooses Shy-Guy colour purely by where they place
+So the level designer chooses Shy-Guy color purely by where they place
 the sprite. If you want a red Shy Guy, drop it on a tile whose
 (world X, world Y) bit-4 nibble is `(0, 1)` -> y-index $02 -> palette $0003.
 
@@ -337,7 +337,7 @@ the sprite. If you want a red Shy Guy, drop it on a tile whose
 | $192 Mufti / Petal Guy | (no DP-mod -- inherits $01E's pattern via shared CODE_048A18 call) | 4-way (after burst-replace) | Palette nibble of the post-burst $01E |
 
 The Flyguy variant is the most game-impactful one: the four indices select
-the colour of the balloon AND the dropped item -- one variant drops the
+the color of the balloon AND the dropped item -- one variant drops the
 1-up moon, another drops a coin, etc. This is encoded in `DATA_03ECBB`
 (tile-data bank) and `DATA_03ECC3` (tile-data lo word) at Bank03:14214-14218.
 
@@ -404,7 +404,7 @@ and triggers the bandit-bonus minigame transition.
 
 The base case. Init/Main/StompRt as documented in section 2.
 Identical visual+behaviour to the "Shy Guy" of every YI level except for
-its DP-mod palette colour. Stomped via `stomp_shy_guy` (Bank04:2299)
+its DP-mod palette color. Stomped via `stomp_shy_guy` (Bank04:2299)
 which arms 1-frame despawn and jumps to engine `CODE_head_bop_common`.
 
 ### 4.2 $124 Stretch
@@ -1072,7 +1072,7 @@ All in `yi/Constants/NormalSpriteIDs.asm`:
 
 3. **DP-mod variant index** has 4 entries (`DATA_shy_guy_palette_indices`)
    but the BIT-shuffle logic produces a 4-bit nibble (0/2/4/6) that
-   indexes into a word-table. SMWC documents the 4 colours as Green / Red
+   indexes into a word-table. SMWC documents the 4 colors as Green / Red
    / Yellow / Pink; this matches the gameplay observation. But: are there
    additional unused palette slots beyond these 4 that level designers
    could theoretically reach by manipulating the seed bits? Unclear --
@@ -1095,5 +1095,5 @@ All in `yi/Constants/NormalSpriteIDs.asm`:
 6. **Variant index in OAM**: the `STA $7042,x` writes the assembled
    variant byte plus other bits, but the OAM-render path further down
    the per-frame chain may apply additional palette bits on top. Need to
-   trace the exact CGRAM palette-row each colour (Green/Red/Yellow/Pink)
-   ends up in to fully verify the DP-mod -> on-screen-colour mapping.
+   trace the exact CGRAM palette-row each color (Green/Red/Yellow/Pink)
+   ends up in to fully verify the DP-mod -> on-screen-color mapping.

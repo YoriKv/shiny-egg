@@ -1,9 +1,9 @@
-; --- Title Logo Colors: recolour the small "SUPER MARIO" line of the logo ---
+; --- Title Logo Colors: recolor the small "SUPER MARIO" line of the logo ---
 ;
 ; The line is 2 rows x 11 cells (cols 4..14) of an 8x8 BG2 tilemap in Mode 0,
 ; where each cell picks its own 3-bit palette field. Only the field changes the
-; colour; the glyph (char#) stays put. The logo's sub-palettes define just three
-; usable fill colours:
+; color; the glyph (char#) stays put. The logo's sub-palettes define just three
+; usable fill colors:
 ;
 ;     0 = green   2 = red   3 = yellow
 ;
@@ -13,9 +13,9 @@
 ; Each tilemap word = $2000 | char# | (palette << 10):
 ;   $2000      = BG priority bit (set on every logo cell — preserved below)
 ;   char#      = which glyph (low 10 bits)
-;   pal << 10  = the 3-bit colour field (bits 10-12)
+;   pal << 10  = the 3-bit color field (bits 10-12)
 ;
-; To recolour, edit only the palette digit in each `($0X<<10)` to 0/2/3.
+; To recolor, edit only the palette digit in each `($0X<<10)` to 0/2/3.
 ;
 ; Anchored to !DATA_title_screen_logo_tilemap (= $0F:FC80, DMA'd verbatim to
 ; VRAM $3E40), so the writes track asm drift. Row r, col c -> word (r*32+c);

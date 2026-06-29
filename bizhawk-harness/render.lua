@@ -45,6 +45,16 @@ local function sendFramed(body)
   comm.socketServerSend(body)
 end
 
+-- Hex-encode a binary string (2 ASCII chars/byte). Every binary reply goes through
+-- this — READ_MEM and the DUMP_* dumps — because comm.socketServerSend UTF-8-mangles
+-- bytes >= 0x80 (it shifts/corrupts everything after the first high byte, e.g. the
+-- live world read at $0218 came back as 0xefbd). Hex is pure ASCII, so it survives
+-- the socket intact; the Node side decodes it (bizhawk.ts decodeHexReply). The write
+-- path WRITE_MEM already uses hex for the same reason.
+local function toHex(s)
+  return (s:gsub('.', function(c) return string.format('%02x', c:byte()) end))
+end
+
 local handlers = {}
 
 handlers.PING = function()
@@ -71,7 +81,7 @@ local function dumpDomain(domain, length)
     sendFramed("ERR domain " .. domain .. " returned " .. tostring(#payload) .. " bytes, expected " .. tostring(length))
     return
   end
-  sendFramed(payload)
+  sendFramed(toHex(payload)) -- hex, not raw binary — see toHex
 end
 
 handlers.DUMP_VRAM  = function() dumpDomain("VRAM",  0x10000) end  -- 64 KB
@@ -424,7 +434,7 @@ local function dispatch(cmd)
       if not addr or not len then sendFramed("ERR read_mem bad args") return end
       local ok, payload = pcall(memory.read_bytes_as_binary_string, addr, len, domain)
       if not ok then sendFramed("ERR " .. tostring(payload)) return end
-      sendFramed(payload)
+      sendFramed(toHex(payload)) -- hex, not raw binary — see toHex
       return
     end
     if name == "WRITE_MEM" then

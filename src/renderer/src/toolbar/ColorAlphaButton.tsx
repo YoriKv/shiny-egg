@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { formatRgba, parseRgba, rgbToHex } from '../lib/rgba'
 
-// A compact colour-picker control with opacity, for the toolbar. The native
+// A compact color-picker control with opacity, for the toolbar. The native
 // `<input type="color">` can't pick alpha (its `alpha` attribute isn't in
 // Electron's Chromium yet), so the swatch opens a small popover holding the
-// native RGB picker AND an opacity slider together — one "colour picker" that
-// includes both RGB and alpha. The preview swatch shows the solid RGB colour
+// native RGB picker AND an opacity slider together — one "color picker" that
+// includes both RGB and alpha. The preview swatch shows the solid RGB color
 // only (no opacity). Value is an `rgba()` string in / out.
 
 export function ColorAlphaButton({

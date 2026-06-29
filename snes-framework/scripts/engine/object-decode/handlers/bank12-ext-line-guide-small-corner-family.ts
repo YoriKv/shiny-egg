@@ -45,7 +45,7 @@ import { getCurrentMap16Tile } from '../fetch.ts';
 import { stampCell } from './_shared.ts';
 
 // Cart asm: `LDA.w #$8710`. Base of the 4 sequential small line-guide-corner
-// Map16 IDs ($8710..$8713); the ($15+ offset) selects the colour variant.
+// Map16 IDs ($8710..$8713); the ($15+ offset) selects the color variant.
 const LINE_GUIDE_SMALL_CORNER_BASE_TILE = 0x8710;
 
 // ─────────────────────────────────────────────────────────────────────

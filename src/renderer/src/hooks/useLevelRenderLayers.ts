@@ -17,10 +17,10 @@ const NO_PALETTE_EDITS: PaletteEdit[] = []
 /**
  * Coalesce a render layer's fetches: returns a stable `trigger` to call from the
  * layer's effect on every relevant change. While a fetch is in flight, the
- * latest trigger is HELD and re-issued on completion — so a rapid palette-colour
- * drag converges to the latest colours WITHOUT backing up a queue of large
+ * latest trigger is HELD and re-issued on completion — so a rapid palette-color
+ * drag converges to the latest colors WITHOUT backing up a queue of large
  * (≤33 MB) RGBA transfers. Without this, the throttle issues a render per window
- * regardless of whether the previous finished; once a full recolour render is
+ * regardless of whether the previous finished; once a full recolor render is
  * slower than the window they pile up on the main process and the renderer keeps
  * receiving + discarding superseded payloads — the drag jank + the post-release
  * "catch-up". `run` reads the latest inputs from its closure and must bail on a
@@ -139,11 +139,11 @@ export interface LevelRenderLayers {
  */
 export function useLevelRenderLayers(
   level: LevelData | null,
-  /** The palette colour-edit DRAFT (usePaletteEditor) — passed to bg1 / sprite /
+  /** The palette color-edit DRAFT (usePaletteEditor) — passed to bg1 / sprite /
    *  bgLayers as `paletteOverride` so the canvas previews unsaved palette edits
    *  (the analog of feeding the mutated `level`). A change forces bg1 to re-fetch
    *  FULL: the Map16 grid is unchanged, so the incremental patch would diff to
-   *  zero cells and the stale colours would persist. Collision is
+   *  zero cells and the stale colors would persist. Collision is
    *  palette-independent, so it ignores this. */
   paletteOverride: PaletteEdit[] = NO_PALETTE_EDITS,
   /** Bumped on every successful build. The ROM bytes changed but nothing else in
@@ -151,7 +151,7 @@ export function useLevelRenderLayers(
    *  re-fetch of every layer — dropping the patch tokens, since a token patch
    *  would diff to zero cells and keep the pre-build pixels. */
   refreshNonce = 0,
-  /** App-wide canvas background colour (`#rrggbb`). Used for the opaque wipe of
+  /** App-wide canvas background color (`#rrggbb`). Used for the opaque wipe of
    *  the bg1 backing canvas on a level switch, so that transient matches the
    *  surrounding canvas background (`.se-canvas`) instead of always being black. */
   canvasBackground = '#000000',
@@ -202,7 +202,7 @@ export function useLevelRenderLayers(
   const spriteTokenRef = useRef<string | null>(null)
   // Last paletteOverride the sprite effect rendered — a change forces a FULL
   // sprite fetch (the signature grid is palette-independent, so a patch would
-  // diff to zero cells and keep stale colours; same reasoning as bg1).
+  // diff to zero cells and keep stale colors; same reasoning as bg1).
   const spritePaletteOverrideRef = useRef(paletteOverride)
 
   const [bg1Canvas, setBg1Canvas] = useState<HTMLCanvasElement | null>(null)
@@ -268,7 +268,7 @@ export function useLevelRenderLayers(
   }
 
   /** Wipe a backing canvas in place (if it exists): an opaque fill with the
-   *  app's canvas background colour, or a transparent clear. Used to drop the
+   *  app's canvas background color, or a transparent clear. Used to drop the
    *  previous level's pixels the instant the record changes, before the new full
    *  render arrives. */
   const blankCanvas = (
@@ -291,7 +291,7 @@ export function useLevelRenderLayers(
   // the previous level's rendered tiles/sprites don't linger under the new
   // level's outlines during the new full render's IPC round-trip (the
   // "disjointed info" flash). bg1 → opaque fill with the canvas background
-  // colour: it sits over BG2/BG3/backdrop, so the fill also hides those
+  // color: it sits over BG2/BG3/backdrop, so the fill also hides those
   // (likewise stale until their re-fetch lands) and matches the surrounding
   // canvas background instead of a hardcoded black.
   // sprite → transparent: it's an overlay drawn ABOVE the object outlines, so a
@@ -321,7 +321,7 @@ export function useLevelRenderLayers(
     }
     void changerSig
     const myGen = bg1GenRef.current
-    // A palette-override change must repaint with the new colours, but the Map16
+    // A palette-override change must repaint with the new colors, but the Map16
     // grid is unchanged → a token-based patch would diff to zero cells. Drop the
     // base token so main renders a FULL bitmap this time.
     const paletteChanged = bg1PaletteOverrideRef.current !== paletteOverride
@@ -380,7 +380,7 @@ export function useLevelRenderLayers(
       return
     }
     const myGen = spriteGenRef.current
-    // A palette change must repaint with the new colours, but the signature grid
+    // A palette change must repaint with the new colors, but the signature grid
     // is unchanged → a token patch would diff to zero cells. Drop the base token
     // so main renders a FULL bitmap this time (same as bg1).
     const paletteChanged = spritePaletteOverrideRef.current !== paletteOverride
@@ -457,7 +457,7 @@ export function useLevelRenderLayers(
   }, [header, paletteOverride, gradientOverride, triggerBgLayers])
 
   // A rebuild changed the ROM bytes but not the level structure or palette draft,
-  // so no layer effect above re-fires. Force a FULL re-fetch of the colour-bearing
+  // so no layer effect above re-fires. Force a FULL re-fetch of the color-bearing
   // layers: drop the patch tokens (a token patch would diff to zero cells and keep
   // the pre-build pixels) + bump each gen (discard any in-flight stale render),
   // then re-trigger. Collision is palette-independent and handled in its own

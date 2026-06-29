@@ -51,9 +51,9 @@ import type {
   RenderImage
 } from '../../shared/ipc-types'
 
-// ── Palette-colour live preview (§B10) ───────────────────────────────────────
+// ── Palette-color live preview (§B10) ───────────────────────────────────────
 // The render path reads BASE CGRAM from the built ROM; the editor's UNSAVED
-// colour draft rides in per-request as `req.paletteOverride` (the analog of
+// color draft rides in per-request as `req.paletteOverride` (the analog of
 // `override` for level data) and is patched into CGRAM via provenance — so the
 // canvas previews unsaved palette edits without writing the overlay or
 // rebuilding. The SAVED overlay only matters at build time (asar reads it).
@@ -69,7 +69,7 @@ export function paletteEditsSig(edits: PaletteEdit[] | undefined): string {
   return edits.map((e) => `${e.offset}:${e.value}`).sort().join(',')
 }
 
-/** Patch CGRAM in place with the draft colour edits via provenance. `cgram` must
+/** Patch CGRAM in place with the draft color edits via provenance. `cgram` must
  *  have been filled by `loadLevelPalettes` with `provenance` populated. No-op for
  *  an absent / empty override. */
 export function applyPaletteEdits(
@@ -109,7 +109,7 @@ export const CGRAM_MIRROR_CARTRAM_OFFSET = 0x2000
 /** CARTRAM byte-offset of YI's SECONDARY CGRAM mirror / fade base (`$70:2D6C`, 256
  *  words, written in parallel by `load_palettes`). The brightness-fade engine rescales
  *  the live mirror FROM this base each step (yi-shiny scene-palettes.md §1.1/§4.2), so
- *  a live edit only survives a fade if it's written here too. Same colour indexing as
+ *  a live edit only survives a fade if it's written here too. Same color indexing as
  *  the live mirror: byte address = base + cgramIndex × 2. */
 export const CGRAM_FADE_BASE_CARTRAM_OFFSET = 0x2d6c
 
@@ -131,7 +131,7 @@ export interface CgramMirrorRun {
  *  those entries are touched — we never write an entry just because our static base
  *  disagrees with the live palette (the backdrop's gradient/HDMA slot, a per-frame
  *  `animation_palette` row, or any runtime palette effect), which is what caused
- *  unrelated colours to change. `base` maps blob offset → pristine BGR-15
+ *  unrelated colors to change. `base` maps blob offset → pristine BGR-15
  *  (`pristineBasePalette`). Coalesces the emitted indices into contiguous runs; `addr`
  *  is the CGRAM-mirror byte (subtract `CGRAM_MIRROR_CARTRAM_OFFSET` for PPU CGRAM). */
 export function offsetCgramRuns(
@@ -196,17 +196,17 @@ export function pristineBasePalette(workRoot: string): Map<number, number> {
   return words
 }
 
-/** Re-source CGRAM's master-palette colours from the PRISTINE base blob (not the
+/** Re-source CGRAM's master-palette colors from the PRISTINE base blob (not the
  *  built ROM, whose blob has saved palette edits baked in), so the live preview is
- *  BASE ⊕ draft — independent of the build. This makes a colour RESET show base
+ *  BASE ⊕ draft — independent of the build. This makes a color RESET show base
  *  immediately (the palette twin of `gfxLiveResetToBase`): without it, a reset of a
- *  previously-built colour would fall through to the built ROM's baked colour until
+ *  previously-built color would fall through to the built ROM's baked color until
  *  the next rebuild. `loadLevelPalettes` supplies the structure + provenance; only
- *  the blob-sourced colour VALUES change (non-blob entries are unaffected by edits).
+ *  the blob-sourced color VALUES change (non-blob entries are unaffected by edits).
  *  Apply BEFORE `applyPaletteEdits` (the draft overlays on top). */
 export function resourcePaletteToBase(cgram: Uint8Array, provenance: Int32Array, workRoot: string): void {
   const base = pristineBasePalette(workRoot)
-  if (base.size === 0) return // base blob unreadable → leave built-ROM colours
+  if (base.size === 0) return // base blob unreadable → leave built-ROM colors
   for (let i = 0; i < 256; i++) {
     const off = provenance[i]!
     if (off < 0) continue
@@ -286,7 +286,7 @@ export function decodeForRequest(
   })
 }
 
-/** Map a provenance cell's (neighbor, buried) flags to its colour class. */
+/** Map a provenance cell's (neighbor, buried) flags to its color class. */
 export function influenceClass(neighbor: boolean, buried: boolean): InfluenceClass {
   if (buried) return neighbor ? 'buriedNeighbor' : 'buried'
   return neighbor ? 'neighbor' : 'footprint'
@@ -312,7 +312,7 @@ export interface Bg1Context {
   cgram: Uint8Array
   map16Tables: Map16Tables
   bg1CharAddr: number
-  /** BG1 colour depth — 4bpp (BG Mode 1/2) or 2bpp (BG Mode 0 / level mode $0A).
+  /** BG1 color depth — 4bpp (BG Mode 1/2) or 2bpp (BG Mode 0 / level mode $0A).
    *  See renderBg1's `bg1Bpp`. */
   bg1Bpp: 2 | 4
   bands?: Parameters<typeof renderBg1>[0]['bands']
@@ -333,7 +333,7 @@ export function getBg1Context(
 ): Bg1Context {
   const h = level.header
   // The palette-override sig + gfx-edit revision are part of the key so a live
-  // colour edit (which changes neither the header nor the changer sprites) OR a
+  // color edit (which changes neither the header nor the changer sprites) OR a
   // live gfx-tile edit still invalidates the cached CGRAM/VRAM and re-renders.
   const key = `${levelRecordId}:${h.join(',')}:${changerSpriteSig(level.sprites)}:${paletteEditsSig(paletteEdits)}:gfx${gfxRevision ?? 0}`
   if (bg1ContextCache && bg1ContextCache.symbols === symbols && bg1ContextCache.key === key) {
@@ -439,7 +439,7 @@ export function gridCachePut(token: string, entry: GridCacheEntry): void {
 // sprite content-signature grid (see render-sprite-layer.ts), not resolved Map16
 // IDs. Token is over header + each sprite's (num, x, y) in list order — the inputs
 // that determine the signature grid. Palette-independent (a palette change forces a
-// full render renderer-side, like bg1), so the same token can back a re-coloured
+// full render renderer-side, like bg1), so the same token can back a re-colored
 // patch (cells are always re-rendered with the request's current palette).
 
 /** Sprite-layer Tier-2 token (decode content key for the sprite signature grid). */

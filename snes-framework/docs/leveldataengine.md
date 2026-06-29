@@ -67,7 +67,7 @@ parsed by other code (Bank10's tail logic + a sprite-spawn routine in Bank01).
 The on-disk level-data format (per-level `.bin` blobs in `LevelData/`):
 
 - **Header**: 10 bytes, 80 bits, bit-packed MSB-first across 15 fields
-  (background colour, BG1/BG2/BG3 tileset+palette, sprite tileset+palette,
+  (background color, BG1/BG2/BG3 tileset+palette, sprite tileset+palette,
   level mode, animation tileset+palette, BG scroll rate, music, item
   memory; plus 5 bits of unused padding). Field bit widths are stored in
   ROM at PC `$080B05` (= `DATA_108B05`, `HeaderBitLengthTable` in Bank10):

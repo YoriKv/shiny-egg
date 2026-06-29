@@ -250,7 +250,7 @@ export function vendoredV10SymbolMap(): SymbolMap {
   add('DATA_sprite_render_control_table', 0x0a9b1c);                  // $7040 spawn-seed; hi byte = OAMByteCount (frame-0 record count)
   add('DATA_0A9F1A', 0x0a9f1a);                  // $7042 seed; hi byte EOR $20 = per-sprite OAM attr (flip + palette)
   add('DATA_sprite_gfx_file_table', 0x0aa716);                  // sprite-id → required gfx file id (u16 × 442)
-  add('DATA_0CE9FE', 0x0ce9fe);                  // Red Coin 0x065 runtime OAM-attr recolour table (YI_NorSpr065_RedCoin_Init)
+  add('DATA_0CE9FE', 0x0ce9fe);                  // Red Coin 0x065 runtime OAM-attr recolor table (YI_NorSpr065_RedCoin_Init)
   add('DATA_gfx_bank54_part2', 0x548000);        // bank-$54 dynamic-body bitmap anchor (DYNAMIC_BODY_SOURCES deltas); main-side alias FXDATA_548000
 
   // Level-name strings (Bank51, SuperFX-mapped). 72 × 2-byte bank-local
@@ -268,7 +268,7 @@ export function vendoredV10SymbolMap(): SymbolMap {
 
   // Backdrop gradient (LoadGradientPalette equivalent)
   // 16 × 4-byte (bank, offset) entries, indexed by (BackgroundColor - $10).
-  // Each entry points at 24 BGR-15 colours in Bank57 (SuperFX-mapped).
+  // Each entry points at 24 BGR-15 colors in Bank57 (SuperFX-mapped).
   add('DATA_bg_gradient_ptrs', 0x01d573);
 
   // Scene-regs (scene_register_layout) — levelMode → sceneModeByteIdx via
@@ -322,6 +322,12 @@ export function vendoredV10SymbolMap(): SymbolMap {
   // 8 KB of BGR-15 colors that CODE_load_palettes walks through via
   // byte-offset indirection.
   add('DATA_master_palette_rom_blob', 0x5fa000); // palette blob base
+
+  // Title-screen placement tilemaps (the ROM importer diffs these at fixed
+  // vanilla addresses, like the palette blob). Island = Mode-7 char bytes in
+  // Bank57; logo = BG words in Bank0F.
+  add('DATA_5F9800', 0x5f9800); // title-island tilemap (worlds 1-5), 1024 char bytes
+  add('DATA_title_screen_logo_tilemap', 0x0ffc80); // title logo tilemap, 448 BG words
 
   return makeMap(m);
 }

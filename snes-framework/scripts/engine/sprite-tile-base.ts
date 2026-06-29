@@ -71,7 +71,7 @@ const RENDER_SUPPRESSED = new Set<number>([0x07b, 0x07c, 0x026, 0x04d]);
  * that are visually identical to a sprite it CAN, when the difference is runtime-only.
  *   Roger's Pot $034 → flower pot $0DA. Both are the same pot gfx (shared spriteset file $44, same tile
  *   base): $0DA (the item pot) renders correctly through its celB cel at pal 1; $034 (the boss pot)
- *   only differs at runtime (`init_roger` recolours it via a CGRAM load + spawns Roger), which the
+ *   only differs at runtime (`init_roger` recolors it via a CGRAM load + spawns Roger), which the
  *   static render can't follow. So draw $034 as $0DA — the red/gold flower pot.
  */
 export const SPRITE_RENDER_ALIAS: ReadonlyMap<number, number> = new Map([[0x034, 0x0da]]);
@@ -488,10 +488,10 @@ export function isFormatAOnlySprite(rom: Uint8Array, symbols: SymbolMap, spriteI
 }
 
 /**
- * Runtime OAM-palette override for the few sprites that recolour themselves in
+ * Runtime OAM-palette override for the few sprites that recolor themselves in
  * their Init handler. The static `$7042` seed (`DATA_0A9F1A`) is only the
  * *un-initialised* palette; these sprites clear it and recompute their palette at
- * spawn from level state, so a static render shows the wrong colour. We can't run
+ * spawn from level state, so a static render shows the wrong color. We can't run
  * the handler, so we reproduce the deterministic, normal-play palette it computes.
  *
  * Returns the OBJ palette row (0..7) to FORCE on the cel, or `undefined` for none.
@@ -598,7 +598,7 @@ const FRAME0_COUNT_OVERRIDE: Record<number, number> = { 0x05c: 5, 0x034: 8 };
  *   - 0x133 Lantern Ghost record 0 (the held lantern): the special_chr stores a redundant
  *     body tile $100 there (renders as an "extra head"); in-game the handler draws the lantern
  *     flame tile $11b at a FIXED flame palette (pal1) regardless of the body's spawn-cell-parity
- *     colour. So patch the tile to $11b and LOCK pal1 (capture-confirmed: body pal4, lantern pal1).
+ *     color. So patch the tile to $11b and LOCK pal1 (capture-confirmed: body pal4, lantern pal1).
  */
 const SPECIAL_CHR_RECORD_OVERRIDE: Record<number, ReadonlyArray<{ index: number; tile?: number; paletteRow?: number; lockPalette?: boolean; dx?: number; dy?: number; size?: 8 | 16; static?: boolean; drop?: boolean }>> = {
   // Nep-Enut / Gargantua Blargg $0A5: cel records [10][11] are tile-0 dynamic-SLOT placeholders
@@ -656,7 +656,7 @@ const SPECIAL_CHR_RECORD_OVERRIDE: Record<number, ReadonlyArray<{ index: number;
  * Per-sprite OBJ-palette-row REMAP applied to a decoded `special_chr` cel: `{ srcRow → dstRow }`.
  * For sprites whose static cel encodes a PLACEHOLDER palette row that the cart's GSU OAM assembler
  * masks off and replaces at runtime — so the cel's row is meaningless and our (celRow | $7042) model
- * renders the wrong colour. The asm proof: the special_chr→OAM builder (`CODE_098B85`/`CODE_098C93`,
+ * renders the wrong color. The asm proof: the special_chr→OAM builder (`CODE_098B85`/`CODE_098C93`,
  * GSU Bank09) reads each cel record, `AND`s the attribute word with `$F1FF` (clearing the 3 palette
  * bits), then `ADD`s the sprite's runtime palette from GSU RAM `($00)`. The cel palette never reaches
  * OAM. Applied AFTER decode, BEFORE the `$7042` whole-sprite OR (so the OR still distinguishes the
@@ -774,7 +774,7 @@ export function resolveSpriteCel(
   preferFormatA = false,
   /** The level's sprite-palette id (`LevelHeaderSpritePaletteLo`, header field 8).
    *  Only consulted by `spriteRuntimePaletteOverride` (the Red Coin's level-state-
-   *  dependent recolour). Omit for the static seed palette. */
+   *  dependent recolor). Omit for the static seed palette. */
   levelSpritePaletteId?: number,
   /** Spawn CELL coordinates — only consulted for `PARITY_CEL_VARIANTS` sprites
    *  (the arrow signs), whose frame + flip depend on cell parity. Omit to render
@@ -783,7 +783,7 @@ export function resolveSpriteCel(
   /** Pre-resolved settled OBJ palette row (0–7) for this sprite — the
    *  `settledPaletteRow` baked from the sprite-render trace (SP4). When supplied,
    *  it FORCES the cel's palette row, replacing the `$7042` seed for sprites that
-   *  recolour at spawn. The conditional Red Coin override (`spriteRuntimePaletteOverride`)
+   *  recolor at spawn. The conditional Red Coin override (`spriteRuntimePaletteOverride`)
    *  takes precedence when both apply. Omit for the static-seed palette. */
   settledPaletteRow?: number,
   /** Pre-resolved animation frame the sprite visibly RESTS at (`restFrame` baked
@@ -820,7 +820,7 @@ export function resolveSpriteCel(
   // pal 4). It OR-combines with the cel record's own palette (cel pals are
   // normally 0, so this just selects the sprite's row; a cel that sets its own
   // non-zero row — e.g. Crazee Dayzee pal 4, whose `$7042` is 0 — is preserved).
-  // NB: shy guys also recolour by map position at runtime (their Init/Main); we
+  // NB: shy guys also recolor by map position at runtime (their Init/Main); we
   // don't reproduce that, and the static `$7042` base palette is correct here.
   const oamAttr = (rom[symbols.pc('DATA_0A9F1A') + spriteId * 2 + 1]! ^ 0x20) & 0xff;
   const spritePal = (oamAttr >>> 1) & 0x07;
@@ -950,7 +950,7 @@ export function resolveSpriteCel(
     ? parityPalRows[placement ? parityIndex(placement.x, placement.y) : 0]
     : undefined;
   // Runtime OAM-palette override — replaces the cel's palette row outright, since
-  // the recolouring handler clears $7042's palette bits before setting its own.
+  // the recoloring handler clears $7042's palette bits before setting its own.
   // Precedence: (1) spawn-cell parity palette (above), then (2) the level-state-conditioned
   // override (`spriteRuntimePaletteOverride` — the Red Coin 0x065, whose row depends on the
   // level's sprite palette), then (3) the static `settledPaletteRow` baked per sprite (SP4).

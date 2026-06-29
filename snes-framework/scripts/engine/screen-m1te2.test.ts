@@ -1,11 +1,11 @@
 // M1TE2 ".M1" system-screen export/import (screen-m1te2.ts). Pins, for each tilemap screen
 // (title island, storybook first scene — the logo is excluded; it'd render with the wrong
 // palette base in M1TE):
-//   1. exportScreenM1 emits the two .M1 files, each a valid 55568-byte session;
+//   1. exportScreenM1 emits the two .M1 files, each a valid 74000-byte v2 session;
 //   2. an unedited .M1 round-trips to ZERO edits;
 //   3. a 1-tile CHR edit routes to the right char file ($B1 / f27);
 //   4. an island word edit → exactly that char (storybook has no placement);
-//   5. a 1-colour palette edit → exactly that CGRAM colour.
+//   5. a 1-color palette edit → exactly that CGRAM color.
 //
 // Run: node snes-framework/scripts/engine/screen-m1te2.test.ts (reference-cart-gated).
 
@@ -27,7 +27,7 @@ const { rom, symbols } = loadDevCart();
 // ── (1) file set ─────────────────────────────────────────────────────────────
 const files = exportScreenM1(rom, symbols);
 assert(files.length === 2, `2 screen .M1 files exported (got ${files.length})`);
-assert(files.every((f) => f.bytes.length === M1TE2_SIZE), 'every screen .M1 is the fixed 55568-byte size');
+assert(files.every((f) => f.bytes.length === M1TE2_SIZE), 'every screen .M1 is the v2 74000-byte size');
 assert(files.map((f) => f.kind).sort().join(',') === 'island,storybook-scene', 'kinds are island + storybook-scene (no logo)');
 assert(files.some((f) => f.file === 'screens/title/island.M1') && files.some((f) => f.file === 'screens/storybook/scene.M1'),
   'screen .M1 files are named per surface');
@@ -58,7 +58,7 @@ assert(!files.some((f) => f.file.includes('logo')), 'the title logo is NOT expor
 
   const doc3 = parseM1te2(m1);
   doc3.palette[2] = doc3.palette[2]! ^ 0x10;
-  assert(diffTitleIslandM1(ctx, encodeM1te2(doc3)).paletteEdits.length === 1, 'an island palette edit → exactly one CGRAM colour');
+  assert(diffTitleIslandM1(ctx, encodeM1te2(doc3)).paletteEdits.length === 1, 'an island palette edit → exactly one CGRAM color');
 }
 
 // ── (4) STORYBOOK SCENE round-trip (pixels-only) ─────────────────────────────
@@ -85,7 +85,7 @@ assert(!files.some((f) => f.file.includes('logo')), 'the title logo is NOT expor
 
   const doc2 = parseM1te2(m1);
   doc2.palette[2] = doc2.palette[2]! ^ 0x10;
-  assert(diffStorybookSceneM1(ctx, encodeM1te2(doc2)).paletteEdits.length === 1, 'a storybook palette edit → exactly one CGRAM colour');
+  assert(diffStorybookSceneM1(ctx, encodeM1te2(doc2)).paletteEdits.length === 1, 'a storybook palette edit → exactly one CGRAM color');
 }
 
 console.log(`\n${failures === 0 ? '✓' : '✗'} ${failures === 0 ? 'all tests pass' : `${failures} failure(s)`}`);

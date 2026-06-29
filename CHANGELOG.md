@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.2 - 2026-06-29
+
+- New Camera Preview overlay. A movable in-game viewport that simulates the SNES camera with accurate parallax of background layers and the sky gradient.
+- ROM import fixes and updates. Now imports changed GFX sheets, the overworld island tilemap, and the title-screen logo tilemap.
+- New project name popup.
+- Message font and message box graphics extract/import for editing pipeline.
+- Palette "Sync to Emulator" with Auto Sync. Color edits can now update the running emulator live as you edit them.
+- Backdrop gradient visuals now match in game visuals.
+
 ## v0.5.1 - 2026-06-28
 
 - Color palette editing for non-level scenes.

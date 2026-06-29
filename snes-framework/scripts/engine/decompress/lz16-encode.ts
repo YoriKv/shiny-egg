@@ -10,28 +10,28 @@
 // 4bpp tile graphics, 128-pixel rows, decoded right-to-left into a rolling row
 // buffer; the previous row is pre-copied so a row can be coded as a delta.
 //
-//   Header: 28 bits = 7 predictor colours (`pred[0..6]`), 4 bits each LSB-first.
+//   Header: 28 bits = 7 predictor colors (`pred[0..6]`), 4 bits each LSB-first.
 //   Then a continuous LSB-first bit stream of per-row encodings.
 //
 // Each row is encoded BOTH ways and the shorter is kept:
 //   - rowMode 0 (RLE): `write_bit(0)`, then per run right-to-left:
-//       number(count) + predictor(run colour) — a 3-bit index into pred[0..6],
-//       or index 7 + a raw 4-bit colour (escape) when not cached.
+//       number(count) + predictor(run color) — a 3-bit index into pred[0..6],
+//       or index 7 + a raw 4-bit color (escape) when not cached.
 //   - rowMode 1 (delta vs the row above): `write_bit(1)`, then per run, compare
 //       this row's run at the cursor with the previous row's run and emit one of
 //       four ops (2-bit mode after the count):
-//         mode 1 (flag 2): colour changed → number(count)+mode+predictor(colour)
-//         mode 2 (flag 1): same colour, run grew  → number(grow)+mode  (+ a
+//         mode 1 (flag 2): color changed → number(count)+mode+predictor(color)
+//         mode 2 (flag 1): same color, run grew  → number(grow)+mode  (+ a
 //                          boundary "carry" written into the prev-row buffer)
-//         mode 3 (flag 3): same colour, run shrank → number(shrink)+mode (+carry)
+//         mode 3 (flag 3): same color, run shrank → number(shrink)+mode (+carry)
 //         mode 0 (flag 0): run unchanged → number(#consecutive-unchanged)+mode
 //       The boundary carry mutates the working previous-row buffer exactly as the
 //       decoder's bridge/jump ops do, keeping encoder and decoder in lockstep.
 //
 // # Predictor selection (`makePalet`)
 //
-// The 7 cached colours are NOT the most-frequent pixels — they are the colours
-// ranked by how often they appear as a *mode-1 colour-change* across the delta
+// The 7 cached colors are NOT the most-frequent pixels — they are the colors
+// ranked by how often they appear as a *mode-1 color-change* across the delta
 // encoding of the whole blob (simulated with the same boundary mutation). This
 // is what makes the header bytes match the cart; a raw-frequency choice does not.
 //
@@ -71,7 +71,7 @@ function tilesToPixels(tiles: Uint8Array, off: number, rowCount: number): Uint8A
   return pixels;
 }
 
-/** Length of the constant-colour run ending at `x` (walking left). */
+/** Length of the constant-color run ending at `x` (walking left). */
 function runCount(line: Uint8Array, x: number): number {
   const color = line[x]!;
   let count = 1;
@@ -122,7 +122,7 @@ const emitPaletColor = (o: number[], c: number): void => {
   emitBit(o, c & 4);
   emitBit(o, c & 8);
 };
-/** Emit a run colour: 3-bit index into pred[0..6], else index 7 + raw colour. */
+/** Emit a run color: 3-bit index into pred[0..6], else index 7 + raw color. */
 const emitColorCoded = (o: number[], color: number, palet: Uint8Array): void => {
   let idx = 7;
   for (let i = 0; i < 7; i++) if (color === palet[i]) { idx = i; break; }
@@ -155,7 +155,7 @@ function asLine1(nowLine: Uint8Array, oldLine: Uint8Array, f: number, palet: Uin
     let oldCnt = runCount(oldLine, x);
 
     if (nowColor !== oldColor) {
-      // mode 1 — colour change.
+      // mode 1 — color change.
       emitNumber(o, nowCnt);
       emitFlag(o, 2);
       emitColorCoded(o, nowColor, palet);
@@ -165,7 +165,7 @@ function asLine1(nowLine: Uint8Array, oldLine: Uint8Array, f: number, palet: Uin
     if (nowCnt !== oldCnt) {
       const n = nowCnt - oldCnt;
       if (n > 0) {
-        // mode 2 — run grew; carry the boundary colour into the prev buffer.
+        // mode 2 — run grew; carry the boundary color into the prev buffer.
         emitNumber(o, n);
         emitFlag(o, 1);
         const i = x - nowCnt;
@@ -197,9 +197,9 @@ function asLine1(nowLine: Uint8Array, oldLine: Uint8Array, f: number, palet: Uin
   return o;
 }
 
-/** Choose the 7 predictor colours: rank by mode-1 colour-change frequency across
+/** Choose the 7 predictor colors: rank by mode-1 color-change frequency across
  *  the delta encoding of the blob (the boundary mutation is replayed so the
- *  counts match what `asLine1` will actually emit). Returns all 16 colours
+ *  counts match what `asLine1` will actually emit). Returns all 16 colors
  *  sorted descending; the first 7 are the predictors. */
 function makePalet(pixels: Uint8Array, lineSu: number): Uint8Array {
   const color = new Uint8Array(16);
@@ -246,7 +246,7 @@ function makePalet(pixels: Uint8Array, lineSu: number): Uint8Array {
     }
   }
 
-  // Selection sort, descending by count; ties keep the lower colour value.
+  // Selection sort, descending by count; ties keep the lower color value.
   for (let y = 0; y < 15; y++)
     for (let x = y + 1; x < 16; x++)
       if (count[color[y]!]! < count[color[x]!]!) {
@@ -257,8 +257,8 @@ function makePalet(pixels: Uint8Array, lineSu: number): Uint8Array {
   return color;
 }
 
-/** Alternative predictor ranking: by how many maximal runs each colour forms
- *  across the blob. Unlike `makePalet`, this counts the background colour (0)
+/** Alternative predictor ranking: by how many maximal runs each color forms
+ *  across the blob. Unlike `makePalet`, this counts the background color (0)
  *  at full weight, which is often the better choice — it's offered as a
  *  candidate and the smaller encoding wins (see `encodeLz16`). */
 function paletByRunFreq(pixels: Uint8Array, lineSu: number): Uint8Array {
@@ -308,10 +308,10 @@ function encodeBlobBits(pixels: Uint8Array, lineSu: number, palet: Uint8Array): 
  * LZ16 stream. The result, fed to `lz16()` with the same `rowCount`, reproduces
  * those tile bytes exactly.
  *
- * Predictor selection is the main size lever (a cached run colour costs 3 bits
+ * Predictor selection is the main size lever (a cached run color costs 3 bits
  * vs 7 for an escape) and no single ranking is optimal, so we try a few
  * candidate palettes and keep the smallest valid encoding. `makePalet` is the
- * canonical/reference ranking; `paletByRunFreq` favours the background colour.
+ * canonical/reference ranking; `paletByRunFreq` favours the background color.
  */
 export function encodeLz16(
   tiles: Uint8Array,

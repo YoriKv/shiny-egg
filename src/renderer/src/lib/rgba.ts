@@ -1,8 +1,8 @@
-// Small RGBA colour helpers shared by the toolbar's grid-colour picker (a
+// Small RGBA color helpers shared by the toolbar's grid-color picker (a
 // native `#rrggbb` swatch + an alpha slider, recombined into one `rgba()`
 // string) and the canvas grid renderer (which parses that string back out and
 // scales the alpha across its depth tiers — see canvas/draw/grid.ts). The grid
-// colour is stored as an `rgba()` string so it carries opacity, which
+// color is stored as an `rgba()` string so it carries opacity, which
 // `<input type="color">` can't.
 
 export interface Rgba {
@@ -17,7 +17,7 @@ const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.m
 const clamp255 = (n: number): number => clamp(Math.round(n), 0, 255)
 
 /** Parse `#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa` (the 8-digit form is what the
- *  native colour input emits with the `alpha` attribute). Null on no match. */
+ *  native color input emits with the `alpha` attribute). Null on no match. */
 function parseHex(s: string): Rgba | null {
   const m = /^#?([0-9a-f]{3,8})$/i.exec(s.trim())
   if (!m) return null
@@ -56,7 +56,7 @@ export function parseRgba(s: string): Rgba {
   return parseHex(s) ?? { r: 0, g: 0, b: 0, a: 1 }
 }
 
-/** `#rrggbb` for a native `<input type="color">` (drops alpha — the colour
+/** `#rrggbb` for a native `<input type="color">` (drops alpha — the color
  *  input can't show it; opacity is a separate slider in the picker popover). */
 export function rgbToHex({ r, g, b }: Pick<Rgba, 'r' | 'g' | 'b'>): string {
   const h = (n: number): string => clamp255(n).toString(16).padStart(2, '0')
@@ -68,7 +68,7 @@ export function formatRgba({ r, g, b, a }: Rgba): string {
   return `rgba(${clamp255(r)}, ${clamp255(g)}, ${clamp255(b)}, ${Math.round(clamp(a, 0, 1) * 100) / 100})`
 }
 
-/** Same colour with its alpha multiplied by `scale` (clamped to [0,1]) — the
+/** Same color with its alpha multiplied by `scale` (clamped to [0,1]) — the
  *  grid renderer's per-tier alpha derivation. */
 export function withAlphaScale(c: Rgba, scale: number): string {
   return `rgba(${c.r}, ${c.g}, ${c.b}, ${clamp(c.a * scale, 0, 1)})`

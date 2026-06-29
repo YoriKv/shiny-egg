@@ -166,7 +166,7 @@ function paletteIndexOf(palette: Uint32Array, u: number): number {
 
 /**
  * Slice one 8×8 sheet tile back out of the canvas — the inverse of a blit.
- * Base-aware (a pixel still showing its base colour keeps its base index) and
+ * Base-aware (a pixel still showing its base color keeps its base index) and
  * owner-gated (a pixel a CLOSER record owns, or transparent/body, keeps base —
  * so overlap + dynamic bodies don't corrupt). Returns the 32 planar bytes.
  */
@@ -374,7 +374,7 @@ export function diffMetaspriteTiles(
 }
 
 /** The metasprite as a single-image (no-tilemap) `.aseprite`: the assembled character
- *  coloured in its used OBJ rows (index 0 transparent). Import flattens it back →
+ *  colored in its used OBJ rows (index 0 transparent). Import flattens it back →
  *  `diffMetaspriteTiles`, like the PNG. */
 export function metaspriteAseprite(ctx: MetaspriteContext, canvas: MetaspriteCanvas): Uint8Array {
   const pal: number[] = [];
@@ -395,7 +395,7 @@ export interface MetaspritePngEntry {
 
 /** Encode a metasprite canvas to a PNG: the assembled character (index 0
  *  transparent) + a self-describing OBJ-palette swatch column per palette row
- *  used (full 16-colour row; index 0 transparent), placed to the right. Import
+ *  used (full 16-color row; index 0 transparent), placed to the right. Import
  *  reads only the top-left `width×height` region. */
 export function metaspritePng(ctx: MetaspriteContext, canvas: MetaspriteCanvas): Uint8Array {
   const rows = canvas.paletteRowsUsed;

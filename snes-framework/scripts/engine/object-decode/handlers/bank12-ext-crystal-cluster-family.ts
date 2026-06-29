@@ -43,10 +43,10 @@
 // contiguous $0E-tile run: $8D54-$8D61, +$0E, +$1C, +$2A). The cart's PRNG
 // is HV-counter noise our static LFSR cannot reproduce.
 //
-// The $A1 colour offset is PRNG-picked from DATA_128FA5 = {0,$0E,$1C,$2A} by
+// The $A1 color offset is PRNG-picked from DATA_128FA5 = {0,$0E,$1C,$2A} by
 // `prng & 6` (init, once per object). We roll it faithfully via prngNext: under
 // per-site replay (RNG_SITE.crystalClusterInit) it reproduces a captured run's
-// colour exactly; otherwise the LFSR picks a valid colour (cosmetic — same $8Dxx
+// color exactly; otherwise the LFSR picks a valid color (cosmetic — same $8Dxx
 // page, so never a structural diff). (Earlier this was hard-coded to the single
 // trace-observed value $1C, which under-modelled the per-object randomisation.)
 //
@@ -62,9 +62,9 @@ import { prngNext, RNG_SITE } from '../prng.ts';
 
 const CRYSTAL_CLUSTER_BASE_ID = 0xad;
 
-// DATA_128FA5 — the $A1 colour-offset pool, PRNG-picked by `prng & 6` (byte
+// DATA_128FA5 — the $A1 color-offset pool, PRNG-picked by `prng & 6` (byte
 // offset into these 4 words). Each offset shifts the whole cluster to one of 4
-// contiguous $8Dxx colour variants.
+// contiguous $8Dxx color variants.
 const A1_POOL: readonly number[] = [0x0000, 0x000e, 0x001c, 0x002a];
 
 // DATA_128FAD — row extent ($2E) per variant (extID order from 0xAD).
@@ -83,7 +83,7 @@ const TILE_TABLES: readonly (readonly number[])[] = [
 
 // CODE_12C0B1 — per-cell stamper. $15 = variant*2 selects the tile table;
 // walker counters give the cell ($2C = row, $28 = col). Cart byte offset
-// (row*2 + col)*2 -> word index (row*2 + col). Adds the $A1 colour offset.
+// (row*2 + col)*2 -> word index (row*2 + col). Adds the $A1 color offset.
 const crystalClusterStamp: PerCellHandler = (state) => {
   const variant = (state.zp15 & 0xffff) >> 1;
   const table = TILE_TABLES[variant];
@@ -99,7 +99,7 @@ function crystalClusterFamily(state: DecodeState): void {
   const extId = state.zp15 & 0xff;
   const variant = extId - CRYSTAL_CLUSTER_BASE_ID;
   if (variant < 0 || variant >= TILE_TABLES.length) return; // not ours
-  // $A1 PRNG colour offset — `JSL prng ; AND #6 ; TAY ; LDA DATA_128FA5,y`.
+  // $A1 PRNG color offset — `JSL prng ; AND #6 ; TAY ; LDA DATA_128FA5,y`.
   state.zpA1 = A1_POOL[(prngNext(state, RNG_SITE.crystalClusterInit) & 0x06) >>> 1]!;
   // Col extent is the constant $0002 (`LDA #$0002 : STA $2A`).
   state.zp2A = 0x0002;

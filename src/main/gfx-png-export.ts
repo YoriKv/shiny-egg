@@ -35,10 +35,20 @@ import { exportWorldMapM1 } from 'snes-framework/world-map-m1te2'
 import { exportScreenM1 } from 'snes-framework/screen-m1te2'
 import { exportMetasprites } from 'snes-framework/sprite-metasprite'
 import { exportSpriteGlyphs } from 'snes-framework/sprite-glyph'
+import { decodeFontSheet, FONT_SHEETS } from 'snes-framework/msg-font'
+import { imageAseprite } from 'snes-framework/gfx-aseprite'
+import { encodePng } from 'snes-framework/png'
 import type { RenderHeaderRequest, ExportGfxOptions, GfxExportTrack } from '../shared/ipc-types'
 import { loadRomAndSymbols } from './render/rom-cache'
 import { gfxLiveEdits } from './gfx-live-cache'
-import { loadPaletteEdits } from './resources'
+import {
+  loadPaletteEdits,
+  loadLogoTilemapEdits,
+  loadIslandTilemapEdits,
+  applyScreenPlacementOverlays,
+  fontSheetBinFiles,
+  readRawChrOverlayFirst
+} from './resources'
 import { PALETTE_BLOB_LABEL } from 'snes-framework/palette-edit'
 import { type SymbolMap } from 'snes-framework/symbol-map'
 import {
@@ -55,7 +65,8 @@ import {
   type TitleLogoManifestEntry,
   type TitleIslandManifestEntry,
   type TitleSceneryManifestEntry,
-  type StorybookSceneManifestEntry
+  type StorybookSceneManifestEntry,
+  type FontSheetManifestEntry
 } from './gfx-manifest'
 
 const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -78,28 +89,35 @@ export function gfxTrackFolder(opts: ExportGfxOptions): { folder: string; strip:
   if (t === 'worldmap') return { folder: 'map', strip: 'screens/map/' }
   if (t === 'systemscreens') return { folder: 'screens', strip: 'screens/' }
   if (t === 'metasprites') return { folder: 'metasprites', strip: '' }
+  if (t === 'fonts') return { folder: 'fonts', strip: 'fonts/' }
   return null
 }
 
 /**
- * A copy of the built ROM with the project's palette-colour edits applied to the master
- * palette blob — so every track's CGRAM (read from the blob via the palette program) reflects
- * UNBUILT colour edits, matching the import's `effectiveBlobWords` baseline (base ⊕
- * loadPaletteEdits). Without this, an export taken before a rebuild shows base colours, so
- * re-importing it (which diffs against base ⊕ edits) would revert prior colour edits. The
- * patch is idempotent vs a fresh build (the build applies the same edits) and offset-exact
- * (`PaletteEdit.offset` is the blob byte-offset the palette program reads, `value` its BGR-15
- * word). Returns the original ROM untouched when there are no edits (no copy).
+ * A copy of the built ROM with the project's UNBUILT overlay edits applied, so an export taken
+ * before a rebuild reflects them (and a second export/import cycle doesn't revert them):
+ *   • palette colors → the master palette blob, so every track's CGRAM (read from the blob via
+ *     the palette program) reflects the edits, matching the import's `effectiveBlobWords`
+ *     baseline (base ⊕ loadPaletteEdits).
+ *   • title-screen PLACEMENT (logo Bank0F + island Bank57) → their tilemap tables, so the
+ *     re-exported logo/island `.aseprite` shows moved/edited cells instead of the last-built
+ *     tilemap. These are asm overlays that don't render live, so this is their ONLY preview
+ *     path (there's no live canvas for the title screen); the import applies the SAME overlays
+ *     to its diff baseline so the round-trip is symmetric.
+ * All patches are idempotent vs a fresh build (the build applies the same edits) and offset-
+ * exact. Returns the original ROM untouched when there are no edits (no copy).
  */
-function romWithLivePalette(builtRom: Uint8Array, symbols: SymbolMap): Uint8Array {
-  const edits = loadPaletteEdits()
-  if (edits.length === 0) return builtRom
+function romWithLiveOverlays(builtRom: Uint8Array, symbols: SymbolMap): Uint8Array {
+  const paletteEdits = loadPaletteEdits()
+  const hasPlacement = loadLogoTilemapEdits().length > 0 || loadIslandTilemapEdits().length > 0
+  if (paletteEdits.length === 0 && !hasPlacement) return builtRom // nothing live → no copy
   const rom = builtRom.slice()
   const blobPC = symbols.pc(PALETTE_BLOB_LABEL)
-  for (const { offset, value } of edits) {
+  for (const { offset, value } of paletteEdits) {
     rom[blobPC + offset] = value & 0xff
     rom[blobPC + offset + 1] = (value >> 8) & 0xff
   }
+  applyScreenPlacementOverlays(rom, symbols)
   return rom
 }
 
@@ -122,12 +140,14 @@ export function exportGfxPngsToDir(
 ): { count: number } {
   const { rom: builtRom, symbols } = loadRomAndSymbols()
   // Live baseline: the export must reflect the SAME unbuilt edits the import diffs against, or
-  // a second export/import cycle (before a rebuild) would revert prior edits. Colours: patch
-  // the ROM's palette blob with the palette overlay (→ all CGRAM is base ⊕ edits). Pixels: the
-  // screens track gets the live gfx-cache as `gfxOverride` (→ char-sheet VRAM is base ⊕ edits,
-  // matching the import's `liveTiles`). [Metasprites already pass it; the dedicated map/title
-  // tracks read built-ROM VRAM on BOTH sides, so they stay self-consistent — see notes.]
-  const rom = romWithLivePalette(builtRom, symbols)
+  // a second export/import cycle (before a rebuild) would revert prior edits. Colors: patch
+  // the ROM's palette blob with the palette overlay (→ all CGRAM is base ⊕ edits). Title-screen
+  // PLACEMENT (logo/island tilemaps): patched too, so a re-export of the logo/island .aseprite
+  // shows unbuilt cell moves (their only preview path — asm overlays don't render live).
+  // Pixels: the screens track gets the live gfx-cache as `gfxOverride` (→ char-sheet VRAM is
+  // base ⊕ edits, matching the import's `liveTiles`). [Metasprites already pass it; the
+  // dedicated map/title tracks read built-ROM VRAM on BOTH sides, so they stay self-consistent.]
+  const rom = romWithLiveOverlays(builtRom, symbols)
   // Limit to the selected track(s); no filter ⇒ both tracks.
   const want = (t: GfxExportTrack): boolean => !opts.tracks || opts.tracks.includes(t)
   // Level-DEPENDENT tracks (metasprites + glyphs) need the loaded level's header +
@@ -197,7 +217,7 @@ export function exportGfxPngsToDir(
       index0Transparent: e.index0Transparent,
       region: e.region, // cropped screens (e.g. boot logo); undefined otherwise
       perTilePalette: e.perTilePalette, // flat-map BG (f74/f75) per-tile palette; undefined otherwise
-      paletteOffsets: useAse ? e.paletteOffsets : undefined // region .aseprite colour write-back map
+      paletteOffsets: useAse ? e.paletteOffsets : undefined // region .aseprite color write-back map
     })
   }
 
@@ -287,10 +307,11 @@ export function exportGfxPngsToDir(
 
   // World-map M1TE2 ".M1" sessions — when the World Map track is exported in M1TE2 format,
   // these REPLACE the PNG/Aseprite map outputs above (all skipped via wantWorldMapPng). Two
-  // products: the overworld (one .M1 per world × half, BG1+BG2+BG3 composited) + the combined
-  // icons file (all per-level icons in level order + marker + castle). Each .M1 bundles
-  // tilemap + CHR + palette, so there is no separate char sheet — the import re-derives the
-  // scene/grid from the cart and routes edits to the right files (world-map-m1te2.ts).
+  // products: the overworld (one .M1 per world — the full 64×32 screen, BG1+BG2+BG3
+  // composited) + the combined icons file (all per-level icons in level order + marker +
+  // castle). Each .M1 bundles tilemap + CHR + palette, so there is no separate char sheet —
+  // the import re-derives the scene/grid from the cart and routes edits to the right files
+  // (world-map-m1te2.ts).
   let mapM1Manifest: MapM1Manifest | null = null
   if (wantWorldMap && m1Fmt) {
     const m1Files = exportWorldMapM1(rom, symbols)
@@ -300,7 +321,7 @@ export function exportGfxPngsToDir(
       const file = rebase(m.file)
       writeArtifact(outDir, file, m.bytes)
       if (m.kind === 'overworld') {
-        overworlds.push({ file, world: m.world!, half: m.half!, bg1FileId: m.bg1FileId!, bg2FileId: m.bg2FileId!, bg3FileId: m.bg3FileId! })
+        overworlds.push({ file, world: m.world!, bg1FileId: m.bg1FileId!, bg2FileId: m.bg2FileId!, bg3FileId: m.bg3FileId! })
       } else icons = { file }
     }
     mapM1Manifest = { overworlds, icons }
@@ -361,6 +382,39 @@ export function exportGfxPngsToDir(
     storybookSceneManifest = { file, faithful: scene.faithful, width: scene.width, height: scene.height, paletteOffsets: useAse ? scene.paletteOffsets : undefined }
   }
 
+  // Bank09 1bpp graphics (message font + message-box pictures) — raw, fixed-address
+  // CHR read overlay-first (so a re-export reflects unbuilt edits) and decoded to a
+  // 2-color cell grid. Edits re-encode to 1bpp + slice back to the raw `.bin` via
+  // saveRawChrEdit. Level-independent (cart-static), like the screen tracks.
+  // `format:'aseprite'` writes the SAME 2-color image as a single-image `.aseprite`
+  // (index 0 = off/black, index 1 = on/white) — these blobs aren't an 8×8 CHR tilemap
+  // (the font is 8×12 unique glyphs; the pictures are a flat bitmap), so there's no
+  // tileset, just the flat 2-color image. The palette is opaque so the round-trip is
+  // byte-exact; the import keys "is the pixel white", so erasing to transparent in
+  // Aseprite still reads as off. Import handles it unchanged (decodeEditedToRgba 'image').
+  const fontManifest: FontSheetManifestEntry[] = []
+  if (want('fonts')) {
+    for (const { key, binFile } of fontSheetBinFiles()) {
+      const spec = FONT_SHEETS.find((s) => s.key === key)
+      if (!spec) continue
+      const img = decodeFontSheet(readRawChrOverlayFirst(binFile), spec.glyphW, spec.glyphH, spec.cols)
+      const file = rebase(`fonts/${key}.${aseFmt ? 'aseprite' : 'png'}`)
+      const bytes = aseFmt
+        ? imageAseprite({ rgba: img.rgba, width: img.width, height: img.height, palette: Uint32Array.of(0xff000000, 0xffffffff), index0Transparent: false, layerName: key })
+        : encodePng(img)
+      writeArtifact(outDir, file, bytes)
+      fontManifest.push({
+        file,
+        binFile,
+        glyphW: spec.glyphW,
+        glyphH: spec.glyphH,
+        cols: spec.cols,
+        width: img.width,
+        height: img.height
+      })
+    }
+  }
+
   // System-screen M1TE2 ".M1" sessions — when the Boot/Story/Title track is exported in M1TE2
   // format, the tilemap-based screens (title island + storybook first scene) export as `.M1`
   // instead of the PNG/Aseprite outputs above (all skipped via wantSystemPng). The non-tilemap
@@ -392,7 +446,8 @@ export function exportGfxPngsToDir(
         titleLogo: titleLogoManifest,
         titleIsland: titleIslandManifest,
         titleScenery: titleSceneryManifest,
-        storybookScene: storybookSceneManifest
+        storybookScene: storybookSceneManifest,
+        fonts: fontManifest.length > 0 ? fontManifest : null
       },
       null,
       2
@@ -407,47 +462,53 @@ export function exportGfxPngsToDir(
       mapIcons.length + levelIcons.length + mapTerrain.length +
       (mapGroundManifest ? 1 : 0) + (titleLogoManifest ? 1 : 0) + (titleIslandManifest ? 1 : 0) + (titleSceneryManifest ? 1 : 0) +
       (storybookSceneManifest ? 1 : 0) +
+      fontManifest.length +
       (mapM1Manifest ? mapM1Manifest.overworlds.length + (mapM1Manifest.icons ? 1 : 0) : 0) +
       screenM1Manifest.length
   }
 }
 
-/** Human guide dropped at the picked-folder root — the one user-facing README for the export
- *  folder. Covers only the dropdown export types; written generically (re-exporting a second
+/** Human guide dropped at the picked-folder root — the one user-facing README for the extract
+ *  folder. Covers only the dropdown extract types; written generically (re-extracting a second
  *  type overwrites it with the same text). Keep it minimal + user-facing — don't document the
  *  import mechanism here unless it's a gotcha the user needs (e.g. shared-tile spread). */
 function readmeText(): string {
   return [
-    'Shiny Egg — exported graphics',
-    '=============================',
+    'Shiny Egg — extracted graphics',
+    '==============================',
     '',
     'Edit these files in any image editor (PNG), in Aseprite, or — for an .M1 session —',
-    'in M1TE (open it from the app\'s exported-folders list), then re-import this folder.',
+    'in M1TE (open it from the app\'s extracted-folders list), then re-import this folder.',
     'Only the files you actually change are saved.',
     '',
     'What you can edit',
     '-----------------',
     'Pixels   The tile art. Tiles are often reused, so editing one pixel changes that',
     '         tile everywhere it appears.',
-    'Palette  The colours themselves — Aseprite exports only. A PNG includes a colour',
+    'Palette  The colors themselves — Aseprite extracts only. A PNG includes a color',
     '         swatch to paint FROM, but editing the swatch doesn\'t change the palette.',
-    'Layout   Which tile sits in each cell (rearranging the picture) — Aseprite exports',
+    'Layout   Which tile sits in each cell (rearranging the picture) — Aseprite extracts',
     '         only, and only where noted below.',
     '',
-    'Exports',
-    '-------',
-    'BG1 area / BG2 / BG3   Pixels, Palette.',
+    'Extracts',
+    '--------',
+    'BG1 area / BG2 / BG3      Pixels, Palette.',
     '    A level\'s background tiles.',
     '',
-    'World Map              Pixels, Palette, Layout.',
+    'World Map                 Pixels, Palette, Layout.',
     '    Layout covers the overworld terrain and ground; the level markers, select',
     '    pictures and shared map tiles are pixels only. The map is shown in one world\'s',
-    '    colours (the game recolours the same tiles per world).',
+    '    colors (the game recolors the same tiles per world).',
     '',
-    'Boot/Story/Title       Pixels, Palette, Layout.',
+    'Boot/Story/Title          Pixels, Palette, Layout.',
     '    Layout covers the title logo and floating island; the boot logo, title scenery',
-    '    and storybook are pixels only. These screens animate their colours in-game, so',
-    '    the exported picture shows just one frame.',
+    '    and storybook are pixels only. These screens animate their colors in-game, so',
+    '    the extracted picture shows just one frame.',
+    '',
+    'Message Font / Pictures   Pixels (PNG or Aseprite).',
+    '    The 1bpp message font glyphs + message-box pictures, as a 2-color image (index 0',
+    '    = off, index 1 = on). Paint white/opaque pixels to turn them on, erase',
+    '    (transparent) or paint black to turn them off.',
     '',
     'Re-import this folder to apply your edits.',
     ''

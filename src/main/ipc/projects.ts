@@ -36,7 +36,10 @@ export function registerProjectsIpc(): void {
     ensureCurrentProject()
   )
 
-  ipcMain.handle('project:create', async (): Promise<ProjectSummary> => createProject())
+  ipcMain.handle(
+    'project:create',
+    async (_e, name?: string): Promise<ProjectSummary> => createProject(name || undefined)
+  )
 
   ipcMain.handle('project:switch', async (_e, id: string): Promise<ProjectSummary> => {
     const p = setCurrentProject(id)

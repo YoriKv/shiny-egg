@@ -18,7 +18,7 @@ function assert(cond: boolean, msg: string): void {
 const TW = 8, TH = 8;
 const TRANSPARENT = 200;
 
-// Distinct opaque palette colours (entry i is reproducible from its index).
+// Distinct opaque palette colors (entry i is reproducible from its index).
 const palette = new Uint32Array(256);
 for (let i = 0; i < 256; i++) {
   palette[i] = (((0xff) << 24) | (((i * 7) & 0xff) << 16) | (((i * 13) & 0xff) << 8) | ((i * 3) & 0xff)) >>> 0;

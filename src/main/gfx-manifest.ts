@@ -27,7 +27,7 @@ export interface GfxManifestEntry {
    *  logo). Import maps edits back into the full file by these coords. */
   region?: TileRegion
   /** Region `.aseprite` only: per-palette-entry master-palette-blob byte-offset (`-1` =
-   *  transparent/non-blob) — the import writes edited colours back to the blob. */
+   *  transparent/non-blob) — the import writes edited colors back to the blob. */
   paletteOffsets?: number[]
 }
 
@@ -56,7 +56,7 @@ export interface MapIconManifestEntry {
   width: number
   height: number
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
-   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+   *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
@@ -72,7 +72,7 @@ export interface LevelIconManifestEntry {
   width: number
   height: number
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
-   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+   *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
@@ -95,7 +95,7 @@ export interface MapTerrainManifestEntry {
    *  Aseprite mode only (the PNG view carries no editable tilemap). */
   tileKeys?: number[]
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
-   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+   *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
@@ -111,7 +111,7 @@ export interface MapGroundManifestEntry {
    *  the import maps cells back from this without re-deriving. Aseprite mode only. */
   tileKeys?: number[]
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
-   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+   *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
@@ -128,7 +128,7 @@ export interface TitleLogoManifestEntry {
    *  Aseprite mode only. */
   tileKeys?: number[]
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
-   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+   *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
@@ -146,7 +146,7 @@ export interface TitleIslandManifestEntry {
    *  order — the import maps cells/tiles back from this without re-deriving. Aseprite mode. */
   tileKeys?: number[]
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
-   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+   *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
@@ -157,7 +157,7 @@ export interface TitleSceneryManifestEntry {
   width: number
   height: number
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
-   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+   *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
@@ -171,20 +171,18 @@ export interface StorybookSceneManifestEntry {
   width: number
   height: number
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
-   *  non-blob) — the import writes edited colours back to the blob. Aseprite mode only. */
+   *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
-/** One OVERWORLD M1TE2 `.M1` session — a world's LEFT or RIGHT 32×32 half (M1TE2 maps are a
- *  fixed 32×32, the overworld is 64 wide). The file bundles slot 0 = BG1 ($7C-class) / slot
- *  1 = BG2 ($7D-class) / slot 2 = BG3 ground ($7E) tilemaps + the shared $74/$75/$4C (4bpp) +
- *  $56 (2bpp) CHR + the per-world palette. `world`+`half` rebuild the scene on import; CHR
- *  pixels round-trip to the char files, tilemap words to bg1/bg2/bg3FileId, palette to the
- *  master blob. */
+/** One OVERWORLD M1TE2 `.M1` session — a world's full 64×32 screen (M1TE2 v2 supports a
+ *  64-wide map). The file bundles slot 0 = BG1 ($7C-class) / slot 1 = BG2 ($7D-class) /
+ *  slot 2 = BG3 ground ($7E) tilemaps + the shared $74/$75/$4C (4bpp) + $56 (2bpp) CHR +
+ *  the per-world palette. `world` rebuilds the scene on import; CHR pixels round-trip to the
+ *  char files, tilemap words to bg1/bg2/bg3FileId, palette to the master blob. */
 export interface MapOverworldM1ManifestEntry {
   file: string
   world: number
-  half: 0 | 1
   bg1FileId: number
   bg2FileId: number
   bg3FileId: number
@@ -213,6 +211,20 @@ export interface MapM1Manifest {
 export interface ScreenM1ManifestEntry {
   file: string
   kind: 'island' | 'storybook-scene'
+}
+
+/** One 1bpp Bank09 sheet PNG (the message font / message-box pictures) — a raw
+ *  `glyphW`×`glyphH` cell grid. Edits re-encode to 1bpp and slice back to the raw
+ *  `binFile` via saveRawChrEdit (fixed incbin, no layout move). */
+export interface FontSheetManifestEntry {
+  file: string
+  /** `assets/yi`-relative raw `.bin` the edits write back to. */
+  binFile: string
+  glyphW: number
+  glyphH: number
+  cols: number
+  width: number
+  height: number
 }
 
 /** One dynamic-sprite glyph PNG (a GSU-rasterized sprite's editable bank-$54

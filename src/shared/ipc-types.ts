@@ -63,11 +63,11 @@ export interface Settings {
   /** Absolute path to the Aseprite executable, saved via the Graphics panel's
    *  "Locate Aseprite" button (for opening exported `.aseprite` projects). */
   asepritePath?: string
-  /** Canvas background colour (the area behind/around the level), as a `#rrggbb`
+  /** Canvas background color (the area behind/around the level), as a `#rrggbb`
    *  hex. App-wide, set via the toolbar swatch; absent ⇒ the renderer default. */
   canvasBackgroundColor?: string
-  /** Grid line colour (both the per-screen and per-cell grid), as an `rgba(...)`
-   *  string so the user can pick colour AND opacity. App-wide, set via the
+  /** Grid line color (both the per-screen and per-cell grid), as an `rgba(...)`
+   *  string so the user can pick color AND opacity. App-wide, set via the
    *  toolbar swatch beside the background; absent ⇒ the renderer default. The
    *  renderer scales this alpha across the cell/screen/boundary depth tiers. */
   gridColor?: string
@@ -160,6 +160,14 @@ export interface PaletteLiveResult {
   scene?: 'level' | 'world-map' | 'title' | 'story-cutscene' | 'storybook' | 'boot' | null
   /** Palette bytes written to the current screen's CGRAM (0 when nothing mapped). */
   bytesWritten?: number
+  /** The live CurrentGameMode ($0118) byte at sync time. Present whenever the
+   *  emulator was read (even when `scene` is null), so an unrecognized screen can
+   *  be reported by its game mode. Undefined only when WRAM couldn't be read. */
+  gamemode?: number
+  /** When `scene` is null, a short reason the live screen couldn't be mapped
+   *  (out-of-range world, palette-load throw, unmapped game mode). For the sync
+   *  error message. */
+  detail?: string
 }
 
 // ── Projects ────────────────────────────────────────────────────────────────
@@ -291,7 +299,7 @@ export interface RenderHeaderRequest {
   levelMode?: number
   /** header[11] LevelHeaderAnimationPalette. Indexes `DATA_animation_palette_ptr`
    *  (the per-frame palette-cycle handler). Used by the BG3 gfx export to flag
-   *  when BG3's palette colours are animated (so the exported colours are one
+   *  when BG3's palette colors are animated (so the exported colors are one
    *  frame of a cycle). Optional; defaults to 0 (no per-frame palette animation). */
   animationPalette?: number
 }
@@ -379,8 +387,8 @@ export interface LevelTileUsage extends LevelMap16Usage {
   bg3PaletteRowsUsed: number[]
 }
 
-/** `render:editablePalette` result — the level's BASE 512-byte CGRAM (no colour
- *  edits applied), plus, per CGRAM colour index, the palette-blob byte-offset
+/** `render:editablePalette` result — the level's BASE 512-byte CGRAM (no color
+ *  edits applied), plus, per CGRAM color index, the palette-blob byte-offset
  *  that backs it (`provenance`; −1 = the interpreter never writes it ⇒ not
  *  editable). The panel applies the live edit DRAFT (held by `usePaletteEditor`)
  *  on top for display; the canvas previews the draft via `paletteOverride`. */
@@ -404,7 +412,7 @@ export interface CollisionRenderResult {
  *  `footprint` = a target's own visible cells; `neighbor` = a tile a target
  *  stamped into an adjacent cell; `buried` = a target cell a later non-target
  *  object overdrew; `buriedNeighbor` = both. The renderer paints each a
- *  translucent colour; with several targets each cell carries its last writer's
+ *  translucent color; with several targets each cell carries its last writer's
  *  class (what the decode actually renders). */
 export type InfluenceClass = 'footprint' | 'neighbor' | 'buried' | 'buriedNeighbor'
 
@@ -479,12 +487,24 @@ export interface BgLayersResult {
    *  present in the contract so the canvas + gates can't silently drop it. */
   bg2Front: RenderImage | null
   bg3Front: RenderImage | null
+  /** BG3 MID plane (priority-1 water band) on BG3 screen-designation levels
+   *  (tileset `$20`/`$22`): drawn IN FRONT of BG2 but BEHIND BG1. `null` on every
+   *  other level. Required-but-nullable — the canvas draws it between BG2 and BG1. */
+  bg3Mid: RenderImage | null
   /** Per-level backdrop. Solid form = CSS hex (CGRAM[0], header < $10).
    *  Gradient form = 1×2048 RGBA strip tiled horizontally (header >= $10,
    *  the cart's 24-stop atmospheric gradient). */
   backdrop:
     | { kind: 'solid'; css: string }
-    | { kind: 'gradient'; rgba: Uint8Array; width: number; height: number }
+    | {
+        kind: 'gradient'
+        rgba: Uint8Array
+        width: number
+        height: number
+        /** The 24 effective BGR-15 keyframes (bottom→top) the gradient was built
+         *  from — for the Camera Preview's screen-relative re-banding. */
+        stops: number[]
+      }
   levelMode: number
   /** Per-layer approximate-color-math compositing descriptors (visibility +
    *  blend + draw role) derived from the level mode's PPU registers. YI puts
@@ -499,6 +519,14 @@ export interface BgLayersResult {
     bg2CharAddr: number
     bg3CharAddr: number
   }
+  /** BG2/BG3 parallax scroll rates (raw 8.8 words from the cart rate tables at
+   *  BGScrollSetting) — drives the Camera Preview's parallax offsets. */
+  parallax: {
+    bg2X: number
+    bg2Y: number
+    bg3X: number
+    bg3Y: number
+  }
 }
 
 /** Per-level render request. `override` lets the renderer ship a mutated
@@ -507,13 +535,13 @@ export interface BgLayersResult {
 export interface LevelRenderRequest {
   levelRecordId: number
   override?: LevelData
-  /** Pending master-palette colour edits (the `usePaletteEditor` draft) to apply
+  /** Pending master-palette color edits (the `usePaletteEditor` draft) to apply
    *  to CGRAM before rendering — the live in-editor preview of unsaved palette
    *  edits (the analog of `override` for level data). Applied via the per-entry
    *  provenance offset. Absent / empty ⇒ base palette. `render:cgram`,
    *  `bg1Layer`, `spriteLayer`, `bgLayers` honour it. */
   paletteOverride?: PaletteEdit[]
-  /** Pending backdrop-gradient stops (24 BGR-15 colours = BASE ⊕ the
+  /** Pending backdrop-gradient stops (24 BGR-15 colors = BASE ⊕ the
    *  `useGradientEditor` draft for THIS level's gradient table) to use in place of
    *  the ROM-read gradient — the live in-editor preview of unsaved gradient edits.
    *  Only `render:bgLayers` honours it (the backdrop layer); absent / wrong length
@@ -731,7 +759,7 @@ export interface Map16BlockPreview {
  *  icons + terrain / ground; `systemscreens` covers the boot / title / storybook
  *  char sheets + the title logo / island / scenery + storybook scene. (`worldmap` +
  *  `systemscreens` are the two halves of what used to be a single `screens` track.) */
-export type GfxExportTrack = 'metasprites' | 'worldmap' | 'systemscreens'
+export type GfxExportTrack = 'metasprites' | 'worldmap' | 'systemscreens' | 'fonts'
 
 export interface ExportGfxOptions {
   /** Limit the export to these tracks. */
@@ -740,7 +768,7 @@ export interface ExportGfxOptions {
    *  projects instead of PNGs. The title island's Aseprite export is a COMBINED
    *  tilemap: one file edits pixels, placement, AND added tiles together (assumes
    *  Manual tileset mode — see gfx-png-import.ts). `m1te2` (World Map track only)
-   *  writes the overworld (one `.M1` per world × half, BG1+BG2+BG3) + a combined icons
+   *  writes the overworld (one `.M1` per world, BG1+BG2+BG3) + a combined icons
    *  `.M1` (all per-level icons in level order + marker + castle) as M1TE2 sessions
    *  instead of the PNG/Aseprite map outputs. Default `png`. */
   format?: 'png' | 'aseprite' | 'm1te2'
@@ -766,9 +794,9 @@ export type BgRegionLayer = 1 | 2 | 3
  *  the **16×16-WORD placement** tilemap for BG2/BG3 only (rearrange which tile goes where;
  *  8×8 placement is impossible in 16×16 tile mode — see research/graphics-editing). BG1
  *  has no static tilemap placement (that's the level editor), so it rejects
- *  `aseprite-layout`. `m1te2` = an M1TE2 `.M1` session file (BG2/BG3 only) bundling the
- *  layer's tilemap + CHR + palette for editing in M1TE2 — one `.M1` per 32×32 screen since
- *  M1TE2's map is a fixed 32×32. Round-trips (CHR pixels + tilemap words + palette). */
+ *  `aseprite-layout`. `m1te2` = an M1TE2 `.M1` session file (any BG layer) bundling the
+ *  layer's tilemap + CHR + palette for editing in M1TE2 — one `.M1` for the whole layer
+ *  (M1TE2 v2 holds up to 64×64). Round-trips (CHR pixels + tilemap words + palette). */
 export type BgRegionFormat = 'png' | 'aseprite' | 'aseprite-layout' | 'm1te2'
 
 /** A rectangle of BG1 level cells (16×16 px each), in absolute level coords.
@@ -786,7 +814,7 @@ export interface BgRegionExportArgs {
   /** Required for BG1 (the selected level rectangle); ignored for BG2/BG3. */
   rect?: BgRegionRect
   /** The loaded level — its decode backs the BG1 positioned grid + its header
-   *  colours every layer. */
+   *  colors every layer. */
   level: LevelData
   /** Output format. Defaults to `png`; `aseprite` = 8×8 pixel tilemap; `aseprite-layout`
    *  = 16×16-word placement (BG2/BG3 only). */
@@ -813,7 +841,7 @@ export interface RegionImportLogEntry {
   source: 'png' | 'aseprite' | 'm1te2'
   /** Tile edits sliced from this region. */
   tiles: number
-  /** Opaque pixels whose colour was in no slot of their cell's palette row. */
+  /** Opaque pixels whose color was in no slot of their cell's palette row. */
   mismatches: number
   conflicts: number
 }
@@ -830,7 +858,7 @@ export type BgRegionImportResult =
       conflicts: number
       regions: number
       mismatches: number
-      /** Palette colours written back to the master palette blob. */
+      /** Palette colors written back to the master palette blob. */
       paletteChanged: number
       perRegion: RegionImportLogEntry[]
       log: string[]
@@ -847,7 +875,7 @@ export type ImportGraphicsResult =
       dir: string
       /** Files (gfx + palette) changed — drives the build-dirty mark. */
       changed: number
-      /** Master-palette colours written back (e.g. a recolour imported from M1TE / a
+      /** Master-palette colors written back (e.g. a recolor imported from M1TE / a
        *  swatch). Non-zero ⇒ the renderer reloads its palette draft so the live preview
        *  reflects the import (the edits were persisted behind the edit-session's back). */
       paletteChanged: number
@@ -1089,7 +1117,7 @@ export interface RomImportLevel extends ForeignLevelDiff {
   isNew?: boolean
 }
 
-/** Master-palette colour changes detected in the foreign cart. */
+/** Master-palette color changes detected in the foreign cart. */
 export interface RomImportPalette {
   /** BGR-15 words that differ from the base blob. */
   changedWords: number
@@ -1144,6 +1172,53 @@ export interface RomImportWorldMap {
   hasConflict: boolean
 }
 
+/** Backdrop-gradient stop changes detected in the foreign cart (the 16 BG color
+ *  gradients). Like {@link RomImportPalette} but for gradient stops. */
+export interface RomImportGradient {
+  /** Gradient stops (BGR-15 words) that differ from base. */
+  changedStops: number
+  /** Of those, how many you've already edited in this project (overwrite warning). */
+  conflicts: number
+}
+
+/** Title-screen tilemap PLACEMENT changes detected in the foreign cart — shared
+ *  by the title-island (Bank57) and title-logo (Bank0F) tilemaps. */
+export interface RomImportTilemap {
+  /** Cells whose tile differs from base. */
+  changedCells: number
+  /** Of those, how many you've already edited in this project (overwrite warning). */
+  conflicts: number
+}
+
+/** Cutscene glyph-line text changes (intro story / ending text) detected in the
+ *  foreign cart. Mirrors {@link RomImportNames}: only entries whose binary form
+ *  matches the editable model import; layout-control / special-glyph / relocated
+ *  entries are skipped rather than risk corruption. */
+export interface RomImportGlyphText {
+  /** Entries that will import (cleanly decodable, line structure matches base). */
+  changed: number
+  /** Entries skipped — unreadable, structurally complex, or relocated by the hack. */
+  skipped: number
+  /** The changed text doesn't fit the asm region's fixed byte budget. */
+  overBudget: boolean
+  /** The project already has edits to this region that importing would rebuild over. */
+  hasConflict: boolean
+}
+
+/** Graphics changes detected in the foreign cart — compressed GFX sheets plus raw
+ *  CHR banks ($52–$56: animation tiles, world-map icons, sprite/dynamic-body gfx). */
+export interface RomImportGfx {
+  /** Compressed sheets whose decompressed tiles differ from base (importable). */
+  changed: number
+  /** Raw-CHR `.bin` files (banks $52–$56) that differ from base (importable). */
+  rawFiles: number
+  /** Sheets that changed but couldn't be safely imported (resized / un-decodable /
+   *  un-sized lz16) — surfaced so partial coverage is never silent. */
+  skipped: number
+  /** Of the changed sheets/files, how many you've already gfx-edited in this project. */
+  conflicts: number
+}
+
 /** Result of analysing a picked foreign cart against the project's base. */
 export type RomImportReport =
   | {
@@ -1161,6 +1236,18 @@ export type RomImportReport =
       names: RomImportNames
       messages: RomImportMessages
       worldMap: RomImportWorldMap
+      /** Backdrop-gradient stop changes (16 BG color gradients). */
+      gradient: RomImportGradient
+      /** Title-island tilemap placement changes (Bank57 Mode-7 cells). */
+      islandTilemap: RomImportTilemap
+      /** Title-logo tilemap placement changes (Bank0F BG cells). */
+      logoTilemap: RomImportTilemap
+      /** Intro storybook text changes (Bank0F). */
+      introStory: RomImportGlyphText
+      /** Ending/epilogue text changes (Bank0D). */
+      endingText: RomImportGlyphText
+      /** Compressed-graphics (GFX sheet) changes. */
+      graphics: RomImportGfx
       /** Detect-only diff inventory — EVERY differing byte by cart structure,
        *  including the categories the importer doesn't apply (graphics, Map16,
        *  collision, code …). Absent when the pointer table didn't resolve. */
@@ -1172,7 +1259,7 @@ export type RomImportReport =
 export interface RomImportSelection {
   /** Record IDs to import (subset of the report's full/raw-only levels). */
   recordIds: number[]
-  /** Import the master-palette colour changes. */
+  /** Import the master-palette color changes. */
   palette: boolean
   /** Import the level-name string changes. */
   names: boolean
@@ -1180,6 +1267,18 @@ export interface RomImportSelection {
   messages: boolean
   /** Import the world-map entrance + midway record changes. */
   worldMap: boolean
+  /** Import the backdrop-gradient stop changes. */
+  gradient: boolean
+  /** Import the title-island tilemap placement changes. */
+  islandTilemap: boolean
+  /** Import the title-logo tilemap placement changes. */
+  logoTilemap: boolean
+  /** Import the intro storybook text changes. */
+  introStory: boolean
+  /** Import the ending/epilogue text changes. */
+  endingText: boolean
+  /** Import the compressed-graphics (GFX sheet) changes. */
+  graphics: boolean
   /** Pre-emptively resolve resolvable import blocks for the selected records
    *  (set 0x7D's free-space migration / de-couple 0x19/0xCB) before writing,
    *  so their levels import instead of failing the save gate. */
@@ -1215,6 +1314,23 @@ export type RomImportApplyResult =
       messages: { applied: boolean; changed: number; blanked: number; error?: string }
       /** World-map entrance/midway/index apply outcome (when selected). */
       worldMap: { applied: boolean; entrances: number; midway: number; indexRemaps: number; error?: string }
+      /** Backdrop-gradient apply outcome (when selected). */
+      gradient: { applied: boolean; stops: number; error?: string }
+      /** Title-island tilemap apply outcome (when selected). */
+      islandTilemap: { applied: boolean; cells: number; error?: string }
+      /** Title-logo tilemap apply outcome (when selected). */
+      logoTilemap: { applied: boolean; cells: number; error?: string }
+      /** Intro-story text apply outcome (when selected). */
+      introStory: { applied: boolean; changed: number; error?: string }
+      /** Ending text apply outcome (when selected). */
+      endingText: { applied: boolean; changed: number; error?: string }
+      /** Graphics apply outcome (when selected) — `files` = compressed sheets,
+       *  `rawFiles` = raw-CHR `.bin`s (banks $52–$56) written. */
+      graphics: { applied: boolean; files: number; rawFiles: number; error?: string }
+      /** Levels the hack itself emptied/removed, taken out of the project by
+       *  default (their bytes free up at the next build). Drives the editor's
+       *  navigate-away when the open level was among them. */
+      emptiedRemoved: { removed: number[]; error?: string }
     }
   | { ok: false; error: string }
 

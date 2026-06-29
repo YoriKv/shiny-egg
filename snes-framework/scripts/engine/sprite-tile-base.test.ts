@@ -1,6 +1,6 @@
-// Pins the SP4 runtime-recolour fix: resolveSpriteCel's `settledPaletteRow`
+// Pins the SP4 runtime-recolor fix: resolveSpriteCel's `settledPaletteRow`
 // param FORCES the cel's OBJ palette row, replacing the static $7042 seed for
-// sprites that recolour at spawn (the per-sprite rows baked into obj-metadata
+// sprites that recolor at spawn (the per-sprite rows baked into obj-metadata
 // from the sprite-render trace). Reads the real V1.0 cart via the vendored
 // symbol map (no build needed).
 //
@@ -91,9 +91,9 @@ assert(ghost !== null && ghost.cel.some((t) => t.tile === 271) && ghost.cel.some
 const ghostRec0 = ghost!.cel[0]!;
 assert(ghostRec0.tile === 0x11b && ghostRec0.lockPalette === true && ghostRec0.paletteRow === 1,
   `$133 record 0 = lantern $11b, locked pal1 (got tile $${ghostRec0.tile.toString(16)} pal${ghostRec0.paletteRow} lock=${ghostRec0.lockPalette})`);
-// The body recolours by spawn-cell parity (rows 0/1/2/4) but the locked lantern stays pal1.
+// The body recolors by spawn-cell parity (rows 0/1/2/4) but the locked lantern stays pal1.
 const ghostP3 = resolveSpriteCel(rom, sym, header, 0x133, undefined, false, undefined, { x: 1, y: 1 })!; // parity 3 → row 4 (brown)
-assert(ghostP3.cel[0]!.tile === 0x11b && ghostP3.cel[0]!.paletteRow === 1, '$133 lantern stays pal1 under the parity-4 body recolour');
+assert(ghostP3.cel[0]!.tile === 0x11b && ghostP3.cel[0]!.paletteRow === 1, '$133 lantern stays pal1 under the parity-4 body recolor');
 assert(ghostP3.cel.slice(1).every((t) => t.paletteRow === 4), `$133 body records take parity row 4 (got ${JSON.stringify(ghostP3.cel.slice(1).map((t) => t.paletteRow))})`);
 assert(resolveSpriteCel(rom, sym, header, 0x0c) === null, '$00C still gated null (cel tiles >= 448, true dynamic region, no body)');
 const taptap = resolveSpriteCel(rom, sym, header, 0x3c);

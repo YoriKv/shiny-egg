@@ -12,7 +12,7 @@
 //      drawn before the neighbour error badge so a genuine red "!" wins the
 //      corner.
 // SINGLE SOURCE: geometry + caps live in the data modules; this module only
-// presents them (colour, dash, tick styling) — mirrors sprite-variant-hints.
+// presents them (color, dash, tick styling) — mirrors sprite-variant-hints.
 
 import type { LevelSprite, SpriteCelBounds } from '../../../../preload/api'
 import { behaviorMarks, type BehaviorMark } from '../../data/sprite-behavior-extents'

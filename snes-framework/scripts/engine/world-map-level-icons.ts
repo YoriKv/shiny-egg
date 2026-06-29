@@ -105,15 +105,15 @@ export function levelIconHighNibble(rom: Uint8Array, symbols: SymbolMap, world: 
   return rom[listPc + slot]! === COLUMN_X_HIGH;
 }
 
-/** Per-world decode context — just the per-world overworld CGRAM (icons colour
+/** Per-world decode context — just the per-world overworld CGRAM (icons color
  *  against the map palette, like `mapPalette` for the BG). */
 export interface LevelIconContext {
   rom: Uint8Array;
   symbols: SymbolMap;
   world: number;
   cgram: Uint8Array;
-  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source) — lets a
-   *  level-icon palette-colour edit (OBJ row 8+slot) round-trip to the blob. */
+  /** CGRAM color index → master-palette-blob byte-offset (`-1` = no blob source) — lets a
+   *  level-icon palette-color edit (OBJ row 8+slot) round-trip to the blob. */
   provenance: Int32Array;
 }
 export function buildLevelIconContext(rom: Uint8Array, symbols: SymbolMap, world: number): LevelIconContext {
@@ -230,7 +230,7 @@ export function sliceLevelIconWrites(
 /**
  * Slice an edited 24×24 INDEX buffer (nibble indices 0-15 — e.g. the decoded CHR of an
  * M1TE2 `.M1` icon) back to bank-$53 writes: the index-domain twin of `sliceLevelIconWrites`
- * (no RGBA round-trip, so no palette-aliasing risk on a duplicate colour). RMW only THIS
+ * (no RGBA round-trip, so no palette-aliasing risk on a duplicate color). RMW only THIS
  * icon's nibble (the other column's nibble in the shared byte is preserved), one write per
  * chunky row. Returns null if a row is outside the bins.
  */
@@ -268,7 +268,7 @@ export function levelIconAseprite(ctx: LevelIconContext, canvas: LevelIconCanvas
     pixels: canvas.indices.slice(), palette: iconPalette(ctx.cgram, canvas.paletteRow),
     transparentIndex: 0, layerName: `level-icon-${canvas.world}-${canvas.slot}`
   });
-  // Colour write-back map — the SAME single OBJ row (8+paletteRow), 16-colour, index 0 transparent.
+  // Color write-back map — the SAME single OBJ row (8+paletteRow), 16-color, index 0 transparent.
   const paletteOffsets = imagePaletteOffsets({ provenance: ctx.provenance, rows: [8 + canvas.paletteRow], index0Transparent: true });
   return { bytes, paletteOffsets };
 }
@@ -284,13 +284,13 @@ export interface LevelIconPngEntry {
   /** The same icon as a single-image `.aseprite` (built only when requested). */
   aseprite?: Uint8Array;
   /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
-   *  editing the embedded palette writes those colours back to the blob. Aseprite mode only. */
+   *  editing the embedded palette writes those colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[];
 }
 
 /**
  * Export the per-level icons for every world (0-5, slots 0-9 = L1..L8 + EXTRA +
- * BONUS) — the editable assembled icon, coloured by the world's overworld palette.
+ * BONUS) — the editable assembled icon, colored by the world's overworld palette.
  * Pixels come from the cart bank-$53 chunky data (the right nibble per the cart's
  * column table); the per-slot palette row is the only embedded metadata.
  */

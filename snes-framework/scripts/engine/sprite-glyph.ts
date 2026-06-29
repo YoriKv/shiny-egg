@@ -117,9 +117,9 @@ export interface GlyphPngEntry {
   png: Uint8Array;
 }
 
-/** Export every byte-validated dynamic-sprite glyph as a PNG (coloured by the
- *  level's OBJ palette + a swatch). The bytes are global; the colouring is the
- *  level's (the slice maps colours → indices, so the edit is palette-independent). */
+/** Export every byte-validated dynamic-sprite glyph as a PNG (colored by the
+ *  level's OBJ palette + a swatch). The bytes are global; the coloring is the
+ *  level's (the slice maps colors → indices, so the edit is palette-independent). */
 export function exportSpriteGlyphs(rom: Uint8Array, symbols: SymbolMap, header: PaletteHeader): GlyphPngEntry[] {
   const cgram = new Uint8Array(512);
   loadLevelPalettes(rom, symbols, header, cgram);

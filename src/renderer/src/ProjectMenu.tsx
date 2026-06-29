@@ -2,6 +2,7 @@ import { useEffect, useState, type JSX } from 'react'
 import type { ProjectInfo, ProjectSummary } from '../../preload/api'
 import { useDropdown } from './hooks/useDropdown'
 import { DiscardChangesModal } from './DiscardChangesModal'
+import { NameProjectModal } from './NameProjectModal'
 import { HelpDialog } from './HelpDialog'
 import { ImportRomDialog } from './ImportRomDialog'
 import { ImportGbaDialog } from './ImportGbaDialog'
@@ -25,6 +26,17 @@ interface ProjectMenuProps {
 // lowercase ascii + digits + "-"/"_", must start alphanumeric, ≤64 chars.
 // Used for live feedback; the backend enforces it authoritatively.
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
+
+// Suggested default for the new-project modal — the first free `new-shiny-NN`,
+// mirroring the main-side `nextDefaultName` so an accept-the-default click matches
+// the old auto-naming. Computed from the loaded project list (the backend still
+// has the final say on uniqueness).
+function nextDefaultName(existing: ReadonlySet<string>): string {
+  for (let i = 0; ; i++) {
+    const name = `new-shiny-${String(i).padStart(2, '0')}`
+    if (!existing.has(name)) return name
+  }
+}
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso)
@@ -53,6 +65,10 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
   // thunk runs on Save (after a successful save-all) or Discard.
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // "Name your new project" modal — opened by New project (after the unsaved-changes
+  // guard), it owns the create so its result/error shows in-place.
+  const [nameModalOpen, setNameModalOpen] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
   // App-level help/about dialogs (reuse the panel HelpDialog system).
   const [appDialog, setAppDialog] = useState<'editor-help' | 'about' | null>(null)
 
@@ -80,14 +96,17 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
     }
   }
 
-  async function doNew(): Promise<void> {
+  async function doNew(name: string): Promise<void> {
     setBusy(true)
-    setStatus(null)
+    setNameError(null)
     try {
-      onChange(await window.shinyEgg.projects.create(), true)
+      const created = await window.shinyEgg.projects.create(name)
+      setNameModalOpen(false)
+      onChange(created, true)
       await refreshList()
     } catch (err) {
-      setStatus((err as Error).message)
+      // Keep the modal open and show the (rare, post-validation) backend error.
+      setNameError((err as Error).message)
     } finally {
       setBusy(false)
     }
@@ -107,7 +126,13 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
   }
 
   function onNew(): void {
-    guard(doNew)
+    // Resolve any unsaved changes first (creating switches projects), then open the
+    // name prompt. The modal's Create runs doNew(name).
+    guard(async () => {
+      setOpen(false)
+      setNameError(null)
+      setNameModalOpen(true)
+    })
   }
 
   function onOpen(id: string): void {
@@ -358,7 +383,7 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
                     setAppDialog('editor-help')
                   }}
                 >
-                  Level Editor help
+                  Level Editor Help
                 </button>
                 <button
                   type="button"
@@ -469,6 +494,19 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
           )}
         </div>
       )}
+
+      <NameProjectModal
+        open={nameModalOpen}
+        defaultName={nextDefaultName(new Set(projects.map((p) => p.name)))}
+        existingNames={projects.map((p) => p.name)}
+        busy={busy}
+        error={nameError}
+        onSubmit={(name) => void doNew(name)}
+        onCancel={() => {
+          setNameModalOpen(false)
+          setNameError(null)
+        }}
+      />
 
       <DiscardChangesModal
         open={pending !== null}

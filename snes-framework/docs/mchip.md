@@ -97,7 +97,7 @@ Special registers:
 | RAMBR   | RAM bank register   | Source/dest bank for `LDB(Rn)`/`STB(Rn)`. Set via `FROM Rn / RAMB`. |
 | SBR     | Screen base register | Mode-7 / character mode screen address. |
 | SCBR    | Screen char base    | Per-tile character data base. |
-| SCMR    | Screen mode register | Resolution / colour-depth selection. |
+| SCMR    | Screen mode register | Resolution / color-depth selection. |
 | CFGR    | Configuration reg   | Multiplier mode / interrupt enable. |
 | CBR     | Cache base register | Read-only: where the 512-byte CACHE was last filled from. |
 
@@ -184,7 +184,7 @@ serve different purposes:
 | Framework label | SuperFX addr | Source file | Format | Purpose |
 |---|---|---|---|---|
 | `CODE_08A980 / lz2_decompress`   | `$08:A980` | `chip/ys_chip0.asm` (entry $5 bytes into the bank's `ys_chip0` segment per the link map) | LC_LZ2 (Lunar Compress FORMAT=1) — cart labels it "lz1" but the format is LZ2 | **Format-agnostic byte stream.** Stages output as raw bytes — caller decides what to do with them. Used for 4bpp tile graphics AND for BG1/BG2 tilemap-index arrays. |
-| `CODE_0A8000 / lz16_decompress`  | `$0A:8000` | `chip/Gdefchr.asm` (filename = "Get-Define-CHR"; the whole 457-byte file is this single decompressor — bank `$0A` starts with it) | LC_LZ16 (FORMAT=15) | **Tile-graphics-only.** Has CGRAM-aware 4bpp tile setup folded in: opens with `CMODE` (configures GSU bit-fetch from prefetch) and `IWT R4,#$0F0F` (4bpp colour mask), reads a 3-byte palette/control header, then writes tiles straight through the GSU plot pipeline. Wired for 16-colour CHR data end-to-end. |
+| `CODE_0A8000 / lz16_decompress`  | `$0A:8000` | `chip/Gdefchr.asm` (filename = "Get-Define-CHR"; the whole 457-byte file is this single decompressor — bank `$0A` starts with it) | LC_LZ16 (FORMAT=15) | **Tile-graphics-only.** Has CGRAM-aware 4bpp tile setup folded in: opens with `CMODE` (configures GSU bit-fetch from prefetch) and `IWT R4,#$0F0F` (4bpp color mask), reads a 3-byte palette/control header, then writes tiles straight through the GSU plot pipeline. Wired for 16-color CHR data end-to-end. |
 
 The format split in YI: 115 tile-graphics files + 150 tilemap files
 are LC_LZ2; 187 tile-graphics files are LC_LZ16. Tile-graphics files

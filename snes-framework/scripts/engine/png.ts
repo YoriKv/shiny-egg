@@ -38,7 +38,7 @@ function chunk(type: string, data: Buffer): Buffer {
 
 /**
  * Decode a PNG buffer to RGBA8888. Handles 8-bit grayscale / RGB / RGBA and
- * indexed (palette, 1/2/4/8-bit) — the colour types external editors export —
+ * indexed (palette, 1/2/4/8-bit) — the color types external editors export —
  * with all five filter types. Errors on 16-bit depth and interlacing (rare from
  * paint tools). Enough to round-trip our own exports and standard editor saves.
  */
@@ -68,7 +68,7 @@ export function decodePng(buf: Buffer): ImageData {
   }
   const channels = colorType === 2 ? 3 : colorType === 4 ? 2 : colorType === 6 ? 4 : 1;
   if (depth === 16) throw new Error('decodePng: 16-bit depth unsupported');
-  if (colorType !== 3 && depth !== 8) throw new Error(`decodePng: depth ${depth} unsupported for colour type ${colorType}`);
+  if (colorType !== 3 && depth !== 8) throw new Error(`decodePng: depth ${depth} unsupported for color type ${colorType}`);
 
   const bitsPerPixel = channels * depth;
   const bpp = Math.max(1, bitsPerPixel >> 3); // filter byte-distance

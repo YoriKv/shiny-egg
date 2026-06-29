@@ -104,7 +104,7 @@ export function drawSpritePrize(
     // (its inscribed square is ~0.71× the diameter, so 3-char text rides smaller than in a box).
     ctx.font = `bold ${diameter * (style.label.length <= 1 ? 0.66 : 0.34)}px 'JetBrains Mono', monospace`
     const ty = cy + 0.5 / zoom
-    // Dark outline under the white glyph so the label stays legible over any badge colour
+    // Dark outline under the white glyph so the label stays legible over any badge color
     // (constant screen-width stroke, rounded joins so it hugs the glyph cleanly).
     ctx.lineWidth = 2 / zoom
     ctx.lineJoin = 'round'

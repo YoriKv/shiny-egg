@@ -36,13 +36,13 @@ function assertPaletteRoundTrip(label: string, palette: Uint32Array, offsets: nu
   const blobWords = new Map<number, number>();
   for (let ci = 0; ci < provenance.length; ci++) { const o = provenance[ci]!; if (o >= 0) blobWords.set(o, (cgram[ci * 2]! | (cgram[ci * 2 + 1]! << 8)) & 0x7fff); }
   assert(offsets.length > 0 && offsets.length <= palette.length, `${label}: paletteOffsets covers the meaningful entries (${offsets.length} of ${palette.length})`);
-  assert(diffAsepritePalette(palette, offsets, blobWords).length === 0, `${label}: unedited palette → 0 master-blob colour edits`);
+  assert(diffAsepritePalette(palette, offsets, blobWords).length === 0, `${label}: unedited palette → 0 master-blob color edits`);
   const pi = offsets.findIndex((o) => o >= 0);
-  assert(pi >= 0, `${label}: palette has a blob-backed colour to edit`);
+  assert(pi >= 0, `${label}: palette has a blob-backed color to edit`);
   if (pi >= 0) {
     const ep = palette.slice(); ep[pi] = (ep[pi]! ^ 0x00080808) >>> 0;
     const eds = diffAsepritePalette(ep, offsets, blobWords);
-    assert(eds.length === 1 && eds[0]!.offset === offsets[pi] && eds[0]!.value === imageDataU32ToBgr15(ep[pi]!), `${label}: a 1-colour edit → exactly one PaletteEdit at the right offset`);
+    assert(eds.length === 1 && eds[0]!.offset === offsets[pi] && eds[0]!.value === imageDataU32ToBgr15(ep[pi]!), `${label}: a 1-color edit → exactly one PaletteEdit at the right offset`);
   }
 }
 
@@ -142,7 +142,7 @@ for (const { world, slot, label, high } of [
   const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
   assert(eq(dec.rgba, canvasRegion(levelIconPng(ctx, c))), 'level-icon .aseprite flatten == the PNG canvas region');
   assert(!sliceLevelIconWrites(ctx, c, dec.rgba)!.changed, 'level-icon .aseprite round-trips to 0 writes');
-  // Palette write-back: the icon's single OBJ row (8+slot), 16-colour, index 0 transparent.
+  // Palette write-back: the icon's single OBJ row (8+slot), 16-color, index 0 transparent.
   assertPaletteRoundTrip('level icon', dec.palette, liconFull.paletteOffsets, ctx.provenance, ctx.cgram);
 }
 

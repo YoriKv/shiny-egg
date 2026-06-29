@@ -29,6 +29,7 @@ import {
 } from './bg-region.ts';
 import { decodeAsepriteRegion, decodeAsepriteStructural } from './aseprite.ts';
 import { resolveBgTilemapSource } from './load-bg-tilemaps.ts';
+import { OFF_PALETTE, OFF_MAPS, OFF_CHR4, OFF_CHR2, MAP_STRIDE, MAP_WORDS } from './m1te2.ts';
 
 /** flatten(.aseprite) must equal the region RGBA byte-for-byte (the round-trip
  *  invariant the slicers rely on). */
@@ -71,7 +72,7 @@ function firstAllocatedScreen(screenPageMap: Uint8Array): { sx: number; sy: numb
   return null;
 }
 
-/** Set one pixel to a palette colour of `row` that differs from its current value
+/** Set one pixel to a palette color of `row` that differs from its current value
  *  (so the slice registers a change). Returns true if a pixel was changed. */
 function pokePixel(
   rgba: Uint8Array, width: number, pxX: number, pxY: number,
@@ -117,7 +118,7 @@ for (const rec of LEVELS) {
           const d = diffBg1Region(ctx, region, edited);
           assert(d.edits.length >= 1, `BG1 1-px edit isolates → ${d.edits.length} tile(s)`);
         }
-        // An off-palette colour (R=1 isn't a 5-bit SNES channel) → reported mismatch.
+        // An off-palette color (R=1 isn't a 5-bit SNES channel) → reported mismatch.
         const off = region.rgba.slice();
         new Uint32Array(off.buffer, off.byteOffset, off.length >>> 2)[(cell.r * 16) * region.width + cell.c * 16] = 0xff030201 >>> 0;
         assert(diffBg1Region(ctx, region, off).mismatches >= 1, `BG1 off-palette pixel flagged as mismatch`);
@@ -131,41 +132,40 @@ for (const rec of LEVELS) {
       assert(diffBg1Region(ctx, region, flat.rgba).edits.length === 0,
         `BG1 aseprite round-trips through the slicer (0 edits)`);
 
-      // 4. BG1 M1TE ".M1" round-trip (pixel + palette; no placement). The 16×16-Map16
-      //    region → one 32×32 8×8 screen. Unedited → 0 edits; flipping the .M1 CHR yields
-      //    edits only for writable (faithful) tiles, all 32 B, 0 word edits; a palette edit
-      //    isolates to its CGRAM index.
+      // 4. BG1 M1TE ".M1" round-trip (pixel + palette; no placement). The Map16 region →
+      //    one .M1 (v2 holds up to 64×64 8×8 cells). Unedited → 0 edits; flipping the .M1 CHR
+      //    yields edits only for writable (faithful) tiles, all 32 B, 0 word edits; a palette
+      //    edit isolates to its CGRAM index.
       {
-        const screens = bg1RegionM1te2(ctx, region);
-        assert(screens.length === 1, `BG1 M1TE → ${screens.length} screen (single, not split)`);
-        // A larger-than-16×16 area is CROPPED to the top-left block — still ONE .M1, ≤32×32.
-        const bigRect = { col0: scr.sx * 16, row0: scr.sy * 16, cols: 24, rows: 20 };
-        const bigScreens = bg1RegionM1te2(ctx, renderBg1Region(ctx, levelDataBuffer, screenPageMap, bigRect));
-        assert(bigScreens.length === 1 && bigScreens[0]!.cols <= 32 && bigScreens[0]!.rows <= 32,
-          `BG1 M1TE crops a >16×16 area to one top-left screen (got ${bigScreens.length} screen(s), ${bigScreens[0]?.cols}×${bigScreens[0]?.rows} cells)`);
-        const s0 = screens[0]!;
-        const clean = diffBg1RegionM1te2(ctx, region, s0.bytes, 0, 0);
+        const m1 = bg1RegionM1te2(ctx, region);
+        assert(m1.cols <= MAP_STRIDE && m1.rows <= MAP_STRIDE, `BG1 M1TE → one .M1 (${m1.cols}×${m1.rows} cells, ≤64)`);
+        // A larger-than-32×32-Map16 area is CROPPED to the top-left block — still ONE .M1, ≤64×64.
+        const bigRect = { col0: scr.sx * 16, row0: scr.sy * 16, cols: 40, rows: 36 };
+        const big = bg1RegionM1te2(ctx, renderBg1Region(ctx, levelDataBuffer, screenPageMap, bigRect));
+        assert(big.cols <= MAP_STRIDE && big.rows <= MAP_STRIDE,
+          `BG1 M1TE crops a >32×32-cell area to the top-left block (got ${big.cols}×${big.rows} cells)`);
+        const clean = diffBg1RegionM1te2(ctx, region, m1.bytes);
         assert(clean.tileEdits.length === 0 && clean.wordEdits.length === 0 && clean.paletteEdits.length === 0,
           `BG1 M1TE unedited round-trips (0 tile / 0 word / 0 palette)`);
         if (faithful > 0) {
           // Flip a byte in every CHR tile → writable tiles produce 32 B edits, others skip;
           // BG1 never writes a tilemap word.
-          const edited = s0.bytes.slice()
-          for (let t = 1; t < 1024; t++) edited[6416 + t * 32]! ^= 0xff
-          const d = diffBg1RegionM1te2(ctx, region, edited, 0, 0)
+          const edited = m1.bytes.slice()
+          for (let t = 1; t < 1024; t++) edited[OFF_CHR4 + t * 32]! ^= 0xff
+          const d = diffBg1RegionM1te2(ctx, region, edited)
           assert(d.tileEdits.length >= 1 && d.wordEdits.length === 0 && d.tileEdits.every((e) => e.bytes.length === 32),
             `BG1 M1TE CHR edit → ${d.tileEdits.length} writable tile(s) of 32 B, 0 words`)
         }
-        // Palette edit: recolour a used row's colour 1 (never a blacked transparent slot).
+        // Palette edit: recolor a used row's color 1 (never a blacked transparent slot).
         if (region.paletteRowsUsed.length > 0) {
           const pi = region.paletteRowsUsed[0]! * 16 + 1
-          const pe = s0.bytes.slice()
-          const orig = pe[16 + pi * 2]! | (pe[16 + pi * 2 + 1]! << 8)
+          const pe = m1.bytes.slice()
+          const orig = pe[OFF_PALETTE + pi * 2]! | (pe[OFF_PALETTE + pi * 2 + 1]! << 8)
           const nc = (orig ^ 0x001f) & 0x7fff
-          pe[16 + pi * 2] = nc & 0xff; pe[16 + pi * 2 + 1] = (nc >> 8) & 0xff
-          const dp = diffBg1RegionM1te2(ctx, region, pe, 0, 0)
+          pe[OFF_PALETTE + pi * 2] = nc & 0xff; pe[OFF_PALETTE + pi * 2 + 1] = (nc >> 8) & 0xff
+          const dp = diffBg1RegionM1te2(ctx, region, pe)
           assert(dp.paletteEdits.length === 1 && dp.paletteEdits[0]!.cgramIndex === pi && dp.paletteEdits[0]!.bgr15 === nc,
-            `BG1 M1TE 1-colour palette edit → exactly that CGRAM index`)
+            `BG1 M1TE 1-color palette edit → exactly that CGRAM index`)
         }
         m1te2Tested++;
       }
@@ -213,15 +213,15 @@ for (const rec of LEVELS) {
       `BG${layer} aseprite flattens byte-exact (${region.bpp}bpp, flips)`);
     assert(diffBgRegionTiles(bgCtx, region, flat.rgba).edits.length === 0,
       `BG${layer} aseprite round-trips through the slicer (0 edits)`);
-    // The aseprite palette must match the PNG swatch — each row's colour 0 is
-    // transparent on these layers (NOT an opaque colour the artist could mis-use).
+    // The aseprite palette must match the PNG swatch — each row's color 0 is
+    // transparent on these layers (NOT an opaque color the artist could mis-use).
     let palMatch = true;
     const cprPal = region.bpp === 4 ? 16 : 4;
     region.paletteRowsUsed.forEach((row, k) => {
       const swatch = buildPaletteRow(bgCtx.cgram, row, true, 'expand', cprPal);
       for (let i = 0; i < cprPal; i++) if ((flat.palette[k * cprPal + i] ?? 0) !== swatch[i]) palMatch = false;
     });
-    assert(palMatch, `BG${layer} aseprite palette matches the PNG swatch (per-row colour 0 transparent)`);
+    assert(palMatch, `BG${layer} aseprite palette matches the PNG swatch (per-row color 0 transparent)`);
 
     // 4. PLACEMENT round-trip on REAL data, at the BG's NATIVE tile size (16×16 for
     //    YI BG2/BG3 — one Aseprite tile = one tilemap word). Unedited → 0 word edits;
@@ -351,7 +351,7 @@ for (const rec of LEVELS) {
         const vals = new Set<number>(); for (let i = 0; i < 64; i++) { const a = tp[tb + i]!; if (a) vals.add(a); }
         const dv = [...vals];
         if (editTile > 0 && dv.length >= 2) {
-          for (let i = 0; i < 64; i++) if (tp[tb + i] === dv[0]) { tp[tb + i] = dv[1]!; break; } // in-row recolour
+          for (let i = 0; i < 64; i++) if (tp[tb + i] === dv[0]) { tp[tb + i] = dv[1]!; break; } // in-row recolor
           const editedStruct = { ...cstruct, tilePixels: tp };
           const vanilla = bgCtx.vram.slice();
           const d1 = diffBgRegionCombined(bgCtx, region, editedStruct, tmAddr, { baseVram: vanilla });
@@ -412,55 +412,54 @@ for (const rec of LEVELS) {
       }
     }
 
-    // 8. M1TE2 ".M1" session round-trip: export the layer (one .M1 per 32×32 screen),
-    //    re-diff the first screen unedited → 0 edits; then a 1-tile CHR edit, a 1-word
-    //    tilemap edit, and a 1-colour palette edit each isolate to exactly one change.
+    // 8. M1TE2 ".M1" session round-trip: export the WHOLE layer as one .M1 (v2 holds up to
+    //    64×64), re-diff unedited → 0 edits; then a 1-tile CHR edit, a 1-word tilemap edit,
+    //    and a 1-color palette edit each isolate to exactly one change.
     {
-      const screens = bgRegionM1te2(bgCtx, region);
+      const m1 = bgRegionM1te2(bgCtx, region);
       const ts2 = region.tileSize;
       const cols2 = region.width / ts2, rows2 = region.height / ts2;
-      assert(screens.length === Math.max(1, Math.ceil(cols2 / 32)) * Math.max(1, Math.ceil(rows2 / 32)),
-        `BG${layer} M1TE2 → ${screens.length} screen(s) for ${cols2}×${rows2} cells`);
-      const s0 = screens[0]!;
-      const clean = diffBgRegionM1te2(bgCtx, region, s0.bytes, 0, 0, tmAddr);
+      assert(m1.cols === cols2 && m1.rows === rows2,
+        `BG${layer} M1TE2 → one .M1 covering ${cols2}×${rows2} cells (got ${m1.cols}×${m1.rows})`);
+      const clean = diffBgRegionM1te2(bgCtx, region, m1.bytes, tmAddr);
       assert(clean.tileEdits.length === 0 && clean.wordEdits.length === 0 && clean.paletteEdits.length === 0,
         `BG${layer} M1TE2 unedited round-trips (0 tile / 0 word / 0 palette)`);
 
-      const chrBase = region.bpp === 4 ? 6416 : 39184;
+      const chrBase = region.bpp === 4 ? OFF_CHR4 : OFF_CHR2;
       // CHR edit: flip a byte of an editable tile's CHR → exactly that one CHR tile.
       const ec = region.subCells.find((s) => s.gfx);
       if (ec) {
-        const b = s0.bytes.slice();
+        const b = m1.bytes.slice();
         b[chrBase + ec.charTile * tileBytes]! ^= 0xff;
-        const d = diffBgRegionM1te2(bgCtx, region, b, 0, 0, tmAddr);
+        const d = diffBgRegionM1te2(bgCtx, region, b, tmAddr);
         assert(d.tileEdits.length === 1 && d.tileEdits[0]!.fileId === ec.gfx!.fileId &&
           d.tileEdits[0]!.fileTile === ec.gfx!.fileTile && d.tileEdits[0]!.bytes.length === tileBytes,
           `BG${layer} M1TE2 1-tile CHR edit → exactly that CHR tile (${tileBytes} B)`);
       }
-      // Word edit: change one editable screen-0 cell's tilemap word → exactly that word.
+      // Word edit: change one editable cell's tilemap word (at the doc's 64-stride) → exactly that word.
       const wcell = region.subCells.find((s) => s.gfx && s.pxX % ts2 === 0 && s.pxY % ts2 === 0 &&
-        s.pxX / ts2 < 32 && s.pxY / ts2 < 32);
+        s.pxX / ts2 < MAP_STRIDE && s.pxY / ts2 < MAP_STRIDE);
       if (wcell) {
-        const wo = 272 + (layer - 1) * 2048 + ((wcell.pxY / ts2) * 32 + wcell.pxX / ts2) * 2;
-        const b = s0.bytes.slice();
+        const wo = OFF_MAPS + (layer - 1) * MAP_WORDS * 2 + ((wcell.pxY / ts2) * MAP_STRIDE + wcell.pxX / ts2) * 2;
+        const b = m1.bytes.slice();
         const nw = (wcell.entry ^ 0x0001) & 0xffff;
         b[wo] = nw & 0xff; b[wo + 1] = (nw >> 8) & 0xff;
-        const d = diffBgRegionM1te2(bgCtx, region, b, 0, 0, tmAddr);
+        const d = diffBgRegionM1te2(bgCtx, region, b, tmAddr);
         assert(d.wordEdits.length === 1 && d.wordEdits[0]!.fileOffset === wcell.memoryEntryOff - tmAddr &&
           d.wordEdits[0]!.word === nw,
           `BG${layer} M1TE2 1-word edit → exactly that tilemap word`);
       }
-      // Palette edit: recolour a used, non-blacked CGRAM index (col 1 ≠ any blacked slot).
+      // Palette edit: recolor a used, non-blacked CGRAM index (col 1 ≠ any blacked slot).
       const cpr2 = region.bpp === 4 ? 16 : 4;
       const pi = region.paletteRowsUsed[0]! * cpr2 + 1;
       {
-        const b = s0.bytes.slice();
-        const orig = b[16 + pi * 2]! | (b[16 + pi * 2 + 1]! << 8);
+        const b = m1.bytes.slice();
+        const orig = b[OFF_PALETTE + pi * 2]! | (b[OFF_PALETTE + pi * 2 + 1]! << 8);
         const nc = (orig ^ 0x001f) & 0x7fff;
-        b[16 + pi * 2] = nc & 0xff; b[16 + pi * 2 + 1] = (nc >> 8) & 0xff;
-        const d = diffBgRegionM1te2(bgCtx, region, b, 0, 0, tmAddr);
+        b[OFF_PALETTE + pi * 2] = nc & 0xff; b[OFF_PALETTE + pi * 2 + 1] = (nc >> 8) & 0xff;
+        const d = diffBgRegionM1te2(bgCtx, region, b, tmAddr);
         assert(d.paletteEdits.length === 1 && d.paletteEdits[0]!.cgramIndex === pi && d.paletteEdits[0]!.bgr15 === nc,
-          `BG${layer} M1TE2 1-colour palette edit → exactly that CGRAM index`);
+          `BG${layer} M1TE2 1-color palette edit → exactly that CGRAM index`);
       }
       m1te2Tested++;
     }

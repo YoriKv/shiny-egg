@@ -468,7 +468,7 @@ export const DYNAMIC_BODY_SOURCES: Readonly<Record<number, DynamicBodySource>> =
   // as the bbox fallback `ox = min(dx)` and the Wild Piranha $066 `originX:-18`), NOT its negation.
   0x043: { delta: 0x540060 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 1, bodyStandalone: true, originX: -8, originY: -10 }, // Red Giant Shy Guy
   0x044: { delta: 0x540060 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 0, bodyStandalone: true, originX: -8, originY: -10 }, // Green Giant Shy Guy
-  0x08c: { delta: 0x556080 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 5 }, // Yoshi, at the Goal — OBJ pal 5 = the Yoshi-colour row (CGRAM 13, yoshi_palette_ptrs) → green Yoshi w/ red boots; pal 7 was the per-level grayscale row (same gray-skin trap as the Koopas)
+  0x08c: { delta: 0x556080 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 5 }, // Yoshi, at the Goal — OBJ pal 5 = the Yoshi-color row (CGRAM 13, yoshi_palette_ptrs) → green Yoshi w/ red boots; pal 7 was the per-level grayscale row (same gray-skin trap as the Koopas)
   0x0ed: { delta: 0x556040 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 1 }, // Flamer Guy (walking/running)
   0x0ec: { delta: 0x556040 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 1 }, // Flamer Guy (jumping) — SAME handler as $0ED ($05:BE69/$05:BEB2), so the same body source
   0x0f6: { delta: 0x552000 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 1 }, // Huffin' Puffins
@@ -586,7 +586,7 @@ export const DYNAMIC_BODY_SOURCES: Readonly<Record<number, DynamicBodySource>> =
   ] }, // Tap-Tap (DATA_0FA6D3 idx0 $55:4081 HIGH via CODE_0FA71D + shell $55:00C1 via CODE_0FA75B + feet $55:60A1)
   // Bullet Bill Blasters $078/$079/$07A — ONE draw routine (CODE_05D32B → FXCODE_08D6EB): the 16×16
   // ball source `DATA_05D325[$77]` plotted at ~2× (R6=$7A36 reaches ≈$01FC at draw; the un-zoomed 16×16
-  // top-left of each sheet IS the ball — reading 32×32 would pull in adjacent frames). Per-colour: $77
+  // top-left of each sheet IS the ball — reading 32×32 would pull in adjacent frames). Per-color: $77
   // (source) from init, palette from DATA_05D1D1 ($7042 = $0022/$0024/$0020 → rows 1/2/0):
   //   $078 Red / $07A Green → $77=0 → $54:8010 ; $079 Yellow → $77=4 → $54:B000 (its special init path).
   // 16×16 LOW, drawn at the SPAWN scale (asm init $7A36 = $0100 = 1×). $7A36 ramps to ~2× by the settled

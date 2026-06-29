@@ -45,7 +45,7 @@ export interface AsepriteTilemapDoc {
   tiles: Uint8Array[];
   /** `tilesAcross*tilesDown` cells, row-major. */
   cells: AsepriteCell[];
-  /** Up to 256 ImageData-packed colours (`r | g<<8 | b<<16 | a<<24`), the same
+  /** Up to 256 ImageData-packed colors (`r | g<<8 | b<<16 | a<<24`), the same
    *  u32 form `buildPaletteRow` produces — index i is palette entry i. */
   palette: Uint32Array;
   /** Palette index rendered transparent on the (non-background) tilemap layer.
@@ -335,7 +335,7 @@ function readPaletteChunk(buf: Buffer, type: number, data: number, palette: Uint
   }
   if (type === 0x0004 || type === 0x0011) {
     // Old palette chunk (FLI_COLOR / FLI_COLOR2). WORD packet count, then packets of
-    // {BYTE skip, BYTE count (0⇒256), RGB×count}. 0x0011 colours are 6-bit; 0x0004 8-bit.
+    // {BYTE skip, BYTE count (0⇒256), RGB×count}. 0x0011 colors are 6-bit; 0x0004 8-bit.
     // No alpha → opaque (transparency is the transparent index, not palette alpha).
     const sixBit = type === 0x0011;
     let o = data + 2;

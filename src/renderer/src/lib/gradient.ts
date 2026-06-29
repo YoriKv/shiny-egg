@@ -1,4 +1,4 @@
-// Pure colour-math for the backdrop-gradient editor (24 BGR-15 stops). Kept
+// Pure color-math for the backdrop-gradient editor (24 BGR-15 stops). Kept
 // separate from the React hook + panel so the "fill gradient" generation is
 // unit-testable and side-effect-free.
 
@@ -16,7 +16,7 @@ export function gradientOffset(gradientId: number, stop: number): number {
   return gradientId * GRADIENT_STRIDE_BYTES + stop * 2
 }
 
-/** Linear-interpolate two BGR-15 colours per 5-bit channel at `t` ∈ [0,1]. */
+/** Linear-interpolate two BGR-15 colors per 5-bit channel at `t` ∈ [0,1]. */
 export function lerpBgr15(a: number, b: number, t: number): number {
   const ar = a & 0x1f
   const ag = (a >>> 5) & 0x1f

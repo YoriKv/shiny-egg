@@ -63,7 +63,7 @@ function decodeGfxFile(format: 'lz2' | 'lz16', fileId: number, sizeBytes: number
   return out;
 }
 
-/** Pick an owned pixel + a different palette colour to paint there. */
+/** Pick an owned pixel + a different palette color to paint there. */
 function findOwnedEdit(ctx: MetaspriteContext, canvas: ReturnType<typeof renderMetasprite>): { p: number; recIndex: number } | null {
   if (!canvas) return null;
   const haveUnits = new Set(canvas.records.filter((r) => r.units).map((r) => r.recordIndex));

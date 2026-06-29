@@ -1,9 +1,9 @@
 // Pin the whole-game palette catalog (`buildPaletteCatalog`) against the real
 // built V1.0 cart. The load-bearing claim is that each catalog swatch's blob
 // byte-offset is the EXACT offset the cart loads for that palette selection — so
-// an edit there lands on the right colour. We verify that by cross-checking every
+// an edit there lands on the right color. We verify that by cross-checking every
 // pointer-table entry's swatches against what `loadLevelPalettes` actually writes
-// into CGRAM (offset + colour) for a header that selects that palette.
+// into CGRAM (offset + color) for a header that selects that palette.
 //
 // Reference-cart-gated: skips cleanly (exit 0) when the built ROM/.sym is absent.
 //
@@ -46,7 +46,7 @@ const emptyHeader = (): PaletteHeader => ({
 });
 const group = (id: string): PaletteCatalogGroup | undefined => catalog.catalog.find((g) => g.id === id);
 
-// All CGRAM colour offsets the cart writes for a given header (offset → colour).
+// All CGRAM color offsets the cart writes for a given header (offset → color).
 function liveOffsets(header: PaletteHeader): Map<number, number> {
   const cg = new Uint8Array(512);
   const pv = new Int32Array(256);
@@ -72,9 +72,9 @@ console.log(`Loaded ${symbols.size} symbols; catalog has ${catalog.catalog.lengt
   assert(backdrop?.swatches.length === 256, `backdrop entry has 256 swatches (got ${backdrop?.swatches.length})`);
 }
 
-// ── Test 2: per-table offset + colour correctness vs the live cart load ──────
-// For a header selecting palette #n, every catalog swatch's (offset, colour)
-// must match a colour the cart actually loads, and the per-entry swatch count
+// ── Test 2: per-table offset + color correctness vs the live cart load ──────
+// For a header selecting palette #n, every catalog swatch's (offset, color)
+// must match a color the cart actually loads, and the per-entry swatch count
 // must equal the cart's transfer size.
 function verifyTable(id: string, field: keyof PaletteHeader, expectedCount: number): void {
   const g = group(id);
@@ -88,7 +88,7 @@ function verifyTable(id: string, field: keyof PaletteHeader, expectedCount: numb
     for (const sw of entry.swatches) {
       if (live.get(sw.offset) !== sw.base) { ok = false; break; }
     }
-    assert(ok, `${id} #${n}: every swatch offset+colour matches the live cart load`);
+    assert(ok, `${id} #${n}: every swatch offset+color matches the live cart load`);
     assert(entry.swatches.length === expectedCount, `${id} #${n}: ${expectedCount} swatches (got ${entry.swatches.length})`);
   }
 }
@@ -110,7 +110,7 @@ verifyTable('yoshi', 'yoshiColor', 15);
     const entry = g.entries[1]!;
     let ok = true;
     for (const sw of entry.swatches) if (live.get(sw.offset) !== sw.base) { ok = false; break; }
-    assert(ok, `bg1-dark #1: swatch offsets+colours match the live World-6 load`);
+    assert(ok, `bg1-dark #1: swatch offsets+colors match the live World-6 load`);
   }
 }
 
@@ -125,10 +125,10 @@ verifyTable('yoshi', 'yoshiColor', 15);
       const live = liveOffsets(header);
       const sw = entry.swatches[b]!;
       // The cart writes the chosen backdrop to CGRAM[0]; its provenance offset
-      // must be this swatch's offset, with the matching colour.
+      // must be this swatch's offset, with the matching color.
       if (live.get(sw.offset) !== sw.base) { ok = false; break; }
     }
-    assert(ok, `backdrop: sampled colours match the live cart backdrop selection`);
+    assert(ok, `backdrop: sampled colors match the live cart backdrop selection`);
   }
 }
 
@@ -144,7 +144,7 @@ verifyTable('yoshi', 'yoshiColor', 15);
       total += entry.swatches.length;
       for (const sw of entry.swatches) if (live.get(sw.offset) !== sw.base) { ok = false; break; }
     }
-    assert(ok, `fixed: every literal swatch offset+colour matches the live load`);
+    assert(ok, `fixed: every literal swatch offset+color matches the live load`);
     assert(total > 0, `fixed: has swatches (got ${total})`);
     // The OBJ 0–4 block (CGRAM rows 8–12 = indices 128..191) is the big fixed
     // sprite block — make sure that semantic entry is present and complete.
@@ -174,7 +174,7 @@ verifyTable('yoshi', 'yoshiColor', 15);
   assert(editable > 0, `scenes expose editable (blob-backed) swatches (got ${editable})`);
 }
 
-// ── Test 6: the World-map panels group (per-world panel colour + sync copies) ─
+// ── Test 6: the World-map panels group (per-world panel color + sync copies) ─
 {
   const panels = catalog.scenes.find((g) => g.id === 'scene-world-panels');
   assert(!!panels, `World-map panels group present`);
@@ -190,15 +190,15 @@ verifyTable('yoshi', 'yoshiColor', 15);
       const sw = panels.entries[w]!.swatches[0]!;
       const all = [sw.offset, ...(sw.mirrors ?? [])];
       assert(all.length === 6, `World ${w + 1} syncs 6 copies (got ${all.length})`);
-      // Every copy must hold the SAME base colour (else syncing them is wrong).
-      const colours = new Set(all.map((o) => baseWord(o)));
-      assert(colours.size === 1, `World ${w + 1}: all copies share one colour`);
+      // Every copy must hold the SAME base color (else syncing them is wrong).
+      const colors = new Set(all.map((o) => baseWord(o)));
+      assert(colors.size === 1, `World ${w + 1}: all copies share one color`);
     }
-    // The user's verified anchor: World 6's panel colour includes blob 0x3b34.
+    // The user's verified anchor: World 6's panel color includes blob 0x3b34.
     const w6 = panels.entries[5]!.swatches[0]!;
     const w6set = new Set([w6.offset, ...(w6.mirrors ?? [])]);
-    assert(w6set.has(0x3b34), `World 6 panel-colour set includes blob 0x3b34 (the anchor)`);
-    assert(w6set.has(0x3da0), `World 6 panel-colour set includes its own-screen copy 0x3da0`);
+    assert(w6set.has(0x3b34), `World 6 panel-color set includes blob 0x3b34 (the anchor)`);
+    assert(w6set.has(0x3da0), `World 6 panel-color set includes its own-screen copy 0x3da0`);
   }
 }
 

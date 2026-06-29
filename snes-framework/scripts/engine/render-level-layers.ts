@@ -45,6 +45,10 @@ export interface RenderedLevelLayers {
    *  render-parity + import-verify gates always account for them. */
   bg2Front: LayerImage | null;
   bg3Front: LayerImage | null;
+  /** BG3 MID plane (priority-1 water band, in front of BG2 / behind BG1) on BG3
+   *  screen-designation levels (tileset `$20`/`$22`); `null` otherwise. See
+   *  `composeBgLayers` `bg3Mid`. Required-but-nullable for the gates. */
+  bg3Mid: LayerImage | null;
   /** Null only if the sprite renderer declines (kept for caller parity). */
   sprite: LayerImage | null;
   collision: LayerImage;
@@ -127,7 +131,7 @@ export function renderLevelLayers(
     vram
   );
   loadLevelPalettes(rom, symbols, palHeader, cgram);
-  // Overlay the cart's phase-0 per-frame animated palette (gm0F) — the colours
+  // Overlay the cart's phase-0 per-frame animated palette (gm0F) — the colors
   // the level actually shows in-level on its animated CGRAM rows.
   applyAnimatedPalette(rom, cgram, h);
 
@@ -197,6 +201,7 @@ export function renderLevelLayers(
     bg3: composedBg.bg3,
     bg2Front: composedBg.bg2Front,
     bg3Front: composedBg.bg3Front,
+    bg3Mid: composedBg.bg3Mid,
     sprite: sprite ?? null,
     collision
   };

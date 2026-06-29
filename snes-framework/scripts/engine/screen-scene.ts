@@ -48,7 +48,7 @@
 //   map   — see `research/graphics-editing/world-map-screens.md` (ground-truth
 //           captured). What this exporter currently covers is the gm$22 LEVEL-SELECT
 //           view (BG Mode 1, scene-register row $28: TM=$17 = BG1+BG2+BG3+OBJ on the
-//           MAIN screen, TS=$00, CGADSUB=$00 ⇒ **NO colour math**). Its two visible
+//           MAIN screen, TS=$00, CGADSUB=$00 ⇒ **NO color math**). Its two visible
 //           BG layers (verified against the per-world captures):
 //             • **BG1 = the per-world level-select panel** (level numbers, boxes,
 //               castle, SCORE) + the level-slot icons. Tilemap $3800 (32×32,
@@ -62,9 +62,9 @@
 //               char in all 6 worlds — only the palette tint differs). NOTE: this is
 //               the menu backdrop, NOT the per-world overworld map (see below).
 //             • **BG2 is a DEAD layer** — tilemap+char byte-identical to BG1, and
-//               with colour math off it sits fully behind BG1 (every pixel covered),
-//               so it contributes nothing. (The old "second pass to push >16 colours"
-//               note was wrong — the colour spread is BG1's per-tile palette rows.)
+//               with color math off it sits fully behind BG1 (every pixel covered),
+//               so it contributes nothing. (The old "second pass to push >16 colors"
+//               note was wrong — the color spread is BG1's per-tile palette rows.)
 //           Per exported file: lz16 `$74`/`$75` (BG1 PANEL char, NOT sprites) →
 //           per-tile tint rows; lz2 `$56` (BG3 backdrop char at VRAM $2000) → row 0;
 //           lz16 at VRAM ≥ $8000 (OBJ markers — cursor/HUD chrome) → sprite row 8;
@@ -94,7 +94,7 @@
 //           mis-indexes `DATA_00B3F4` (uses `world`, not `world*2`) — fix before use.
 // bpp/row only affect preview legibility + the swatch — the import is base-aware,
 // so an unedited file round-trips byte-exact regardless, and edits map to the
-// shown row's colours.
+// shown row's colors.
 
 import { loadSceneGfx, type GfxFileEntry, type SceneGfx } from './load-graphics.ts';
 import { loadSceneRegsByIndex, type SceneRegs } from './scene-regs.ts';
@@ -202,7 +202,7 @@ export interface ScreenGfxPng {
    *  import maps edits back into the full file by these coords. */
   region?: TileRegion;
   /** Flat-map BG files (`f74`/`f75`): per-tile palette fidelity — each tile is
-   *  coloured in the palette row it actually draws with (the map BG spans rows
+   *  colored in the palette row it actually draws with (the map BG spans rows
    *  0/3/6/7, not one tint). Import decodes per-tile via this (the same mechanism
    *  the level BG2/BG3 export uses). */
   perTilePalette?: PerTilePalette;
@@ -212,14 +212,14 @@ export interface ScreenGfxPng {
    *  over the region's flat tile grid (the `region` flag routes it there). */
   aseprite?: Uint8Array;
   /** Region `.aseprite` only: per-palette-entry master-blob byte-offset (`-1` = transparent/
-   *  non-blob) — editing the embedded palette writes those colours back to the blob. */
+   *  non-blob) — editing the embedded palette writes those colors back to the blob. */
   paletteOffsets?: number[];
 }
 
 /** Per-file render parameters, fixed by the scene-layout entry (see file header). */
 interface FileClass {
   bpp: 2 | 4;
-  /** CGRAM palette row to colour the preview + emit as the swatch. */
+  /** CGRAM palette row to color the preview + emit as the swatch. */
   paletteRow: number;
   /** Export only this tile-region of the file (see {@link TileRegion}). */
   region?: TileRegion;
@@ -287,22 +287,22 @@ const STORYBOOK_SCENE_REGS_INDEX = 0x24;
  *
  * **Palette BASE (NOT the title-logo case).** The storybook runs in BG **Mode 1**
  * (BG1/BG2 4bpp, BG3 2bpp — vs the title's Mode 0), so it has **no per-BG CGRAM offset**:
- * a BG cell's palette field `P` reads CGRAM[P*colours] directly (BG 4bpp → P*16, BG3
+ * a BG cell's palette field `P` reads CGRAM[P*colors] directly (BG 4bpp → P*16, BG3
  * 2bpp → P*4), and OBJ palette `P` reads the OBJ half at row `8+P`. That is why each
- * tile is coloured at base 0 (BG) / base 8 (OBJ) here — do **not** add a Mode-0-style
+ * tile is colored at base 0 (BG) / base 8 (OBJ) here — do **not** add a Mode-0-style
  * +offset (the inverse of the title-logo `LOGO_BG2_PALETTE_BASE` fix; that one is BG2
  * in Mode 0, this is not). Verified against the trace's live CGRAM: the settled intro
  * frames are byte-identical to the static palette-$50 load.
  *
- * **Colours are the static palette-$50 load (one frame), not per-page.** The cutscene
+ * **Colors are the static palette-$50 load (one frame), not per-page.** The cutscene
  * does NOT just reuse one palette across pages — later story pages STREAM page-specific
- * colours into most BG rows (2-7) and OBJ row 0 as illustrations appear, so the same row
- * shows different colours on different pages. The export colours each tile in its captured
- * dominant row using the cart's own static palette-$50 CGRAM (no captured colours
+ * colors into most BG rows (2-7) and OBJ row 0 as illustrations appear, so the same row
+ * shows different colors on different pages. The export colors each tile in its captured
+ * dominant row using the cart's own static palette-$50 CGRAM (no captured colors
  * committed, provenance-clean like the world map): faithful for the settled/common palette,
  * but an illustration tile whose row is re-streamed (e.g. f87's rows 2-3, the clouds) shows
- * the settled placeholder colours, not its per-page colours. Editing is INDEX-based and
- * round-trips byte-exact regardless of the shown colour (`paletteAnimated`).
+ * the settled placeholder colors, not its per-page colors. Editing is INDEX-based and
+ * round-trips byte-exact regardless of the shown color (`paletteAnimated`).
  *
  * `classify` keys off the facts: `bg`/`bg3` char sheets (f87/f88, f27) render at BG
  * rows 0-7 with opaque index 0; the `obj` sprite sheets (f8A/f4A, loaded into the OBJ
@@ -394,7 +394,7 @@ function mapBgTileRow(char: number, tintRow: number): number | null {
   return null;
 }
 
-/** Pack a 16-colour CGRAM BG row (index 0 OPAQUE) into RGBA bytes. */
+/** Pack a 16-color CGRAM BG row (index 0 OPAQUE) into RGBA bytes. */
 function bgRowRgba(cgram: Uint8Array, row: number): Uint8Array {
   const p = buildPaletteRow(cgram, row, false, 'expand', 16);
   const out = new Uint8Array(16 * 4);
@@ -406,14 +406,14 @@ function bgRowRgba(cgram: Uint8Array, row: number): Uint8Array {
 }
 
 /**
- * The single-image (no-tilemap) `.aseprite` + colour write-back map for a PER-TILE-palette
+ * The single-image (no-tilemap) `.aseprite` + color write-back map for a PER-TILE-palette
  * char sheet (storybook `f88` / map-BG `f74-f75` / title-logo `f1D`). The embedded palette is
- * the used CGRAM rows CONCATENATED (per-row blocks) — so every used row's colours are present
- * and editable, while the bare tile grid (swatch dropped) stays coloured per-tile (the import
+ * the used CGRAM rows CONCATENATED (per-row blocks) — so every used row's colors are present
+ * and editable, while the bare tile grid (swatch dropped) stays colored per-tile (the import
  * re-derives indices per tile via `perTilePalette`, byte-identical to the PNG path). `subRgba`
  * are those rows (RGBA, `colors` each); `cgramRows[k]` is row k's CGRAM row number → its
- * provenance/blob offset (the colour write-back map mirrors the per-row-block palette layout,
- * one offset per entry, so a colour shared across rows is two independent editable entries).
+ * provenance/blob offset (the color write-back map mirrors the per-row-block palette layout,
+ * one offset per entry, so a color shared across rows is two independent editable entries).
  */
 function perTileSheetAseprite(args: {
   image: ImageData; layout: GfxImageLayout; subRgba: Uint8Array[]; colors: number;
@@ -427,7 +427,7 @@ function perTileSheetAseprite(args: {
   for (const sp of subRgba) for (let i = 0; i < colors; i++)
     palU32.push((sp[i * 4]! | (sp[i * 4 + 1]! << 8) | (sp[i * 4 + 2]! << 16) | (sp[i * 4 + 3]! << 24)) >>> 0);
   const aseprite = imageAseprite({ rgba: gridRgba, width: gridW, height: gridH, palette: palU32, index0Transparent, layerName });
-  // Colour write-back: entry k*colors+i ⇒ CGRAM cgramRows[k]*colors+i → provenance. (rowStride
+  // Color write-back: entry k*colors+i ⇒ CGRAM cgramRows[k]*colors+i → provenance. (rowStride
   // = colors: every per-tile row here reads CGRAM at the tight `colors`-stride — see the *Rgba builders.)
   const paletteOffsets = provenance ? imagePaletteOffsets({ provenance, rows: cgramRows, index0Transparent, colorsPerRow: colors }) : undefined;
   return { aseprite, paletteOffsets };
@@ -435,10 +435,10 @@ function perTileSheetAseprite(args: {
 
 /**
  * Render a level-select PANEL char file (`f74`/`f75` — BG1, not the overworld map)
- * PER-TILE: each tile coloured in the palette row it actually draws with (rows
+ * PER-TILE: each tile colored in the palette row it actually draws with (rows
  * 0/3/6/7 via `mapBgTileRow`), plus a multi-row reference swatch — exactly the level
  * BG2/BG3 fidelity model, so the existing per-tile-palette import path round-trips it.
- * In `aseprite` mode it also emits a multi-row `.aseprite` whose embedded palette colours
+ * In `aseprite` mode it also emits a multi-row `.aseprite` whose embedded palette colors
  * round-trip to the master blob. Returns `null` when NO tile is referenced by the panel
  * tilemap (e.g. `f7C`/`f7D`, the per-world Mode-7 map halves, are excluded — see the header).
  */
@@ -495,7 +495,7 @@ function renderMapBgFile(
     sizeBytes: entry.sizeBytes,
     rowCount,
     addr: fileAddr(rom, symbols, entry.format, entry.fileId),
-    index0Transparent: false, // BG1 index 0 is an opaque colour
+    index0Transparent: false, // BG1 index 0 is an opaque color
     perTilePalette: { tileSub, subPalettes: subRgb, paletteAnimated: false },
     png: new Uint8Array(png),
     aseprite: ase?.aseprite,
@@ -503,10 +503,10 @@ function renderMapBgFile(
   };
 }
 
-/** Pack an N-colour CGRAM palette row into RGBA bytes. `transparentZero` follows the
- *  layer's index-0 semantics: BG/BG3 composite colour 0 as a real (opaque) colour, OBJ
- *  sprite tiles composite index 0 transparent. 4bpp → 16 colours; 2bpp BG3 → 4 colours
- *  at the tight 4-colour stride. (The Mode-0 title logo is also tight-4-colour, but it's
+/** Pack an N-color CGRAM palette row into RGBA bytes. `transparentZero` follows the
+ *  layer's index-0 semantics: BG/BG3 composite color 0 as a real (opaque) color, OBJ
+ *  sprite tiles composite index 0 transparent. 4bpp → 16 colors; 2bpp BG3 → 4 colors
+ *  at the tight 4-color stride. (The Mode-0 title logo is also tight-4-color, but it's
  *  BG2 so its caller offsets the row — see LOGO_BG2_PALETTE_BASE — not handled here.) */
 function bgSubRowRgba(cgram: Uint8Array, row: number, colors: number, transparentZero = false): Uint8Array {
   const p = buildPaletteRow(cgram, row, transparentZero, 'expand', colors);
@@ -519,7 +519,7 @@ function bgSubRowRgba(cgram: Uint8Array, row: number, colors: number, transparen
 }
 
 /**
- * Render a storybook (gm$05) char file PER-TILE — each tile coloured in its captured
+ * Render a storybook (gm$05) char file PER-TILE — each tile colored in its captured
  * dominant palette row (`storybook-palette-facts.ts`, from the `storybook-render`
  * trace) using the cart's static palette-$50 CGRAM, plus a multi-row reference swatch.
  * Same per-tile-palette fidelity model as the level BG2/BG3 / map-BG exports, so the
@@ -529,8 +529,8 @@ function bgSubRowRgba(cgram: Uint8Array, row: number, colors: number, transparen
  * (BG) / base 8 (OBJ), the Mode-1 mapping with NO per-BG offset (see the STORYBOOK
  * descriptor; this is NOT the Mode-0 title-logo base case). A tile the cutscene never
  * displayed falls back to the file's default row (base-aware import keeps it byte-exact
- * regardless). `paletteAnimated` is set — the scene streams page-specific colours, so the
- * shown colours are the settled palette-$50 frame (illustration tiles on re-streamed rows
+ * regardless). `paletteAnimated` is set — the scene streams page-specific colors, so the
+ * shown colors are the settled palette-$50 frame (illustration tiles on re-streamed rows
  * are representative, not per-page exact); editing INDICES is byte-safe regardless. */
 function renderStorybookCharFile(
   rom: Uint8Array,
@@ -621,7 +621,7 @@ function storybookVariant(): ScreenVariant {
 // trace's first-scene capture (sb.f0030/f1000).
 //
 // The storybook is BG **Mode 1** (BG1/BG2 4bpp, BG3 2bpp), so the per-cell palette
-// field reads CGRAM at base 0 (BG3, 2bpp, tight 4-colour stride) — NOT the Mode-0
+// field reads CGRAM at base 0 (BG3, 2bpp, tight 4-color stride) — NOT the Mode-0
 // title-logo BG2→CGRAM-32 case. Cells whose char doesn't land in f27 (the frame's
 // interior, where BG1/BG2 illustrations show through in-game) are rendered for context
 // but are NOT editable (no f27 tile backs them). Edits to f27 cells slice back to the
@@ -641,8 +641,8 @@ export interface StorybookSceneContext {
   /** The loaded f27 char file (VRAM offset + size) — the editable tiles. */
   f27: GfxFileEntry;
   palettes: (Uint32Array | undefined)[];
-  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source), from the
-   *  scene palette load — lets a palette-colour edit round-trip to the blob. */
+  /** CGRAM color index → master-palette-blob byte-offset (`-1` = no blob source), from the
+   *  scene palette load — lets a palette-color edit round-trip to the blob. */
   provenance: Int32Array;
 }
 
@@ -663,7 +663,7 @@ export function buildStorybookSceneContext(rom: Uint8Array, symbols: SymbolMap):
 }
 
 /** BG3 2bpp sub-palette `row` (0..7) as ARGB, opaque index 0 (BG composites it) — cached.
- *  Mode-1 BG3: tight 4-colour stride at base 0 (no per-BG offset; see the section note). */
+ *  Mode-1 BG3: tight 4-color stride at base 0 (no per-BG offset; see the section note). */
 function sceneBg3PalFor(ctx: StorybookSceneContext, row: number): Uint32Array {
   let p = ctx.palettes[row];
   if (!p) {
@@ -689,7 +689,7 @@ export interface StorybookSceneCanvas {
 
 /** Assemble the storybook first scene's BG3 tilemap into an RGBA canvas + per-cell
  *  source map. Reads the tilemap straight from VRAM (the gfx bundle staged the first
- *  scene there); each cell is coloured in its BG3 2bpp sub-palette and mapped back to
+ *  scene there); each cell is colored in its BG3 2bpp sub-palette and mapped back to
  *  its f27 tile when the char lands in f27. */
 export function renderStorybookScene(ctx: StorybookSceneContext): StorybookSceneCanvas {
   const cols = (ctx.regs.bg3ScSize === 1 || ctx.regs.bg3ScSize === 3) ? 64 : 32;
@@ -771,7 +771,7 @@ export function diffStorybookSceneTiles(
 }
 
 /** Encode the scene canvas to a PNG: the assembled BG3 layout (opaque) + a 2bpp swatch
- *  column (4 colours) per used sub-palette row, to the right. Import reads only the
+ *  column (4 colors) per used sub-palette row, to the right. Import reads only the
  *  top-left `width×height`. */
 export function storybookScenePng(ctx: StorybookSceneContext, canvas: StorybookSceneCanvas): Uint8Array {
   const rows = canvas.paletteRowsUsed;
@@ -820,10 +820,10 @@ export function storybookSceneAseprite(ctx: StorybookSceneContext, canvas: Story
   const bytes = tilesAseprite({
     cgram: ctx.cgram, bpp: 2, tileW: TILE_PX, tileH: TILE_PX, tiles, cells,
     tilesAcross: canvas.cols, tilesDown: canvas.rows, index0Transparent: false,
-    rowStride: STORYBOOK_SCENE_BG3_COLORS, // BG3 2bpp tight 4-colour stride, base 0
+    rowStride: STORYBOOK_SCENE_BG3_COLORS, // BG3 2bpp tight 4-color stride, base 0
     layerName: 'storybook-scene', tilesetName: 'storybook-bg3'
   });
-  // Per-palette-entry master-blob offsets (the colour write-back map) — SAME args as above.
+  // Per-palette-entry master-blob offsets (the color write-back map) — SAME args as above.
   const paletteOffsets = tilesetPaletteOffsets({
     tiles, bpp: 2, index0Transparent: false, provenance: ctx.provenance, rowStride: STORYBOOK_SCENE_BG3_COLORS
   });
@@ -843,13 +843,13 @@ export interface StorybookScenePng {
   /** The same scene as an Aseprite tilemap (built only when requested). */
   aseprite?: Uint8Array;
   /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
-   *  serialized so the import can write an edited colour back to the blob. Aseprite mode. */
+   *  serialized so the import can write an edited color back to the blob. Aseprite mode. */
   paletteOffsets?: number[];
 }
 
 /** Export the storybook's first-scene BG3 frame as an editable tile-layout PNG (or an
  *  Aseprite tilemap when `aseprite`). Edits slice back to the f27 char tiles via
- *  saveGfxEdit (shared char ⇒ one edit repaints every cell reusing it). Colour edits to the
+ *  saveGfxEdit (shared char ⇒ one edit repaints every cell reusing it). Color edits to the
  *  embedded palette round-trip to the master blob (via `paletteOffsets`). */
 export function exportStorybookScene(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean } = {}): StorybookScenePng {
   const ctx = buildStorybookSceneContext(rom, symbols);
@@ -858,7 +858,7 @@ export function exportStorybookScene(rom: Uint8Array, symbols: SymbolMap, opts: 
   return {
     file: 'screens/storybook/scene-f27.png',
     description:
-      'storybook first scene — the gm$05 cutscene opening page laid out as it renders (BG3 decorative frame, file 0x27 char tiles). Edit the frame tiles in place; a shared char repaints every cell that reuses it. The frame interior (BG1/BG2 illustration) is preview-only. Colours are the static palette-$50 frame; the scene shimmers in-game. Editing the embedded palette writes those colours back to the master palette blob.',
+      'storybook first scene — the gm$05 cutscene opening page laid out as it renders (BG3 decorative frame, file 0x27 char tiles). Edit the frame tiles in place; a shared char repaints every cell that reuses it. The frame interior (BG1/BG2 illustration) is preview-only. Colors are the static palette-$50 frame; the scene shimmers in-game. Editing the embedded palette writes those colors back to the master palette blob.',
     width: canvas.width,
     height: canvas.height,
     faithful: canvas.faithful,
@@ -917,7 +917,7 @@ export function mapTilemapFileId(rom: Uint8Array, symbols: SymbolMap, world: num
 /** Map palette DP slots for `world` (mirrors `CODE_load_world_map_palettes`): DP
  *  $10 = `DATA_00BB0B`[world]; $12/$14/$16/$18 = `DATA_00BB17`[world*4 + 0..3].
  *  Program offset $6E. Exported so the per-level-icon track (`world-map-level-icons.ts`)
- *  can load the same per-world CGRAM the icons colour against. */
+ *  can load the same per-world CGRAM the icons color against. */
 export function mapPalette(rom: Uint8Array, symbols: SymbolMap, world: number): ScenePalette {
   const worldPtr = symbols.pc('DATA_00BB0B');
   const subPtr = symbols.pc('DATA_00BB17');
@@ -1003,7 +1003,7 @@ function renderFile(
   const png = encodePng(image);
   // A cropped region (the boot logo) → a single-image `.aseprite` (no tilemap): the
   // region crop (swatch dropped) + the row palette as the indexed palette. The image is
-  // opaque (paletteRowRgba index 0 is a real colour), matching the PNG render, so the
+  // opaque (paletteRowRgba index 0 is a real color), matching the PNG render, so the
   // flatten reproduces it and diffGfxFileAseprite round-trips. Region-only by design.
   let aseprite: Uint8Array | undefined;
   let paletteOffsets: number[] | undefined;
@@ -1015,7 +1015,7 @@ function renderFile(
     const regionRgba = new Uint8Array(rw * rh * 4);
     for (let y = 0; y < rh; y++) regionRgba.set(image.rgba.subarray(y * image.width * 4, (y * image.width + rw) * 4), y * rw * 4);
     aseprite = imageAseprite({ rgba: regionRgba, width: rw, height: rh, palette: palU32, index0Transparent: false, layerName: 'screen-crop' });
-    // Colour write-back map — the SAME single palette row (opaque, `n` colours at tight stride),
+    // Color write-back map — the SAME single palette row (opaque, `n` colors at tight stride),
     // so editing the region crop's embedded palette rounds-trips to the master blob.
     if (provenance) paletteOffsets = imagePaletteOffsets({ provenance, rows: [cls.paletteRow], index0Transparent: false, colorsPerRow: n });
   }
@@ -1105,7 +1105,7 @@ export function exportScreenGfxPngs(rom: Uint8Array, symbols: SymbolMap, opts: {
   // --- Storybook (gm$05): narrowed to f88 (raw per-tile char sheet) + f27 (the
   // first-scene BG3 frame, laid out as the scene renders it — see exportStorybookScene,
   // emitted separately by the export driver). f88's per-tile rows come from the
-  // `storybook-render` capture (storybook-palette-facts.ts), coloured with the static
+  // `storybook-render` capture (storybook-palette-facts.ts), colored with the static
   // palette-$50 CGRAM. The other storybook sheets (f87/f8A/f4A/f8B) are intentionally
   // not exported. f27 is skipped here so the scene-layout export is its sole view.
   if (wantSystem) for (const { entry, cls, vram, cgram, provenance } of loadVariant(rom, symbols, storybookVariant(), STORYBOOK, opts.gfxOverride)) {
@@ -1176,8 +1176,8 @@ export function exportScreenGfxPngs(rom: Uint8Array, symbols: SymbolMap, opts: {
 // world-map level-slot icon, for the title (2bpp instead of 4bpp).
 //
 // NB the logo's CGRAM palette animates at runtime (a ping-pong shimmer); the exported
-// colours are one frame. Editing tile INDICES is byte-safe regardless — only the
-// on-screen colours animate.
+// colors are one frame. Editing tile INDICES is byte-safe regardless — only the
+// on-screen colors animate.
 //
 // The floating island / sea (Mode-7) IS statically exportable — see the island
 // section below (`exportTitleIsland`). (An earlier note here claimed it needed a
@@ -1190,16 +1190,16 @@ const LOGO_COLS = 32; // the tilemap is 448 words = 32 wide ×
 const LOGO_ROWS = 14; //   14 tall, DMA'd contiguously to VRAM word $3E40
 const LOGO_CHAR_ADDR = 0x4000; // BG1/BG2 shared char base (BG12NBA=$22 → $2000 words; scene-regs $00)
 const TILE_BYTES_2BPP = 16;
-const LOGO_COLORS = 4; // 2bpp sub-palette size (a logo tile reads 4 colours)
-/** CGRAM stride between logo sub-palette rows = the TIGHT 4-colour 2bpp stride
+const LOGO_COLORS = 4; // 2bpp sub-palette size (a logo tile reads 4 colors)
+/** CGRAM stride between logo sub-palette rows = the TIGHT 4-color 2bpp stride
  *  (sub-palette N at base + N*4). The title runs in BG **Mode 0**, where the
  *  hardware resolves a tilemap cell's 3-bit palette field `P` to CGRAM[base + P*4
- *  .. +3] at a fixed 4-colour read stride. */
+ *  .. +3] at a fixed 4-color read stride. */
 const LOGO_ROW_STRIDE = LOGO_COLORS;
 /** The logo is **BG2**, not BG1 (BG2 8×8 draws the "Yoshi's Island" glyphs; BG1
  *  16×16 draws the clouds behind it — both off the same `$3C00` nametable at
  *  different scrolls). In Mode 0 each BG owns 8 sub-palettes: BG1 → CGRAM palette
- *  rows 0..7 (colours 0..31), **BG2 → rows 8..15 (colours 32..63)**. So a logo
+ *  rows 0..7 (colors 0..31), **BG2 → rows 8..15 (colors 32..63)**. So a logo
  *  field `P` reads CGRAM[32 + P*4] — i.e. CGRAM palette row `8 + P`.
  *
  *  **CORRECTION (proven by the `title-render` trace):** earlier code read field `P`
@@ -1209,7 +1209,7 @@ const LOGO_ROW_STRIDE = LOGO_COLORS;
  *  scenario `title-render`, BG2 base 32) decodes field 0 = black/cyan/green and field 1
  *  = black-outlined white — the real logo. The prior "stride 16" theory and the
  *  "stride 4 base 0" theory both missed this +32 BG2 base offset. */
-const LOGO_BG2_PALETTE_BASE = 8; // first BG2 sub-palette row in Mode 0 (CGRAM colour 32)
+const LOGO_BG2_PALETTE_BASE = 8; // first BG2 sub-palette row in Mode 0 (CGRAM color 32)
 const LOGO_PX_W = LOGO_COLS * TILE_PX;
 
 /** Decode + palette context for the title logo scene (build once). */
@@ -1220,8 +1220,8 @@ export interface TitleLogoContext {
   cgram: Uint8Array;
   manifest: GfxFileEntry[];
   palettes: (Uint32Array | undefined)[];
-  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source) — lets a
-   *  logo BG2 palette-colour edit round-trip to the blob. */
+  /** CGRAM color index → master-palette-blob byte-offset (`-1` = no blob source) — lets a
+   *  logo BG2 palette-color edit round-trip to the blob. */
   provenance: Int32Array;
 }
 
@@ -1240,7 +1240,7 @@ export function buildTitleLogoContext(rom: Uint8Array, symbols: SymbolMap): Titl
 
 /** 2bpp sub-palette for logo field `row` (0..7) as ARGB, opaque index 0 (BG
  *  composites it) — cached. Read from the Mode-0 BG2 palette region: field `P` is
- *  CGRAM palette row `8 + P` at the tight 4-colour stride (see {@link LOGO_BG2_PALETTE_BASE}). */
+ *  CGRAM palette row `8 + P` at the tight 4-color stride (see {@link LOGO_BG2_PALETTE_BASE}). */
 function logoPalFor(ctx: TitleLogoContext, row: number): Uint32Array {
   let p = ctx.palettes[row];
   if (!p) {
@@ -1264,10 +1264,10 @@ function logoFileForVramByte(
 }
 
 /** Slice one 8×8 cell back out of the logo canvas (inverse of the blit), base-aware
- *  (a pixel still showing its base colour keeps its base index). Returns 16 bytes. */
+ *  (a pixel still showing its base color keeps its base index). Returns 16 bytes. */
 /** Slice one 8×8 cell back out of an assembled 2bpp canvas → its 16 tile bytes,
- *  base-aware (a pixel still showing its base colour keeps its base index, so a
- *  duplicate-colour palette still round-trips an unedited cell byte-exact). The cell
+ *  base-aware (a pixel still showing its base color keeps its base index, so a
+ *  duplicate-color palette still round-trips an unedited cell byte-exact). The cell
  *  may be flipped on the canvas; the slice un-flips. Shared by the title logo
  *  (`sliceLogoCell`) and the storybook BG3 scene (`sliceSceneF27Cell`). */
 function slice2bppCell(
@@ -1398,7 +1398,7 @@ export function diffTitleLogoTiles(
 }
 
 /** Encode the logo canvas to a PNG: the 256×112 logo (opaque) + a self-describing
- *  2bpp swatch column (4 colours) per used sub-palette row, to the right. Import
+ *  2bpp swatch column (4 colors) per used sub-palette row, to the right. Import
  *  reads only the top-left `width×height`. */
 export function titleLogoPng(ctx: TitleLogoContext, canvas: TitleLogoCanvas): Uint8Array {
   const rows = canvas.paletteRowsUsed;
@@ -1430,7 +1430,7 @@ export function titleLogoPng(ctx: TitleLogoContext, canvas: TitleLogoCanvas): Ui
  *  empty tile** (`null`); the `$1D` CHR file is replicated 1:1 at tiles 1..N in CHR order (tile
  *  `i` = char `0x300 + i − 1`), every char placed or not. (Aseprite reserves tileset index 0 as
  *  the empty tile — `notile = 0`, and `fix_old_tileset` inserts it — so the CHR is 1-indexed; we
- *  can't put a real char at tile 0.) Each char is coloured by the palette row it's placed with
+ *  can't put a real char at tile 0.) Each char is colored by the palette row it's placed with
  *  (logo chars are 1:1 char→palRow); an unplaced char falls back to the dominant used row. Shared
  *  by the export (`titleLogoAseprite`) AND the combined diff (`diffTitleLogoCombined`). */
 export function logoTileMeta(ctx: TitleLogoContext): ({ char: number; palRow: number } | null)[] {
@@ -1456,7 +1456,7 @@ export function logoTileMeta(ctx: TitleLogoContext): ({ char: number; palRow: nu
   }
   const defPal = [...palCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
   // Tile 0 = Aseprite's mandatory empty tile; the CHR file follows 1:1 at tiles 1..N in char
-  // order. Each char coloured by its placed palette row (1:1 char→palRow), unplaced chars fall
+  // order. Each char colored by its placed palette row (1:1 char→palRow), unplaced chars fall
   // back to the dominant used row.
   const meta: ({ char: number; palRow: number } | null)[] = [null];
   for (const char of [...fileChars].sort((a, b) => a - b)) meta.push({ char, palRow: usedPal.get(char) ?? defPal });
@@ -1485,7 +1485,7 @@ export function titleLogoAseprite(ctx: TitleLogoContext, _canvas: TitleLogoCanva
     tileIndex.set(char, ti);
     const vramByte = (LOGO_CHAR_ADDR + char * TILE_BYTES_2BPP) & 0xffff;
     decode2bppTile(ctx.vram, vramByte, false, false, indices, 0); // UN-flipped; cell carries flip
-    // Embed the BG2 colours: field P → CGRAM palette row 8+P (see LOGO_BG2_PALETTE_BASE).
+    // Embed the BG2 colors: field P → CGRAM palette row 8+P (see LOGO_BG2_PALETTE_BASE).
     tiles.push({ indices: indices.slice(), paletteRow: LOGO_BG2_PALETTE_BASE + palRow });
   }
   const cells: AsepriteCell[] = [];
@@ -1497,10 +1497,10 @@ export function titleLogoAseprite(ctx: TitleLogoContext, _canvas: TitleLogoCanva
   const bytes = tilesAseprite({
     cgram: ctx.cgram, bpp: 2, tileW: TILE_PX, tileH: TILE_PX, tiles, cells,
     tilesAcross: LOGO_COLS, tilesDown: LOGO_ROWS, index0Transparent: false,
-    rowStride: LOGO_ROW_STRIDE, // Mode-0 BG2: 2bpp tiles, tight 4-colour palette stride (rows 8..15)
+    rowStride: LOGO_ROW_STRIDE, // Mode-0 BG2: 2bpp tiles, tight 4-color palette stride (rows 8..15)
     layerName: 'logo', tilesetName: 'logo-tiles'
   });
-  // Colour write-back map — SAME bpp/index0Transparent/rowStride (8+P rows at stride 4) as above.
+  // Color write-back map — SAME bpp/index0Transparent/rowStride (8+P rows at stride 4) as above.
   const paletteOffsets = tilesetPaletteOffsets({ tiles, bpp: 2, index0Transparent: false, provenance: ctx.provenance, rowStride: LOGO_ROW_STRIDE });
   return { bytes, paletteOffsets };
 }

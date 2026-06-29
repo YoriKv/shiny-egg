@@ -213,7 +213,7 @@ class BizHawkSupervisor {
       // is relaunched (BizHawk's comm socket doesn't auto-reconnect). If this fires
       // on a screen transition, the harness loop died — see render.lua's pcall guard.
       // eslint-disable-next-line no-console
-      console.warn('[bizhawk] harness socket closed — live link lost until relaunch')
+      console.warn('[bizhawk] harness socket closed - live link lost until relaunch')
       this.client = null
       this.failPending(new Error('BizHawk disconnected'))
     })
@@ -333,12 +333,14 @@ class BizHawkSupervisor {
 
   async dumpVram(): Promise<Buffer> {
     await this.ensureRunning()
-    return this.enqueue('DUMP_VRAM', true)
+    const reply = await this.enqueue('DUMP_VRAM', true)
+    return this.decodeHexReply(reply, 0x10000, 'dumpVram')
   }
 
   async dumpCgram(): Promise<Buffer> {
     await this.ensureRunning()
-    return this.enqueue('DUMP_CGRAM', true)
+    const reply = await this.enqueue('DUMP_CGRAM', true)
+    return this.decodeHexReply(reply, 0x0200, 'dumpCgram')
   }
 
   // Direct WRAM-stomp level load
@@ -394,7 +396,8 @@ class BizHawkSupervisor {
   // Generic memory-read primitive. `domain` is a BizHawk memory-domain
   // name ("WRAM", "CARTRAM", "VRAM", "CGRAM", "OAM", "CARTROM", ...);
   // `addr` is the offset within that domain (NOT a 24-bit SNES address);
-  // `len` is the byte count. Returns the raw bytes.
+  // `len` is the byte count. Returns the raw bytes (reply hex-decoded via
+  // `decodeHexReply` — the harness can't put raw binary on the socket).
   async readMem(domain: string, addr: number, len: number): Promise<Buffer> {
     if (!Number.isInteger(addr) || addr < 0) {
       throw new Error(`readMem: addr must be non-negative integer, got ${addr}`)
@@ -405,7 +408,22 @@ class BizHawkSupervisor {
     await this.ensureRunning()
     const addrHex = addr.toString(16)
     const lenHex = len.toString(16)
-    return this.enqueue(`READ_MEM ${domain} ${addrHex} ${lenHex}`, true)
+    const reply = await this.enqueue(`READ_MEM ${domain} ${addrHex} ${lenHex}`, true)
+    return this.decodeHexReply(reply, len, `readMem ${domain} 0x${addrHex}`)
+  }
+
+  /** Decode a harness HEX reply (READ_MEM / DUMP_*) back to raw bytes. The harness
+   *  hex-encodes every binary reply because comm.socketServerSend UTF-8-mangles raw
+   *  bytes >= 0x80 (see render.lua `toHex`). Throws on an "ERR …" reply or a decoded
+   *  length that doesn't match what was requested. */
+  private decodeHexReply(reply: Buffer, expectedLen: number, what: string): Buffer {
+    const text = reply.toString('ascii')
+    if (text.startsWith('ERR')) throw new Error(`${what}: ${text.slice(4).trim()}`)
+    const out = Buffer.from(text, 'hex')
+    if (out.length !== expectedLen) {
+      throw new Error(`${what}: expected ${expectedLen} bytes, decoded ${out.length}`)
+    }
+    return out
   }
 
   // Generic memory-WRITE primitive — the editor's pathway to edit the RUNNING

@@ -115,12 +115,12 @@ const LEVEL_MODE_0A = 0x0a;
  *  starts. Hardcoded in the cart as `LDX #$00D8` (`$00:BBA9`). */
 const LEVEL_MODE_0A_START_OFFSET = 0xd8;
 
-/** The CGRAM palette ROW each BG layer's colours load into, read from
+/** The CGRAM palette ROW each BG layer's colors load into, read from
  *  `scene_palette_layout`'s fixed CGRAM destinations. BG1/BG2 are 4bpp (row =
  *  colorIdx >> 4); BG3 is 2bpp (row = colorIdx >> 2). Stock normal program:
  *  BG1 → row 4, BG2 → row 6, BG3 → row 0 (row 0 holds the backdrop + BG3).
  *
- *  This is what a *paletteless gfx-file preview* needs to colour a BG sheet with
+ *  This is what a *paletteless gfx-file preview* needs to color a BG sheet with
  *  ITS OWN palette — the per-tile layer renderer (`render-bg-layers`/`render-bg1`)
  *  doesn't, because it reads the 3-bit palette row from each tilemap / Map16 cell.
  *  Defaults (4/6/0) cover mode-$0A, whose tail program doesn't reload the BG rows. */
@@ -166,9 +166,9 @@ export function bgPaletteBaseRows(
  * Throws on malformed input (interpreter runs off the end of the cart's
  * scene_palette_layout or tries to read past the palette blob).
  *
- * `provenance` (optional, length 256) is filled with each CGRAM colour index's
+ * `provenance` (optional, length 256) is filled with each CGRAM color index's
  * SOURCE byte-offset into the master palette blob (`DATA_master_palette_rom_blob`
- * base) — the word that backs that swatch, so a colour edit knows which blob
+ * base) — the word that backs that swatch, so a color edit knows which blob
  * `dw` to rewrite. `−1` = never written by the interpreter (no blob source).
  * Last write wins, matching the cart's overwrite order. Pure add — omit it and
  * the render path is unchanged.
@@ -279,7 +279,7 @@ export function loadScenePalettes(
 
 /**
  * Shared `scene_palette_layout` interpreter — walks 4-byte entries from
- * `startOffset`, transferring BGR-15 colours from the master palette blob into
+ * `startOffset`, transferring BGR-15 colors from the master palette blob into
  * `cgram` (indirect source words resolve through `slots`). Used by both
  * `loadLevelPalettes` (header-derived slots, offset 0/$D8) and
  * `loadScenePalettes` (slots set directly, screen-specific offset).
@@ -293,7 +293,7 @@ function runPaletteProgram(
   provenance?: Int32Array
 ): void {
   const SCENE_PALETTE_LAYOUT_PC = symbols.pc('DATA_scene_palette_layout');
-  // Palette blob base — BGR-15 colours, walked via 16-bit byte-offsets.
+  // Palette blob base — BGR-15 colors, walked via 16-bit byte-offsets.
   const PALETTE_BLOB_PC = symbols.pc('DATA_master_palette_rom_blob');
   let prog = SCENE_PALETTE_LAYOUT_PC + startOffset;
 
@@ -350,7 +350,7 @@ function runPaletteProgram(
         }
         cgram[d + 0] = rom[srcPC + 0]!;
         cgram[d + 1] = rom[srcPC + 1]!;
-        if (provenance) provenance[d >>> 1] = srcByte; // CGRAM colour idx → blob byte-offset
+        if (provenance) provenance[d >>> 1] = srcByte; // CGRAM color idx → blob byte-offset
         srcByte = (srcByte + 2) & 0xffff;
         d += 2;
       }

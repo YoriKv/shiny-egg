@@ -153,7 +153,7 @@ export const RNG_SITE = {
   stone3dBodyMainHi: 0x13fd04, // main-tiles roll #2: re-roll when ((prng&3)+$2C)*2 >= $16
   // Jungle-tree family (std $30/$31 trunk, $36 leaves-only; foliage in non-jungle
   // tilesets too, e.g. record $1A). The leaves roll gates whether the overlay +
-  // side-leaf cells stamp (so it drives footprint, not just colour).
+  // side-leaf cells stamp (so it drives footprint, not just color).
   jungleTrunkInit: 0x1295b2,     // CODE_init_jungle_tree_trunk: $A1 leaf-tint bias roll (per object)
   jungleTrunkBranches: 0x139711, // CODE_jungle_tree_trunk_with_branches: per-cell body roll
   jungleTrunkLeaves: 0x139780,   // CODE_jungle_tree_trunk_with_leaves: per-cell overlay+side roll
@@ -162,7 +162,7 @@ export const RNG_SITE = {
   // the tile-family table (DATA_1394C8), so a wrong roll swaps $96xx↔$9bxx.
   jungleTreetopCanopy: 0x1394e5, // CODE_jungle_treetop_canopy: per-column $A1 variant roll
   // Ice floor (std $DB). Row-0 scatter roll picks $0000(skip)/$0017/$0018, so it
-  // gates whether each row-0 cell stamps → drives footprint, not just colour.
+  // gates whether each row-0 cell stamps → drives footprint, not just color.
   iceFloorScatter: 0x13f1b0,     // CODE_stamp_ice_floor: row-0 floor-top scatter roll
   // Jungle cattail (std $34). Per-column roll picks one of 16 sub-tables; the
   // last 4 have a $0000 row-0 (no stamp), so the roll drives footprint too.

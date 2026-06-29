@@ -70,17 +70,17 @@ function blobWordsFrom(provenance: Int32Array, cgram: Uint8Array): Map<number, n
 }
 
 /** Pin a track's palette write-back: offsets cover the meaningful entries, an unedited
- *  palette → 0 colour edits, and flipping the first blob-backed entry → exactly one. */
+ *  palette → 0 color edits, and flipping the first blob-backed entry → exactly one. */
 function assertPaletteRoundTrip(label: string, palette: Uint32Array, offsets: number[], blobWords: Map<number, number>): void {
   assert(offsets.length > 0 && offsets.length <= palette.length, `${label}: paletteOffsets covers the meaningful entries (${offsets.length} of ${palette.length})`);
-  assert(diffAsepritePalette(palette, offsets, blobWords).length === 0, `${label}: unedited palette → 0 master-blob colour edits`);
+  assert(diffAsepritePalette(palette, offsets, blobWords).length === 0, `${label}: unedited palette → 0 master-blob color edits`);
   const pi = offsets.findIndex((o) => o >= 0);
-  assert(pi >= 0, `${label}: palette has a blob-backed colour to edit`);
+  assert(pi >= 0, `${label}: palette has a blob-backed color to edit`);
   if (pi >= 0) {
     const ep = palette.slice();
     ep[pi] = (ep[pi]! ^ 0x00080808) >>> 0; // flip bit 3 of each RGB byte → ±1 in the 5-bit channel
     const eds = diffAsepritePalette(ep, offsets, blobWords);
-    assert(eds.length === 1 && eds[0]!.offset === offsets[pi] && eds[0]!.value === imageDataU32ToBgr15(ep[pi]!), `${label}: a 1-colour edit → exactly one PaletteEdit at the right offset`);
+    assert(eds.length === 1 && eds[0]!.offset === offsets[pi] && eds[0]!.value === imageDataU32ToBgr15(ep[pi]!), `${label}: a 1-color edit → exactly one PaletteEdit at the right offset`);
   }
 }
 
@@ -173,21 +173,21 @@ assert(bootTiles < boot.sizeBytes / tileBytesOf(boot), `boot crop (${bootTiles} 
   }
   assert(done && diffGfxFileAseprite({ palette: dec.palette, bpp: boot.bpp, baseTileData: baseRegion, flatten: edited, width: dec.width }).length >= 1,
     'boot .aseprite a 1-px edit slices to a tile');
-  // Palette write-back wiring: the region .aseprite carries a colour write-back map (one
+  // Palette write-back wiring: the region .aseprite carries a color write-back map (one
   // blob offset per palette entry + the trailing transparent slot). (imagePaletteOffsets'
   // provenance correctness is pinned against real CGRAM by the scenery/icon/level-icon
   // tracks; here we pin the boot region's shape + a self-consistent diff round-trip.)
   const bootOff = bootAse.paletteOffsets!;
-  assert(!!bootOff && bootOff.length === 17, `boot region paletteOffsets = 16 colours + trailing slot (got ${bootOff?.length})`);
+  assert(!!bootOff && bootOff.length === 17, `boot region paletteOffsets = 16 colors + trailing slot (got ${bootOff?.length})`);
   assert(bootOff[16] === -1, 'boot region offsets end with a trailing transparent slot (-1)');
   const bootBi = bootOff.slice(0, 16).findIndex((o) => o >= 0); // a blob-backed entry (some OBJ slots have no blob source)
-  assert(bootBi >= 0, 'boot region has at least one blob-backed colour');
+  assert(bootBi >= 0, 'boot region has at least one blob-backed color');
   const bootBlob = new Map<number, number>();
   for (let i = 0; i < 16; i++) if (bootOff[i]! >= 0) bootBlob.set(bootOff[i]!, imageDataU32ToBgr15(dec.palette[i]!));
-  assert(diffAsepritePalette(dec.palette, bootOff, bootBlob).length === 0, 'boot region: unedited palette → 0 colour edits');
+  assert(diffAsepritePalette(dec.palette, bootOff, bootBlob).length === 0, 'boot region: unedited palette → 0 color edits');
   const bootFlip = dec.palette.slice(); bootFlip[bootBi] = (bootFlip[bootBi]! ^ 0x00080808) >>> 0;
   const bootEd = diffAsepritePalette(bootFlip, bootOff, bootBlob);
-  assert(bootEd.length === 1 && bootEd[0]!.offset === bootOff[bootBi], 'boot region: a 1-colour edit → exactly one PaletteEdit at the right offset');
+  assert(bootEd.length === 1 && bootEd[0]!.offset === bootOff[bootBi], 'boot region: a 1-color edit → exactly one PaletteEdit at the right offset');
 }
 
 // (3) unedited round-trip byte-exact for every file (region- AND per-tile-aware).
@@ -204,7 +204,7 @@ assert(exact === entries.length, `all ${entries.length} screen files round-trip 
 assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette != null), 'map BG terrain uses per-tile palette');
 
 // (3a) Per-tile-palette char sheets (map BG f74/f75, storybook f88) export a
-// MULTI-ROW .aseprite (every used CGRAM row's colours concatenated) whose palette round-trips
+// MULTI-ROW .aseprite (every used CGRAM row's colors concatenated) whose palette round-trips
 // to the master blob. (imagePaletteOffsets' provenance correctness is pinned against real
 // CGRAM by the scenery/icon/level-icon image tracks; here we pin the multi-row sheets' shape +
 // a self-consistent diff round-trip.)
@@ -218,8 +218,8 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
     const base = decodeBase(e);
     const round = imageToGfx(aimg, layoutOf(e), { base, index0Transparent: e.index0Transparent, tilePalette: tilePaletteOf(e) }).subarray(0, base.length);
     assert(eq(round, base), `${e.file}: per-tile .aseprite pixel round-trip byte-exact`);
-    // COLOURS: paletteOffsets parallels the embedded multi-row palette; self-consistent blob
-    // words (each blob-backed entry's current colour at its offset) → unedited 0, flip → 1.
+    // COLORS: paletteOffsets parallels the embedded multi-row palette; self-consistent blob
+    // words (each blob-backed entry's current color at its offset) → unedited 0, flip → 1.
     const pal = aimg.palette;
     const off = e.paletteOffsets!;
     const bw = new Map<number, number>();
@@ -251,19 +251,19 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
   }
 }
 
-// (3d) LIVE BASELINE (colours) — `romWithLivePalette` patches the master-palette blob at each
+// (3d) LIVE BASELINE (colors) — `romWithLivePalette` patches the master-palette blob at each
 // edit's blob offset; this proves that lands in CGRAM at the index whose provenance is that
-// offset, so the export's CGRAM reflects unbuilt colour edits (≡ the import's effectiveBlobWords)
-// → no colour revert pre-rebuild. (Project-free: patches the ROM directly, like the helper does.)
+// offset, so the export's CGRAM reflects unbuilt color edits (≡ the import's effectiveBlobWords)
+// → no color revert pre-rebuild. (Project-free: patches the ROM directly, like the helper does.)
 {
   const ctx = buildTitleSceneryContext(rom, symbols);
   const ci = [...ctx.provenance].findIndex((o) => o >= 0);
-  assert(ci >= 0, 'scenery palette has a blob-backed CGRAM colour to test the blob patch');
+  assert(ci >= 0, 'scenery palette has a blob-backed CGRAM color to test the blob patch');
   if (ci >= 0) {
     const offset = ctx.provenance[ci]!;
     const blobPC = symbols.pc(PALETTE_BLOB_LABEL);
     const orig = (rom[blobPC + offset]! | (rom[blobPC + offset + 1]! << 8)) & 0x7fff;
-    const want = (orig ^ 0x1234) & 0x7fff; // a guaranteed-different 15-bit colour
+    const want = (orig ^ 0x1234) & 0x7fff; // a guaranteed-different 15-bit color
     const patched = rom.slice();
     patched[blobPC + offset] = want & 0xff; patched[blobPC + offset + 1] = (want >> 8) & 0xff;
     const ctx2 = buildTitleSceneryContext(patched, symbols);
@@ -290,7 +290,7 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
   assert(f88.index0Transparent === false, 'storybook BG char f88 has opaque index 0');
 }
 
-// (3c) STORYBOOK f88 Aseprite output (single-image, per-tile-coloured; the palette lives
+// (3c) STORYBOOK f88 Aseprite output (single-image, per-tile-colored; the palette lives
 // in-file so the `.aseprite` omits the swatch the PNG appends — the bare tile grid). The
 // flatten reproduces the PNG's tile-grid region byte-for-byte.
 {
@@ -345,7 +345,7 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
     }
     if (edited2) break;
   }
-  assert(edited2 !== null, 'found a storybook scene cell with ≥2 colours to test an edit');
+  assert(edited2 !== null, 'found a storybook scene cell with ≥2 colors to test an edit');
   if (edited2) {
     const d = diffStorybookSceneTiles(ctx, canvas, edited2);
     assert(d.edits.length === 1, `a 1-pixel scene edit changes exactly one f27 tile (got ${d.edits.length})`);
@@ -361,14 +361,14 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
 
   // Palette write-back: paletteOffsets is one master-blob byte-offset per .aseprite palette
   // entry. Build the blob's current words from (provenance, cgram) — the same source the
-  // export read — and confirm an UNEDITED palette diffs to 0 colour edits, while flipping
+  // export read — and confirm an UNEDITED palette diffs to 0 color edits, while flipping
   // one entry yields exactly one PaletteEdit. (The decoder pads the palette to 256 entries;
   // the encoder writes only the meaningful ones, and diffAsepritePalette min-clamps to
   // offsets.length, so offsets covers exactly the meaningful prefix — not the padding.)
   assertPaletteRoundTrip('storybook', sceneAse.palette, sceneAseFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
 }
 
-// (4) 1-pixel edit on tile 0: change pixel (0,0) to another (unique) swatch colour
+// (4) 1-pixel edit on tile 0: change pixel (0,0) to another (unique) swatch color
 // → that tile's bytes change to the right index, others untouched.
 function pixelEditCheck(e: ScreenGfxPng, label: string): void {
   const tileBytes = tileBytesOf(e);
@@ -385,7 +385,7 @@ function pixelEditCheck(e: ScreenGfxPng, label: string): void {
     if (cand === bi) continue;
     if (pal.filter((c) => c === pal[cand]).length === 1) { k = cand; break; }
   }
-  if (k < 0) { console.log(`  (skipped ${label} 1-pixel edit: tile 0 row has no unique alternate colour)`); return; }
+  if (k < 0) { console.log(`  (skipped ${label} 1-pixel edit: tile 0 row has no unique alternate color)`); return; }
   const col = pal[k]!;
   img.rgba[0] = (col >> 16) & 0xff; img.rgba[1] = (col >> 8) & 0xff; img.rgba[2] = col & 0xff; img.rgba[3] = k === 0 ? 0 : 255;
   const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: e.index0Transparent }).subarray(0, base.length);
@@ -430,8 +430,8 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
   // the logo char comes from a single lz2 (2bpp) file — verify it's $1D
   const fileIds = new Set(canvas.units.filter(Boolean).map((u) => `${u!.format}/0x${u!.fileId.toString(16)}`));
   assert(fileIds.has('lz2/0x1d') && fileIds.size === 1, `logo char is the lz2 $1D sheet (got ${[...fileIds].join(',')})`);
-  // 1-pixel edit: find a cell with ≥2 distinct colours, recolour one pixel to
-  // another colour ALREADY in that cell (guaranteed in-palette) → exactly that tile.
+  // 1-pixel edit: find a cell with ≥2 distinct colors, recolor one pixel to
+  // another color ALREADY in that cell (guaranteed in-palette) → exactly that tile.
   const u32 = new Uint32Array(canvas.rgba.buffer, canvas.rgba.byteOffset, canvas.width * canvas.height);
   const px = (cx: number, cy: number): number => u32[cy * canvas.width + cx]!;
   let edited2: Uint8Array | null = null;
@@ -448,7 +448,7 @@ assert(logo.width === 256 && logo.height === 112, `title logo canvas is 256×112
     new Uint32Array(edited2.buffer, edited2.byteOffset, canvas.width * canvas.height)[altY * canvas.width + altX] = alt;
     break;
   }
-  assert(edited2 !== null, 'found a logo cell with ≥2 colours to test an edit');
+  assert(edited2 !== null, 'found a logo cell with ≥2 colors to test an edit');
   if (edited2) {
     const d = diffTitleLogoTiles(ctx, canvas, edited2);
     assert(d.edits.length === 1, `a 1-pixel in-palette logo edit changes exactly one tile (got ${d.edits.length})`);
@@ -549,7 +549,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
   const clean = diffTitleIslandTiles(ctx, canvas, canvas.rgba);
   assert(clean.edits.length === 0 && clean.conflicts === 0, 'unedited island diff is empty (round-trips byte-exact)');
   assert(clean.sharedCells === 0, 'an unedited island reports no shared-cell spread');
-  // 1-pixel edit: recolour one pixel to another colour already in that cell.
+  // 1-pixel edit: recolor one pixel to another color already in that cell.
   const cellsPerChar = new Map<number, number>();
   for (const u of canvas.units) cellsPerChar.set(u.char, (cellsPerChar.get(u.char) ?? 0) + 1);
   const u32 = new Uint32Array(canvas.rgba.buffer, canvas.rgba.byteOffset, canvas.width * canvas.height);
@@ -565,7 +565,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
     chosenChar = u.char;
     break;
   }
-  assert(edited !== null, 'found an island cell with ≥2 colours to test an edit');
+  assert(edited !== null, 'found an island cell with ≥2 colors to test an edit');
   if (edited) {
     const d = diffTitleIslandTiles(ctx, canvas, edited);
     assert(d.edits.length === 1, `a 1-pixel island edit changes exactly one char tile (got ${d.edits.length})`);
@@ -728,7 +728,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
   // Palette write-back: scenery OBJ row 7 (CGRAM 240-255, single row, index 0 transparent).
   assertPaletteRoundTrip('title scenery', sceneryAse.palette, sceneryFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
 
-  // 1-pixel edit: recolour a non-transparent pixel to another colour in the row.
+  // 1-pixel edit: recolor a non-transparent pixel to another color in the row.
   const u32 = new Uint32Array(canvas.rgba.buffer, canvas.rgba.byteOffset, 256 * 96);
   let pi = -1, alt = 0;
   for (let i = 0; i < 256 * 96; i++) {
@@ -744,7 +744,7 @@ assert(!entries.some((e) => e.fileId === 0xb1), 'file $B1 is NOT in the generic 
     new Uint32Array(edited.buffer, edited.byteOffset, 256 * 96)[pi] = ctx.palette[alt]!;
     const d = diffTitleScenery(ctx, edited);
     assert(d.changed === 1, `a 1-pixel scenery edit changes exactly one source byte (got ${d.changed})`);
-    assert((d.region[pi]! & 0x0f) === alt, 'scenery edit writes the new colour into the low nibble');
+    assert((d.region[pi]! & 0x0f) === alt, 'scenery edit writes the new color into the low nibble');
     assert((d.region[pi]! & 0xf0) === (ctx.base[pi]! & 0xf0), 'scenery edit preserves the high nibble');
     assert(d.region.filter((b, i) => b !== ctx.base[i]).length === 1, 'scenery edit touches only the edited byte');
   }

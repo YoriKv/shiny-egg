@@ -60,7 +60,7 @@ const SPRITE_VRAM_START = 0x6000;
 /**
  * Palette row to PREVIEW an animated slot with (the Tiles-gallery animated-slot
  * blocks). The always-on universal collectibles — coins / !-switch / !-coin / star,
- * at VRAM byte $2800-$2980 — are coloured from the FIXED universal-object palette
+ * at VRAM byte $2800-$2980 — are colored from the FIXED universal-object palette
  * (CGRAM rows 1-3: red / gold / green), NOT the level's BG1 palette, so a coin
  * previews gold in every level. Every OTHER (per-tileset) animated band is level
  * terrain (water / lava / torch) tinted by the level's own BG1 palette → the BG1 row.
@@ -121,7 +121,7 @@ function inferRenderParams(
   bgRows: BgPaletteRows
 ): { bpp: 2 | 4; paletteRow: number; layer: string } {
   // Non-sprite paletteRow = the layer's REAL CGRAM row (bgPaletteBaseRows), not 0
-  // — row 0 holds the backdrop + BG3, so BG1/BG2 sheets coloured at row 0 show
+  // — row 0 holds the backdrop + BG3, so BG1/BG2 sheets colored at row 0 show
   // the wrong palette. (The per-tile renderer reads the row per cell; a
   // paletteless file preview has to pick the layer's base row.)
   if (entry.dpSlot !== undefined) {
@@ -252,7 +252,7 @@ export function renderGfxFiles(
   const regs = loadSceneRegs(rom, symbols, header.levelMode ?? 0);
   // The CGRAM row each BG layer's palette actually loads into (BG1 row 4, BG2
   // row 6, BG3 row 0 in the stock program) — so each sheet previews in its own
-  // colours instead of row 0.
+  // colors instead of row 0.
   const bgRows = bgPaletteBaseRows(rom, symbols, header.levelMode ?? 0);
 
   const bgU32 = bgr15ToImageDataU32(0x0000);
@@ -419,20 +419,20 @@ function classifyGfxRole(entry: GfxFileEntry, layer: string): GfxRole {
 /** Per-tile palette fidelity for a BG2/BG3 file, carried on the export entry (and
  *  copied into the gfx manifest) so import decodes each tile against its OWN
  *  palette row — see gfx-png.ts. A global swatch can't disambiguate the rows (they
- *  share colours at different positions); decode must be per-tile. Used for both
- *  BG3 (2bpp, 4-colour rows) and BG2 (4bpp, 16-colour rows). */
+ *  share colors at different positions); decode must be per-tile. Used for both
+ *  BG3 (2bpp, 4-color rows) and BG2 (4bpp, 16-color rows). */
 export interface PerTilePalette {
   /** Per file-tile palette index (0..subPalettes.length-1); 0 = the layer's
    *  primary row, used for tiles the tilemap never references. */
   tileSub: number[];
-  /** The palette rows the tiles use, as RGB ints (0xRRGGBB) — 4 colours each for
+  /** The palette rows the tiles use, as RGB ints (0xRRGGBB) — 4 colors each for
    *  2bpp BG3, 16 for 4bpp BG2; index 0 = the transparent key. The layer's loaded
    *  block comes first (BG3 rows 0-3, BG2 rows 6-7), then any extra rows the
    *  tilemap references. */
   subPalettes: number[][];
-  /** This level runs a per-frame palette animation that recolours THIS layer's
-   *  rows (header field 11) — the exported colours are one frame of a cycle.
-   *  Editing tile indices stays byte-safe; only the displayed colours animate. */
+  /** This level runs a per-frame palette animation that recolors THIS layer's
+   *  rows (header field 11) — the exported colors are one frame of a cycle.
+   *  Editing tile indices stays byte-safe; only the displayed colors animate. */
   paletteAnimated: boolean;
 }
 
@@ -456,7 +456,7 @@ export interface GfxPngEntry {
   perTilePalette?: PerTilePalette;
   png: Uint8Array;
   /** Present when `opts.format === 'aseprite'`: the file's tiles as an indexed
-   *  Aseprite tileset (sheet-grid tilemap). The single render palette row colours
+   *  Aseprite tileset (sheet-grid tilemap). The single render palette row colors
    *  every tile (BG2/BG3 per-tile fidelity stays PNG-only). */
   aseprite?: Uint8Array;
 }
@@ -479,10 +479,10 @@ function bgScreenIndex(d: { cols: number; rows: number }, row: number, col: numb
   return 0;
 }
 
-/** Animation-palette modes (header field 11) verified NOT to recolour a given BG
+/** Animation-palette modes (header field 11) verified NOT to recolor a given BG
  *  layer's palette rows, from the Bank01 `DATA_animation_palette_ptr` handlers'
  *  CGRAM destinations. Any OTHER non-zero mode is conservatively assumed to
- *  (possibly) recolour it — so we never claim "static" for an animated palette.
+ *  (possibly) recolor it — so we never claim "static" for an animated palette.
  *   - BG3 (CGRAM 0-15): mode 1→row4, modes 3/4→row7 miss it.
  *   - BG2 (CGRAM 96-127 = rows 6/7): mode 1→row4 and the BG3-region modes
  *     {2,5,9,13,15,19} miss it; modes 3/4 DO cycle row 7. */
@@ -527,10 +527,10 @@ interface BgLayerConfig {
 /**
  * Resolve, per char tile, which CGRAM palette row a BG2/BG3 layer draws it with
  * (the dominant `palRow` across the tilemap cells using it), plus those rows'
- * colours from the already-loaded CGRAM. This lets the export colour each tile in
+ * colors from the already-loaded CGRAM. This lets the export color each tile in
  * its real row (not all in the base row) and the import decode each tile against
  * its own row. Snapshot of the static palette load — `paletteAnimated` flags
- * levels whose colours then cycle.
+ * levels whose colors then cycle.
  */
 function computePerTilePalette(
   rom: Uint8Array,
@@ -645,7 +645,7 @@ function computePerTilePalette(
 
 /**
  * Render every chunk-list gfx file used by `header`'s scene to a PNG — the tiles
- * coloured by the level's real palette (index 0 transparent for sprites) plus a
+ * colored by the level's real palette (index 0 transparent for sprites) plus a
  * self-describing swatch (see `gfx-png.ts`). Deduped by (format, fileId) so a
  * file loaded into multiple slots exports once. Animated tiles are skipped (they
  * aren't single saveGfxEdit-able blobs). The companion import is
@@ -665,8 +665,8 @@ export function exportLevelGfxPngs(
   loadLevelPalettes(rom, symbols, header, cgram);
   const regs = loadSceneRegs(rom, symbols, header.levelMode ?? 0);
   const bgRows = bgPaletteBaseRows(rom, symbols, header.levelMode ?? 0);
-  // When exporting Aseprite, build each file's tiles as an indexed tileset coloured
-  // in its single render row (round-trip-safe; BG2/BG3 per-tile colour is PNG-only).
+  // When exporting Aseprite, build each file's tiles as an indexed tileset colored
+  // in its single render row (round-trip-safe; BG2/BG3 per-tile color is PNG-only).
   const makeAse = opts.format === 'aseprite'
     ? (tileData: Uint8Array, bpp: 2 | 4, row: number, t0: boolean): Uint8Array =>
         gfxFileAseprite({ cgram, bpp, tileData, paletteRowPerTile: () => row, index0Transparent: t0 })
@@ -691,10 +691,10 @@ export function exportLevelGfxPngs(
     const addr = u24le(rom, (entry.format === 'lz16' ? lz16Table : lz2Table) + entry.fileId * 3);
     const baseLayout = entry.format === 'lz16' ? lz16Layout(rowCount!) : lz2Layout(entry.sizeBytes, params.bpp);
 
-    // BG2/BG3 → per-tile palette fidelity: colour each tile in the palette row its
+    // BG2/BG3 → per-tile palette fidelity: color each tile in the palette row its
     // tilemap cells use (not all in the layer's base row), with a reference swatch
     // of the exposed rows. Import decodes per-tile (a global swatch can't
-    // disambiguate rows that share colours). BG3 = 2bpp/4-colour, BG2 = 4bpp/16.
+    // disambiguate rows that share colors). BG3 = 2bpp/4-color, BG2 = 4bpp/16.
     const perTile =
       params.layer === 'BG3'
         ? (bg3Ctx ??= computePerTilePalette(rom, symbols, header, cgram, {

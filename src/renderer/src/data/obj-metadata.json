@@ -2901,8 +2901,8 @@
       ]
     },
     "0xAC": {
-      "name": "Horizontal sewage pipe, top / Randomly coloured egg block",
-      "desc": "The ceiling of a horizontal sewage pipe. If it is not placed in a sewer level, it will be a randomly coloured egg block. As it can occasionally freeze the game, only using this object in sewer levels is advised.",
+      "name": "Horizontal sewage pipe, top / Randomly colored egg block",
+      "desc": "The ceiling of a horizontal sewage pipe. If it is not placed in a sewer level, it will be a randomly colored egg block. As it can occasionally freeze the game, only using this object in sewer levels is advised.",
       "category": "pipe",
       "tilesets": [
         "sewer"
@@ -4988,8 +4988,8 @@
       ]
     },
     "0x46": {
-      "name": "Randomly coloured egg block",
-      "desc": "A randomly coloured Egg Block, whose colour isn't corresponding to correct ones at all. As this occasionally freezes the game, using this is not recommended.",
+      "name": "Randomly colored egg block",
+      "desc": "A randomly colored Egg Block, whose color isn't corresponding to correct ones at all. As this occasionally freezes the game, using this is not recommended.",
       "category": "collectible",
       "tilesets": [
         "misc"
@@ -10518,9 +10518,9 @@
             "0x15F"
           ],
           "enforce": true,
-          "targetName": "$15F (same colour)",
+          "targetName": "$15F (same color)",
           "failureMode": "dead switch",
-          "designerRule": "global by colour (position irrelevant)"
+          "designerRule": "global by color (position irrelevant)"
         }
       ]
     },
@@ -10539,9 +10539,9 @@
             "0x160"
           ],
           "enforce": true,
-          "targetName": "$160 (same colour)",
+          "targetName": "$160 (same color)",
           "failureMode": "dead switch",
-          "designerRule": "global by colour (position irrelevant)"
+          "designerRule": "global by color (position irrelevant)"
         }
       ]
     },
@@ -10563,9 +10563,9 @@
             "0x15C"
           ],
           "enforce": true,
-          "targetName": "$15C (same colour)",
+          "targetName": "$15C (same color)",
           "failureMode": "never flips",
-          "designerRule": "global by colour (position irrelevant)"
+          "designerRule": "global by color (position irrelevant)"
         }
       ]
     },
@@ -10582,9 +10582,9 @@
             "0x15D"
           ],
           "enforce": true,
-          "targetName": "$15D (same colour)",
+          "targetName": "$15D (same color)",
           "failureMode": "never flips",
-          "designerRule": "global by colour (position irrelevant)"
+          "designerRule": "global by color (position irrelevant)"
         }
       ]
     },

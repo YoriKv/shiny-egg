@@ -1,19 +1,21 @@
 // M1TE2 ".M1" session export/import for the WORLD MAP — the M1TE-editable counterpart
 // to the per-world overworld terrain (world-map-terrain.ts) + the level-slot / level
 // icons (screen-world-map-icons.ts / world-map-level-icons.ts). Like the level BG-region
-// .M1 path (bg-region.ts) this bundles a layer's tilemap + CHR + palette into one fixed
-// 55568-byte file (m1te2.ts); the difference is the world map's data is a SCENE (no level
-// header), so it reads the cart directly. Two products:
+// .M1 path (bg-region.ts) this bundles a layer's tilemap + CHR + palette into one .M1 file
+// (m1te2.ts); the difference is the world map's data is a SCENE (no level header), so it
+// reads the cart directly. Two products:
 //
-//   • OVERWORLD — one .M1 per world × HALF (left = cols 0-31 / levels 1-4, right = cols
-//     32-63 / levels 5-8), because the overworld is a 64×32 screen and an M1TE2 map is a
-//     fixed 32×32. Each file carries the three composited map layers as M1TE2 map slots:
+//   • OVERWORLD — one .M1 per world (the full 64×32 screen). M1TE2 v2 supports a 64-wide
+//     map, so this is ONE file — the cart stores the whole overworld as a single 64×32
+//     screen-block tilemap (the "levels 1-4 / 5-8" left/right split is a CAMERA hscroll,
+//     not a data split — see world-map-terrain.ts). Each file carries the three composited
+//     map layers as M1TE2 map slots:
 //       slot 0 = BG1 foreground  ($7C-class LZ2 tilemap) — path, markers, fortress
 //       slot 1 = BG2 background   ($7D-class LZ2 tilemap) — hills, clouds, scenery
 //       slot 2 = BG3 ground       ($7E LZ2 tilemap, 2bpp) — the tan terrain + tree line
 //     BG1+BG2 draw 4bpp from the shared $74/$75/$4C char (base $4000); BG3 draws 2bpp from
 //     the $56 char ($2000). The palette is the per-world overworld CGRAM rows 0-7 (BG) —
-//     M1TE2 holds 128 colours = exactly those rows, so the overworld colours are EXACT.
+//     M1TE2 holds 128 colors = exactly those rows, so the overworld colors are EXACT.
 //     The overworld is native tilemap data, so every word + CHR byte maps VERBATIM: edits
 //     round-trip placement (→ the $7C/$7D/$7E tilemaps), pixels (→ $74/$75/$4C + $56), and
 //     palette (→ the master blob).
@@ -24,13 +26,13 @@
 //     slot 0): per-level icons are bank-$53 GSU-chunky pixels converted to 4bpp planar
 //     (round-trip → the $53 .bin, nibble RMW); marker/castle are the cart $74/$75 tiles
 //     (round-trip → saveGfxEdit). The display palette is FAITHFUL: the icons span only a few
-//     distinct 16-colour palettes (the per-level icons use 2 world-invariant OBJ palettes;
+//     distinct 16-color palettes (the per-level icons use 2 world-invariant OBJ palettes;
 //     the marker/castle use the 6 per-world BG tints — ≤ 6 distinct in all), which fit
-//     M1TE2's 8 palette rows, so each cell is shown in its true colours (`buildIconLayout`).
+//     M1TE2's 8 palette rows, so each cell is shown in its true colors (`buildIconLayout`).
 //     Pixel edits round-trip in the INDEX/BYTE domain regardless. The diff re-derives the
 //     whole layout from the base cart (deterministic), so the .M1 needs no per-icon sidecar.
 
-import { encodeM1te2, parseM1te2 } from './m1te2.ts';
+import { encodeM1te2, parseM1te2, MAP_STRIDE, MAP_WORDS } from './m1te2.ts';
 import {
   buildWorldMapTerrainContext, terrainLayerFileId, type WorldMapTerrainContext
 } from './world-map-terrain.ts';
@@ -49,7 +51,6 @@ import { type SymbolMap } from './symbol-map.ts';
 // ── overworld constants (mirrors world-map-terrain.ts) ───────────────────────
 const COLS = 64;
 const ROWS = 32;
-const BLOCK = 32; // an M1TE2 map screen
 const MAP_CHAR_BASE = 0x4000; // BG1/BG2 char base on the overworld (reaches $74/$75/$4C)
 const GROUND_CHAR_VRAM = 0x2000; // BG3 ground char ($56), 2bpp
 const GROUND_TM_VRAM = 0x2800; // BG3 ground tilemap ($7E), 64×32, DMA'd here
@@ -64,14 +65,12 @@ const wordIndex = (c: number, r: number): number => (c >= 32 ? 0x400 : 0) + r * 
 const wordAt = (tm: Uint8Array, wi: number): number => tm[wi * 2]! | (tm[wi * 2 + 1]! << 8);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OVERWORLD — one .M1 per world × half (BG1+BG2+BG3 composited).
+// OVERWORLD — one .M1 per world (the full 64×32 screen, BG1+BG2+BG3 composited).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** One exported overworld `.M1` (a world's left or right 32×32 half). */
+/** One exported overworld `.M1` (a world's full 64×32 screen). */
 export interface OverworldM1 {
   world: number;
-  /** 0 = left half (cols 0-31, levels 1-4), 1 = right half (cols 32-63, levels 5-8). */
-  half: 0 | 1;
   /** BG1 foreground tilemap (slot 0) round-trips to this $7C-class LZ2 file. */
   bg1FileId: number;
   /** BG2 background tilemap (slot 1) → this $7D-class LZ2 file. */
@@ -85,38 +84,32 @@ export interface OverworldM1 {
  *  DMA'd into — byte-identical to the decompressed $7E). 4096 bytes = 2048 words. */
 const groundTilemap = (vram: Uint8Array): Uint8Array => vram.slice(GROUND_TM_VRAM, GROUND_TM_VRAM + COLS * ROWS * 2);
 
-/** Build both halves of a world's overworld as `.M1` sessions: BG1/BG2/BG3 tilemaps in
- *  slots 0/1/2 over the shared 4bpp ($74/$75/$4C) + 2bpp ($56) CHR windows, coloured by the
- *  per-world CGRAM (rows 0-7). CHR + palette are identical across the two halves; only the
- *  tilemaps differ (each half is its 32-col screen-block). */
-export function buildOverworldM1(c: WorldMapTerrainContext): OverworldM1[] {
+/** Build a world's overworld as one `.M1` session: BG1/BG2/BG3 tilemaps in slots 0/1/2 over
+ *  the shared 4bpp ($74/$75/$4C) + 2bpp ($56) CHR windows, colored by the per-world CGRAM
+ *  (rows 0-7). The cart's screen-block tilemaps (left block @ words 0x000, right @ 0x400)
+ *  are de-interleaved into the doc's plain row-major 64-wide grid (`wordIndex`). */
+export function buildOverworldM1(c: WorldMapTerrainContext): OverworldM1 {
   const vram = c.scene.vram;
-  const palette = c.scene.cgram.slice(0, 256); // 128 BG colours; encodeM1te2 masks bit15
+  const palette = c.scene.cgram.slice(0, 256); // 128 BG colors; encodeM1te2 masks bit15
   const chr4 = chrWindow(vram, MAP_CHAR_BASE, TILE4);
   const chr2 = chrWindow(vram, GROUND_CHAR_VRAM, TILE2);
   const ground = groundTilemap(vram);
-  const bg1FileId = terrainLayerFileId(c, 0);
-  const bg2FileId = terrainLayerFileId(c, 1);
-  const out: OverworldM1[] = [];
-  for (let half = 0 as 0 | 1; half <= 1; half = (half + 1) as 0 | 1) {
-    const m0 = new Uint16Array(1024); // BG1
-    const m1 = new Uint16Array(1024); // BG2
-    const m2 = new Uint16Array(1024); // BG3 ground
-    for (let lr = 0; lr < ROWS; lr++) {
-      for (let lc = 0; lc < BLOCK; lc++) {
-        const wi = wordIndex(half * 32 + lc, lr);
-        const cell = lr * 32 + lc;
-        m0[cell] = wordAt(c.bg1Tilemap, wi);
-        m1[cell] = wordAt(c.bg2Tilemap, wi);
-        m2[cell] = wordAt(ground, wi);
-      }
+  const m0 = new Uint16Array(MAP_STRIDE * MAP_STRIDE); // BG1
+  const m1 = new Uint16Array(MAP_STRIDE * MAP_STRIDE); // BG2
+  const m2 = new Uint16Array(MAP_STRIDE * MAP_STRIDE); // BG3 ground
+  for (let r = 0; r < ROWS; r++) {
+    for (let cc = 0; cc < COLS; cc++) {
+      const wi = wordIndex(cc, r);
+      const cell = r * MAP_STRIDE + cc;
+      m0[cell] = wordAt(c.bg1Tilemap, wi);
+      m1[cell] = wordAt(c.bg2Tilemap, wi);
+      m2[cell] = wordAt(ground, wi);
     }
-    out.push({
-      world: c.world, half, bg1FileId, bg2FileId, bg3FileId: GROUND_TM_FILE_ID,
-      bytes: encodeM1te2({ mapHeight: 32, tileSize: 8, palette, maps: [m0, m1, m2], chr4bpp: chr4, chr2bpp: chr2 })
-    });
   }
-  return out;
+  return {
+    world: c.world, bg1FileId: terrainLayerFileId(c, 0), bg2FileId: terrainLayerFileId(c, 1), bg3FileId: GROUND_TM_FILE_ID,
+    bytes: encodeM1te2({ mapWidth: 64, mapHeight: 32, tileSize: 8, palette, maps: [m0, m1, m2], chr4bpp: chr4, chr2bpp: chr2 })
+  };
 }
 
 /** A CHR pixel edit sliced from an overworld `.M1` (for `saveGfxEdit`). `tileBytes` is the
@@ -131,7 +124,7 @@ export interface OverworldM1Diff {
   chrEdits: OverworldChrEdit[];
   /** $7C/$7D (BG1/BG2) + $7E (BG3 ground) tilemap word edits, by file offset. */
   wordEdits: OverworldWordEdit[];
-  /** Changed CGRAM colours (excludes M1TE2's auto-blacked transparent slots). */
+  /** Changed CGRAM colors (excludes M1TE2's auto-blacked transparent slots). */
   paletteEdits: M1tePaletteEdit[];
   /** CHR tiles changed but not resolvable to a map gfx file (wrap / unknown). */
   skippedTiles: number;
@@ -139,11 +132,12 @@ export interface OverworldM1Diff {
 
 /**
  * Diff an edited overworld `.M1` against the cart → CHR pixel edits + tilemap word edits +
- * palette colour edits, for the world's `half`. CHR is a direct planar byte compare (the
- * .M1 CHR is the same raw format as VRAM, no re-plane); tilemap words compare against the
- * cart's current word at each screen-block position; palette compares CGRAM rows 0-7.
+ * palette color edits. CHR is a direct planar byte compare (the .M1 CHR is the same raw
+ * format as VRAM, no re-plane); tilemap words compare the doc's plain 64-wide grid against
+ * the cart's current word at each (re-interleaved) screen-block position; palette compares
+ * CGRAM rows 0-7.
  */
-export function diffOverworldM1(c: WorldMapTerrainContext, m1Bytes: Uint8Array, half: 0 | 1): OverworldM1Diff {
+export function diffOverworldM1(c: WorldMapTerrainContext, m1Bytes: Uint8Array): OverworldM1Diff {
   const doc = parseM1te2(m1Bytes);
   const { vram, cgram, manifest } = c.scene;
   const ground = groundTilemap(vram);
@@ -175,10 +169,10 @@ export function diffOverworldM1(c: WorldMapTerrainContext, m1Bytes: Uint8Array, 
   const wordEdits: OverworldWordEdit[] = [];
   for (const s of slots) {
     const map = doc.maps[s.slot]!;
-    for (let lr = 0; lr < ROWS; lr++) {
-      for (let lc = 0; lc < BLOCK; lc++) {
-        const wi = wordIndex(half * 32 + lc, lr);
-        const docWord = map[lr * 32 + lc]! & 0xffff;
+    for (let r = 0; r < ROWS; r++) {
+      for (let cc = 0; cc < COLS; cc++) {
+        const wi = wordIndex(cc, r);
+        const docWord = map[r * MAP_STRIDE + cc]! & 0xffff;
         if (docWord !== wordAt(s.tm, wi)) wordEdits.push({ fileId: s.fileId, fileOffset: wi * 2, word: docWord });
       }
     }
@@ -206,7 +200,8 @@ const ICON_WORLDS = 6;
 const ICON_SLOTS = 10;
 const ICON_CELLS = 3; // 24×24 = 3×3 8×8 cells
 const ICON_PX = 24;
-const MAP_W = 32; // M1TE2 map width
+// The icons fill a 32-wide region (10 slots × 3 cells = 30) of the doc's 64-stride grid;
+// the .M1 is written with mapWidth 32 (buildIconsM1). Array indices use MAP_STRIDE.
 /** The marker/castle row sits below the 6 world rows (each 3 cells tall). */
 const MC_ROW = ICON_WORLDS * ICON_CELLS; // 18
 const M1_MAP_HEIGHT = MC_ROW + ICON_CELLS; // 21 rows occupied
@@ -270,24 +265,24 @@ function chunkyCellToPlanar(indices24: Uint8Array, tr: number, tc: number): Uint
  * are converted chunky→4bpp; marker/castle copy the cart $74/$75 tiles (un-flipped, the cell
  * carries flip).
  *
- * The display palette is FAITHFUL. The icons span only a handful of distinct 16-colour
+ * The display palette is FAITHFUL. The icons span only a handful of distinct 16-color
  * palettes — the per-level icons use just two OBJ palettes (CGRAM rows 8 & 9, world-INVARIANT,
  * so all 60 collapse to those two), and the marker/castle use the six per-world BG tint rows;
  * the union is ≤ 6 distinct, which fits M1TE2's 8 palette rows. So `palRowFor` dedupes each
- * cell's actual 16-colour CGRAM block (keyed by content — collapsing the same palette across
+ * cell's actual 16-color CGRAM block (keyed by content — collapsing the same palette across
  * the per-world map CGRAMs) into an M1TE2 row, and the cell's word references it. M1TE renders
- * `palette[row*16 + pixel]` (base 0), so this shows every icon in its true colours. Overflow
+ * `palette[row*16 + pixel]` (base 0), so this shows every icon in its true colors. Overflow
  * beyond 8 rows (never in practice) falls back to row 0. Pixel edits round-trip in the
  * index/byte domain regardless, so the palette only affects display.
  */
 function buildIconLayout(rom: Uint8Array, symbols: SymbolMap): IconM1Layout {
   const tiles: Uint8Array[] = [new Uint8Array(TILE4)]; // tile 0 = empty
   const byKey = new Map<string, number>();
-  const tilemap = new Uint16Array(1024);
+  const tilemap = new Uint16Array(MAP_WORDS); // 64×64-stride doc grid (icons fill a 32-wide region)
   const palette = new Uint8Array(256);
   const icons: IconM1Item[] = [];
 
-  // Map a 16-colour CGRAM block (a `cgram` row) → an M1TE2 palette row, deduped by content so
+  // Map a 16-color CGRAM block (a `cgram` row) → an M1TE2 palette row, deduped by content so
   // the same palette from different per-world CGRAMs collapses to one row (and an OBJ icon
   // palette that coincides with a marker BG tint shares its row). ≤ 8 rows; overflow → row 0.
   const palRows = new Map<string, number>();
@@ -319,7 +314,7 @@ function buildIconLayout(rom: Uint8Array, symbols: SymbolMap): IconM1Layout {
         for (let tc = 0; tc < ICON_CELLS; tc++) {
           const ti = allocTile(tiles, byKey, chunkyCellToPlanar(canvas.indices, tr, tc));
           tileIdx.push(ti);
-          tilemap[(gridRow0 + tr) * MAP_W + (gridCol0 + tc)] = (ti & 0x3ff) | (palRow << 10);
+          tilemap[(gridRow0 + tr) * MAP_STRIDE + (gridCol0 + tc)] = (ti & 0x3ff) | (palRow << 10);
         }
       }
       icons.push({ kind: 'level', world, slot, gridCol0, gridRow0, tiles: tileIdx, levelCtx: ctx, levelCanvas: canvas });
@@ -327,7 +322,7 @@ function buildIconLayout(rom: Uint8Array, symbols: SymbolMap): IconM1Layout {
   }
 
   // Marker + castle (world-0; pixels are world-invariant). Each CELL draws in its own BG palette
-  // row (the word's palette bits OR'd with the world tint), so it's coloured per cell.
+  // row (the word's palette bits OR'd with the world tint), so it's colored per cell.
   const mcCtx = buildWorldMapIconContext(rom, symbols, 0);
   for (const name of ['marker', 'castle'] as const) {
     const canvas = renderWorldMapIcon(mcCtx, name);
@@ -342,7 +337,7 @@ function buildIconLayout(rom: Uint8Array, symbols: SymbolMap): IconM1Layout {
       const tr = Math.floor(cell / ICON_CELLS), tc = cell % ICON_CELLS;
       const palRow = u ? palRowFor(mcCtx.cgram, u.paletteRow) : 0;
       const flip = (u?.hflip ? 0x4000 : 0) | (u?.vflip ? 0x8000 : 0);
-      tilemap[(gridRow0 + tr) * MAP_W + (gridCol0 + tc)] = (ti & 0x3ff) | (palRow << 10) | flip;
+      tilemap[(gridRow0 + tr) * MAP_STRIDE + (gridCol0 + tc)] = (ti & 0x3ff) | (palRow << 10) | flip;
     }
     icons.push({ kind: name, world: 0, slot: -1, gridCol0, gridRow0, tiles: tileIdx, canvas });
   }
@@ -356,8 +351,8 @@ function buildIconLayout(rom: Uint8Array, symbols: SymbolMap): IconM1Layout {
 export function buildIconsM1(rom: Uint8Array, symbols: SymbolMap): Uint8Array {
   const layout = buildIconLayout(rom, symbols);
   return encodeM1te2({
-    mapHeight: layout.mapHeight, tileSize: 8, palette: layout.palette,
-    maps: [layout.tilemap, new Uint16Array(1024), new Uint16Array(1024)],
+    mapWidth: 32, mapHeight: layout.mapHeight, tileSize: 8, palette: layout.palette,
+    maps: [layout.tilemap, new Uint16Array(MAP_WORDS), new Uint16Array(MAP_WORDS)],
     chr4bpp: layout.chr4bpp, chr2bpp: new Uint8Array(0)
   });
 }
@@ -429,16 +424,15 @@ export function diffIconsM1(rom: Uint8Array, symbols: SymbolMap, m1Bytes: Uint8A
 }
 
 /** The two products' filename roots (used by the export + the M1TE "open" list). */
-export const overworldM1Name = (world: number, half: 0 | 1): string => `overworld-w${world}-${half === 0 ? 'left' : 'right'}.M1`;
+export const overworldM1Name = (world: number): string => `overworld-w${world}.M1`;
 export const ICONS_M1_NAME = 'icons.M1';
 
-/** Build every world-map `.M1` (12 overworld halves + 1 icons), with each file's name +
- *  metadata for the manifest. The caller writes the bytes + records the manifest. */
+/** Build every world-map `.M1` (6 overworlds + 1 icons), with each file's name + metadata
+ *  for the manifest. The caller writes the bytes + records the manifest. */
 export interface WorldMapM1File {
   file: string;
   kind: 'overworld' | 'icons';
   world?: number;
-  half?: 0 | 1;
   bg1FileId?: number;
   bg2FileId?: number;
   bg3FileId?: number;
@@ -449,12 +443,11 @@ export function exportWorldMapM1(rom: Uint8Array, symbols: SymbolMap): WorldMapM
   const out: WorldMapM1File[] = [];
   for (let world = 0; world < ICON_WORLDS; world++) {
     const c = buildWorldMapTerrainContext(rom, symbols, world);
-    for (const s of buildOverworldM1(c)) {
-      out.push({
-        file: `screens/map/${overworldM1Name(s.world, s.half)}`, kind: 'overworld',
-        world: s.world, half: s.half, bg1FileId: s.bg1FileId, bg2FileId: s.bg2FileId, bg3FileId: s.bg3FileId, bytes: s.bytes
-      });
-    }
+    const s = buildOverworldM1(c);
+    out.push({
+      file: `screens/map/${overworldM1Name(s.world)}`, kind: 'overworld',
+      world: s.world, bg1FileId: s.bg1FileId, bg2FileId: s.bg2FileId, bg3FileId: s.bg3FileId, bytes: s.bytes
+    });
   }
   out.push({ file: `screens/map/${ICONS_M1_NAME}`, kind: 'icons', bytes: buildIconsM1(rom, symbols) });
   return out;

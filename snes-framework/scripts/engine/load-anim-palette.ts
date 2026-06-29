@@ -7,10 +7,10 @@
 // Header field 11 (`LevelHeaderAnimationPalette`) selects one of ~19 per-frame
 // palette-cycle routines that `CODE_main_gamemode_0F` (the in-level gameplay
 // loop) runs EVERY frame, overwriting specific CGRAM rows via
-// `copy_anim_palette_row` ($01:C9CF). So the colours the cart actually shows
+// `copy_anim_palette_row` ($01:C9CF). So the colors the cart actually shows
 // in-level differ from the static `scene_palette_layout` load (our
 // `loadLevelPalettes`) on those rows — e.g. type $01 overwrites BG1 palette row
-// 4 (CGRAM colour 67+). Without this overlay the editor shows the static base
+// 4 (CGRAM color 67+). Without this overlay the editor shows the static base
 // palette the cart only displays for ~1 fade-in frame.
 //
 // # What "frame 0" means here
@@ -36,9 +36,9 @@
 // PC `$1F0000 + addr`, the same region as the master palette blob at
 // `$5F:A000`). `copy_anim_palette_row` copies `$0E` BYTES from `$5F:src` into the
 // live CGRAM mirror `$702000` (DMA'd to PPU each NMI) at byte-offset X — so a
-// write is `cgram[X + i] = rom[$5F:src + i]`. CGRAM colour N = byte 2N. The
+// write is `cgram[X + i] = rom[$5F:src + i]`. CGRAM color N = byte 2N. The
 // per-type source addresses below are the index-0 entries of the Bank01 pointer
-// tables (`DATA_01C47F`, `DATA_01C574`, …); they are cart-static (deep colour
+// tables (`DATA_01C47F`, `DATA_01C574`, …); they are cart-static (deep color
 // data, never editor-mutated), so they're inlined with asm citations rather than
 // symbol-resolved.
 
@@ -124,7 +124,7 @@ export function applyAnimatedPalette(
     row(0xf760, 0x92, 0x0e);
     c5c1();
   };
-  // C4D9 ($02) phase-0 base: DATA_5FA190[0]; X=$0A (colour 5), 6 bytes.
+  // C4D9 ($02) phase-0 base: DATA_5FA190[0]; X=$0A (color 5), 6 bytes.
   const c4d9 = (): void => row(0xa190, 0x0a, 0x06);
 
   switch (animPal) {
@@ -154,7 +154,7 @@ export function applyAnimatedPalette(
     case 0x08: // CODE_01C682: DATA_01C67A[0]=$5F:A170, X=$A6, 8B.
       row(0xa170, 0xa6, 0x08);
       break;
-    case 0x09: { // CODE_01C6BB: 1 word from DATA_5FC932 → CGRAM colours 1 and 9.
+    case 0x09: { // CODE_01C6BB: 1 word from DATA_5FC932 → CGRAM colors 1 and 9.
       const pc = snesToPC(BANK_5F | 0xc932);
       for (const color of [1, 9]) {
         const d = color * 2;

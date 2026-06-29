@@ -54,8 +54,14 @@ export interface ComposedBgLayers {
    *  foreground flowers). REQUIRED-but-nullable so every consumer accounts for
    *  it — see research notes / the priority-split investigation. */
   bg2Front: RenderResult | null;
-  /** BG3 foreground plane (priority-1 tiles), or `null` when none. */
+  /** BG3 foreground plane (priority-1 tiles in front of BG1), or `null` when none. */
   bg3Front: RenderResult | null;
+  /** BG3 MID plane — priority-1 tiles ABOVE the water line on BG3
+   *  screen-designation levels (tileset `$20`/`$22`): drawn IN FRONT of BG2 but
+   *  BEHIND BG1 (the water/reflection band the cart's per-scanline TM/TS HDMA
+   *  composites on the subscreen). `null` on every non-screen-des level (the BG3
+   *  priority split is just deep/front there). REQUIRED-but-nullable. */
+  bg3Mid: RenderResult | null;
   /** Per-level backdrop (solid CGRAM[0] color or 24-stop vertical gradient). */
   backdrop: Backdrop;
   /** Compositing descriptor for BG2 (visibility + blend + role). */
@@ -87,6 +93,36 @@ export interface ComposeBgLayersArgs {
 }
 
 /**
+ * BG3 "screen-designation" water-line split, keyed by **BG3 tileset** (header
+ * `$013E`). These tilesets' load-time dispatch (`DATA_bg3_tilemap_table` action
+ * byte → `CODE_setup_bg3_screen_des_hdma` / `clouds_mist`, Bank01 `$01:EC7F`)
+ * arms a per-scanline HDMA that rewrites TM/TS (`$212C`/`$212D`) at the water
+ * line: above it BG3 is pushed to the subscreen (water/reflection BEHIND BG1),
+ * below it BG3 stays on the main screen where its priority-1 tiles are in front.
+ * So the editor's "priority-1 BG3 → foreground" is right only BELOW this row;
+ * priority-1 cells at rows < value render behind BG1 with the rest of BG3.
+ *
+ * The pre-rendered BG3 tilemap is per-tileset, so the split row is too — both
+ * affected catalog levels (1-3 `0x02`, 3-8 Naval Piranha's Castle `0x19`) use
+ * tileset `$20` and share row 28 (foreground bank = tilemap rows 28..31).
+ * Verified vs the live emulator (the pipe in 1-3 stays solid through the water
+ * band, cut only by the lower bushes). `$22` (clouds_mist) has no catalog level.
+ */
+const BG3_FOREGROUND_MIN_ROW: Readonly<Record<number, number>> = {
+  0x20: 28
+};
+
+/** Collapse an all-transparent render to `null` so an EMPTY nullable plane
+ *  (foreground / mid) costs nothing downstream — no rgba buffer over IPC, no
+ *  `createImageBitmap`, no draw call. The renderer treats `null` as "layer
+ *  absent". RGBA buffers, so emptiness = every alpha byte is 0. */
+function nonEmpty(r: RenderResult | null): RenderResult | null {
+  if (!r || r.width === 0 || r.height === 0) return null;
+  for (let i = 3; i < r.rgba.length; i += 4) if (r.rgba[i] !== 0) return r;
+  return null;
+}
+
+/**
  * Load the BG2/BG3 tilemaps into `vram`, render both layers + the backdrop, and
  * derive each layer's approximate-color-math compositing descriptor. `vram` and
  * `cgram` must already hold the level's gfx/animation/palette data; this mutates
@@ -114,13 +150,20 @@ export function composeBgLayers(args: ComposeBgLayersArgs): ComposedBgLayers {
   // priority-1 cells, a foreground plane (drawn above BG1). Most levels have no
   // foreground tiles → no extra render, and `bg2`/`bg3` stay byte-identical to
   // the un-split single-plane render. bpp is BGMODE-derived (bgLayerBpp), index-0
-  // transparent (cart filler tiles are colour-0 so they don't paint a solid rect).
+  // transparent (cart filler tiles are color-0 so they don't paint a solid rect).
+  // BG3 "screen-designation" water-line gate (see BG3_FOREGROUND_MIN_ROW): on
+  // these levels priority-1 BG3 ABOVE the water line is behind BG1, so only rows
+  // at/below the gate are real foreground. 0 (= no gate) for every other level.
+  const bg3FgMinRow = BG3_FOREGROUND_MIN_ROW[gfxHeader.bg3Tileset] ?? 0;
+  // screen-designation levels (gate > 0) get the three-plane BG3 split (deep /
+  // mid / front); every other level is the plain two-plane (or single) split.
+  const bg3Split = bg3Layer.role === 'background' && bg3FgMinRow > 0;
   const bg2HasFg =
     bg2Layer.role === 'background' &&
     tilemapHasForeground(vram, regs.bg2TilemapAddr, bg2LoadedBytes);
   const bg3HasFg =
     bg3Layer.role === 'background' &&
-    tilemapHasForeground(vram, regs.bg3TilemapAddr, bg3Load.bytesWritten);
+    tilemapHasForeground(vram, regs.bg3TilemapAddr, bg3Load.bytesWritten, bg3FgMinRow);
 
   const renderBg2 = (priority?: 'low' | 'high'): RenderResult =>
     renderBgLayer(vram, cgram, {
@@ -133,7 +176,7 @@ export function composeBgLayers(args: ComposeBgLayersArgs): ComposedBgLayers {
       loadedBytes: bg2LoadedBytes,
       priority
     });
-  const renderBg3 = (priority?: 'low' | 'high'): RenderResult =>
+  const renderBg3 = (priority?: 'low' | 'mid' | 'high'): RenderResult =>
     renderBgLayer(vram, cgram, {
       tilemapAddr: regs.bg3TilemapAddr,
       charAddr: regs.bg3CharAddr,
@@ -142,17 +185,23 @@ export function composeBgLayers(args: ComposeBgLayersArgs): ComposedBgLayers {
       tileSize: regs.bg3TileSize,
       transparentZero: true,
       loadedBytes: bg3Load.bytesWritten,
-      priority
+      priority,
+      foregroundMinRow: bg3FgMinRow
     });
 
   const bg2 = renderBg2(bg2HasFg ? 'low' : undefined);
-  const bg3 = renderBg3(bg3HasFg ? 'low' : undefined);
-  const bg2Front = bg2HasFg ? renderBg2('high') : null;
-  const bg3Front = bg3HasFg ? renderBg3('high') : null;
+  // On a split (screen_des) level `bg3` is the priority-0 deep plane even when
+  // there's no separate foreground, since the priority-1 water band moves to bg3Mid.
+  const bg3 = renderBg3(bg3HasFg || bg3Split ? 'low' : undefined);
+  // Nullable planes collapse to null when empty (all-transparent) so they never
+  // ship a buffer / build a bitmap / draw — see nonEmpty.
+  const bg2Front = nonEmpty(bg2HasFg ? renderBg2('high') : null);
+  const bg3Front = nonEmpty(bg3HasFg ? renderBg3('high') : null);
+  const bg3Mid = nonEmpty(bg3Split ? renderBg3('mid') : null);
 
   const backdrop = buildBackdrop(rom, symbols, cgram, palHeader.bgColor, gradientOverride);
 
-  return { bg2, bg3, bg2Front, bg3Front, backdrop, bg2Layer, bg3Layer, regs };
+  return { bg2, bg3, bg2Front, bg3Front, bg3Mid, backdrop, bg2Layer, bg3Layer, regs };
 }
 
 /**

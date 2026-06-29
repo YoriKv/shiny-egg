@@ -41,7 +41,7 @@
 //   If word == 0: skip stamp (some entries are explicit gaps so the
 //     walker leaves the previous tile alone).
 //   Else: stamp word + 4 * $15  (the $15 variant adds 4*N to step through
-//     a 4-entry colour/decor band per cell — the "random" axis).
+//     a 4-entry color/decor band per cell — the "random" axis).
 //
 // col_a / col_b / col_c:
 //   Only fire on a specific column ($28 == 2 for the DATA_13D845 set;

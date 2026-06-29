@@ -43,7 +43,7 @@ const ARROW_FILL = '#ef4444' //    red-500 — vivid entrance/teleport marker
 const ARROW_OUTLINE = '#000000' // black outline so it reads over any tile
 const DISC_BORDER = ARROW_OUTLINE // solid black outline, same weight as the arrows
 
-/** Filled colour disc + solid black outline centred on (cx,cy) — the shared backing
+/** Filled color disc + solid black outline centred on (cx,cy) — the shared backing
  *  every entrance/teleport glyph draws first, so the white mark on top reads over
  *  any tile. Mirrors the prize badge family (filled fill + dark edge + white mark). */
 function drawDisc(

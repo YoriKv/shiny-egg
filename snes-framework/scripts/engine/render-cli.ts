@@ -77,7 +77,7 @@ function runLevel(): void {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const named: Array<[string, LayerImage | null]> = [
     ['bg1', r.bg1], ['bg2', r.bg2], ['bg3', r.bg3],
-    ['bg2front', r.bg2Front], ['bg3front', r.bg3Front],
+    ['bg2front', r.bg2Front], ['bg3front', r.bg3Front], ['bg3mid', r.bg3Mid],
     ['sprite', r.sprite], ['collision', r.collision]
   ];
   let wrote = 0;

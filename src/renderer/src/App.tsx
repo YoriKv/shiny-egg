@@ -245,7 +245,7 @@ export default function App(): JSX.Element {
   // Bumped to force every overlay-backed panel to re-read from disk without a
   // project switch — e.g. after a ROM import rewrites the overlay in place.
   const [projectRev, setProjectRev] = useState(0)
-  // Bumped when a graphics IMPORT persists master-palette colours (e.g. a recolour from
+  // Bumped when a graphics IMPORT persists master-palette colors (e.g. a recolor from
   // M1TE / a swatch) — those bypass the palette edit-session, so reload ONLY the palette
   // draft (not every overlay panel) from disk so the canvas live-preview shows them.
   const [paletteImportRev, setPaletteImportRev] = useState(0)
@@ -460,7 +460,7 @@ export default function App(): JSX.Element {
   // Bumped on every successful build so the canvas layers + palette panel re-fetch
   // from the freshly-built ROM (asm edits — palette, strings — only reach the
   // rendered pixels through a rebuild, and nothing else in their render deps
-  // changes, so without this the canvas keeps the pre-build colours).
+  // changes, so without this the canvas keeps the pre-build colors).
   const [renderRefresh, setRenderRefresh] = useState(0)
   const bumpRenderRefresh = useCallback(() => setRenderRefresh((v) => v + 1), [])
   const markBuildClean = useCallback(() => {
@@ -481,7 +481,7 @@ export default function App(): JSX.Element {
     markRomDirty()
     bumpRenderRefresh()
   }, [markRomDirty, bumpRenderRefresh])
-  // A graphics import wrote master-palette colours straight to the overlay (bypassing the
+  // A graphics import wrote master-palette colors straight to the overlay (bypassing the
   // palette edit-session), so reload the palette draft from disk — its new value flows to
   // the canvas as `paletteOverride`, updating the live preview.
   const onPaletteImported = useCallback(() => setPaletteImportRev((v) => v + 1), [])
@@ -497,13 +497,13 @@ export default function App(): JSX.Element {
   const [logOpenSignal, setLogOpenSignal] = useState<number>(0)
   const openLog = useCallback(() => setLogOpenSignal((n) => n + 1), [])
 
-  // Canvas background colour (the area behind/around the level) — an app-wide
+  // Canvas background color (the area behind/around the level) — an app-wide
   // setting, defaulting to a near-black 25,25,25 grey. Loaded once from
   // settings.json; the toolbar swatch persists + previews it. Applied as the
   // `--se-canvas-bg` CSS var that `.se-canvas` reads (the canvas clears to
   // transparent, so this CSS background shows through — see scene.ts).
   const DEFAULT_CANVAS_BG = '#191919'
-  // Grid line colour as rgba (carries alpha). The toolbar picks it via
+  // Grid line color as rgba (carries alpha). The toolbar picks it via
   // ColorAlphaButton (a swatch that opens an RGB picker + opacity slider).
   // Default reproduces the prior hardcoded look (black at 0.65). Applies to both
   // the screen + tile grid (see draw/grid.ts).
@@ -927,20 +927,20 @@ export default function App(): JSX.Element {
   // level dropdown, so plain markRomDirty (not the catalog-refreshing variant).
   const introStory = useStringsEditor('intro-story', 'Intro Story', projectScope, markRomDirty, docHistory)
   const endingText = useStringsEditor('ending-text', 'Ending Text', projectScope, markRomDirty, docHistory)
-  // Palette colour-edit document — its `draft` is fed to the canvas as a live
+  // Palette color-edit document — its `draft` is fed to the canvas as a live
   // render override; its Save (or the global Save / Test Level) persists the
   // delta to the overlay before a build.
   // Palette reload scope = the project scope PLUS the import nonce, so a graphics import
-  // that wrote palette colours reloads ONLY the palette draft (the other overlay editors
+  // that wrote palette colors reloads ONLY the palette draft (the other overlay editors
   // keep their unsaved drafts).
   const paletteScope = projectScope === null ? null : `${projectScope}#p${paletteImportRev}`
   const paletteEditor = usePaletteEditor(paletteScope, markRomDirty, docHistory)
-  // Backdrop-gradient colour-edit document (sibling of the palette editor; also
+  // Backdrop-gradient color-edit document (sibling of the palette editor; also
   // saves into Bank57.asm). Its draft, resolved to the current level's 24 stops,
   // feeds the canvas as `gradientOverride` for live preview.
   const gradientEditor = useGradientEditor(paletteScope, markRomDirty, docHistory)
   // The current level's 24 gradient stops (BASE ⊕ draft) for the canvas preview —
-  // null for a solid-backdrop level (BackgroundColor < $10) or before base colours
+  // null for a solid-backdrop level (BackgroundColor < $10) or before base colors
   // load, in which case the canvas renders the ROM gradient. Keyed on just the
   // BackgroundColor header byte (not the whole level) so an object edit doesn't
   // recompute it; ALWAYS supplied for a gradient level so a reset shows base
@@ -1771,7 +1771,7 @@ export default function App(): JSX.Element {
           title="Unsaved changes"
           body={
             pendingClose?.kind === 'palette'
-              ? 'This Palette window has unsaved colour edits. Save them, or discard and close?'
+              ? 'This Palette window has unsaved color edits. Save them, or discard and close?'
               : pendingClose?.kind === 'world-map'
                 ? 'This World Map window has unsaved entrance edits. Save them, or discard and close?'
                 : 'This Strings window has unsaved edits. Save them, or discard and close?'

@@ -73,7 +73,7 @@ for (const e of entries) {
   const img = decodePng(Buffer.from(e.png));
   const reg = region(img, e.width, e.height);
   const u32 = new Uint32Array(reg.buffer, reg.byteOffset, e.width * e.height);
-  // find an opaque pixel + a different palette colour from the swatch (col e.width).
+  // find an opaque pixel + a different palette color from the swatch (col e.width).
   const sw = new Uint32Array(img.rgba.buffer, img.rgba.byteOffset, img.width * img.height);
   let p = -1;
   for (let i = 0; i < u32.length; i++) if ((u32[i]! >>> 24) !== 0) { p = i; break; }

@@ -114,8 +114,8 @@ function fallingStone(cols: number, rows: number): SpriteCel {
 export const SYNTHESIZED_CELS: Readonly<Record<number, SpriteCel>> = {
   // $091 "4 Toadies": its own special_chr cel ($2E36) renders a broken group (wrong top half, no feet).
   // It should look like its siblings $058 Green / $05C Pink Toady — which share cel $2DD2 (the single
-  // Toady: a 16×16 body $0e + two feet $2f + two head tiles, common-page, recoloured by $7042) — just a
-  // different colour. Synth = $2DD2 FRAME 2 (the resting pose $058 uses via restFrame 2) baked at $091's
+  // Toady: a 16×16 body $0e + two feet $2f + two head tiles, common-page, recolored by $7042) — just a
+  // different color. Synth = $2DD2 FRAME 2 (the resting pose $058 uses via restFrame 2) baked at $091's
   // own palette row 1. (spritesetFiles set to [] in obj-metadata to match the siblings — all common-page.)
   0x091: [t(0, 0, 0x0e, 1, 16), t(1, 14, 0x2f, 1, 8, true), t(6, 14, 0x2f, 1, 8, true), t(8, -6, 0x3c, 1, 8, true), t(0, -6, 0x3c, 1, 8)],
   // Bullet Bill Blasters $078/$079/$07A: the body is the 16×16 ball (a DYNAMIC_BODY_SOURCES entry) drawn
@@ -125,7 +125,7 @@ export const SYNTHESIZED_CELS: Readonly<Record<number, SpriteCel>> = {
   // first tile = the tileRow/slot base): capture green $140 = slot-2 base, yellow $180 = slot-4 base, both
   // cel-value 0. Since cel tile 0 is the dynbody placeholder sentinel, the muzzle record sets `static:true`
   // so it renders as a real VRAM tile (the slot base) instead. It only resolves when file $31 is loaded —
-  // a spriteset-dependent tile, like other spriteset sprites. Each piece uses the sprite's colour row
+  // a spriteset-dependent tile, like other spriteset sprites. Each piece uses the sprite's color row
   // (red 1 / yellow 2 / green 0) — body and muzzle share it (capture-confirmed).
   // Z-ORDER: renderSpriteCel composites back-to-front (reverse array order), so the FIRST record is
   // frontmost. The static cannon-BODY (spriteset tile 0) must be in front of the dynbody MUZZLE, so the

@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { SPECIAL_GLYPHS } from '../asm/msg-markup.ts'
+import type { ImageData } from './png.ts'
 
 const GLYPH_BYTES = 12 // 8×12 1bpp → 12 rows × 1 byte
 const GLYPH_W = 8
@@ -31,7 +32,7 @@ export interface GlyphImage {
   width: number
   height: number
   /** RGBA — set bits are opaque white, clear bits transparent (shows on the
-   *  panel's dark surface; no recolour needed). */
+   *  panel's dark surface; no recolor needed). */
   rgba: Uint8Array
 }
 
@@ -59,4 +60,106 @@ function renderGlyph(font: Uint8Array, token: string, bytes: number[]): GlyphIma
 /** RGBA previews for every special (non-typeable) glyph token. */
 export function renderSpecialGlyphImages(font: Uint8Array): GlyphImage[] {
   return SPECIAL_GLYPHS.map((g) => renderGlyph(font, g.token, g.bytes))
+}
+
+// ── 1bpp sheet codec (Graphics-panel export/import) ─────────────────────────
+// Bank09 holds two raw, fixed-address 1bpp blobs the Graphics panel can edit:
+//   • the message font (`GFX_1BPPFont_*.bin`) — a GRID of 256 × 8×12 glyphs the GSU
+//     streamer (`FXCODE_09E92F`) addresses by char×12 (8px wide = 1 byte/row);
+//   • the message-box pictures (`GFX_1BPPMesaageBoxPictures.bin`) — a FLAT 1bpp
+//     bitmap, 128 px wide × 512 tall (16 bytes/row). It is NOT a tile grid: the
+//     message renderer's `$60` "inline bitmap" command plots a sub-rectangle of it
+//     by (x, y, w, h) — e.g. the egg-throw demo image (see yi-shiny mchip.md §3.18).
+//     Stride confirmed: at 128px the rows align into clean bands; at 256px the
+//     pattern breaks at column 128. Modelled here as one 128×512 cell (cols 1).
+// Both export to a 2-color RGBA image — set bit = WHITE, clear bit = BLACK (both
+// opaque) — and re-import by "is the pixel white": any other color (black, a stray
+// edit color, transparent) counts as erased (off). Byte-faithful round-trip. Edits
+// write back via `saveRawChrEdit` (fixed incbin, no layout move).
+
+/** A 1bpp Bank09 sheet the Graphics panel exports/imports. */
+export interface FontSheetSpec {
+  /** Stable id (manifest + UI label). */
+  key: 'message-font' | 'message-box-pictures'
+  description: string
+  /** Cell width in pixels — a multiple of 8 (8px ⇒ 1 byte/row, 16px ⇒ 2 bytes/row). */
+  glyphW: number
+  /** Cell height in rows. */
+  glyphH: number
+  /** Cells per row in the exported sheet. */
+  cols: number
+}
+
+export const FONT_SHEETS: readonly FontSheetSpec[] = [
+  { key: 'message-font', description: 'Message font (256 × 8×12 glyphs)', glyphW: 8, glyphH: 12, cols: 16 },
+  // A flat 128×512 1bpp bitmap (one cell, full width) — NOT a tile grid; the GSU
+  // plots sub-rectangles of it. 8192 B / 16 B-per-row = 512 rows.
+  { key: 'message-box-pictures', description: 'Message-box pictures (flat 128×512 1bpp bitmap)', glyphW: 128, glyphH: 512, cols: 1 }
+]
+
+/** A pixel is "on" only when WHITE (all channels high + opaque); any other color —
+ *  black, transparent, or a stray edit color — is treated as erased (off). */
+function pixelOn(rgba: Uint8Array, o: number): boolean {
+  return (rgba[o] ?? 0) >= 192 && (rgba[o + 1] ?? 0) >= 192 && (rgba[o + 2] ?? 0) >= 192 && (rgba[o + 3] ?? 0) >= 128
+}
+
+/** Decode a 1bpp blob into a `cols`-wide grid of `glyphW`×`glyphH` cells — set bit =
+ *  white, clear = black (both opaque). `glyphW` may be 8 or 16 (1 or 2 bytes/row). */
+export function decodeFontSheet(bytes: Uint8Array, glyphW: number, glyphH: number, cols: number): ImageData {
+  const bpr = glyphW >> 3 // bytes per row (8px = 1, 16px = 2)
+  const bytesPerCell = bpr * glyphH
+  const count = Math.floor(bytes.length / bytesPerCell)
+  const rows = Math.max(1, Math.ceil(count / cols))
+  const width = cols * glyphW
+  const height = rows * glyphH
+  const rgba = new Uint8Array(width * height * 4)
+  for (let g = 0; g < count; g++) {
+    const cx = (g % cols) * glyphW
+    const cy = Math.floor(g / cols) * glyphH
+    for (let r = 0; r < glyphH; r++) {
+      for (let bb = 0; bb < bpr; bb++) {
+        const v = bytes[g * bytesPerCell + r * bpr + bb] ?? 0
+        for (let c = 0; c < 8; c++) {
+          const o = ((cy + r) * width + cx + bb * 8 + c) * 4
+          const on = (v & (0x80 >> c)) !== 0
+          rgba[o] = on ? 0xff : 0x00
+          rgba[o + 1] = on ? 0xff : 0x00
+          rgba[o + 2] = on ? 0xff : 0x00
+          rgba[o + 3] = 0xff
+        }
+      }
+    }
+  }
+  return { width, height, rgba }
+}
+
+/** Re-encode an edited `cols`-wide grid back to a `byteLen`-byte 1bpp blob. A pixel
+ *  is "on" only when white (see {@link pixelOn}); any other color is erased. */
+export function encodeFontSheet(
+  rgba: Uint8Array,
+  width: number,
+  glyphW: number,
+  glyphH: number,
+  cols: number,
+  byteLen: number
+): Uint8Array {
+  const bpr = glyphW >> 3
+  const bytesPerCell = bpr * glyphH
+  const count = Math.floor(byteLen / bytesPerCell)
+  const out = new Uint8Array(byteLen)
+  for (let g = 0; g < count; g++) {
+    const cx = (g % cols) * glyphW
+    const cy = Math.floor(g / cols) * glyphH
+    for (let r = 0; r < glyphH; r++) {
+      for (let bb = 0; bb < bpr; bb++) {
+        let bits = 0
+        for (let c = 0; c < 8; c++) {
+          const o = ((cy + r) * width + cx + bb * 8 + c) * 4
+          if (pixelOn(rgba, o)) bits |= 0x80 >> c
+        }
+        out[g * bytesPerCell + r * bpr + bb] = bits
+      }
+    }
+  }
+  return out
 }

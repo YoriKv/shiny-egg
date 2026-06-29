@@ -15,7 +15,7 @@ function lcg(seed: number): () => number {
   return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0));
 }
 
-// A distinct N-colour palette (no duplicate colours → exact round-trip).
+// A distinct N-color palette (no duplicate colors → exact round-trip).
 function distinctPalette(n: number, alpha0: number): Uint8Array {
   const p = new Uint8Array(n * 4);
   for (let i = 0; i < n; i++) {
@@ -61,7 +61,7 @@ console.log('\n=== off-palette pixel → index 0 ===');
   const tiles = new Uint8Array(512); // all index 0
   const pal = distinctPalette(16, 255);
   const img = gfxToImage(tiles, layout, pal);
-  // Paint pixel (0,0) an off-palette colour.
+  // Paint pixel (0,0) an off-palette color.
   img.rgba[0] = 1; img.rgba[1] = 2; img.rgba[2] = 3; img.rgba[3] = 255;
   const back = imageToGfx(img, layout);
   const idxOut = new Uint8Array(64);
@@ -80,7 +80,7 @@ console.log('\n=== 2bpp round-trip ===');
   assert(eqBytes(back, tiles), '2bpp exact round-trip');
 }
 
-// ── PNG decoder robustness: colour types + filters from external editors ─────
+// ── PNG decoder robustness: color types + filters from external editors ─────
 const CRC = (() => {
   const t: number[] = [];
   for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
@@ -117,7 +117,7 @@ console.log('\n=== decodePng: truecolor (type 2) with Sub filter ===');
 
 console.log('\n=== decodePng: indexed (type 3, 4-bit) with Up filter ===');
 {
-  // 4×2, 4-bit indexed; PLTE of 3 colours; row1 filtered Up against row0.
+  // 4×2, 4-bit indexed; PLTE of 3 colors; row1 filtered Up against row0.
   const plte = Buffer.from([0, 0, 0, 255, 0, 0, 0, 255, 0]); // idx0 black, idx1 red, idx2 green
   // Each row = 2 bytes (4 px × 4 bit). row0 indices [1,2,0,1] → bytes [0x12,0x01]; row1 [2,1,1,0] → [0x21,0x10].
   const row0 = [0x12, 0x01], row1 = [0x21, 0x10];

@@ -103,6 +103,7 @@ import {
   type MetaspriteCanvas
 } from 'snes-framework/sprite-metasprite'
 import { glyphWritesForSprite } from 'snes-framework/sprite-glyph'
+import { encodeFontSheet } from 'snes-framework/msg-font'
 import { decodePng } from 'snes-framework/png'
 import { canvasRegion, decodeEditedToRgba, decodeGfxFile, liveTiles, addTilePatches, applyTilePatches, type FilePatchMap, type SlicedTileEdit } from './gfx-import-utils'
 import { imageToGfx, lz16Layout, lz2Layout } from 'snes-framework/gfx-png'
@@ -115,7 +116,7 @@ import type { GfxFileEntry } from 'snes-framework/load-graphics'
 import type { RenderHeaderRequest } from '../shared/ipc-types'
 import { loadRomAndSymbols } from './render/rom-cache'
 import { gfxLiveEdits } from './gfx-live-cache'
-import { saveGfxEdit, saveRawChrEdit, saveIslandTilemap, saveLogoTilemap, loadPaletteEdits, savePaletteEdits } from './resources'
+import { saveGfxEdit, saveRawChrEdit, saveIslandTilemap, saveLogoTilemap, loadPaletteEdits, savePaletteEdits, loadLogoTilemapEdits, loadIslandTilemapEdits, applyScreenPlacementOverlays, readRawChrBase } from './resources'
 import { frameworkWorkRoot } from './framework-paths'
 import {
   MANIFEST,
@@ -131,7 +132,8 @@ import {
   type TitleLogoManifestEntry,
   type TitleIslandManifestEntry,
   type TitleSceneryManifestEntry,
-  type StorybookSceneManifestEntry
+  type StorybookSceneManifestEntry,
+  type FontSheetManifestEntry
 } from './gfx-manifest'
 
 const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
@@ -252,8 +254,13 @@ export interface ImportGfxResult {
   glyphMissing: number
   /** Distinct OTHER sprites affected by a shared-glyph edit. */
   glyphShared: number
-  /** Screen-palette colour edits written back to the master palette blob (Bank57 overlay)
-   *  across all screen `.aseprite` tracks — the colour analog of the tile-layout imports. */
+  /** Bank09 1bpp sheet edits (message font / message-box pictures) routed to the raw
+   *  `.bin` (via saveRawChrEdit). */
+  fontImported: number
+  fontSkipped: number
+  fontMissing: number
+  /** Screen-palette color edits written back to the master palette blob (Bank57 overlay)
+   *  across all screen `.aseprite` tracks — the color analog of the tile-layout imports. */
   paletteImported: number
   errors: string[]
 }
@@ -271,7 +278,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   if (!existsSync(manifestPath)) {
     throw new Error(`No ${MANIFEST} in the selected folder — pick a folder you exported to.`)
   }
-  const { entries, metasprites, glyphs, mapIcons, levelIcons, mapTerrain, mapGround, mapM1, screenM1, titleLogo, titleIsland, titleScenery, storybookScene } = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+  const { entries, metasprites, glyphs, mapIcons, levelIcons, mapTerrain, mapGround, mapM1, screenM1, titleLogo, titleIsland, titleScenery, storybookScene, fonts } = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
     entries: GfxManifestEntry[]
     metasprites?: { header: RenderHeaderRequest; sprites: MetaspriteManifestEntry[] }
     glyphs?: { header: RenderHeaderRequest; sprites: GlyphManifestEntry[] }
@@ -285,14 +292,37 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     titleIsland?: TitleIslandManifestEntry
     titleScenery?: TitleSceneryManifestEntry
     storybookScene?: StorybookSceneManifestEntry
+    fonts?: FontSheetManifestEntry[] | null
   }
-  const { rom, symbols } = loadRomAndSymbols()
+  const { rom: builtRom, symbols } = loadRomAndSymbols()
+  // Title-screen PLACEMENT baseline (logo/island): apply the existing tilemap overlays to a COPY
+  // of the built ROM, so the logo/island placement diffs run against base ⊕ overlay (matching
+  // what the live export showed) and return only NEW cell moves — which the full-set merge at
+  // each save site folds back onto the existing overlay (the screen-placement twin of the
+  // palette `effectiveBlobWords` baseline). Build-state-independent: the overlay is full-set-
+  // vs-base, so this is idempotent whether or not a build already baked it. Other tracks don't
+  // read these tiny tilemap regions, so they see the built ROM unchanged. (NEVER mutate the
+  // cached ROM in place — `applyScreenPlacementOverlays` works on the copy.)
+  let rom = builtRom
+  {
+    const copy = builtRom.slice()
+    if (applyScreenPlacementOverlays(copy, symbols)) rom = copy
+  }
   let imported = 0, skipped = 0, missing = 0
   const errors: string[] = []
+  // Fold a placement DELTA (cells changed vs base ⊕ overlay) into the existing FULL-SET overlay
+  // → the new full set for saveLogoTilemap/saveIslandTilemap (which write base ⊕ set). A cell
+  // the user reset to its base word rides along as a base-valued entry; the save skips it, so
+  // the overlay drops it. Empty delta is never passed here (callers guard on it).
+  const mergePlacement = <T extends { offset: number; value: number }>(existing: readonly T[], delta: readonly T[]): { offset: number; value: number }[] => {
+    const m = new Map<number, number>(existing.map((e) => [e.offset, e.value]))
+    for (const e of delta) m.set(e.offset, e.value)
+    return [...m].map(([offset, value]) => ({ offset, value }))
+  }
   // Saved tiles per gfx file (`format/fileId`), so a metasprite edit to the same
   // sheet patches ON TOP of a raw-sheet edit instead of clobbering it.
   const savedFileTiles = new Map<string, Uint8Array>()
-  // Screen-palette colour write-back: every screen `.aseprite` track that carries
+  // Screen-palette color write-back: every screen `.aseprite` track that carries
   // `paletteOffsets` diffs its embedded palette against the EFFECTIVE current blob
   // (base ⊕ the panel's existing palette edits) and accumulates `offset → BGR-15` here;
   // one merged `savePaletteEdits` flush at the end (savePaletteEdits is a full-set
@@ -321,13 +351,13 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       } catch { /* the pixel driver already reports unreadable files */ }
     }
   }
-  accumImagePalette(entries) // COLOURS: region-crop (boot logo) embedded palette → master blob
+  accumImagePalette(entries) // COLORS: region-crop (boot logo) embedded palette → master blob
   for (const e of entries) {
     const p = join(dir, e.file)
     if (!existsSync(p)) { missing++; continue }
     try {
       // Base-aware: unedited pixels keep their original index, so an untouched
-      // file round-trips byte-exact (even with duplicate palette colours).
+      // file round-trips byte-exact (even with duplicate palette colors).
       const base = decodeBase(rom, symbols, e)
       // Cropped screen region (e.g. the boot logo): the export is only a w×h tile
       // sub-grid of the file — a PNG, OR a single-image `.aseprite` (no tilemap). Slice
@@ -371,7 +401,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       // Faithful Aseprite tileset (`.aseprite`, full file, SINGLE palette): flatten +
       // slice changed tiles via its OWN embedded palette (no cart context) and splice
       // onto base. Gated to NON-per-tile-palette sheets — a per-tile-palette `.aseprite`
-      // (the storybook char sheets) can't be sliced against one flat palette (a colour
+      // (the storybook char sheets) can't be sliced against one flat palette (a color
       // means different indices in different rows), so it falls through to the per-tile
       // path below (flatten → imageToGfx with the per-tile palette, same as its PNG).
       if (e.file.endsWith('.aseprite') && !e.perTilePalette) {
@@ -392,7 +422,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       const img = e.file.endsWith('.aseprite') ? decodeAsepriteImage(readFileSync(p)) : decodePng(readFileSync(p))
       const layout = e.format === 'lz16' ? lz16Layout(e.rowCount!) : lz2Layout(e.sizeBytes, e.bpp)
       // BG2/BG3 + storybook decode each tile against its own palette row (the swatch
-      // can't disambiguate rows that share colours); other layers use the swatch.
+      // can't disambiguate rows that share colors); other layers use the swatch.
       const tilePalette = e.perTilePalette
         ? (t: number): readonly number[] =>
             e.perTilePalette!.subPalettes[e.perTilePalette!.tileSub[t] ?? 0] ?? e.perTilePalette!.subPalettes[0]!
@@ -477,7 +507,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     })
     // The icon tiles live in the shared $74/$75 BG files (4bpp); any world's context resolves them.
     applyTilePatches(filePatches, { manifest: ctxCache.first()?.manifest ?? [], scope: 'the world map', tileBytesOf: () => 32, rom, symbols, savedFileTiles, errors })
-    accumImagePalette(mapIcons) // COLOURS: edited icon palette → master blob
+    accumImagePalette(mapIcons) // COLORS: edited icon palette → master blob
   }
 
   // Per-level ICON edits → the bank-$53 chunky `.bin` (via saveRawChrEdit). Faithful
@@ -506,7 +536,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       const r = saveRawChrEdit(writes)
       if (!r.ok) { errors.push(`level icons: ${r.error}`); levelIconImported = 0 }
     }
-    accumImagePalette(levelIcons) // COLOURS: edited level-icon palette → master blob
+    accumImagePalette(levelIcons) // COLORS: edited level-icon palette → master blob
   }
 
   // Overworld-map edits → the cart, from ONE combined `.aseprite` per world (a `.png` is the
@@ -557,7 +587,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         const { edits, conflicts } = diffWorldMapTerrainPixels(ctx, keys, ms.tilePixels, ms.numTiles, ms.palette)
         if (edits.length > 0) { addTilePatches(mapTerrainPatches, edits); entryChanged = true }
         if (conflicts > 0) errors.push(`${e.file}: ${conflicts} shared-tile pixel conflict(s) — a char used at multiple palette rows was edited inconsistently; the first edit was kept.`)
-        // (c) COLOURS: an edited embedded palette → the master blob (independent of a/b).
+        // (c) COLORS: an edited embedded palette → the master blob (independent of a/b).
         if (e.paletteOffsets) {
           for (const ed of diffAsepritePalette(ms.palette, e.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
         }
@@ -592,7 +622,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
           if (r.ok) mapTerrainImported++
           else errors.push(`${mapGround.file}: ${r.error}`)
         }
-        // COLOURS: an edited embedded palette → the master blob (independent of placement).
+        // COLORS: an edited embedded palette → the master blob (independent of placement).
         if (mapGround.paletteOffsets) {
           for (const ed of diffAsepritePalette(struct.palette, mapGround.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
         }
@@ -602,15 +632,15 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     }
   }
 
-  // World-map M1TE2 ".M1" sessions (the M1TE2-format World Map export). The overworld halves
-  // round-trip to the SAME cart files as the Aseprite terrain ($7C/$7D/$7E tilemaps +
+  // World-map M1TE2 ".M1" sessions (the M1TE2-format World Map export). Each overworld file
+  // round-trips to the SAME cart files as the Aseprite terrain ($7C/$7D/$7E tilemaps +
   // $74/$75/$4C/$56 char + the per-world palette); the icons file routes per-level pixels to
   // bank-$53 and marker/castle pixels to the shared $74/$75 char. Counts fold into the
   // existing overworld/icon tallies. The .M1 itself is the source of truth — the engine
   // re-derives the scene/grid from the cart (world-map-m1te2.ts).
   if (mapM1) {
-    // ── Overworld: CHR pixels (per file) + tilemap words (per file, merged across the two
-    //    halves AND all worlds — $7E ground is world-invariant) + palette (→ master blob).
+    // ── Overworld: CHR pixels (per file) + tilemap words (per file, merged across all worlds
+    //    — $7E ground is world-invariant) + palette (→ master blob).
     const m1Patches: FilePatchMap = new Map()
     let m1Manifest: GfxFileEntry[] | null = null
     const m1Words = new Map<number, { base: Uint8Array; words: Map<number, number> }>()
@@ -620,7 +650,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       try {
         const ctx = buildWorldMapTerrainContext(rom, symbols, ov.world)
         m1Manifest = ctx.scene.manifest
-        const d = diffOverworldM1(ctx, readFileSync(p), ov.half)
+        const d = diffOverworldM1(ctx, readFileSync(p))
         let entryChanged = false
         // CHR pixels — 4bpp ($74/$75/$4C) + 2bpp ($56) tiles, each spliced at its own stride.
         for (const e of d.chrEdits) { addTilePatches(m1Patches, [e], e.tileBytes); entryChanged = true }
@@ -634,7 +664,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
           }
           acc.words.set(w.fileOffset, w.word); entryChanged = true
         }
-        // Palette colours → the master blob via the scene's provenance (skip non-blob slots).
+        // Palette colors → the master blob via the scene's provenance (skip non-blob slots).
         for (const pe of d.paletteEdits) {
           const off = ctx.scene.provenance[pe.cgramIndex] ?? -1
           if (off >= 0) { screenPaletteEdits.set(off, pe.bgr15); entryChanged = true }
@@ -717,14 +747,16 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
             } else {
               pixelEdits = d.pixels
               if (d.placement.length > 0) {
-                const r = await saveLogoTilemap(d.placement)
+                // d.placement is the DELTA vs base ⊕ overlay (the `rom` baseline) — merge it
+                // onto the existing overlay so prior cell moves survive (full-set save).
+                const r = await saveLogoTilemap(mergePlacement(loadLogoTilemapEdits(), d.placement))
                 if (r.ok) changed = true
                 else errors.push(`title logo (DATA_title_screen_logo_tilemap): ${r.error}`)
               }
               if (d.skipped > 0) errors.push(`title logo: ${d.skipped} repositioned cell${d.skipped === 1 ? '' : 's'} skipped (non-editable / new tile — add new logo art via the faithful $1D sheet).`)
               if (d.erased > 0) errors.push(erasedCellsWarning('title logo', d.erased))
             }
-            // COLOURS: an edited embedded palette (logo BG2 rows 8..15) → the master blob.
+            // COLORS: an edited embedded palette (logo BG2 rows 8..15) → the master blob.
             if (titleLogo.paletteOffsets) {
               for (const ed of diffAsepritePalette(struct.palette, titleLogo.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
             }
@@ -788,7 +820,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
             } else {
               let ok = true
               if (d.pixels.length > 0) { const r = writeIslandPixels(d.pixels); if (!r.ok) { errors.push(`title island ($B1): ${r.error}`); ok = false } }
-              if (ok && d.placement.length > 0) { const r = await saveIslandTilemap(d.placement); if (!r.ok) { errors.push(`title island (DATA_5F9800): ${r.error}`); ok = false } }
+              if (ok && d.placement.length > 0) { const r = await saveIslandTilemap(mergePlacement(loadIslandTilemapEdits(), d.placement)); if (!r.ok) { errors.push(`title island (DATA_5F9800): ${r.error}`); ok = false } }
               if (d.unmappedTiles > 0) errors.push(`title island: ${d.unmappedTiles} new tile${d.unmappedTiles === 1 ? '' : 's'} couldn't be added — only ${ctx.addableChars.length} free $B1 char slot${ctx.addableChars.length === 1 ? '' : 's'} exist (the rest are used by the world-6 island).`)
               if (d.skippedW6Tiles > 0) errors.push(`title island: ${d.skippedW6Tiles} edit${d.skippedW6Tiles === 1 ? '' : 's'} to world-6-only tiles were skipped (they'd corrupt the world-6 island) — edit those via the faithful $B1 sheet.`)
               if (d.erased > 0) errors.push(erasedCellsWarning('title island', d.erased))
@@ -797,7 +829,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
               if (ok && (d.pixels.length > 0 || d.placement.length > 0)) islandImported++
               else if (d.pixels.length === 0 && d.placement.length === 0) islandSkipped++
             }
-            // COLOURS: an edited embedded palette (Mode-7 CGRAM 0-15) → the master blob.
+            // COLORS: an edited embedded palette (Mode-7 CGRAM 0-15) → the master blob.
             if (titleIsland.paletteOffsets) {
               for (const ed of diffAsepritePalette(struct.palette, titleIsland.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
             }
@@ -840,7 +872,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
           if (r.ok) sceneryImported++
           else errors.push(`title scenery (DATA_560000.bin): ${r.error}`)
         }
-        // COLOURS: an edited embedded palette (OBJ row 7) → the master blob (Aseprite mode only).
+        // COLORS: an edited embedded palette (OBJ row 7) → the master blob (Aseprite mode only).
         if (titleScenery.paletteOffsets && p.endsWith('.aseprite')) {
           const asePal = decodeAsepriteImage(readFileSync(p)).palette
           for (const ed of diffAsepritePalette(asePal, titleScenery.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
@@ -848,6 +880,28 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       } catch (err) {
         errors.push(`${titleScenery.file}: ${err instanceof Error ? err.message : String(err)}`)
       }
+    }
+  }
+
+  // Bank09 1bpp sheets (message font / message-box pictures) → the raw `.bin` via
+  // saveRawChrEdit. The edited PNG is a 2-color cell grid; re-encode by alpha-
+  // threshold and write only when the bytes actually changed vs base.
+  let fontImported = 0, fontSkipped = 0, fontMissing = 0
+  for (const f of fonts ?? []) {
+    const p = join(dir, f.file)
+    if (!existsSync(p)) { fontMissing++; continue }
+    try {
+      const edited = decodeEditedToRgba(p, 'image', f.width, f.height)
+      const base = readRawChrBase(f.binFile)
+      const bytes = encodeFontSheet(edited, f.width, f.glyphW, f.glyphH, f.cols, base.length)
+      let changed = bytes.length !== base.length
+      for (let i = 0; !changed && i < bytes.length; i++) if (bytes[i] !== base[i]) changed = true
+      if (!changed) { fontSkipped++; continue }
+      const r = saveRawChrEdit([{ binFile: f.binFile, offset: 0, bytes }])
+      if (r.ok) fontImported++
+      else errors.push(`${f.file} (${f.binFile}): ${r.error}`)
+    } catch (err) {
+      errors.push(`${f.file}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -876,7 +930,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
             applyTilePatches(filePatches, { manifest: [ctx.f27], scope: 'the storybook scene', tileBytesOf: () => 16, rom, symbols, savedFileTiles, errors })
             sceneImported++
           }
-          // Colour write-back: an edited embedded palette → the master blob (Aseprite mode
+          // Color write-back: an edited embedded palette → the master blob (Aseprite mode
           // only — the embedded palette is the editable surface). Independent of pixel edits,
           // so a palette-only change still applies. Base-aware diff → unedited = no-op.
           if (storybookScene.paletteOffsets && p.endsWith('.aseprite')) {
@@ -925,7 +979,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
             if (r.ok) { savedFileTiles.set(key, b1.slice()); changed = true } else errors.push(`title island ($B1): ${r.error}`)
           }
           if (d.placement.length > 0) {
-            const r = await saveIslandTilemap(d.placement)
+            const r = await saveIslandTilemap(mergePlacement(loadIslandTilemapEdits(), d.placement))
             if (r.ok) changed = true; else errors.push(`title island (DATA_5F9800): ${r.error}`)
           }
           accumScreenM1Palette(d.paletteEdits, ctx.provenance)
@@ -977,7 +1031,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     }
   }
 
-  // Flush every accumulated screen-palette colour edit in ONE merged Bank57 overlay write.
+  // Flush every accumulated screen-palette color edit in ONE merged Bank57 overlay write.
   // savePaletteEdits is a full-set replace shared with the Palette panel, so merge: keep the
   // panel's existing edits, override per-offset with the screen edits (which already differ
   // from the effective current blob, so an unedited round-trip writes nothing).
@@ -1001,6 +1055,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     sceneryImported, scenerySkipped, sceneryMissing,
     sceneImported, sceneSkipped, sceneMissing,
     glyphImported, glyphSkipped, glyphMissing, glyphShared,
+    fontImported, fontSkipped, fontMissing,
     paletteImported,
     errors
   }

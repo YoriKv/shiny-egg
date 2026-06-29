@@ -219,10 +219,10 @@ export function loadSceneRegsByIndex(
 }
 
 /**
- * A background layer's tile colour depth (2 or 4 bpp) for a given SNES BG mode.
+ * A background layer's tile color depth (2 or 4 bpp) for a given SNES BG mode.
  * **This is the single source of truth** — render paths must derive bpp from the
  * scene's `bgmodeMode`, NOT hardcode it. A tile's byte stride (32 vs 16),
- * decoder, and palette-group size (16- vs 4-colour) all hinge on it; decoding a
+ * decoder, and palette-group size (16- vs 4-color) all hinge on it; decoding a
  * 2bpp tile as 4bpp scrambles every tile (the level-$6B / level-mode-$0A bug).
  *
  * Per SNES BG modes, for the depths YI's tile renderers handle:

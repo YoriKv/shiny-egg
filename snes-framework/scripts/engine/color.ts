@@ -85,7 +85,7 @@ export function bgr15ToImageDataU32(
  * a 15-bit BGR color word. Each 5-bit channel is the top 5 bits of the 8-bit channel
  * (`byte >> 3`), which exactly recovers the original 5-bit value for both the 'expand'
  * (bit-replicate) and 'shift' encodings. Alpha is dropped. Used to write an edited
- * Aseprite/PNG palette colour back into the BGR-15 master palette blob.
+ * Aseprite/PNG palette color back into the BGR-15 master palette blob.
  */
 export function imageDataU32ToBgr15(u: number): number {
   const r = (u & 0xff) >>> 3;
@@ -132,7 +132,7 @@ export function readCgramColor(cgram: Uint8Array, index: number): number {
  * tile reads. It defaults to `colorsPerRow` — i.e. tightly packed, which is
  * right for every tightly-packed caller (4bpp@16, Mode-1 2bpp BG3@4, and the
  * Mode-0 title BG2 logo@4). Note the Mode-0 title logo is **not** a wide-stride
- * case: the `title-render` trace proved it reads at the tight 4-colour stride from
+ * case: the `title-render` trace proved it reads at the tight 4-color stride from
  * the **BG2 palette region** (CGRAM 32..63 — Mode-0 BG2 owns palette rows 8..15).
  * The caller supplies that base by passing palette row `8 + field` (see
  * screen-scene.ts `LOGO_BG2_PALETTE_BASE`), not by a wider `rowStride`.

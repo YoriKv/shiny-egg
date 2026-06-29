@@ -2,7 +2,7 @@
 // byte-order / layout / rowCount / truncation bugs the synthetic gfx-png test
 // can't. For every exported gfx file: the PNG decodes at the expected size, and
 // the round-trip (PNG → tile bytes) is BYTE-EXACT vs the base blob whenever the
-// file's swatch palette has no duplicate colours (a duplicate maps to the lowest
+// file's swatch palette has no duplicate colors (a duplicate maps to the lowest
 // index — visually identical, byte-different, which is expected/allowed).
 //
 // Run: node --experimental-strip-types snes-framework/scripts/engine/gfx-png-export.test.ts
@@ -44,7 +44,7 @@ for (const e of entries) {
   else lz2(rom, srcPC, base, 0);
 
   // Base-aware import: an UNEDITED file must round-trip BYTE-EXACT even when its
-  // palette has duplicate colours (this is what keeps the build byte-identical).
+  // palette has duplicate colors (this is what keeps the build byte-identical).
   // BG2/BG3 decode each tile against its own palette row (per-tile fidelity).
   const tilePalette = e.perTilePalette
     ? (t: number): readonly number[] =>

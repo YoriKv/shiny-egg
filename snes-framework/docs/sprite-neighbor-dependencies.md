@@ -165,14 +165,14 @@ Sprites that read *another placed sprite* (not a child they spawn themselves).
 | Sprite | Name | Needs | Mechanism / where | Spatial rule | Grade / if absent |
 |---|---|---|---|---|---|
 | `$067` | RockRevealedHiddenWingedCloud | `$09E` ChompRock **or** `$0DC` Snowball | per-frame proximity probe `FXCODE_099011` + ID check (`Bank0F.asm:2090-2096`) | **positional** -- the rock must be able to roll into the cloud's box | **required** -- prize unreachable (10/10 shipped levels have one) |
-| `$15C` / `$15D` | Green/Red RotatingPlatformSwitch | `$15F` / `$160` platform (same colour) | writes global pair-state `$0FD5,y` (`y` = colour) on egg-hit (`Bank0D.asm:5509`) | **global by colour** -- position irrelevant | **required** -- dead switch |
-| `$15F` / `$160` | Green/Red SpikedPlatform | `$15C` / `$15D` switch (same colour) | reads global `$0FD1,y` / `$0FD5,y` | **global by colour** | **required** -- never flips |
+| `$15C` / `$15D` | Green/Red RotatingPlatformSwitch | `$15F` / `$160` platform (same color) | writes global pair-state `$0FD5,y` (`y` = color) on egg-hit (`Bank0D.asm:5509`) | **global by color** -- position irrelevant | **required** -- dead switch |
+| `$15F` / `$160` | Green/Red SpikedPlatform | `$15C` / `$15D` switch (same color) | reads global `$0FD1,y` / `$0FD5,y` | **global by color** | **required** -- never flips |
 | `$04E` / `$131` / `$0CA` | LockedDoor / BigBossDoor | `$027` Key | door reads the top of Yoshi's egg-inventory stack `$7DF6`, checks ID == `$027` (`Bank02.asm:3811`) | carried (the player brings the key over -- a connected sub-room in every shipped case) | **required** but cross-record -- satisfied in a connected room, informational only |
 | `$1A4` | KeyholeCork | `$027` Key | unlock path `CODE_07FE73` checks the carried sprite | carried | as the locked doors |
 | `$033` | LittleMouserExitingNest | `$02F` LittleMouserHole | by-ID nearest-sprite probe `FXCODE_098EBF` (`#$002F`) -- homes on the nearest ACTIVE nest | **same cell** -- the mouser pops out of its hole (confirmed in-game; all 22 shipped placements at distance 0) | **required** -- no nest under it; the pop-out visual breaks |
 | `$0F5` | Slugger | `$09E` ChompRock | by-ID probe `FXCODE_098EBF` (`#$009E`): bats an approaching rock back (XSpeed +/-$400); `$09E`'s own scan reciprocally excludes Slugger (`Bank0E.asm:8736`) | global | **enabling** -- the Baseball Boys duel; swings at Yoshi/eggs regardless (9/15 shipped placements co-occur) |
 
-The switch/platform pairing is purely colour-keyed (`pair-index = (id - base) << 1`,
+The switch/platform pairing is purely color-keyed (`pair-index = (id - base) << 1`,
 no position term), so any green switch anywhere controls every green platform in
 the level.
 
@@ -227,7 +227,7 @@ zero false errors):
 - **Class C** -- icicle **21/21** on `$8E01/$8E02`; boo-bomb markers **28/28**
   within +/-2 cells; cork **1/1** on `$7D24`; wall-lakitu generator **1/1** with
   37 `$0010` cells; falling-rock platform unused (0 placements).
-- **Class D** -- cloud **10/10**; switch/platform pairs **2/2 + 2/2** by colour;
+- **Class D** -- cloud **10/10**; switch/platform pairs **2/2 + 2/2** by color;
   mouser->hole **22/22**; slugger+rock **9/15** (interaction, not required).
 - **Inverse sweep** -- per-sprite own-cell tile/tag distributions over all
   shipped placements (33 flagged patterns) all resolved: every exact-tile correlation

@@ -7,7 +7,7 @@ import { CELL_PX } from '../geometry'
  *
  * `heights` maps cell-corner column → row. Coordinates are in world pixels (the
  * ctx already carries pan/zoom). `pending` columns (the live, not-yet-committed
- * stroke) draw brighter; `erasing` columns draw in the erase colour. Lines stay a
+ * stroke) draw brighter; `erasing` columns draw in the erase color. Lines stay a
  * constant screen thickness regardless of zoom.
  */
 export function drawPaintOverlay(

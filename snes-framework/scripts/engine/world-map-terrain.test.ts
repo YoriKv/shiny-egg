@@ -38,7 +38,7 @@ function assert(cond: boolean, msg: string): void {
 
 /** The master-blob's current `offset → BGR-15` words, sourced from a scene's
  *  (provenance, cgram) — the same source the export read. Used to pin the palette
- *  write-back: an UNEDITED export must diff to 0 colour edits against this. */
+ *  write-back: an UNEDITED export must diff to 0 color edits against this. */
 function blobWordsFrom(provenance: Int32Array, cgram: Uint8Array): Map<number, number> {
   const w = new Map<number, number>();
   for (let ci = 0; ci < provenance.length; ci++) {
@@ -52,14 +52,14 @@ function blobWordsFrom(provenance: Int32Array, cgram: Uint8Array): Map<number, n
  *  palette diffs to 0 edits, and flipping the first blob-backed entry yields exactly one. */
 function assertPaletteRoundTrip(label: string, palette: Uint32Array, offsets: number[], blobWords: Map<number, number>): void {
   assert(offsets.length > 0 && offsets.length <= palette.length, `${label}: paletteOffsets covers the meaningful entries (${offsets.length} of ${palette.length})`);
-  assert(diffAsepritePalette(palette, offsets, blobWords).length === 0, `${label}: unedited palette → 0 master-blob colour edits`);
+  assert(diffAsepritePalette(palette, offsets, blobWords).length === 0, `${label}: unedited palette → 0 master-blob color edits`);
   const pi = offsets.findIndex((o) => o >= 0);
-  assert(pi >= 0, `${label}: palette has a blob-backed colour to edit`);
+  assert(pi >= 0, `${label}: palette has a blob-backed color to edit`);
   if (pi >= 0) {
     const ep = palette.slice();
     ep[pi] = (ep[pi]! ^ 0x00080808) >>> 0; // flip bit 3 of each RGB byte → ±1 in the 5-bit channel
     const eds = diffAsepritePalette(ep, offsets, blobWords);
-    assert(eds.length === 1 && eds[0]!.offset === offsets[pi] && eds[0]!.value === imageDataU32ToBgr15(ep[pi]!), `${label}: a 1-colour edit → exactly one PaletteEdit at the right offset`);
+    assert(eds.length === 1 && eds[0]!.offset === offsets[pi] && eds[0]!.value === imageDataU32ToBgr15(ep[pi]!), `${label}: a 1-color edit → exactly one PaletteEdit at the right offset`);
   }
 }
 
@@ -193,7 +193,7 @@ assert(terrainTileKeys(buildWorldMapTerrainContext(rom, symbols, 0)).length >= 2
   // Edit one tile's pixels → exactly one char (the right $74/$75/$4C tile) changes.
   const edited = ms.tilePixels.slice();
   const ti = 1; // first real tile
-  const wantFlat = baseOf((keys[ti]! >> 10) & 7) + 1; // a different, opaque colour in the SAME row's block
+  const wantFlat = baseOf((keys[ti]! >> 10) & 7) + 1; // a different, opaque color in the SAME row's block
   for (let p = 0; p < 64; p++) edited[ti * 64 + p] = wantFlat;
   const d = diffWorldMapTerrainPixels(ctx, keys, edited, ms.numTiles, ms.palette);
   assert(d.edits.length === 1 && d.edits[0]!.bytes.length === 32, `a 1-tile pixel edit slices to exactly one 32-B CHR tile (got ${d.edits.length})`);
@@ -201,7 +201,7 @@ assert(terrainTileKeys(buildWorldMapTerrainContext(rom, symbols, 0)).length >= 2
     'the sliced pixel edit targets a shared map char file ($74/$75/$4C)');
 
   // 6c. Palette write-back (the third axis): the embedded BG palette round-trips to the
-  //     master blob. bpp 4 (16-colour rows, default stride 16); per-world tint provenance.
+  //     master blob. bpp 4 (16-color rows, default stride 16); per-world tint provenance.
   assertPaletteRoundTrip('terrain', ms.palette, terrainAse.paletteOffsets, blobWordsFrom(ctx.scene.provenance, ctx.scene.cgram));
 }
 
@@ -257,7 +257,7 @@ assert(gctx.tilemap.length === 4096, `ground tilemap is 4096 bytes (got ${gctx.t
     let gn = 0; if (gout) for (let i = 0; i < gctx.tilemap.length; i++) if (gout[i] !== gctx.tilemap[i]) gn++;
     assert(!!gout && gn >= 1 && gn <= 2, `a single ground-cell edit changes one word (got ${gn} bytes)`);
   }
-  // Ground palette write-back (BG3, 2bpp → 4-colour rows, default stride 4).
+  // Ground palette write-back (BG3, 2bpp → 4-color rows, default stride 4).
   assertPaletteRoundTrip('ground', gstruct.palette, groundAse.paletteOffsets, blobWordsFrom(gctx.scene.provenance, gctx.scene.cgram));
 }
 assert(hash(gctx.tilemap) !== hash(w0.bg1Tilemap), 'ground ($7E) differs from the world-0 BG1 map ($7C)');

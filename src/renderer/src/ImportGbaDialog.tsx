@@ -164,6 +164,11 @@ export function ImportGbaDialog({
             <p className="se-import__warn">No active project — create or open one first.</p>
           )}
 
+          {/* Import log moved to the TOP of the panel (mirrors the ROM importer):
+              the apply outcome shows first, above the (still-visible) report. */}
+          {phase === 'applying' && <p className="se-meta se-import__hint">Importing…</p>}
+          {phase === 'done' && applyResult && <GbaImportLog applyResult={applyResult} />}
+
           {(phase === 'idle' || phase === 'analyzing') && (
             <div className="se-import__intro">
               <p>
@@ -281,64 +286,6 @@ export function ImportGbaDialog({
                   )
                 })}
               </div>
-
-              {phase === 'applying' && <p className="se-meta se-import__hint">Importing…</p>}
-
-              {phase === 'done' && applyResult && (
-                <div className="se-import__result">
-                  {applyResult.ok ? (
-                    <>
-                      {applyResult.applied.length > 0 ? (
-                        <p>
-                          Imported <strong>{applyResult.applied.length}</strong> level
-                          {applyResult.applied.length === 1 ? '' : 's'}:{' '}
-                          {applyResult.applied
-                            .map((a) => `${hex(a.sublevelId)} → ${hex(a.targetRecordId)}`)
-                            .join(', ')}
-                          .
-                        </p>
-                      ) : (
-                        <p>No levels imported.</p>
-                      )}
-                      {applyResult.applied.some((a) => a.warnings.length > 0) && (
-                        <details className="se-import__anchors">
-                          <summary>Conversion notes</summary>
-                          <div className="se-import__anchortable">
-                            {applyResult.applied
-                              .filter((a) => a.warnings.length > 0)
-                              .map((a) => (
-                                <div key={a.targetRecordId} className="se-import__anchorrow">
-                                  <span className="se-import__anchorname">
-                                    {hex(a.sublevelId)} → {hex(a.targetRecordId)}
-                                  </span>
-                                  <span className="se-import__conf" title={a.warnings.join('\n')}>
-                                    {a.warnings.length} note{a.warnings.length === 1 ? '' : 's'}
-                                  </span>
-                                </div>
-                              ))}
-                          </div>
-                        </details>
-                      )}
-                      {applyResult.failed.length > 0 && (
-                        <div className="se-import__failed">
-                          {applyResult.failed.map((f) => (
-                            <p key={f.targetRecordId} className="se-import__error">
-                              {hex(f.targetRecordId)} — {f.error}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                      {applyResult.applied.length > 0 && (
-                        <p className="se-meta se-import__hint">
-                          Rebuild (Test Level / Launch) to see the changes in-game.
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="se-import__error">Import failed: {applyResult.error}</p>
-                  )}
-                </div>
-              )}
             </>
           )}
         </div>
@@ -359,6 +306,69 @@ export function ImportGbaDialog({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The GBA import log — moved to the TOP of the panel (mirrors the ROM importer's
+ * ImportLog): the apply outcome shows first, above the (still-visible) report.
+ */
+function GbaImportLog({ applyResult }: { applyResult: GbaImportApplyResult }): JSX.Element {
+  if (!applyResult.ok) {
+    return (
+      <div className="se-import__result">
+        <p className="se-import__error">Import failed: {applyResult.error}</p>
+      </div>
+    )
+  }
+  return (
+    <div className="se-import__result">
+      {applyResult.applied.length > 0 ? (
+        <p>
+          Imported <strong>{applyResult.applied.length}</strong> level
+          {applyResult.applied.length === 1 ? '' : 's'}:{' '}
+          {applyResult.applied
+            .map((a) => `${hex(a.sublevelId)} → ${hex(a.targetRecordId)}`)
+            .join(', ')}
+          .
+        </p>
+      ) : (
+        <p>No levels imported.</p>
+      )}
+      {applyResult.applied.some((a) => a.warnings.length > 0) && (
+        <details className="se-import__anchors">
+          <summary>Conversion notes</summary>
+          <div className="se-import__anchortable">
+            {applyResult.applied
+              .filter((a) => a.warnings.length > 0)
+              .map((a) => (
+                <div key={a.targetRecordId} className="se-import__anchorrow">
+                  <span className="se-import__anchorname">
+                    {hex(a.sublevelId)} → {hex(a.targetRecordId)}
+                  </span>
+                  <span className="se-import__conf" title={a.warnings.join('\n')}>
+                    {a.warnings.length} note{a.warnings.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </details>
+      )}
+      {applyResult.failed.length > 0 && (
+        <div className="se-import__failed">
+          {applyResult.failed.map((f) => (
+            <p key={f.targetRecordId} className="se-import__error">
+              {hex(f.targetRecordId)} — {f.error}
+            </p>
+          ))}
+        </div>
+      )}
+      {applyResult.applied.length > 0 && (
+        <p className="se-meta se-import__hint">
+          Rebuild (Test Level / Launch) to see the changes in-game.
+        </p>
+      )}
     </div>
   )
 }

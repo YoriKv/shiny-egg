@@ -18,8 +18,8 @@ import { TILE_PX, titleVariant } from './screen-scene.ts';
 // runs the GSU renderer `FXCODE_08C7CA`, which per output pixel computes a rotated
 // source coordinate then samples the source texture `DATA_560000` with `GETB : AND
 // #15 : PLOT` — i.e. the source is a FLAT bitmap, 1 BYTE PER PIXEL, only the LOW
-// NIBBLE used (4bpp, 16 colours, index 0 transparent/skipped). The high nibble is
-// unused by the renderer (preserved on round-trip). The 16 colours are the title
+// NIBBLE used (4bpp, 16 colors, index 0 transparent/skipped). The high nibble is
+// unused by the renderer (preserved on round-trip). The 16 colors are the title
 // scene palette's OBJ row 7 (CGRAM row 15, sourced from `DATA_5FCC2E` — verified
 // byte-exact vs a live title CGRAM capture).
 //
@@ -42,11 +42,11 @@ export const SCENERY_BIN_FILE = 'Graphics/SuperFX/DATA_560000.bin';
 const SCENERY_W = 256;
 const SCENERY_H = 96; // rows 1-3 only; row 4 (0x6000+) is boss Mode-7 pieces
 const SCENERY_BYTES = SCENERY_W * SCENERY_H; // 0x6000 (1 byte/pixel)
-const SCENERY_PALETTE_ROW = 15; // OBJ palette 7 — the scenery colours
+const SCENERY_PALETTE_ROW = 15; // OBJ palette 7 — the scenery colors
 const SCENERY_COLORS = 16;
 
 /** Decode + palette context for the title scenery (build once). `base` is the
- *  `SCENERY_BYTES` source bytes (1 byte/px; low nibble = colour, high nibble unused);
+ *  `SCENERY_BYTES` source bytes (1 byte/px; low nibble = color, high nibble unused);
  *  `palette` is 16 ARGB (index 0 transparent). */
 export interface TitleSceneryContext {
   rom: Uint8Array;
@@ -54,8 +54,8 @@ export interface TitleSceneryContext {
   base: Uint8Array;
   palette: Uint32Array;
   cgram: Uint8Array;
-  /** CGRAM colour index → master-palette-blob byte-offset (`-1` = no blob source) — lets a
-   *  scenery palette-colour edit (OBJ row 7, CGRAM 240-255) round-trip to the blob. */
+  /** CGRAM color index → master-palette-blob byte-offset (`-1` = no blob source) — lets a
+   *  scenery palette-color edit (OBJ row 7, CGRAM 240-255) round-trip to the blob. */
   provenance: Int32Array;
 }
 
@@ -86,7 +86,7 @@ export function renderTitleScenery(ctx: TitleSceneryContext): TitleSceneryCanvas
 
 /** Diff an edited scenery canvas vs its base → the full re-packed source region
  *  (high nibble preserved) + the changed-pixel count. Base-aware: a pixel still
- *  showing its base colour keeps its base nibble. `changed === 0` ⇒ no edit. */
+ *  showing its base color keeps its base nibble. `changed === 0` ⇒ no edit. */
 export function diffTitleScenery(
   ctx: TitleSceneryContext,
   editedRgba: Uint8Array
@@ -104,7 +104,7 @@ export function diffTitleScenery(
 }
 
 /** Encode the scenery canvas to a PNG: the 256×96 atlas (index 0 transparent) + a
- *  16-colour swatch column (opaque, so colour 0 is visible). Import reads only the
+ *  16-color swatch column (opaque, so color 0 is visible). Import reads only the
  *  top-left `width×height`. */
 export function titleSceneryPng(ctx: TitleSceneryContext, canvas: TitleSceneryCanvas): Uint8Array {
   const width = canvas.width + TILE_PX;
@@ -112,7 +112,7 @@ export function titleSceneryPng(ctx: TitleSceneryContext, canvas: TitleSceneryCa
   const rgba = new Uint8Array(width * height * 4);
   for (let y = 0; y < canvas.height; y++) rgba.set(canvas.rgba.subarray(y * canvas.width * 4, (y + 1) * canvas.width * 4), y * width * 4);
   const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  // Swatch: opaque (force alpha) so the transparent colour 0 is still visible.
+  // Swatch: opaque (force alpha) so the transparent color 0 is still visible.
   for (let i = 0; i < SCENERY_COLORS; i++) {
     const c = (ctx.palette[i]! & 0x00ffffff) | 0xff000000;
     for (let dy = 0; dy < TILE_PX; dy++) for (let dx = 0; dx < TILE_PX; dx++) u32[(i * TILE_PX + dy) * width + (canvas.width + dx)] = c;
@@ -121,11 +121,11 @@ export function titleSceneryPng(ctx: TitleSceneryContext, canvas: TitleSceneryCa
 }
 
 /** The scenery atlas as a single-image (no-tilemap) `.aseprite`: the 256×96 indexed
- *  image in its 16-colour row 7 palette (index 0 transparent). Import flattens it back
+ *  image in its 16-color row 7 palette (index 0 transparent). Import flattens it back
  *  → `diffTitleScenery`, like the PNG. */
 export function titleSceneryAseprite(ctx: TitleSceneryContext, canvas: TitleSceneryCanvas): { bytes: Uint8Array; paletteOffsets: number[] } {
   const bytes = imageAseprite({ rgba: canvas.rgba, width: canvas.width, height: canvas.height, palette: ctx.palette, index0Transparent: true, layerName: 'scenery' });
-  // Colour write-back map — the SAME single row 7 / 16-colour / index-0-transparent palette.
+  // Color write-back map — the SAME single row 7 / 16-color / index-0-transparent palette.
   const paletteOffsets = imagePaletteOffsets({ provenance: ctx.provenance, rows: [SCENERY_PALETTE_ROW], index0Transparent: true, colorsPerRow: SCENERY_COLORS });
   return { bytes, paletteOffsets };
 }
@@ -141,13 +141,13 @@ export interface TitleSceneryPng {
   /** The same atlas as a single-image `.aseprite` (built only when requested). */
   aseprite?: Uint8Array;
   /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
-   *  editing the embedded palette writes those colours back to the blob. Aseprite mode only. */
+   *  editing the embedded palette writes those colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[];
 }
 
 /** Export the title island's 3D decoration art (the GSU-billboarded scenery) as an
  *  editable PNG (or a single-image `.aseprite` when `aseprite`). Edits slice back to
- *  `DATA_560000.bin` (low nibble = colour, high nibble preserved) via saveRawChrEdit. */
+ *  `DATA_560000.bin` (low nibble = color, high nibble preserved) via saveRawChrEdit. */
 export function exportTitleScenery(rom: Uint8Array, symbols: SymbolMap, opts: { aseprite?: boolean } = {}): TitleSceneryPng {
   const ctx = buildTitleSceneryContext(rom, symbols);
   const canvas = renderTitleScenery(ctx);
@@ -155,7 +155,7 @@ export function exportTitleScenery(rom: Uint8Array, symbols: SymbolMap, opts: { 
   return {
     file: 'screens/title/scenery.png',
     description:
-      'title island 3D scenery (GSU-billboarded decorations: flags, mountains, castles, trees, clouds). Raw 4bpp source atlas (256×96, 1 byte/px low-nibble) from DATA_560000.bin; the GSU positions/scales/rotates each piece, so this edits the ART only. Editing the embedded palette writes those colours back to the master palette blob.',
+      'title island 3D scenery (GSU-billboarded decorations: flags, mountains, castles, trees, clouds). Raw 4bpp source atlas (256×96, 1 byte/px low-nibble) from DATA_560000.bin; the GSU positions/scales/rotates each piece, so this edits the ART only. Editing the embedded palette writes those colors back to the master palette blob.',
     width: canvas.width,
     height: canvas.height,
     png: titleSceneryPng(ctx, canvas),

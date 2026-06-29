@@ -9,11 +9,11 @@ import {
 import type { GridMode } from '../../types'
 import { parseRgba, withAlphaScale } from '../../lib/rgba'
 
-// The grid is one user-picked colour (`color` arg — an rgba() string from the
+// The grid is one user-picked color (`color` arg — an rgba() string from the
 // toolbar swatch beside the canvas background, default DEFAULT_GRID_COLOR in
-// App.tsx). The picked colour AND alpha apply directly to BOTH the per-screen
+// App.tsx). The picked color AND alpha apply directly to BOTH the per-screen
 // and per-cell (tile) lines. The outer editable-boundary rect reuses the same
-// colour but a touch more opaque (×BOUNDARY_ALPHA_SCALE, clamped) so the
+// color but a touch more opaque (×BOUNDARY_ALPHA_SCALE, clamped) so the
 // playfield edge still reads as the hardest line.
 const BOUNDARY_ALPHA_SCALE = 1.3
 
@@ -35,11 +35,11 @@ export function drawScreenGrid(
   color: string
 ): void {
   const rgba = parseRgba(color)
-  const lineStyle = withAlphaScale(rgba, 1) // screen + tile lines: the picked colour+alpha
+  const lineStyle = withAlphaScale(rgba, 1) // screen + tile lines: the picked color+alpha
   ctx.save()
   // Per-CELL (tile) lines first — only in 'tile' mode. Cells that coincide with
   // a screen line are skipped here so they read as the per-screen line drawn
-  // over them below (same colour, but no double-stroke darkening at overlaps).
+  // over them below (same color, but no double-stroke darkening at overlaps).
   if (mode === 'tile') {
     ctx.strokeStyle = lineStyle
     ctx.lineWidth = 1 / zoom

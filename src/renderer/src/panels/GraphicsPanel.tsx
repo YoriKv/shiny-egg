@@ -3,7 +3,13 @@ import type {AsepriteInfo, BgRegionLayer, BgRegionRect, BgRegionFormat, GfxExpor
 import {DiscardChangesModal} from '../DiscardChangesModal'
 import {headerFromLevel} from './TilesPanel'
 import {getSprite} from '../data/obj-metadata'
-import {Map16Body} from './Map16Panel'
+// The "Map16 Blocks" tab is removed from the UI for now: its structural edits (reassigning a
+// block's quadrant tiles / palette / flip) don't live-preview on the canvas — only a rebuild
+// shows them — and BG1 *pixel* edits already preview via the BG1-area editor. The implementation
+// is kept intact — `panels/Map16Panel.tsx` (`Map16Body`), the `editor.*Map16Block` IPC, and
+// `src/main/map16-edits.ts` all still work. To re-expose it, restore this import plus the tab
+// bar + the `tab === 'map16'` branch + the `tab` state below:
+// import {Map16Body} from './Map16Panel'
 
 /** Sprite id → friendly name for every sprite num (0..0x1FF) — NAMES the exported
  *  metasprite PNGs (does not limit the set; getSprite returns a fallback name for
@@ -28,7 +34,7 @@ const AUTO_OPEN_KEY = 'shinyEgg.autoOpenExports.v1'
  *  track); BG1/2/3 are the positioned-region export. Aseprite is available for the BG
  *  regions, the two screen tracks (the title logo + island assemble as real tilemaps,
  *  the maps as layered tilemaps), and metasprites. */
-type ExportTarget = 'worldmap' | 'systemscreens' | 'metasprites' | 'bg1' | 'bg2' | 'bg3'
+type ExportTarget = 'worldmap' | 'systemscreens' | 'fonts' | 'metasprites' | 'bg1' | 'bg2' | 'bg3'
 // `metasprites` is intentionally omitted from the dropdown for now (export removed from
 // the UI). The implementation is kept — engine `sprite-metasprite.ts`, the
 // `tracks:['metasprites']` exportGfxPngs path, and the import auto-detect all still work;
@@ -38,32 +44,38 @@ const TARGETS: { value: ExportTarget; label: string }[] = [
     {value: 'bg2', label: 'BG2'},
     {value: 'bg3', label: 'BG3'},
     {value: 'worldmap', label: 'World Map'},
-    {value: 'systemscreens', label: 'Boot/Story/Title Screens'}
+    {value: 'systemscreens', label: 'Boot/Story/Title Screens'},
+    {value: 'fonts', label: 'Message Font / Pictures'}
 ]
 const isRegionTarget = (t: ExportTarget): boolean => t === 'bg1' || t === 'bg2' || t === 'bg3'
 const regionLayerOf = (t: ExportTarget): BgRegionLayer => (t === 'bg1' ? 1 : t === 'bg2' ? 2 : 3)
 // The two screen tracks (world map + boot/story/title) — cart-static graphics, so they
 // export with no level loaded (unlike the BG regions + metasprites, which need the level).
 const isScreenTarget = (t: ExportTarget): boolean => t === 'worldmap' || t === 'systemscreens'
+// Cart-static targets that need NO level loaded (the screen tracks + the Bank09 1bpp
+// message font / pictures, which are raw global graphics).
+const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'fonts'
 // Targets whose Aseprite output goes through the gfx-png export (the screen tracks =
 // assembled tilemaps + single-image icons/scenery; metasprites = single-image-with-palette
-// projects). The BG regions use the separate exportBgRegion path.
-const isAsepriteGfxTarget = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'metasprites'
+// projects; fonts = the 1bpp message font / pictures as a single-image 2-color project —
+// not a tilemap, since they're 8×12 unique glyphs / a flat bitmap, not 8×8 CHR). The BG
+// regions use the separate exportBgRegion path.
+const isAsepriteGfxTarget = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'metasprites' || t === 'fonts'
 const gfxTracksOf = (t: ExportTarget): GfxExportTrack[] =>
-    t === 'metasprites' ? ['metasprites'] : t === 'worldmap' ? ['worldmap'] : ['systemscreens']
+    t === 'metasprites' ? ['metasprites'] : t === 'worldmap' ? ['worldmap'] : t === 'fonts' ? ['fonts'] : ['systemscreens']
 
 interface Props {
-    /** The level currently loaded in the canvas — its palette colours the export. */
+    /** The level currently loaded in the canvas — its palette colors the export. */
     level: LevelData | null
     /** Called after an import or reset changes files (mark the build dirty). */
     onMutated: () => void
-    /** Called after an import wrote master-palette colours (e.g. a recolour from M1TE), so
+    /** Called after an import wrote master-palette colors (e.g. a recolor from M1TE), so
      *  the app reloads its palette draft and the canvas live-preview reflects the import. */
     onPaletteImported: () => void
-    /** Count of edited master-palette colours (the App-level palette draft). Shown as a
+    /** Count of edited master-palette colors (the App-level palette draft). Shown as a
      *  "Changed graphics" entry so palette imports/edits are visible + resettable here too. */
     paletteEditCount: number
-    /** Reset every palette colour to vanilla (clears the draft → live preview repaints). */
+    /** Reset every palette color to vanilla (clears the draft → live preview repaints). */
     onResetPalette: () => void
     /** BG1 area: the rectangle picked on the canvas (null until shift-dragged). */
     bg1RegionRect: BgRegionRect | null
@@ -81,7 +93,8 @@ interface Props {
  * and the positioned BG-region export (BG1 area / BG2 / BG3, PNG or Aseprite
  * tilemap). A dropdown picks what's exported; Import auto-detects everything in a
  * folder. Below: the exported-folders list, the changed-graphics reset list, and
- * the last import's log. (Map16 block editing is a separate tab.)
+ * the last import's log. (Map16 block editing was a separate tab — removed from the UI for
+ * now; see the note at the top of this file.)
  */
 export function GraphicsBody({
     level, onMutated, onPaletteImported, paletteEditCount, onResetPalette, bg1RegionRect, pickingRegion, onStartRegionPick, onClearRegion
@@ -95,7 +108,8 @@ export function GraphicsBody({
     const [pendingReset, setPendingReset] = useState<GfxEditEntry | 'all' | 'palette' | null>(null)
     const [resetBusy, setResetBusy] = useState(false)
     const [resetError, setResetError] = useState<string | null>(null)
-    const [tab, setTab] = useState<'gfx' | 'map16'>('gfx')
+    // (Removed: `const [tab, setTab] = useState<'gfx' | 'map16'>('gfx')` — the Map16 tab is
+    // gone for now, so the panel renders only the Export / Import body. See the top-of-file note.)
     // What the export dropdown targets, + the output format (PNG vs Aseprite — applies
     // to the BG regions and the screens; ignored by other tracks). Format defaults to
     // Aseprite once a tilemap-capable Aseprite is located (see the effect below); starts
@@ -136,8 +150,8 @@ export function GraphicsBody({
     const asepriteOk = isRegion || isAsepriteGfxTarget(target)
     // M1TE2 ".M1" session export — any BG layer, the World Map, or the system screens. BG2/BG3
     // map 1:1 to M1TE2's tilemap/CHR/palette; BG1 area exports an 8×8 tilemap synthesized from
-    // its Map16 cells (pixel + palette only). World Map exports the overworld (one .M1 per world
-    // × half, BG1+BG2+BG3) + a combined icons .M1 (all per-level icons in level order + marker +
+    // its Map16 cells (pixel + palette only). World Map exports the overworld (one .M1 per world,
+    // BG1+BG2+BG3) + a combined icons .M1 (all per-level icons in level order + marker +
     // castle). Boot/Story/Title exports the tilemap-based screens (title logo, island, storybook
     // scene) as one .M1 each. BG1 needs a selected area (the export gates on it). M1TE is bundled.
     const m1te2Ok = isRegion || target === 'worldmap' || target === 'systemscreens'
@@ -219,7 +233,7 @@ export function GraphicsBody({
     const onExport = async (): Promise<void> => {
         // The screen tracks are non-level-dependent — exportable with no level loaded;
         // every other target needs the loaded level's header + palette.
-        if (!isScreenTarget(target) && (!header || !level)) return
+        if (!isLevelIndependent(target) && (!header || !level)) return
         if (target === 'bg1' && !bg1RegionRect) { setStatus('Select an area on the canvas first (shift-drag).'); return }
         setBusy(true)
         setStatus(null)
@@ -237,7 +251,7 @@ export function GraphicsBody({
             setBusy(false)
             if ('canceled' in r) return
             if (r.ok) {
-                setStatus(`Exported ${r.file} (${r.cells} editable cells) to ${folderName(r.dir)}${r.warning ? ` — ⚠ ${r.warning}` : ''}`)
+                setStatus(`Extracted ${r.file} (${r.cells} editable cells) to ${folderName(r.dir)}${r.warning ? ` — ⚠ ${r.warning}` : ''}`)
                 await refreshFolders()
                 // Auto-open the export in its editor: M1TE for a .M1 (bundled — always
                 // available, opened straight to this BG layer); Aseprite otherwise (PNG /
@@ -247,7 +261,7 @@ export function GraphicsBody({
                     if (fmt === 'm1te2') void window.shinyEgg.editor.openInM1te(r.dir, r.file, regionLayerOf(target))
                     else if (asepritePath) void window.shinyEgg.editor.openInAseprite(r.dir, r.file)
                 }
-            } else setStatus(`Export failed: ${r.error}`)
+            } else setStatus(`Extract failed: ${r.error}`)
             return
         }
         // Screens + metasprites export PNG or Aseprite; the World Map can also export M1TE2
@@ -266,9 +280,9 @@ export function GraphicsBody({
         if ('canceled' in r) return
         if (r.ok) {
             const unit = gfxFmt === 'png' ? 'PNG' : 'file'
-            setStatus(`Exported ${r.count} ${unit}${r.count === 1 ? '' : 's'} to ${folderName(r.dir)}`)
+            setStatus(`Extracted ${r.count} ${unit}${r.count === 1 ? '' : 's'} to ${folderName(r.dir)}`)
             await refreshFolders()
-        } else setStatus(`Export failed: ${r.error}`)
+        } else setStatus(`Extract failed: ${r.error}`)
     }
 
     // Shared display for an import result (per-folder button or the ad-hoc dialog).
@@ -278,8 +292,8 @@ export function GraphicsBody({
         if ('canceled' in r) return
         if (!r.ok) { setImportLog({dir: '', lines: [], errors: [r.error]}); return }
         if (r.changed > 0) onMutated()
-        // Palette recolours were persisted behind the edit-session's back — tell the app to
-        // reload its palette draft so the canvas live-preview shows the imported colours.
+        // Palette recolors were persisted behind the edit-session's back — tell the app to
+        // reload its palette draft so the canvas live-preview shows the imported colors.
         if (r.paletteChanged > 0) onPaletteImported()
         setImportLog({dir: r.dir, lines: r.log, errors: r.errors})
         await refreshEdits()
@@ -301,12 +315,12 @@ export function GraphicsBody({
     const doReset = async (): Promise<void> => {
         if (!pendingReset) return
         const which = pendingReset
-        // Palette colours live in a separate overlay (the App-level palette draft), not the
+        // Palette colors live in a separate overlay (the App-level palette draft), not the
         // gfx-file list — resetting them clears the draft, which repaints the live preview.
         if (which === 'palette') {
             onResetPalette()
             setPendingReset(null)
-            setStatus('Reset palette colours to vanilla.')
+            setStatus('Reset palette colors to vanilla.')
             return
         }
         const targets = which === 'all' ? edits : [which]
@@ -322,23 +336,23 @@ export function GraphicsBody({
         setResetBusy(false)
         if (errors.length) { setResetError(errors.join('; ')); return }
         // "Reset all" also clears the palette (it's a graphics change too) so the canvas
-        // reverts the imported/edited colours, not just the CHR.
+        // reverts the imported/edited colors, not just the CHR.
         const resetPalette = which === 'all' && paletteEditCount > 0
         if (resetPalette) onResetPalette()
         setPendingReset(null)
         if (removed > 0) onMutated()
-        setStatus(`Reset ${removed} file${removed === 1 ? '' : 's'}${resetPalette ? ' + palette colours' : ''} to vanilla.`)
+        setStatus(`Reset ${removed} file${removed === 1 ? '' : 's'}${resetPalette ? ' + palette colors' : ''} to vanilla.`)
         await refreshEdits()
     }
 
     const resetTitle =
-        pendingReset === 'all' ? 'Reset all graphics' : pendingReset === 'palette' ? 'Reset palette colours' : 'Reset graphics file'
+        pendingReset === 'all' ? 'Reset all graphics' : pendingReset === 'palette' ? 'Reset palette colors' : 'Reset graphics file'
     const resetBody =
         pendingReset === 'all'
-            ? `Reset all ${edits.length} changed graphics file${edits.length === 1 ? '' : 's'}${paletteEditCount > 0 ? ' + the palette colours' : ''} back to vanilla? ` +
+            ? `Reset all ${edits.length} changed graphics file${edits.length === 1 ? '' : 's'}${paletteEditCount > 0 ? ' + the palette colors' : ''} back to vanilla? ` +
             'Your imported edits will be discarded. Rebuild to apply.'
             : pendingReset === 'palette'
-                ? `Reset all ${paletteEditCount} edited palette colour${paletteEditCount === 1 ? '' : 's'} back to vanilla? Your imported / edited colours will be discarded.`
+                ? `Reset all ${paletteEditCount} edited palette color${paletteEditCount === 1 ? '' : 's'} back to vanilla? Your imported / edited colors will be discarded.`
                 : pendingReset
                     ? `Reset “${pendingReset.label}” back to vanilla? Your imported edits to this file will be discarded. Rebuild to apply.`
                     : ''
@@ -368,322 +382,307 @@ export function GraphicsBody({
                         className="se-graphics__radio"
                         title={
                             exportFormat === 'm1te2'
-                                ? 'After exporting, open the .M1 in M1TE automatically (straight to this BG layer)'
-                                : 'After exporting a single region file, open it in Aseprite automatically'
+                                ? 'After extracting, open the .M1 in M1TE automatically (straight to this BG layer)'
+                                : 'After extracting a single region file, open it in Aseprite automatically'
                         }
                     >
                         <input type="checkbox" checked={autoOpen} onChange={(e) => toggleAutoOpen(e.target.checked)} />
-                        Auto-Open Exports
+                        Auto-Open Extracts
                     </label>
                 )}
                 {asepriteError && <span className="se-graphics__log-error">⚠ {asepriteError}</span>}
             </div>
 
-            <div className="se-graphics__tabs">
-                <button
-                    className={`se-graphics__tab${tab === 'gfx' ? ' se-graphics__tab--active' : ''}`}
-                    onClick={() => setTab('gfx')}
-                >
-                    Export / Import
-                </button>
-                <button
-                    className={`se-graphics__tab${tab === 'map16' ? ' se-graphics__tab--active' : ''}`}
-                    onClick={() => setTab('map16')}
-                    title="Edit Map16 object blocks — which tile / palette / flip each quadrant uses"
-                >
-                    Map16 Blocks
-                </button>
-            </div>
+            {/* The "Map16 Blocks" tab bar is removed for now (see the top-of-file note) — with
+                only one tab left it served no purpose, so the panel renders the Export / Import
+                body directly. Restore the tab bar + the `tab === 'map16' ? <Map16Body/> : (…)`
+                wrapper + the `tab` state to bring the Map16 tab back. */}
+            <div className="se-graphics__region">
+                <p className="se-graphics__desc">
+                    Extract the level’s graphics to a folder, edit them in any image editor (or
+                    Aseprite), then import the folder back — only changed tiles are saved.
+                    Pick <strong>what</strong> to extract below; <code>BG1 area</code> extracts the
+                    rectangle you select on the canvas, the other <code>BG</code> layers the whole
+                    tilemap, <code>World Map</code> the overworld map graphics,{' '}
+                    <code>Boot/Story/Title Screens</code> the boot / title / storybook graphics, and{' '}
+                    <code>Message Font / Pictures</code> the message font + message-box pictures.
+                    The <code>BG</code> layers and the <code>World Map</code> can also extract an{' '}
+                    <code>M1TE2</code> session (each BG layer as one <code>.M1</code>;
+                    the World Map as one <code>.M1</code> per world + a combined icons file). Import auto-detects everything in the folder.
+                </p>
 
-            {tab === 'map16' ? (
-                <Map16Body level={level} onMutated={onMutated}/>
-            ) : (
-                <div className="se-graphics__region">
-                    <p className="se-graphics__desc">
-                        Export the level’s graphics to a folder, edit them in any image editor (or
-                        Aseprite), then import the folder back — only changed tiles are saved.
-                        Pick <strong>what</strong> to export below; <code>BG1 area</code> exports the
-                        rectangle you select on the canvas, the other <code>BG</code> layers the whole
-                        tilemap, <code>World Map</code> the overworld map graphics, and{' '}
-                        <code>Boot/Story/Title Screens</code> the boot / title / storybook graphics.
-                        The <code>BG</code> layers and the <code>World Map</code> can also export an{' '}
-                        <code>M1TE2</code> session (the BG layers as one <code>.M1</code> per 32×32 screen;
-                        the World Map as the overworld + a combined icons file). Import auto-detects everything in the folder.
-                    </p>
+                <div className="se-graphics__row">
+                    <span className="se-graphics__status">Extract:</span>
+                    <select
+                        className="se-input se-graphics__select"
+                        value={target}
+                        onChange={(e) => setTarget(e.target.value as ExportTarget)}
+                    >
+                        {TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                </div>
 
-                    <div className="se-graphics__row">
-                        <span className="se-graphics__status">Export:</span>
-                        <select
-                            className="se-input se-graphics__select"
-                            value={target}
-                            onChange={(e) => setTarget(e.target.value as ExportTarget)}
-                        >
-                            {TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                        </select>
-                    </div>
-
-                    {target === 'bg1' && (
-                        <div className="se-graphics__row">
-                            <button
-                                className={`se-banks__act${pickingRegion ? ' is-active' : ''}`}
-                                onClick={onStartRegionPick}
-                                disabled={!header}
-                                title="Then shift-drag a rectangle on the canvas"
-                            >
-                                {pickingRegion ? 'Shift-drag on canvas…' : 'Select area…'}
-                            </button>
-                            {bg1RegionRect && (
-                                <>
-                                    <span className="se-graphics__status">
-                                        {bg1RegionRect.cols}×{bg1RegionRect.rows} cells at ({bg1RegionRect.col0},{bg1RegionRect.row0})
-                                    </span>
-                                    <button className="se-graphics__item-reset" onClick={onClearRegion}>Clear</button>
-                                </>
-                            )}
-                        </div>
-                    )}
-
-                    <div className="se-graphics__row">
-                        <label className="se-graphics__radio">
-                            <input
-                                type="radio"
-                                name="se-gfx-format"
-                                checked={!asepriteOk || tilemapTooOld || exportFormat === 'png'}
-                                onChange={() => pickFormat('png')}
-                            />
-                            PNG
-                        </label>
-                        <label
-                            className="se-graphics__radio"
-                            title={
-                                tilemapTooOld
-                                    ? `Aseprite ${asepriteInfo?.version} can’t open tilemap exports — needs 1.3+`
-                                    : asepriteOk
-                                        ? (isRegion ? 'Edit pixels at 8×8 — a shared CHR tile is one Aseprite tile' : '')
-                                        : 'Aseprite export is for the BG layers, the screens, and metasprites'
-                            }
-                        >
-                            <input
-                                type="radio"
-                                name="se-gfx-format"
-                                checked={asepriteOk && !tilemapTooOld && exportFormat === 'aseprite'}
-                                disabled={!asepriteOk || tilemapTooOld}
-                                onChange={() => pickFormat('aseprite')}
-                            />
-                            Aseprite (tilemap)
-                        </label>
-                        <label
-                            className="se-graphics__radio"
-                            title={
-                                !m1te2Ok
-                                    ? 'M1TE2 export is for the BG layers (BG1 area / BG2 / BG3), the World Map, and the Boot/Story/Title screens'
-                                    : target === 'worldmap'
-                                        ? 'Export the overworld (one .M1 per world × half) + a combined icons .M1 (all level icons + marker/castle) for M1TE'
-                                        : target === 'systemscreens'
-                                            ? 'Export the tilemap-based screens (title island, storybook scene) as one .M1 each for M1TE'
-                                            : 'Export an M1TE2 .M1 session (tilemap + CHR + palette) — one file per 32×32 screen (BG1 area = pixel + palette only)'
-                            }
-                        >
-                            <input
-                                type="radio"
-                                name="se-gfx-format"
-                                checked={m1te2Ok && exportFormat === 'm1te2'}
-                                disabled={!m1te2Ok}
-                                onChange={() => pickFormat('m1te2')}
-                            />
-                            M1TE2 (.M1)
-                        </label>
-                    </div>
-                    {tilemapTooOld && (
-                        <p className="se-graphics__log-error" title={asepritePath ?? undefined}>
-                            ⚠ Aseprite {asepriteInfo?.version} can’t open tilemap exports (tilemaps were added in 1.3).
-                            Exporting as PNG — update Aseprite to use the tilemap format.
-                        </p>
-                    )}
-
+                {target === 'bg1' && (
                     <div className="se-graphics__row">
                         <button
-                            className="se-banks__act"
-                            onClick={() => void onExport()}
-                            disabled={busy || (!isScreenTarget(target) && !header) || (target === 'bg1' && !bg1RegionRect)}
-                            title={header || isScreenTarget(target) ? 'Export the selected target to a folder' : 'Load a level first (screen exports need no level)'}
+                            className={`se-banks__act${pickingRegion ? ' is-active' : ''}`}
+                            onClick={onStartRegionPick}
+                            disabled={!header}
+                            title="Then shift-drag a rectangle on the canvas"
                         >
-                            Export…
+                            {pickingRegion ? 'Shift-drag on canvas…' : 'Select area…'}
                         </button>
-                        <button
-                            className="se-banks__act"
-                            onClick={() => void onImportDialog()}
-                            disabled={busy}
-                            title="Import an edited folder that isn't in the list below"
-                        >
-                            Import folder…
-                        </button>
-                    </div>
-                    {status && <p className="se-graphics__status">{status}</p>}
-
-                    <div className="se-graphics__changes">
-                        <div className="se-graphics__changes-head">
-                            <span className="se-graphics__changes-title">Exported folders ({folders.length})</span>
-                        </div>
-                        {folders.length === 0 ? (
-                            <p className="se-graphics__changes-empty">
-                                No exports yet — export above and its folder is listed here.
-                            </p>
-                        ) : (
-                            <ul className="se-graphics__list">
-                                {folders.map((dir) => (
-                                    <li key={dir} className="se-graphics__item se-graphics__folder">
-                                        <div className="se-graphics__folder-row">
-                                            <span
-                                                className="se-graphics__item-label se-graphics__item-label--link"
-                                                title={`${dir}\n(click to open)`}
-                                                onClick={() => void window.shinyEgg.editor.openRegionFolder(dir)}
-                                            >
-                                                {folderName(dir)}
-                                            </span>
-                                            <button
-                                                className="se-graphics__item-reset"
-                                                onClick={() => void onImportFolder(dir)}
-                                                disabled={busy}
-                                                title={`Import everything in ${dir}`}
-                                            >
-                                                Import
-                                            </button>
-                                            <button
-                                                className="se-graphics__item-reset"
-                                                onClick={() => void onRemoveFolder(dir)}
-                                                disabled={busy}
-                                                title="Remove from list (does not delete the files)"
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
-                                        {(m1Files[dir]?.length ?? 0) > 0 && (
-                                            <ul className="se-graphics__m1-list">
-                                                {m1Files[dir]!.map((m) => (
-                                                    <li key={m.file} className="se-graphics__m1-item">
-                                                        <span
-                                                            className="se-graphics__item-label se-graphics__item-label--link"
-                                                            title={`Open ${m.file} in M1TE (BG${m.layer})`}
-                                                            onClick={() => void window.shinyEgg.editor.openInM1te(dir, m.file, m.layer)}
-                                                        >
-                                                            {m.file} <span className="se-graphics__tag">BG{m.layer}</span>
-                                                        </span>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </li>
-                                ))}
-                            </ul>
+                        {bg1RegionRect && (
+                            <>
+                                <span className="se-graphics__status">
+                                    {bg1RegionRect.cols}×{bg1RegionRect.rows} cells at ({bg1RegionRect.col0},{bg1RegionRect.row0})
+                                </span>
+                                <button className="se-graphics__item-reset" onClick={onClearRegion}>Clear</button>
+                            </>
                         )}
                     </div>
+                )}
 
-                    <div className="se-graphics__changes">
-                        <div className="se-graphics__changes-head">
-                            <span className="se-graphics__changes-title">Changed graphics ({edits.length + (paletteEditCount > 0 ? 1 : 0)})</span>
-                            {(edits.length > 0 || paletteEditCount > 0) && (
-                                <button
-                                    className="se-banks__act se-banks__act--danger"
-                                    onClick={() => setPendingReset('all')}
-                                    disabled={busy || resetBusy}
-                                    title="Reset every changed graphics file (and the palette) back to vanilla"
-                                >
-                                    Reset all…
-                                </button>
-                            )}
-                        </div>
-                        {edits.length === 0 && paletteEditCount === 0 ? (
-                            <p className="se-graphics__changes-empty">No graphics edited yet.</p>
-                        ) : (
-                            <ul className="se-graphics__list">
-                                {paletteEditCount > 0 && (
-                                    <li className="se-graphics__item">
-                                        <span className="se-graphics__item-label" title="Master-palette colour edits (imported or edited here / in the Palette panel)">
-                                            Palette colours
-                                            <span className="se-graphics__tag">{paletteEditCount}</span>
+                <div className="se-graphics__row">
+                    <label className="se-graphics__radio">
+                        <input
+                            type="radio"
+                            name="se-gfx-format"
+                            checked={!asepriteOk || tilemapTooOld || exportFormat === 'png'}
+                            onChange={() => pickFormat('png')}
+                        />
+                        PNG
+                    </label>
+                    <label
+                        className="se-graphics__radio"
+                        title={
+                            tilemapTooOld
+                                ? `Aseprite ${asepriteInfo?.version} can’t open tilemap extracts — needs 1.3+`
+                                : asepriteOk
+                                    ? (isRegion ? 'Edit pixels at 8×8 — a shared CHR tile is one Aseprite tile' : '')
+                                    : 'Aseprite extract is for the BG layers, the screens, the message font / pictures, and metasprites'
+                        }
+                    >
+                        <input
+                            type="radio"
+                            name="se-gfx-format"
+                            checked={asepriteOk && !tilemapTooOld && exportFormat === 'aseprite'}
+                            disabled={!asepriteOk || tilemapTooOld}
+                            onChange={() => pickFormat('aseprite')}
+                        />
+                        Aseprite
+                    </label>
+                    <label
+                        className="se-graphics__radio"
+                        title={
+                            !m1te2Ok
+                                ? 'M1TE2 extract is for the BG layers (BG1 area / BG2 / BG3), the World Map, and the Boot/Story/Title screens'
+                                : target === 'worldmap'
+                                    ? 'Extract the overworld (one .M1 per world) + a combined icons .M1 (all level icons + marker/castle) for M1TE'
+                                    : target === 'systemscreens'
+                                        ? 'Extract the tilemap-based screens (title island, storybook scene) as one .M1 each for M1TE'
+                                        : 'Extract an M1TE2 .M1 session (tilemap + CHR + palette) — one file for the whole BG layer (BG1 area = pixel + palette only)'
+                        }
+                    >
+                        <input
+                            type="radio"
+                            name="se-gfx-format"
+                            checked={m1te2Ok && exportFormat === 'm1te2'}
+                            disabled={!m1te2Ok}
+                            onChange={() => pickFormat('m1te2')}
+                        />
+                        M1TE2 (.M1)
+                    </label>
+                </div>
+                {tilemapTooOld && (
+                    <p className="se-graphics__log-error" title={asepritePath ?? undefined}>
+                        ⚠ Aseprite {asepriteInfo?.version} can’t open tilemap extracts (tilemaps were added in 1.3).
+                        Extracting as PNG — update Aseprite to use the tilemap format.
+                    </p>
+                )}
+
+                <div className="se-graphics__row">
+                    <button
+                        className="se-banks__act"
+                        onClick={() => void onExport()}
+                        disabled={busy || (!isLevelIndependent(target) && !header) || (target === 'bg1' && !bg1RegionRect)}
+                        title={header || isLevelIndependent(target) ? 'Extract the selected target to a folder' : 'Load a level first (screen/font extracts need no level)'}
+                    >
+                        Extract…
+                    </button>
+                    <button
+                        className="se-banks__act"
+                        onClick={() => void onImportDialog()}
+                        disabled={busy}
+                        title="Import an edited folder that isn't in the list below"
+                    >
+                        Import folder…
+                    </button>
+                </div>
+                {status && <p className="se-graphics__status">{status}</p>}
+
+                <div className="se-graphics__changes">
+                    <div className="se-graphics__changes-head">
+                        <span className="se-graphics__changes-title">Extracted folders ({folders.length})</span>
+                    </div>
+                    {folders.length === 0 ? (
+                        <p className="se-graphics__changes-empty">
+                            No extracts yet — extract above and its folder is listed here.
+                        </p>
+                    ) : (
+                        <ul className="se-graphics__list">
+                            {folders.map((dir) => (
+                                <li key={dir} className="se-graphics__item se-graphics__folder">
+                                    <div className="se-graphics__folder-row">
+                                        <span
+                                            className="se-graphics__item-label se-graphics__item-label--link"
+                                            title={`${dir}\n(click to open)`}
+                                            onClick={() => void window.shinyEgg.editor.openRegionFolder(dir)}
+                                        >
+                                            {folderName(dir)}
                                         </span>
                                         <button
                                             className="se-graphics__item-reset"
-                                            onClick={() => setPendingReset('palette')}
+                                            onClick={() => void onImportFolder(dir)}
+                                            disabled={busy}
+                                            title={`Import everything in ${dir}`}
+                                        >
+                                            Import changes
+                                        </button>
+                                        <button
+                                            className="se-graphics__item-reset"
+                                            onClick={() => void onRemoveFolder(dir)}
+                                            disabled={busy}
+                                            title="Remove from list (does not delete the files)"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                    {(m1Files[dir]?.length ?? 0) > 0 && (
+                                        <ul className="se-graphics__m1-list">
+                                            {m1Files[dir]!.map((m) => (
+                                                <li key={m.file} className="se-graphics__m1-item">
+                                                    <span
+                                                        className="se-graphics__item-label se-graphics__item-label--link"
+                                                        title={`Open ${m.file} in M1TE (BG${m.layer})`}
+                                                        onClick={() => void window.shinyEgg.editor.openInM1te(dir, m.file, m.layer)}
+                                                    >
+                                                        {m.file} <span className="se-graphics__tag">BG{m.layer}</span>
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                <div className="se-graphics__changes">
+                    <div className="se-graphics__changes-head">
+                        <span className="se-graphics__changes-title">Changed graphics ({edits.length + (paletteEditCount > 0 ? 1 : 0)})</span>
+                        {(edits.length > 0 || paletteEditCount > 0) && (
+                            <button
+                                className="se-banks__act se-banks__act--danger"
+                                onClick={() => setPendingReset('all')}
+                                disabled={busy || resetBusy}
+                                title="Reset every changed graphics file (and the palette) back to vanilla"
+                            >
+                                Reset all…
+                            </button>
+                        )}
+                    </div>
+                    {edits.length === 0 && paletteEditCount === 0 ? (
+                        <p className="se-graphics__changes-empty">No graphics edited yet.</p>
+                    ) : (
+                        <ul className="se-graphics__list">
+                            {paletteEditCount > 0 && (
+                                <li className="se-graphics__item">
+                                    <span className="se-graphics__item-label" title="Master-palette color edits (imported or edited here / in the Palette panel)">
+                                        Palette colors
+                                        <span className="se-graphics__tag">{paletteEditCount}</span>
+                                    </span>
+                                    <button
+                                        className="se-graphics__item-reset"
+                                        onClick={() => setPendingReset('palette')}
+                                        disabled={busy || resetBusy}
+                                        title="Reset every palette color back to vanilla"
+                                    >
+                                        Reset
+                                    </button>
+                                </li>
+                            )}
+                            {edits.map((e) => (
+                                <Fragment key={e.file}>
+                                    <li className="se-graphics__item">
+                                        <button
+                                            className="se-graphics__item-caret"
+                                            onClick={() => void toggleDetail(e.file)}
+                                            title="Show what this file maps to"
+                                        >
+                                            {detail[e.file] !== undefined ? '▾' : '▸'}
+                                        </button>
+                                        <span className="se-graphics__item-label" title={e.file}>
+                                            {e.label}
+                                            {e.kind === 'raw-chr' && <span className="se-graphics__tag">shared</span>}
+                                        </span>
+                                        <span className="se-graphics__item-size">{sizeLabel(e.bytes)}</span>
+                                        <button
+                                            className="se-graphics__item-reset"
+                                            onClick={() => setPendingReset(e)}
                                             disabled={busy || resetBusy}
-                                            title="Reset every palette colour back to vanilla"
+                                            title="Reset this file back to vanilla"
                                         >
                                             Reset
                                         </button>
                                     </li>
-                                )}
-                                {edits.map((e) => (
-                                    <Fragment key={e.file}>
-                                        <li className="se-graphics__item">
-                                            <button
-                                                className="se-graphics__item-caret"
-                                                onClick={() => void toggleDetail(e.file)}
-                                                title="Show what this file maps to"
-                                            >
-                                                {detail[e.file] !== undefined ? '▾' : '▸'}
-                                            </button>
-                                            <span className="se-graphics__item-label" title={e.file}>
-                                                {e.label}
-                                                {e.kind === 'raw-chr' && <span className="se-graphics__tag">shared</span>}
-                                            </span>
-                                            <span className="se-graphics__item-size">{sizeLabel(e.bytes)}</span>
-                                            <button
-                                                className="se-graphics__item-reset"
-                                                onClick={() => setPendingReset(e)}
-                                                disabled={busy || resetBusy}
-                                                title="Reset this file back to vanilla"
-                                            >
-                                                Reset
-                                            </button>
+                                    {detail[e.file] !== undefined && (
+                                        <li className="se-graphics__detail">
+                                            {detail[e.file] === 'loading'
+                                                ? 'Loading…'
+                                                : detailText(detail[e.file] as GfxFileRole)}
                                         </li>
-                                        {detail[e.file] !== undefined && (
-                                            <li className="se-graphics__detail">
-                                                {detail[e.file] === 'loading'
-                                                    ? 'Loading…'
-                                                    : detailText(detail[e.file] as GfxFileRole)}
-                                            </li>
-                                        )}
-                                    </Fragment>
-                                ))}
-                            </ul>
-                        )}
-                    </div>
-
-                    {importLog && (
-                        <div className="se-graphics__log">
-                            {importLog.dir && (
-                                <p className="se-graphics__status" title={importLog.dir}>
-                                    Imported from {folderName(importLog.dir)}
-                                </p>
-                            )}
-                            {importLog.lines.map((line, i) => (
-                                <p key={`l${i}`} className="se-graphics__log-line">{line}</p>
+                                    )}
+                                </Fragment>
                             ))}
-                            {importLog.errors.map((err, i) => (
-                                <p key={`e${i}`} className="se-graphics__log-error">⚠ {err}</p>
-                            ))}
-                        </div>
+                        </ul>
                     )}
-
-                    <DiscardChangesModal
-                        open={pendingReset !== null}
-                        title={resetTitle}
-                        body={resetBody}
-                        saving={resetBusy}
-                        error={resetError}
-                        confirmLabel="Reset"
-                        danger
-                        onDiscard={() => void doReset()}
-                        onCancel={() => {
-                            if (!resetBusy) {
-                                setPendingReset(null)
-                                setResetError(null)
-                            }
-                        }}
-                    />
                 </div>
-            )}
+
+                {importLog && (
+                    <div className="se-graphics__log">
+                        {importLog.dir && (
+                            <p className="se-graphics__status" title={importLog.dir}>
+                                Imported from {folderName(importLog.dir)}
+                            </p>
+                        )}
+                        {importLog.lines.map((line, i) => (
+                            <p key={`l${i}`} className="se-graphics__log-line">{line}</p>
+                        ))}
+                        {importLog.errors.map((err, i) => (
+                            <p key={`e${i}`} className="se-graphics__log-error">⚠ {err}</p>
+                        ))}
+                    </div>
+                )}
+
+                <DiscardChangesModal
+                    open={pendingReset !== null}
+                    title={resetTitle}
+                    body={resetBody}
+                    saving={resetBusy}
+                    error={resetError}
+                    confirmLabel="Reset"
+                    danger
+                    onDiscard={() => void doReset()}
+                    onCancel={() => {
+                        if (!resetBusy) {
+                            setPendingReset(null)
+                            setResetError(null)
+                        }
+                    }}
+                />
+            </div>
         </div>
     )
 }

@@ -101,7 +101,7 @@ const layerTilemap = (c: WorldMapTerrainContext, layer: TerrainLayer): Uint8Arra
 /** The layer's LZ2 tilemap gfx-file id (BG1 = `$7C`-class, BG2 = `$7D`-class). */
 export const terrainLayerFileId = (c: WorldMapTerrainContext, layer: TerrainLayer): number => layer === 0 ? c.bg1FileId : c.bg2FileId;
 
-/** A 16-colour BG palette row as ARGB; `transparentZero` makes index 0 transparent. */
+/** A 16-color BG palette row as ARGB; `transparentZero` makes index 0 transparent. */
 function bgRow(cgram: Uint8Array, row: number, transparentZero: boolean): Uint32Array {
   return buildPaletteRow(cgram, row, transparentZero, 'expand', 16);
 }
@@ -257,7 +257,7 @@ export function worldMapTerrainAseprite(c: WorldMapTerrainContext, keys: number[
     ],
     tilesAcross: COLS, tilesDown: ROWS, index0Transparent: true, tilesetName: 'map-tiles'
   });
-  // Colour write-back map — SAME bpp/index0Transparent (and default rowStride 16) as above.
+  // Color write-back map — SAME bpp/index0Transparent (and default rowStride 16) as above.
   const paletteOffsets = tilesetPaletteOffsets({ tiles, bpp: 4, index0Transparent: true, provenance: c.scene.provenance });
   return { bytes, paletteOffsets };
 }
@@ -268,7 +268,7 @@ export function worldMapTerrainAseprite(c: WorldMapTerrainContext, keys: number[
 // which lives in the shared $74/$75/$4C files (char base $4000). So pixel edits slice back
 // to those files — the same char the level-select panel + icons draw, so an edit shows
 // everywhere that char appears (across both BG layers AND all worlds). Each tile's row
-// comes from its (char,pal,prio) key, so the slice colour-matches against that CGRAM row
+// comes from its (char,pal,prio) key, so the slice color-matches against that CGRAM row
 // directly — independent of how the file packs its palette rows.
 
 /** A CHR tile edit sliced from the combined `.aseprite`'s tileset, for `saveGfxEdit`. */
@@ -282,8 +282,8 @@ export interface TerrainTileEdit {
 /**
  * Slice an edited combined `.aseprite`'s tileset PIXELS back to the shared $74/$75/$4C CHR
  * tiles. `tilePixels` is the structural decode's stacked tileset (1 byte/px, tile 0 first);
- * `palette` is the file's embedded palette (resolves a painted pixel's index → colour).
- * Base-aware: a pixel still at its base colour keeps its base index; a repaint maps to a
+ * `palette` is the file's embedded palette (resolves a painted pixel's index → color).
+ * Base-aware: a pixel still at its base color keeps its base index; a repaint maps to a
  * local index within the tile's own CGRAM row. Two tileset entries that share a char (same
  * char, different palette row) write the SAME CHR — if they disagree, the first wins and
  * `conflicts` counts it. Returns only changed tiles.
@@ -294,7 +294,7 @@ export function diffWorldMapTerrainPixels(
   const { vram, cgram, manifest } = c.scene;
   const edits: TerrainTileEdit[] = [];
   const seen = new Map<string, Uint8Array>(); // "fileId/fileTile" → bytes (first writer wins)
-  const rowColorsByPal: (Uint32Array | undefined)[] = new Array(8); // CGRAM row → its 16 colours
+  const rowColorsByPal: (Uint32Array | undefined)[] = new Array(8); // CGRAM row → its 16 colors
   let conflicts = 0;
   const baseIdx = new Uint8Array(64), rawIdx = new Uint8Array(64);
   const n = Math.min(numTiles, keys.length);
@@ -305,23 +305,23 @@ export function diffWorldMapTerrainPixels(
     const vramByte = (MAP_CHAR_BASE + ch * TILE_BYTES_4BPP) & 0xffff;
     const map = iconFileForVramByte(manifest, vramByte);
     if (!map || vramByte + TILE_BYTES_4BPP > vram.length) continue;
-    // The tile's row comes from its key (not the palette layout), so we colour-match
-    // against CGRAM row `pal`'s 16 colours — independent of how the file packs its rows.
+    // The tile's row comes from its key (not the palette layout), so we color-match
+    // against CGRAM row `pal`'s 16 colors — independent of how the file packs its rows.
     const rowColors = (rowColorsByPal[pal] ??= bgRow(cgram, pal, true));
     decode4bppTile(vram, vramByte, false, false, baseIdx, 0); // base CHR local indices
     let edited = false;
     for (let p = 0; p < 64; p++) {
       const flat = tilePixels[ti * 64 + p]!;
       const bLocal = baseIdx[p]!;
-      // Base-aware: unchanged pixel (same colour as base) keeps its base local index;
-      // else map the painted colour to a local index within THIS tile's palette row.
+      // Base-aware: unchanged pixel (same color as base) keeps its base local index;
+      // else map the painted color to a local index within THIS tile's palette row.
       if (palette[flat] === rowColors[bLocal]) { rawIdx[p] = bLocal; }
       else { rawIdx[p] = paletteIndexOf(rowColors, palette[flat]!, 16); edited = true; }
     }
     if (!edited) continue;
     const bytes = new Uint8Array(TILE_BYTES_4BPP);
     encode4bppTile(rawIdx, 0, bytes, 0);
-    // Unchanged vs the base CHR bytes? (a recolour that re-plans to identical bytes)
+    // Unchanged vs the base CHR bytes? (a recolor that re-plans to identical bytes)
     let changed = false;
     for (let b = 0; b < TILE_BYTES_4BPP; b++) if (bytes[b] !== vram[vramByte + b]) { changed = true; break; }
     if (!changed) continue;
@@ -381,7 +381,7 @@ export interface WorldMapTerrainPng {
    *  tileset's order), so it never re-derives the key list. Built only in aseprite mode. */
   tileKeys?: number[];
   /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
-   *  editing the embedded palette writes those colours back to the blob. Aseprite mode only. */
+   *  editing the embedded palette writes those colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[];
 }
 
@@ -403,7 +403,7 @@ export function exportWorldMapTerrain(rom: Uint8Array, symbols: SymbolMap, opts:
     const ase = keys ? worldMapTerrainAseprite(c, keys) : undefined;
     out.push({
       file: `screens/map/world-${world}/overworld.png`,
-      description: `overworld map, world ${world} — BG1 foreground (0x${c.bg1FileId.toString(16)}) ⊕ BG2 background (0x${c.bg2FileId.toString(16)}) ⊕ BG3 ground. The PNG is the composited view. The .aseprite (Aseprite export) has both BG layers over one shared tileset and edits BOTH axes: rearrange a layer's cells to move that layer's path/scenery (→ the $7C/$7D tilemaps), and repaint a tileset tile's pixels to edit its art (→ the shared $74/$75/$4C char, so the change shows wherever that tile is used). Editing the embedded palette writes those colours back to the master palette blob.`,
+      description: `overworld map, world ${world} — BG1 foreground (0x${c.bg1FileId.toString(16)}) ⊕ BG2 background (0x${c.bg2FileId.toString(16)}) ⊕ BG3 ground. The PNG is the composited view. The .aseprite (Aseprite export) has both BG layers over one shared tileset and edits BOTH axes: rearrange a layer's cells to move that layer's path/scenery (→ the $7C/$7D tilemaps), and repaint a tileset tile's pixels to edit its art (→ the shared $74/$75/$4C char, so the change shows wherever that tile is used). Editing the embedded palette writes those colors back to the master palette blob.`,
       world, bg1FileId: c.bg1FileId, bg2FileId: c.bg2FileId,
       width: 512, height: 256, png,
       aseprite: ase?.bytes,
@@ -448,7 +448,7 @@ export function renderWorldMapGround(c: WorldMapGroundContext): WorldMapTerrainC
   const W = COLS * TILE_PX, H = ROWS * TILE_PX;
   const rgba = new Uint8Array(W * H * 4);
   const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, W * H);
-  const pal = bgRow(cgram, 0, false); // BG3 ground: index 0 is a real (opaque) colour
+  const pal = bgRow(cgram, 0, false); // BG3 ground: index 0 is a real (opaque) color
   const idx = new Uint8Array(64);
   for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
     const off = wordIndex(cc, r) * 2;
@@ -532,10 +532,10 @@ export function worldMapGroundAseprite(c: WorldMapGroundContext, keys: readonly 
   }
   const bytes = tilesAseprite({
     cgram, bpp: 2, tileW: TILE_PX, tileH: TILE_PX, tiles, cells,
-    tilesAcross: COLS, tilesDown: ROWS, index0Transparent: false, // BG3 index 0 is an opaque colour
+    tilesAcross: COLS, tilesDown: ROWS, index0Transparent: false, // BG3 index 0 is an opaque color
     layerName: 'ground', tilesetName: 'ground-tiles'
   });
-  // Colour write-back map — SAME bpp/index0Transparent (default 4-colour stride) as above.
+  // Color write-back map — SAME bpp/index0Transparent (default 4-color stride) as above.
   const paletteOffsets = tilesetPaletteOffsets({ tiles, bpp: 2, index0Transparent: false, provenance: c.scene.provenance });
   return { bytes, paletteOffsets };
 }
@@ -583,7 +583,7 @@ export interface WorldMapGroundPng {
    *  as `tileKeys` so the import reuses the file's tileset order. Aseprite mode only. */
   tileKeys?: number[];
   /** Per-`.aseprite`-palette-entry master-blob byte-offset (`-1` = transparent/non-blob) —
-   *  editing the embedded palette writes those colours back to the blob. Aseprite mode only. */
+   *  editing the embedded palette writes those colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[];
 }
 
@@ -598,7 +598,7 @@ export function exportWorldMapGround(rom: Uint8Array, symbols: SymbolMap, opts: 
     // Top-level of the map folder (NOT a common/ subfolder — the common/ folder was
     // removed; this world-invariant layer has no per-world home, so it sits at the root).
     file: 'screens/map/ground.png',
-    description: `overworld decorative ground (BG3, the tan terrain + tree line behind every world's map) — tilemap file 0x${c.fileId.toString(16)} over the $56 char. World-invariant (one shared layer). The .aseprite is the editable LAYOUT; ground PIXELS edit via the M1TE2 overworld .M1 (BG3 slot), which bundles the $56 char. Editing the embedded palette writes those colours back to the master palette blob.`,
+    description: `overworld decorative ground (BG3, the tan terrain + tree line behind every world's map) — tilemap file 0x${c.fileId.toString(16)} over the $56 char. World-invariant (one shared layer). The .aseprite is the editable LAYOUT; ground PIXELS edit via the M1TE2 overworld .M1 (BG3 slot), which bundles the $56 char. Editing the embedded palette writes those colors back to the master palette blob.`,
     fileId: c.fileId, width: canvas.width, height: canvas.height,
     png: worldMapTerrainPng(canvas),
     aseprite: ase?.bytes,

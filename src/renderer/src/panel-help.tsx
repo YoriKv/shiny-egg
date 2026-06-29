@@ -34,8 +34,8 @@ export const PANEL_HELP: PanelHelp = {
   palette: (
     <>
       <p>
-        The current level&rsquo;s colour palette (CGRAM). Click a swatch to select
-        it, then drag the colour picker to edit it.
+        The current level&rsquo;s color palette (CGRAM). Click a swatch to select
+        it, then drag the color picker to edit it.
       </p>
       <p>
         Rows the level&rsquo;s tiles don&rsquo;t use are dimmed as a hint &mdash;
@@ -66,7 +66,7 @@ export const PANEL_HELP: PanelHelp = {
     <>
       <p>
         The loaded level&rsquo;s 15 header fields &mdash; per-layer tileset &amp;
-        palette, the spriteset, BG colour, level mode, tile-animation, plus music,
+        palette, the spriteset, BG color, level mode, tile-animation, plus music,
         scroll, and item-memory. Editing one mutates the level like any other edit
         (undo / save included).
       </p>
@@ -286,7 +286,7 @@ export const PANEL_HELP: PanelHelp = {
       </p>
       <p>
         <b>Format:</b> <b>PNG</b> opens in any image editor and includes a swatch column
-        of the exact colours to paint from. <b>Aseprite&nbsp;(tilemap)</b> writes a
+        of the exact colors to paint from. <b>Aseprite&nbsp;(tilemap)</b> writes a
         configured &ldquo;.aseprite&rdquo; file with the palette built in (no Aseprite
         install needed to produce it). <b>M1TE2&nbsp;(.M1)</b> bundles a layer&rsquo;s
         tilemap, tiles, and palette into one session you edit in <b>M1TE</b>, the bundled
@@ -296,9 +296,9 @@ export const PANEL_HELP: PanelHelp = {
         <b>Locate&nbsp;Aseprite</b> points the app at your install).
       </p>
       <p>
-        <b>Palette rows.</b> Each background tile uses a single colour row. If you paint
-        a pixel with a colour that isn&rsquo;t in that tile&rsquo;s own row, the import
-        reports it and snaps the pixel to colour&nbsp;0 (the transparent / backdrop
+        <b>Palette rows.</b> Each background tile uses a single color row. If you paint
+        a pixel with a color that isn&rsquo;t in that tile&rsquo;s own row, the import
+        reports it and snaps the pixel to color&nbsp;0 (the transparent / backdrop
         entry) &mdash; stick to the tile&rsquo;s row.
       </p>
       <p>

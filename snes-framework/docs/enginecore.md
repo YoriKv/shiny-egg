@@ -555,7 +555,7 @@ because the world map only sets `CurrentLevelFromMapLo` to valid IDs.
 ## 5. Palette loader (full pipeline)
 
 The on-disk palette payload lives at SNES `$3F:A000-$3F:FFFF` (PC
-`$1FA000-$1FFFFF`), 8 KB of BGR-15 colour words (`0bbbbbgggggrrrrr`). The
+`$1FA000-$1FFFFF`), 8 KB of BGR-15 color words (`0bbbbbgggggrrrrr`). The
 CGRAM mirror lives in SRAM at `$70:2000-$70:21FF` (256 x u16 = 512 bytes).
 Each scene palette-table entry is 4 bytes / 2 words, bit-packed:
 
@@ -634,7 +634,7 @@ safe -- no rendering tearing.
 The very first iteration of the palette interpreter after boot has an
 uninitialised high byte at DP `$01`. The visible result in V1.0 was the
 "Yoshi running on the world map" sprite picking up a non-zero high byte
-on the first frame, scrolling its colour palette unintentionally. The
+on the first frame, scrolling its color palette unintentionally. The
 inline comment in the framework asm (CODE_00BA7A) preserves this note.
 
 ### 5.6 Per-frame animated palette (animation_palette)
@@ -651,8 +651,8 @@ by `main_gamemode_0F` (the in-level loop) every frame. `$00`
 player-X velocity), selects a palette row, and copies it into the live CGRAM
 mirror `$70:2000` (DMA'd to PPU each NMI, §5.4) plus the fade mirror `$70:2D6C`
 via `copy_anim_palette_row` (`$01:C9CF`): `$0E` bytes from `[$00]` (a `$5F:addr`
-source pointer) → CGRAM byte-offset X. CGRAM colour N = byte `2N`, so e.g.
-`anim_pal_01`'s X=`$86` writes BG1 palette row 4 (colour 67) for 13 colours.
+source pointer) → CGRAM byte-offset X. CGRAM color N = byte `2N`, so e.g.
+`anim_pal_01`'s X=`$86` writes BG1 palette row 4 (color 67) for 13 colors.
 
 **Phase-0 = entry palette.** At level entry the phase counters and `$7974` are 0
 (bulk WRAM clear), so each routine's table index resolves to 0 — the level's
@@ -662,9 +662,9 @@ the literal frame-0 write may lag the resting row by a frame.
 
 **Routine shapes** (header value → behaviour):
 
-- **Single-row writers** — one `copy_anim_palette_row`. e.g. `$01` colours
-  67-79; `$03` colours 112-127; `$08` colours 83-86; `$09` writes one word to
-  colours 1 and 9; `$0F` colours 5-7.
+- **Single-row writers** — one `copy_anim_palette_row`. e.g. `$01` colors
+  67-79; `$03` colors 112-127; `$08` colors 83-86; `$09` writes one word to
+  colors 1 and 9; `$0F` colors 5-7.
 - **Header-conditional** — `$0D` picks its source row by `BG3Palette` bit 0;
   `anim_pal_05`'s `CODE_01C644` prefix runs only for `(BG1Tileset & 7) == 0`;
   `CODE_01C85D` (`$0E`, `$13`) selects both source and CGRAM dest by `BG2Palette`

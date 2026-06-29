@@ -24,13 +24,18 @@ const CATEGORY_DEFS: Record<string, { label: string; imported: boolean }> = {
   'level-ptrs': { label: 'Level pointer table (followed, not copied)', imported: true },
   'world-map': { label: 'World-map entrance tables', imported: true },
   strings: { label: 'Level names + message text', imported: true },
-  palette: { label: 'Master palette colours', imported: true },
+  palette: { label: 'Master palette colors', imported: true },
   'palette-ptrs': { label: 'Palette pointer tables (repointed palettes)', imported: false },
   'gfx-tables': { label: 'Graphics-selection tables (tileset / spriteset files)', imported: false },
+  'gfx-ptrs': { label: 'Graphics pointer tables (followed, not copied)', imported: true },
+  gradient: { label: 'Backdrop gradient colors', imported: true },
+  'screen-tilemap': { label: 'Title-screen tilemaps (logo / island)', imported: true },
+  'cutscene-text': { label: 'Cutscene text (intro / ending)', imported: true },
   map16: { label: 'Map16 page tables', imported: false },
   collision: { label: 'Collision / type tables', imported: false },
-  graphics: { label: 'Compressed graphics (LZ2 / LZ16)', imported: false },
-  tilemaps: { label: 'Compressed BG tilemaps', imported: false },
+  graphics: { label: 'Compressed graphics (LZ2 / LZ16)', imported: true },
+  'graphics-raw': { label: 'Raw graphics CHR (banks $52–$56)', imported: true },
+  tilemaps: { label: 'Compressed BG tilemaps', imported: true },
   superfx: { label: 'SuperFX program', imported: false },
   music: { label: 'Music / sound (SPC)', imported: false },
   code: { label: '65816 code', imported: false },
@@ -39,13 +44,25 @@ const CATEGORY_DEFS: Record<string, { label: string; imported: boolean }> = {
   expanded: { label: 'Expanded ROM area (beyond 2 MB)', imported: false }
 };
 
-/** Categorise a containing `.sym` label by name (tier 3). */
+/** Categorise a containing `.sym` label by name (tier 3). Order matters: the
+ *  IMPORTED gfx-meta labels (pointer tables, logo tilemap) are matched before the
+ *  generic `tileset_files|spriteset_files|tilemap` selection-table bucket, so a
+ *  relocated-graphics pointer or the imported logo tilemap isn't mis-flagged as a
+ *  not-imported selection table (the EGGCELLENT false positive). */
 function categorizeLabel(label: string): string {
   if (/palette_ptrs|palette_layout/i.test(label)) return 'palette-ptrs';
   if (/bitmap_asset/i.test(label)) return 'map16';
   if (/bg_type_table|slope_panels|0AEBBC/i.test(label)) return 'collision';
   if (/_SPC_|^DATA_SPC|spc700|sound_bank/i.test(label)) return 'music';
-  if (/tileset_files|spriteset_files|gfx_ptrs|tilemap/i.test(label)) return 'gfx-tables';
+  // The compressed-gfx pointer tables are FOLLOWED by the graphics import (the
+  // build re-points them when placing relocated blobs), like the level ptr table.
+  if (/compressed_gfx_ptrs/i.test(label)) return 'gfx-ptrs';
+  // Title-screen logo tilemap — imported (logo placement); matched before the
+  // generic `tilemap` bucket below.
+  if (/title_screen_logo_tilemap/i.test(label)) return 'screen-tilemap';
+  // The tileset/spriteset selection tables + BG tilemap index/selection tables —
+  // genuinely not imported.
+  if (/tileset_files|spriteset_files|tilemap/i.test(label)) return 'gfx-tables';
   if (/^(CODE|FXCODE)_/.test(label)) return 'code';
   return 'data-other';
 }
@@ -75,6 +92,14 @@ function buildIntervals(levelExtents: Array<[number, number]>): Interval[] {
   const idxPc = sym.pc('YI_LevelDataPtrsAndEntranceData_DATA_level_entrance_indexes');
   const ptrsPc = sym.pc('YI_LevelDataPtrsAndEntranceData_Ptrs');
   const palettePc = sym.pc('DATA_master_palette_rom_blob');
+  // The now-imported fixed-address regions (resolved via the vendored map where a
+  // label exists). Each is a priority-2 interval so it overrides the coarse asset
+  // bands below — without these, a hack's gradient/island/logo/cutscene/gfx-ptr
+  // changes mis-report as not-imported (data-other / code).
+  const lz2Ptrs = sym.pc('DATA_lz2_compressed_gfx_ptrs');
+  const lz16Ptrs = sym.pc('DATA_lz16_compressed_gfx_ptrs');
+  const islandPc = sym.pc('DATA_5F9800');
+  const logoPc = sym.pc('DATA_title_screen_logo_tilemap');
   out.push(
     { start: 0x7fb0, end: 0x8000, key: 'rom-header', priority: 2 },
     { start: idxPc, end: ptrsPc, key: 'world-map', priority: 2 },
@@ -83,6 +108,22 @@ function buildIntervals(levelExtents: Array<[number, number]>): Interval[] {
     // bodies + level-name strings; PC = (bank-$40)<<16 | offset.
     { start: 0x1110db, end: 0x115348, key: 'strings', priority: 2 },
     { start: palettePc, end: palettePc + 0x2000, key: 'palette', priority: 2 },
+    // Compressed-gfx pointer tables (LZ2 then LZ16, contiguous) — followed by the
+    // graphics import; the build re-points them when placing relocated blobs.
+    { start: lz2Ptrs, end: lz16Ptrs + 187 * 3, key: 'gfx-ptrs', priority: 2 },
+    // Cutscene text bodies — intro storybook (Bank0F $0F:CF78–$0F:D56E) + ending
+    // (Bank0D $0D:F3E8–$0D:F4F7). Imported via readForeignGlyphTable.
+    { start: 0x6f3e8, end: 0x6f4f7, key: 'cutscene-text', priority: 2 },
+    { start: 0x7cf78, end: 0x7d56e, key: 'cutscene-text', priority: 2 },
+    // Title-screen placement tilemaps — island (1024 Mode-7 char bytes) + logo
+    // (448 BG words). Imported.
+    { start: islandPc, end: islandPc + 1024, key: 'screen-tilemap', priority: 2 },
+    { start: logoPc, end: logoPc + 448 * 2, key: 'screen-tilemap', priority: 2 },
+    // Backdrop gradient tables (16 × 24 BGR-15 words, DATA_5FD64C…) — imported.
+    { start: 0x1fd64c, end: 0x1fd94c, key: 'gradient', priority: 2 },
+    // Raw-CHR graphics banks $52–$56 (animation tiles, world-map icons, sprite /
+    // dynamic-body gfx, world-map char base) — imported via the raw-CHR path.
+    { start: 0x120000, end: 0x170000, key: 'graphics-raw', priority: 1 },
     // Bank57 asset bands (file offsets, from the bank's documented layout).
     { start: 0x170000, end: 0x173c00, key: 'superfx', priority: 1 },
     { start: 0x173c00, end: 0x1b0000, key: 'graphics', priority: 1 },

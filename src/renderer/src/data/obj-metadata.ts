@@ -44,7 +44,7 @@ interface StoredObjectInfo {
    *       the band's tileset, not the header's; level 0x58's rail corners
    *       prove ts15) ∨ art byte-identical / ≤¼ different vs a shipped
    *       reference tileset (4bpp VRAM bytes + flips — palette-independent,
-   *       so recolours pass);
+   *       so recolors pass);
    *   never-shipped: the GoldenEgg `tilesets` labels greedily mapped onto
    *       tileset indices from band-resolved shipped placements;
    *   plus the reviewed-override lists in the generator (NEVER_ALLOWED — the

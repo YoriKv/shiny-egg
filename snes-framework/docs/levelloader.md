@@ -228,7 +228,7 @@ midring-restart path (`gm35` → re-entry through `gm0C` with `$038C` set) reach
 `CODE_01B084` via the live exit table `$7F:7E00,x`.
 
 After this, `JSL unpack_level_header` (Bank10 $10:8B15) bit-extracts the
-10-byte header (15 fields: background colour, BG1/BG2/BG3 tileset+palette,
+10-byte header (15 fields: background color, BG1/BG2/BG3 tileset+palette,
 sprite tileset+palette, level mode, animation tileset+palette, BG scroll
 rate, music, item memory; field widths summarised in
 `docs/leveldataengine.md` §2) into 15 RAM fields starting at

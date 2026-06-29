@@ -248,7 +248,11 @@ export function analyzeForeignRom(
       ...(blockedReason ? { blockedReason } : {}),
       relocated,
       base: baseCounts,
-      foreign: foreignCounts
+      foreign: foreignCounts,
+      // Cleanly emptied by the hack (foreign streams gone) while base had real
+      // data — the importer removes it by default. Distinct from an abandoned/
+      // clobbered slot (foreign unreadable, not cleanly empty).
+      ...(foreignEmpty && baseLevel ? { emptied: true } : {})
     });
 
     if (foreignLevel && importability !== 'blocked') {

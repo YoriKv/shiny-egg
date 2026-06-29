@@ -404,8 +404,8 @@ sprites here use a paired-platform-controlled-by-switch pattern.
 
 ### 3.1 The $15C/$15D switch + $15F/$160 platform pair
 
-The base mechanic for "egg hits a coloured switch to flip the
-rotation direction of a coloured pair of spiked platforms". Two
+The base mechanic for "egg hits a colored switch to flip the
+rotation direction of a colored pair of spiked platforms". Two
 parallel state pairs:
 
 - $15C (green switch) <-> $15F (green spiked platforms): index $00.
@@ -655,7 +655,7 @@ So the `$701900` byte serves *triple* duty here: a moving/stationary
 flag (high bit), a rail-id register (low byte), and a per-state
 modifier (mid bits).
 
-**Level 2 -- which two of the four colours**. The moving variants
+**Level 2 -- which two of the four colors**. The moving variants
 look at `(SpriteID - $185) AND #$0002` -- which gives 0 for
 green-pair, 2 for yellow-pair. So:
 - `$185` Green Left  : `($AA00, $0000)` from index 0 = left.
@@ -678,7 +678,7 @@ This explains the apparent label-mismatch (the spreadsheet says
 match the visual direction, while the encoded direction in the data
 table is the reverse).
 
-**Level 3 -- the colour itself** is purely a render concern. The
+**Level 3 -- the color itself** is purely a render concern. The
 shared OAM template register (called early in the per-frame render
 phase that we didn't fully trace) reads the sprite-ID and picks a
 palette-row offset from a small table. So $185/$186 use green
@@ -1631,7 +1631,7 @@ Yoshi is "released" into free-fall and the balloon is despawned.
 When Yoshi steps on, the block doesn't move *per se*; it commits
 its current pose and waits for the global `! switch` flag to flip,
 at which point the block re-enters its state machine and the
-opposite-coloured block becomes solid.
+opposite-colored block becomes solid.
 
 **(H) Direct-position-write.** Used by mini-battle checkered $1B4
 which writes its own X-pos via inline math (lines 11A11A-11A174)

@@ -127,13 +127,24 @@ export function renderBgLayer(
     /** Optional: mutable diagnostic counter. Renderer increments per
      *  sub-tile to tally how many were rendered vs skipped. */
     diag?: BgLayerDiag;
-    /** Per-tile PRIORITY plane filter. Each tilemap entry carries a priority
-     *  bit (`0x2000`); with the BGMODE BG3-priority bit (YI's normal modes) a
-     *  priority-1 tile renders ABOVE BG1, a priority-0 tile below. `'low'`
-     *  renders only priority-0 cells (the background plane, drawn behind BG1);
-     *  `'high'` only priority-1 cells (the foreground plane, drawn above BG1).
-     *  Omit to render all cells (the single-plane default). See composeBgLayers. */
-    priority?: 'low' | 'high';
+    /** Per-tile PRIORITY plane filter. Each tilemap entry carries a priority bit
+     *  (`0x2000`). The split is two-plane normally, three-plane when a water-line
+     *  gate (`foregroundMinRow`) is set (BG3 screen-designation levels):
+     *    `'low'`  → priority-0 cells only           (deep background, behind BG2)
+     *    `'mid'`  → priority-1 cells, row `< gate`   (front of BG2, behind BG1 — the
+     *               water/reflection band the cart pushes to the subscreen)
+     *    `'high'` → priority-1 cells, row `>= gate`  (foreground, in front of BG1)
+     *  With `gate` 0 (every non-screen-des level) `'mid'` is empty and `'low'`/`'high'`
+     *  are the plain priority-0/priority-1 split. Omit to render all cells (the
+     *  single-plane default). See composeBgLayers. */
+    priority?: 'low' | 'mid' | 'high';
+    /** Water-line row gate (BG3 "screen-designation" levels — Bank01
+     *  `CODE_setup_bg3_screen_des_hdma`). Splits the priority-1 cells: rows `< gate`
+     *  are the water/reflection band the cart's per-scanline TM/TS HDMA pushes to the
+     *  subscreen (front of BG2, behind BG1 — the `'mid'` plane), rows `>= gate` are the
+     *  foreground bank in front of BG1 (`'high'`). Default 0 = no gate (all priority-1
+     *  is foreground; no `'mid'`). See `composeBgLayers` BG3_FOREGROUND_MIN_ROW. */
+    foregroundMinRow?: number;
   }
 ): RenderResult {
   const declared = dimsFromScSize(opts.scSize);
@@ -194,10 +205,13 @@ export function renderBgLayer(
       if (entryOff + 2 > vram.length) continue;
       const entry = vram[entryOff] | (vram[entryOff + 1] << 8);
 
-      // Priority-plane filter: skip cells whose per-tile priority bit (0x2000)
-      // doesn't match the requested plane (background vs foreground split).
-      if (opts.priority === 'low' && (entry & 0x2000) !== 0) continue;
-      if (opts.priority === 'high' && (entry & 0x2000) === 0) continue;
+      // Priority-plane filter (see the `priority` field doc): 'low' = priority-0;
+      // 'mid' = priority-1 above the water-line gate; 'high' = priority-1 at/below it.
+      const pri1 = (entry & 0x2000) !== 0;
+      const gate = opts.foregroundMinRow ?? 0;
+      if (opts.priority === 'low' && pri1) continue;
+      if (opts.priority === 'mid' && !(pri1 && row < gate)) continue;
+      if (opts.priority === 'high' && !(pri1 && row >= gate)) continue;
 
       const baseTile = entry & 0x3ff;
       const palRow = (entry >>> 10) & 0x07;
@@ -266,12 +280,17 @@ export function renderBgLayer(
 export function tilemapHasForeground(
   vram: Uint8Array,
   tilemapAddr: number,
-  loadedBytes: number
+  loadedBytes: number,
+  minRow = 0
 ): boolean {
   const end = Math.min(tilemapAddr + loadedBytes, vram.length - 1);
   for (let off = tilemapAddr; off < end; off += 2) {
     const entry = vram[off]! | (vram[off + 1]! << 8);
-    if ((entry & 0x2000) !== 0 && (entry & 0x3ff) !== 0) return true;
+    if ((entry & 0x2000) === 0 || (entry & 0x3ff) === 0) continue;
+    // Row gate (BG3 screen-designation levels): only rows >= minRow are true
+    // foreground. row = byteOffset / 64 (32 entries × 2 B) — valid for the
+    // ≤32-wide BG3 tilemaps these levels use (minRow stays 0 everywhere else).
+    if (minRow === 0 || Math.floor((off - tilemapAddr) / 64) >= minRow) return true;
   }
   return false;
 }

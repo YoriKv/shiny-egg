@@ -1,5 +1,5 @@
 // Per-tile palette fidelity (BG2 + BG3) on a REAL multi-row level (0x02 — its BG3
-// sheet uses several 4-colour sub-palettes and its BG2 sheet uses rows 6+7). Pins:
+// sheet uses several 4-color sub-palettes and its BG2 sheet uses rows 6+7). Pins:
 //   1. every BG2/BG3 file's unedited per-tile round-trip is BYTE-EXACT,
 //   2. BG3 uses >1 sub-palette AND BG2 uses >1 row (the per-tile path is exercised,
 //      i.e. the tilemap walk actually ran — guards the loadBg2/3Tilemap wiring),
@@ -61,7 +61,7 @@ for (const e of all) {
 }
 assert(exact === all.length, `all ${all.length} BG2/BG3 files round-trip byte-exact`);
 
-// (3) 1-pixel edit on tile 0: change pixel (0,0) to another colour of ITS row →
+// (3) 1-pixel edit on tile 0: change pixel (0,0) to another color of ITS row →
 // that tile's bytes change to the right index, others untouched. Run for a 2bpp
 // (BG3) and a 4bpp (BG2) file.
 function pixelEditCheck(e: FidEntry, label: string): void {
@@ -79,7 +79,7 @@ function pixelEditCheck(e: FidEntry, label: string): void {
     if (cand === bi) continue;
     if (pal.filter((c) => c === pal[cand]).length === 1) { k = cand; break; }
   }
-  if (k < 0) { console.log(`  (skipped ${label} 1-pixel edit: tile 0 row has no unique alternate colour)`); return; }
+  if (k < 0) { console.log(`  (skipped ${label} 1-pixel edit: tile 0 row has no unique alternate color)`); return; }
   const img = decodePng(Buffer.from(e.png));
   const col = pal[k]!;
   img.rgba[0] = (col >> 16) & 0xff; img.rgba[1] = (col >> 8) & 0xff; img.rgba[2] = col & 0xff; img.rgba[3] = k === 0 ? 0 : 255;

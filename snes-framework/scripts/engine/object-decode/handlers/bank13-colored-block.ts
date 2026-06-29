@@ -66,7 +66,7 @@ const DATA_colored_block_tiles = [0x7A00, 0x7A01] as const;
 //
 // No shape awareness, no neighbour probe — base table read + $15
 // offset add, unconditional stamp. Cell parity selects which of the
-// 2 base tiles; the per-variant offset (block colour) is latched in $15
+// 2 base tiles; the per-variant offset (block color) is latched in $15
 // by the init.
 // ─────────────────────────────────────────────────────────────────────
 const coloredBlock2TileStamp: PerCellHandler = (state) => {

@@ -2,7 +2,7 @@
 //
 // These are determined by the cart/asm, NOT user-editable: the sprite's cel format (Format-A
 // single object_data tile vs Format-B multi-tile special_chr), the OBJ palette row it settles
-// to at runtime (SP4 — the runtime-recolour fix), and the animation frame it visibly rests at
+// to at runtime (SP4 — the runtime-recolor fix), and the animation frame it visibly rests at
 // (SP3 — the cel-frame fix). They used to live in the renderer's `obj-metadata.json` and reach
 // the engine over IPC (celRenderableNums / formatANums / settledPaletteRows / restFrames); per
 // the "asm-fixed → engine TS" rule they now live here, beside the other asm-fixed render tables

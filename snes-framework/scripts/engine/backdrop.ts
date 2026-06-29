@@ -21,21 +21,33 @@
 //
 // At runtime the cart generates the per-scanline gradient using SuperFX
 // FXCODE_0890E7, writing to `$70:5800` and HDMA'ing it into per-row
-// COLDATA writes. We replace that with offline linear interpolation in TS.
+// COLDATA writes. We replicate that generator's math offline in TS.
 //
 // # Interpolation shape
 //
-// Matching GoldenEgg's port (which produces visually correct gradients
-// when compared against BizHawk screenshots):
-//
-//   - 384 interpolated entries cover the middle 1536 px (4 px per entry)
-//   - Top 72 entries (288 px) padded with the topmost color (= color[23])
-//   - Bottom 56 entries (224 px) padded with the bottommost color (= color[0])
-//   - Total 512 entries × 4 px/entry = 2048 px = max level height
-//
-// The 384 entries break down as 24 sub-segments × 16 entries each:
+// The 24 keyframes form 23 adjacent-pair segments; each is subdivided into 16
+// sub-steps → 368 ramp entries stretched across the full level extent (no padding):
 //   entry[seg*16 + 0]      = color[23 - seg]                (top-to-bottom)
-//   entry[seg*16 + 1..15]  = linear lerp toward color[23 - seg - 1]
+//   entry[seg*16 + 1..15]  = 5-bit-truncated lerp toward color[23 - seg - 1]
+// so entry 0 = color[23] at the level top and the last entry ≈ color[0] at the
+// bottom. There is deliberately NO top/bottom padding: the cart streams the same
+// 24-keyframe ramp edge-to-edge, so the gradient is only flat at the ends where the
+// preset's own edge keyframes are flat. (An earlier port baked in ~288 px flat
+// top/bottom bands that aren't in the cart data.)
+//
+// Each sub-step lerps the 5-bit BGR channels with INTEGER TRUNCATION (no rounding,
+// no dither): `v_k = base + ((delta * k) >> 4)`, k = 0..15 — exactly what the cart's
+// SuperFX generator (FXCODE_0890E7) does, where `>> 4` floors like the GSU's FMULT.
+// That 5-bit quantization is the whole point: it is what makes the in-game sky
+// visibly BANDED (horizontal stripes), and a smooth 8-bit-rounded ramp (the old
+// behaviour) washed the bands out. We then expand each banded 5-bit value to RGB888
+// the same way every other editor swatch does, so a band matches a CGRAM swatch of
+// the same value.
+//
+// NOTE: the cart's gradient is screen-fixed (HDMA per-scanline, identical every
+// frame regardless of camera). We approximate it as a single world-space ramp across
+// the level, so per-screen band thickness is not 1:1 — but the band colors, the
+// 5-bit quantization, and the edge behaviour are faithful.
 //
 // Output is a 1×2048 RGBA bitmap (consumer tiles horizontally).
 
@@ -46,7 +58,7 @@ import { u16le } from './rom-read.ts';
 
 export const LEVEL_HEIGHT_PX = 2048;
 const GRADIENT_THRESHOLD = 0x10;
-/** Colours per gradient table (24 BGR-15 stops, bottom-to-top). */
+/** Colors per gradient table (24 BGR-15 stops, bottom-to-top). */
 export const GRADIENT_COLOR_COUNT = 24;
 /** Gradient tables in `DATA_bg_gradient_ptrs` — one per BackgroundColor $10..$1F. */
 export const GRADIENT_TABLE_COUNT = 16;
@@ -57,20 +69,25 @@ export function gradientIdForBgColor(backgroundColor: number): number | null {
   return backgroundColor >= GRADIENT_THRESHOLD ? backgroundColor - GRADIENT_THRESHOLD : null;
 }
 const GRADIENT_BYTES = GRADIENT_COLOR_COUNT * 2;
-const ENTRIES_PER_COLOR = 16;
-const PAD_TOP_ENTRIES = 72;
-const PAD_BOTTOM_ENTRIES = 56;
-const INTERP_ENTRIES = GRADIENT_COLOR_COUNT * ENTRIES_PER_COLOR; // 384
-const TOTAL_ENTRIES = PAD_TOP_ENTRIES + INTERP_ENTRIES + PAD_BOTTOM_ENTRIES; // 512
-const PIXELS_PER_ENTRY = LEVEL_HEIGHT_PX / TOTAL_ENTRIES; // 4
-
-if (TOTAL_ENTRIES * PIXELS_PER_ENTRY !== LEVEL_HEIGHT_PX) {
-  throw new Error('backdrop.ts: gradient layout constants do not add up to LEVEL_HEIGHT_PX');
-}
+// The cart subdivides each adjacent keyframe pair into 16 interpolation sub-steps,
+// so 23 segments × 16 = 368 ramp entries cover the whole gradient — no flat padding
+// (see renderGradientColumn). The strip is then stretched across LEVEL_HEIGHT_PX.
+const ENTRIES_PER_SEGMENT = 16;
+const GRADIENT_SEGMENTS = GRADIENT_COLOR_COUNT - 1; // 23
+const STRIP_ENTRIES = GRADIENT_SEGMENTS * ENTRIES_PER_SEGMENT; // 368
 
 export type Backdrop =
   | { kind: 'solid'; color15: number }
-  | { kind: 'gradient'; rgba: Uint8Array; width: number; height: number };
+  | {
+      kind: 'gradient';
+      rgba: Uint8Array;
+      width: number;
+      height: number;
+      /** The 24 effective BGR-15 keyframes (bottom→top) this gradient was built
+       *  from — base ⊕ any live override. Exposed so a screen-relative consumer
+       *  (the editor's Camera Preview) can re-band them at a different height. */
+      stops: number[];
+    };
 
 /**
  * Build the per-level backdrop. CGRAM must already be populated by
@@ -79,7 +96,7 @@ export type Backdrop =
  * `overrideColors` (24 BGR-15 stops) replaces the ROM-read gradient when present —
  * the live-preview seam for the Palette panel's gradient editor (so an unsaved
  * gradient draft previews on the canvas without a rebuild, independent of the
- * built ROM, exactly like `paletteOverride` does for CGRAM colours). Ignored for
+ * built ROM, exactly like `paletteOverride` does for CGRAM colors). Ignored for
  * solid backdrops and when the wrong length.
  */
 export function buildBackdrop(
@@ -101,7 +118,7 @@ export function buildBackdrop(
       ? Uint16Array.from(overrideColors, (c) => c & 0xffff)
       : readGradientColors(rom, symbols, backgroundColor);
   const rgba = renderGradientColumn(colors15);
-  return { kind: 'gradient', rgba, width: 1, height: LEVEL_HEIGHT_PX };
+  return { kind: 'gradient', rgba, width: 1, height: LEVEL_HEIGHT_PX, stops: Array.from(colors15) };
 }
 
 function readGradientColors(
@@ -143,59 +160,56 @@ function readGradientColors(
  * `colors15[0]` = bottom-of-level color; `colors15[23]` = top.
  */
 function renderGradientColumn(colors15: Uint16Array): Uint8Array {
-  // Step 1: build the 512-entry RGB888 strip indexed TOP-TO-BOTTOM
-  // (entry 0 = top of level, entry 511 = bottom).
-  const strip = new Uint8Array(TOTAL_ENTRIES * 3);
+  // Step 1: build the 368-entry RGB888 ramp strip indexed TOP-TO-BOTTOM
+  // (entry 0 = colors15[23] at the level top; last entry ≈ colors15[0] at the
+  // bottom). No padding — the ramp is the whole strip.
+  const strip = new Uint8Array(STRIP_ENTRIES * 3);
 
-  // Decode endpoint colors once.
-  const ep = new Array<{ r: number; g: number; b: number }>(GRADIENT_COLOR_COUNT);
-  for (let i = 0; i < GRADIENT_COLOR_COUNT; i++) {
-    ep[i] = bgr15ToRgb(colors15[i]);
-  }
+  // Write a BGR-15 color into strip entry `e`, expanded to RGB888 the same way
+  // every other editor swatch is (bgr15ToRgb 'expand') — so a gradient band of a
+  // given 5-bit value matches a CGRAM swatch of that value.
+  const writeEntry = (e: number, c15: number): void => {
+    const { r, g, b } = bgr15ToRgb(c15);
+    strip[e * 3 + 0] = r;
+    strip[e * 3 + 1] = g;
+    strip[e * 3 + 2] = b;
+  };
 
-  // Top pad (72 entries) = topmost color (= colors15[23])
-  const top = ep[GRADIENT_COLOR_COUNT - 1];
-  for (let i = 0; i < PAD_TOP_ENTRIES; i++) {
-    strip[i * 3 + 0] = top.r;
-    strip[i * 3 + 1] = top.g;
-    strip[i * 3 + 2] = top.b;
-  }
+  // Endpoint colors as 5-bit BGR channels — the interpolation runs in 5-bit space.
+  const ep = Array.from(colors15, (c15) => ({
+    r: c15 & 0x1f,
+    g: (c15 >>> 5) & 0x1f,
+    b: (c15 >>> 10) & 0x1f
+  }));
 
-  // Middle 384 entries: 24 sub-segments × 16 entries each, walking
-  // colors15[23] → colors15[0] from top to bottom.
-  for (let seg = 0; seg < GRADIENT_COLOR_COUNT; seg++) {
+  // 23 sub-segments × 16 entries, walking colors15[23] → colors15[0] top-to-bottom.
+  // Each sub-step is an INTEGER-TRUNCATED 5-bit lerp — `v_k = base + ((delta*k) >> 4)`,
+  // k = 0..15, masked to 5 bits — matching the cart's SuperFX generator FXCODE_0890E7.
+  // The truncation (NOT rounding) is what bands the sky into horizontal stripes; see
+  // the file header. (`>> 4` floors for a decreasing channel like the GSU's FMULT.)
+  for (let seg = 0; seg < GRADIENT_SEGMENTS; seg++) {
     const from = ep[GRADIENT_COLOR_COUNT - 1 - seg];
-    const to = seg + 1 < GRADIENT_COLOR_COUNT
-      ? ep[GRADIENT_COLOR_COUNT - 1 - (seg + 1)]
-      : from; // last segment holds its color (no further to lerp toward)
-    for (let k = 0; k < ENTRIES_PER_COLOR; k++) {
-      const t = k / ENTRIES_PER_COLOR;
-      const r = Math.round(from.r + (to.r - from.r) * t);
-      const g = Math.round(from.g + (to.g - from.g) * t);
-      const b = Math.round(from.b + (to.b - from.b) * t);
-      const entryIdx = PAD_TOP_ENTRIES + seg * ENTRIES_PER_COLOR + k;
-      strip[entryIdx * 3 + 0] = r;
-      strip[entryIdx * 3 + 1] = g;
-      strip[entryIdx * 3 + 2] = b;
+    const to = ep[GRADIENT_COLOR_COUNT - 1 - (seg + 1)];
+    const dr = to.r - from.r;
+    const dg = to.g - from.g;
+    const db = to.b - from.b;
+    for (let k = 0; k < ENTRIES_PER_SEGMENT; k++) {
+      const r = (from.r + ((dr * k) >> 4)) & 0x1f;
+      const g = (from.g + ((dg * k) >> 4)) & 0x1f;
+      const b = (from.b + ((db * k) >> 4)) & 0x1f;
+      writeEntry(seg * ENTRIES_PER_SEGMENT + k, r | (g << 5) | (b << 10));
     }
   }
 
-  // Bottom pad (56 entries) = bottommost color (= colors15[0])
-  const bot = ep[0];
-  for (let i = 0; i < PAD_BOTTOM_ENTRIES; i++) {
-    const entryIdx = PAD_TOP_ENTRIES + INTERP_ENTRIES + i;
-    strip[entryIdx * 3 + 0] = bot.r;
-    strip[entryIdx * 3 + 1] = bot.g;
-    strip[entryIdx * 3 + 2] = bot.b;
-  }
-
-  // Step 2: expand to 1×LEVEL_HEIGHT_PX RGBA (4 px per entry).
+  // Step 2: expand to 1×LEVEL_HEIGHT_PX RGBA — the 368-entry ramp stretched across
+  // the full level extent (no padding); entry pitch is fractional (~5.57 px).
   const rgba = new Uint8Array(LEVEL_HEIGHT_PX * 4);
   for (let y = 0; y < LEVEL_HEIGHT_PX; y++) {
-    const entry = (y / PIXELS_PER_ENTRY) | 0;
-    rgba[y * 4 + 0] = strip[entry * 3 + 0];
-    rgba[y * 4 + 1] = strip[entry * 3 + 1];
-    rgba[y * 4 + 2] = strip[entry * 3 + 2];
+    let e = ((y * STRIP_ENTRIES) / LEVEL_HEIGHT_PX) | 0;
+    if (e >= STRIP_ENTRIES) e = STRIP_ENTRIES - 1;
+    rgba[y * 4 + 0] = strip[e * 3 + 0];
+    rgba[y * 4 + 1] = strip[e * 3 + 1];
+    rgba[y * 4 + 2] = strip[e * 3 + 2];
     rgba[y * 4 + 3] = 0xff;
   }
   return rgba;
