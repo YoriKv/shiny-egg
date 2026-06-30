@@ -282,6 +282,21 @@ export interface ImportGfxResult {
  * Reports per-kind changed/unchanged/missing counts, errors, and how many other
  * sprites a shared-tile edit propagated to.
  */
+/** The "Changed graphics" role label for a faithful gfx PNG, from its category subfolder — the
+ *  export's OWN classification (bg1-tileset/bg2/bg3/sprites/hud). Stamps a role for files level
+ *  data can't classify (HUD sheets, global sprites), so they don't read "couldn't determine".
+ *  Returns undefined for an unrecognized category (gfxFileRole then covers level-loaded files). */
+function faithfulGfxRole(relFile: string): string | undefined {
+  switch (relFile.split(/[\\/]/)[0]) {
+    case 'bg1-tileset': return 'BG1 tileset'
+    case 'bg2': return 'BG2 background'
+    case 'bg3': return 'BG3 background'
+    case 'sprites': return 'Sprite sheet'
+    case 'hud': return 'HUD / font / status'
+    default: return undefined
+  }
+}
+
 export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportReconciler): Promise<ImportGfxResult> {
   const manifestPath = join(dir, MANIFEST)
   if (!existsSync(manifestPath)) {
@@ -383,7 +398,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
       // savedFileTiles last-write-wins.
       const recordSheet = (full: Uint8Array): void => {
         reconciler.registerManifest([{ format: e.format, fileId: e.fileId, sizeBytes: e.sizeBytes }])
-        reconciler.recordWholeBlob(e.format, e.fileId, full, e.bpp === 4 ? 32 : 16, e.file)
+        reconciler.recordWholeBlob(e.format, e.fileId, full, e.bpp === 4 ? 32 : 16, e.file, faithfulGfxRole(e.file))
         imported++
       }
       // Cropped screen region (e.g. the boot logo): the export is only a w×h tile
@@ -490,7 +505,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
         const { edits } = diffMetaspriteTiles(ctx, canvas, edited)
         if (edits.length === 0) return 'skipped'
         for (const ed of edits) {
-          reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file)
+          reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file, 'Sprite sheet')
           for (const sid of tileSprites.get(`${ed.format}/${ed.fileId}/${ed.fileTile}`) ?? []) if (sid !== e.spriteId) propagated.add(sid)
         }
         return 'imported'
@@ -517,7 +532,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
         if (edits.length === 0) return 'skipped'
         // The icon tiles live in the shared $74/$75 BG files (4bpp); any world's context resolves them.
         reconciler.registerManifest(ctx.manifest)
-        for (const ed of edits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file)
+        for (const ed of edits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file, 'World map char (level icons)')
         return 'imported'
       },
       errors, count: { imported: () => iconImported++, skipped: () => iconSkipped++, missing: () => iconMissing++ }
@@ -588,7 +603,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
           const { tilemap, erased } = diffWorldMapTerrainPlacement(ctx, j.layer, keys, j.cells)
           terrainErased += erased
           if (!tilemap) continue // unchanged layer → no overlay
-          const r = saveGfxEdit('lz2', j.fileId, tilemap, undefined, { kind: 'tilemap', unitBytes: 2 })
+          const r = saveGfxEdit('lz2', j.fileId, tilemap, undefined, { kind: 'tilemap', unitBytes: 2, role: `World map terrain (world ${e.world}, BG${j.layer + 1})` })
           if (r.ok) { mapTerrainImported++; entryChanged = true }
           else errors.push(`${e.file} (0x${j.fileId.toString(16)}): ${r.error}`)
         }
@@ -596,7 +611,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
         // (b) PIXELS: slice the edited tileset back to the shared $74/$75/$4C CHR → reconciler
         // (4bpp, 32-byte tiles; shared across layers/worlds, so conflict-checked cross-file).
         const { edits, conflicts } = diffWorldMapTerrainPixels(ctx, keys, ms.tilePixels, ms.numTiles, ms.palette)
-        if (edits.length > 0) { for (const ed of edits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file); entryChanged = true }
+        if (edits.length > 0) { for (const ed of edits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file, 'World map terrain char'); entryChanged = true }
         if (conflicts > 0) errors.push(`${e.file}: ${conflicts} shared-tile pixel conflict(s) — a char used at multiple palette rows was edited inconsistently; the first edit was kept.`)
         // (c) COLORS: an edited embedded palette → the master blob (independent of a/b).
         if (e.paletteOffsets) {
@@ -624,7 +639,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
         if (erased > 0) errors.push(erasedCellsWarning(mapGround.file, erased))
         if (!tilemap) { mapTerrainSkipped++ } // single-owner $7E tilemap → direct save
         else {
-          const r = saveGfxEdit('lz2', mapGround.fileId, tilemap, undefined, { kind: 'tilemap', unitBytes: 2 })
+          const r = saveGfxEdit('lz2', mapGround.fileId, tilemap, undefined, { kind: 'tilemap', unitBytes: 2, role: 'World map ground (BG3)' })
           if (r.ok) mapTerrainImported++
           else errors.push(`${mapGround.file}: ${r.error}`)
         }
@@ -649,6 +664,15 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
     //    single-owner) + palette (→ reconciler). $7E ground is world-invariant.
     let m1Manifest: GfxFileEntry[] | null = null
     const m1Words = new Map<number, { base: Uint8Array; words: Map<number, number> }>()
+    // fileId → human role for the tilemap files this export round-trips. These are per-world,
+    // not level-loaded, so gfxFileRole can't classify them — the importer stamps the role so the
+    // "Changed graphics" list names them. ($7E ground is world-invariant; last write wins, same label.)
+    const m1TilemapRole = new Map<number, string>()
+    for (const ov of mapM1.overworlds) {
+      m1TilemapRole.set(ov.bg1FileId, `World map terrain (world ${ov.world}, BG1)`)
+      m1TilemapRole.set(ov.bg2FileId, `World map terrain (world ${ov.world}, BG2)`)
+      m1TilemapRole.set(ov.bg3FileId, 'World map ground (BG3)')
+    }
     for (const ov of mapM1.overworlds) {
       const gv = gate(ov.file)
       if (gv === 'missing') { mapTerrainMissing++; continue }
@@ -665,7 +689,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
           errors.push(`${ov.file}: ${d.tileset1Cells} cell${d.tileset1Cells === 1 ? '' : 's'} use tileset 1 (the blank char 0–255 band, shown as a ✕ in M1TE) — these draw unrelated panel graphics in-game. Use tilesets 2–4 for overworld map tiles.`)
         }
         // CHR pixels — 4bpp ($74/$75/$4C) + 2bpp ($56) tiles, each at its own stride → reconciler.
-        for (const e of d.chrEdits) { reconciler.chrTile(e.format, e.fileId, e.fileTile, e.bytes, e.tileBytes, ov.file); entryChanged = true }
+        for (const e of d.chrEdits) { reconciler.chrTile(e.format, e.fileId, e.fileTile, e.bytes, e.tileBytes, ov.file, 'World map char'); entryChanged = true }
         // Tilemap words — accumulate per file (a file's screens/worlds write disjoint offsets).
         for (const w of d.wordEdits) {
           let acc = m1Words.get(w.fileId)
@@ -687,14 +711,16 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
       }
     }
     // Splice each tilemap file's accumulated word edits once (onto the live overlay if any).
+    // This PERSISTS edits already counted per changed .M1 entry above — it must NOT re-count
+    // (counting both double-reported "2 overworld maps changed" for a single edited file).
     for (const [fileId, acc] of m1Words) {
       if (acc.words.size === 0) continue
       const bytes = (liveTiles('lz2', fileId) ?? acc.base).slice()
       let written = 0
       for (const [off, word] of acc.words) if (off >= 0 && off + 1 < bytes.length) { bytes[off] = word & 0xff; bytes[off + 1] = (word >> 8) & 0xff; written++ }
-      const r = saveGfxEdit('lz2', fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2 })
-      if (r.ok) { if (written > 0) mapTerrainImported++ }
-      else errors.push(`overworld tilemap 0x${fileId.toString(16)}: ${r.error}`)
+      if (written === 0) continue
+      const r = saveGfxEdit('lz2', fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2, role: m1TilemapRole.get(fileId) })
+      if (!r.ok) errors.push(`overworld tilemap 0x${fileId.toString(16)}: ${r.error}`)
     }
 
     // ── Icons: per-level pixels → bank-$53 (.bin nibble RMW); marker/castle → the shared
@@ -713,7 +739,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
           if (d.levelWrites.length > 0) levelIconImported += d.levelIconsChanged
           if (d.markerCastleEdits.length > 0) {
             reconciler.registerManifest(m1Manifest ?? buildWorldMapTerrainContext(rom, symbols, 0).scene.manifest)
-            for (const ed of d.markerCastleEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, mfile)
+            for (const ed of d.markerCastleEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, mfile, 'World map char (marker / castle)')
             iconImported += d.markerCastleChanged
           }
           if (d.conflicts > 0) errors.push(`map icons: ${d.conflicts} shared marker/castle tile conflict(s) — the first edit was kept.`)
@@ -933,7 +959,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
           else {
             // f27 is lz2/2bpp → 16-byte tiles; record into the reconciler (shared with the raw f27 sheet).
             reconciler.registerManifest([ctx.f27])
-            for (const ed of pixelEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 16, storybookScene.file)
+            for (const ed of pixelEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 16, storybookScene.file, 'Storybook scene char (f27)')
             sceneImported++
           }
           // Color write-back: an edited embedded palette → the master blob (Aseprite mode
@@ -989,7 +1015,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
           let changed = false
           if (d.chrEdits.length > 0) {
             reconciler.registerManifest([ctx.f27])
-            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, 16, e.file) // f27 lz2/2bpp → 16-byte tiles
+            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, 16, e.file, 'Storybook scene char (f27)') // f27 lz2/2bpp → 16-byte tiles
             changed = true
           }
           accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)

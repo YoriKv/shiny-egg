@@ -61,6 +61,7 @@ export class GfxImportReconciler {
   private raw = new ConflictTracker<Uint8Array>(bytesEq) // key = binFile\toffset
   private meta = new Map<string, ChrFileMeta>()          // 'format/fileId' → re-encode metadata
   private chrTileBytes = new Map<string, number>()       // 'format/fileId' → tile stride
+  private chrRole = new Map<string, string>()            // 'format/fileId' → pipeline-supplied role
 
   /** Register the CHR gfx-file metadata a track knows about (for the re-encode size + lz16 row
    *  count at apply). Idempotent; later registrations of the same id are ignored. */
@@ -71,18 +72,21 @@ export class GfxImportReconciler {
     }
   }
 
-  /** A CHR tile edit (pixels). `tileBytes` = the file's tile stride (BG2 4bpp=32 vs BG3 2bpp=16). */
-  chrTile(format: 'lz2' | 'lz16', fileId: number, fileTile: number, bytes: Uint8Array, tileBytes: number, source: string): void {
+  /** A CHR tile edit (pixels). `tileBytes` = the file's tile stride (BG2 4bpp=32 vs BG3 2bpp=16).
+   *  `role` (optional) names what the file maps to, for files gfxFileRole can't classify from
+   *  level data (world-map char $4C/$56, storybook f27) — folded into the "Changed graphics" detail. */
+  chrTile(format: 'lz2' | 'lz16', fileId: number, fileTile: number, bytes: Uint8Array, tileBytes: number, source: string, role?: string): void {
     const fk = `${format}/${fileId}`
     this.chrTileBytes.set(fk, tileBytes)
+    if (role) this.chrRole.set(fk, role)
     this.chr.record(`${fk}/${fileTile}`, bytes, source)
   }
 
   /** Record a WHOLE decompressed CHR blob as per-tile edits (whole-file authoritative: the
    *  faithful raw sheets / region crops / island $B1 — the literal "whole file"). */
-  recordWholeBlob(format: 'lz2' | 'lz16', fileId: number, blob: Uint8Array, tileBytes: number, source: string): void {
+  recordWholeBlob(format: 'lz2' | 'lz16', fileId: number, blob: Uint8Array, tileBytes: number, source: string, role?: string): void {
     const n = Math.floor(blob.length / tileBytes)
-    for (let t = 0; t < n; t++) this.chrTile(format, fileId, t, blob.slice(t * tileBytes, (t + 1) * tileBytes), tileBytes, source)
+    for (let t = 0; t < n; t++) this.chrTile(format, fileId, t, blob.slice(t * tileBytes, (t + 1) * tileBytes), tileBytes, source, role)
   }
 
   /** A master-palette color (blob byte-offset → BGR-15 word). */
@@ -120,7 +124,7 @@ export class GfxImportReconciler {
       const rowCount = meta.format === 'lz16' ? meta.sizeBytes / 512 : undefined
       const base = (liveTiles(meta.format, meta.fileId) ?? decodeGfxFile(rom, symbols, meta.format, meta.fileId, meta.sizeBytes, rowCount)).slice()
       for (const t of tiles) base.set(t.bytes, t.fileTile * tileBytes)
-      const r = saveGfxEdit(meta.format, meta.fileId, base, rowCount, { kind: 'chr', unitBytes: tileBytes })
+      const r = saveGfxEdit(meta.format, meta.fileId, base, rowCount, { kind: 'chr', unitBytes: tileBytes, role: this.chrRole.get(fk) })
       if (r.ok) applied++
       else conflicts.push(`gfx 0x${meta.fileId.toString(16)}: ${r.error}`)
     }

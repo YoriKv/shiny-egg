@@ -112,14 +112,13 @@ interface Props {
  * and the positioned BG-region export (BG1 area / BG2 / BG3, PNG or Aseprite
  * tilemap). A dropdown picks what's exported; Import auto-detects everything in a
  * folder. Below: the exported-folders list, the changed-graphics reset list, and
- * the last import's log. (Map16 block editing was a separate tab — removed from the UI for
- * now; see the note at the top of this file.)
+ * the panel log (the latest extract / import / reset outcome). (Map16 block editing was a
+ * separate tab — removed from the UI for now; see the note at the top of this file.)
  */
 export function GraphicsBody({
     level, projectScope, onMutated, onPaletteImported, paletteEditCount, onResetPalette, bg1RegionRect, pickingRegion, onStartRegionPick, onClearRegion
 }: Props): JSX.Element {
     const [busy, setBusy] = useState(false)
-    const [status, setStatus] = useState<string | null>(null)
     const [edits, setEdits] = useState<GfxEditEntry[]>([])
     // Per changed-file expandable "what this maps back to" detail (keyed by file).
     const [detail, setDetail] = useState<Record<string, GfxFileRole | 'loading'>>({})
@@ -139,11 +138,11 @@ export function GraphicsBody({
     // so it never overrides an explicit choice.
     const formatTouched = useRef(false)
     const pickFormat = (f: BgRegionFormat): void => { formatTouched.current = true; setExportFormat(f) }
-    // Folders this project has exported to, + the last import's log.
+    // Folders this project has exported to, + the panel log (latest extract / import / reset).
     const [folders, setFolders] = useState<string[]>([])
     // Exported .M1 session files per folder (clickable → open in M1TE), keyed by folder dir.
     const [m1Files, setM1Files] = useState<Record<string, M1ExportFile[]>>({})
-    const [importLog, setImportLog] = useState<{ dir: string; lines: string[]; errors: string[]; warnings: string[] } | null>(null)
+    const [panelLog, setPanelLog] = useState<{ dir: string; lines: string[]; errors: string[]; warnings: string[] } | null>(null)
     // Located Aseprite + its probed version (for opening exported .aseprite projects,
     // and gating the tilemap-export option below).
     const [asepriteInfo, setAsepriteInfo] = useState<AsepriteInfo | null>(null)
@@ -230,12 +229,11 @@ export function GraphicsBody({
 
     // The exported-folders + changed-graphics lists are per-project. Re-fetch when the
     // project changes (switch / ROM import bumps projectScope) so the panel never shows
-    // the previous project's extracts; clear the now-stale import log + status banner too.
+    // the previous project's extracts; clear the now-stale panel log too.
     useEffect(() => {
         void refreshEdits()
         void refreshFolders()
-        setImportLog(null)
-        setStatus(null)
+        setPanelLog(null)
     }, [projectScope, refreshEdits, refreshFolders])
 
     // A pre-1.3 Aseprite can't open tilemap exports — fall the format back to PNG so a
@@ -274,9 +272,9 @@ export function GraphicsBody({
         // The screen tracks are non-level-dependent — exportable with no level loaded;
         // every other target needs the loaded level's header + palette.
         if (!isLevelIndependent(target) && (!header || !level)) return
-        if (target === 'bg1' && !bg1RegionRect) { setStatus('Select an area on the canvas first (shift-drag).'); return }
+        if (target === 'bg1' && !bg1RegionRect) { setPanelLog({ dir: '', lines: [], errors: [], warnings: ['Select an area on the canvas first (shift-drag).'] }); return }
         setBusy(true)
-        setStatus(null)
+        setPanelLog(null)
         // A pre-1.3 Aseprite can't open tilemaps; never emit them (belt-and-braces with
         // the disabled radio + the coercion effect). M1TE2 isn't gated by the Aseprite version.
         // `effectiveFormat` already resolves m1te2/aseprite/png for the current target.
@@ -292,7 +290,7 @@ export function GraphicsBody({
             setBusy(false)
             if ('canceled' in r) return
             if (r.ok) {
-                setStatus(`Extracted ${r.file} (${r.cells} editable cells) to ${folderName(r.dir)}${r.warning ? ` — ⚠ ${r.warning}` : ''}`)
+                setPanelLog({ dir: '', lines: [`Extracted ${r.file} (${r.cells} editable cells) to ${folderName(r.dir)}`], errors: [], warnings: r.warning ? [r.warning] : [] })
                 await refreshFolders()
                 // Auto-open the export in its editor: M1TE for a .M1 (bundled — always
                 // available, opened straight to this BG layer); Aseprite otherwise (PNG /
@@ -302,7 +300,7 @@ export function GraphicsBody({
                     if (fmt === 'm1te2') void window.shinyEgg.editor.openInM1te(r.dir, r.file, regionLayerOf(target))
                     else if (asepritePath) void window.shinyEgg.editor.openInAseprite(r.dir, r.file)
                 }
-            } else setStatus(`Extract failed: ${r.error}`)
+            } else setPanelLog({ dir: '', lines: [], errors: [`Extract failed: ${r.error}`], warnings: [] })
             return
         }
         // Screens + metasprites export PNG or Aseprite; the World Map can also export M1TE2
@@ -321,9 +319,9 @@ export function GraphicsBody({
         if ('canceled' in r) return
         if (r.ok) {
             const unit = gfxFmt === 'png' ? 'PNG' : 'file'
-            setStatus(`Extracted ${r.count} ${unit}${r.count === 1 ? '' : 's'} to ${folderName(r.dir)}`)
+            setPanelLog({ dir: '', lines: [`Extracted ${r.count} ${unit}${r.count === 1 ? '' : 's'} to ${folderName(r.dir)}`], errors: [], warnings: [] })
             await refreshFolders()
-        } else setStatus(`Extract failed: ${r.error}`)
+        } else setPanelLog({ dir: '', lines: [], errors: [`Extract failed: ${r.error}`], warnings: [] })
     }
 
     // Shared display for an import result (per-folder button or the ad-hoc dialog).
@@ -331,12 +329,12 @@ export function GraphicsBody({
         r: Awaited<ReturnType<typeof window.shinyEgg.editor.importGraphics>>
     ): Promise<void> => {
         if ('canceled' in r) return
-        if (!r.ok) { setImportLog({dir: '', lines: [], errors: [r.error], warnings: []}); return }
+        if (!r.ok) { setPanelLog({dir: '', lines: [], errors: [r.error], warnings: []}); return }
         if (r.changed > 0) onMutated()
         // Palette recolors were persisted behind the edit-session's back — tell the app to
         // reload its palette draft so the canvas live-preview shows the imported colors.
         if (r.paletteChanged > 0) onPaletteImported()
-        setImportLog({dir: r.dir, lines: r.log, errors: r.errors, warnings: r.warnings})
+        setPanelLog({dir: r.dir, lines: r.log, errors: r.errors, warnings: r.warnings})
         await refreshEdits()
         await refreshFolders()
     }
@@ -344,7 +342,7 @@ export function GraphicsBody({
     const runImport = async (
         fetch: () => ReturnType<typeof window.shinyEgg.editor.importGraphics>
     ): Promise<void> => {
-        setBusy(true); setImportLog(null)
+        setBusy(true); setPanelLog(null)
         try { await applyImportResult(await fetch()) } finally { setBusy(false) }
     }
     const onImportDialog = (): Promise<void> => runImport(() => window.shinyEgg.editor.importGraphics())
@@ -361,7 +359,8 @@ export function GraphicsBody({
         if (which === 'palette') {
             onResetPalette()
             setPendingReset(null)
-            setStatus('Reset palette colors to vanilla.')
+            // Report into the panel log (the unified extract / import / reset log) so a later import clears it.
+            setPanelLog({ dir: '', lines: ['Reset palette colors to vanilla.'], errors: [], warnings: [] })
             return
         }
         const targets = which === 'all' ? edits : [which]
@@ -382,7 +381,8 @@ export function GraphicsBody({
         if (resetPalette) onResetPalette()
         setPendingReset(null)
         if (removed > 0) onMutated()
-        setStatus(`Reset ${removed} file${removed === 1 ? '' : 's'}${resetPalette ? ' + palette colors' : ''} to vanilla.`)
+        // Report into the panel log (the unified extract / import / reset log) so a later import clears it.
+        setPanelLog({ dir: '', lines: [`Reset ${removed} file${removed === 1 ? '' : 's'}${resetPalette ? ' + palette colors' : ''} to vanilla.`], errors: [], warnings: [] })
         await refreshEdits()
     }
 
@@ -485,34 +485,6 @@ export function GraphicsBody({
                 )}
 
                 <div className="se-graphics__row">
-                    <label className="se-graphics__radio">
-                        <input
-                            type="radio"
-                            name="se-gfx-format"
-                            checked={effectiveFormat === 'png'}
-                            onChange={() => pickFormat('png')}
-                        />
-                        PNG
-                    </label>
-                    <label
-                        className="se-graphics__radio"
-                        title={
-                            tilemapTooOld
-                                ? `Aseprite ${asepriteInfo?.version} can’t open tilemap extracts — needs 1.3+`
-                                : asepriteOk
-                                    ? (isRegion ? 'Edit pixels at 8×8 — a shared CHR tile is one Aseprite tile' : '')
-                                    : 'Aseprite extract is for the BG layers, the screens, the message font / pictures, and metasprites'
-                        }
-                    >
-                        <input
-                            type="radio"
-                            name="se-gfx-format"
-                            checked={effectiveFormat === 'aseprite'}
-                            disabled={!asepriteOk || tilemapTooOld}
-                            onChange={() => pickFormat('aseprite')}
-                        />
-                        Aseprite
-                    </label>
                     <label
                         className="se-graphics__radio"
                         title={
@@ -533,6 +505,34 @@ export function GraphicsBody({
                             onChange={() => pickFormat('m1te2')}
                         />
                         M1TE2 (.M1)
+                    </label>
+                    <label
+                        className="se-graphics__radio"
+                        title={
+                            tilemapTooOld
+                                ? `Aseprite ${asepriteInfo?.version} can’t open tilemap extracts — needs 1.3+`
+                                : asepriteOk
+                                    ? (isRegion ? 'Edit pixels at 8×8 — a shared CHR tile is one Aseprite tile' : '')
+                                    : 'Aseprite extract is for the BG layers, the screens, the message font / pictures, and metasprites'
+                        }
+                    >
+                        <input
+                            type="radio"
+                            name="se-gfx-format"
+                            checked={effectiveFormat === 'aseprite'}
+                            disabled={!asepriteOk || tilemapTooOld}
+                            onChange={() => pickFormat('aseprite')}
+                        />
+                        Aseprite
+                    </label>
+                    <label className="se-graphics__radio">
+                        <input
+                            type="radio"
+                            name="se-gfx-format"
+                            checked={effectiveFormat === 'png'}
+                            onChange={() => pickFormat('png')}
+                        />
+                        PNG
                     </label>
                 </div>
                 {tilemapTooOld && (
@@ -561,25 +561,24 @@ export function GraphicsBody({
                     </button>
                 </div>
 
-                {importLog && (
+                {panelLog && (
                     <div className="se-graphics__log">
-                        {importLog.dir && (
-                            <p className="se-graphics__status" title={importLog.dir}>
-                                Imported from {folderName(importLog.dir)}
+                        {panelLog.dir && (
+                            <p className="se-graphics__status" title={panelLog.dir}>
+                                Imported from {folderName(panelLog.dir)}
                             </p>
                         )}
-                        {importLog.lines.map((line, i) => (
+                        {panelLog.lines.map((line, i) => (
                             <p key={`l${i}`} className="se-graphics__log-line">{line}</p>
                         ))}
-                        {importLog.errors.map((err, i) => (
+                        {panelLog.errors.map((err, i) => (
                             <p key={`e${i}`} className="se-graphics__log-error">⚠ {err}</p>
                         ))}
-                        {importLog.warnings.map((warn, i) => (
+                        {panelLog.warnings.map((warn, i) => (
                             <p key={`w${i}`} className="se-graphics__log-warning">⚠ {warn}</p>
                         ))}
                     </div>
                 )}
-                {status && <p className="se-graphics__status">{status}</p>}
 
                 <div className="se-graphics__changes">
                     <div className="se-graphics__changes-head">

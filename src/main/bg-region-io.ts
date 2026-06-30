@@ -447,7 +447,7 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
             const bytes = src.bytes.slice()
             let written = 0
             for (const e of pd.edits) if (e.fileOffset >= 0 && e.fileOffset + 1 < bytes.length) { bytes[e.fileOffset] = e.word & 0xff; bytes[e.fileOffset + 1] = (e.word >> 8) & 0xff; written++ }
-            const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2 })
+            const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2, role: `BG${sc.layer} tilemap` })
             if (r.ok) { repositioned += written; log.push(`${scFile} (BG${sc.layer} layout): ${written} tile${written === 1 ? '' : 's'} repositioned${pd.skipped ? ` (${pd.skipped} non-editable/new skipped)` : ''}`) }
             else errors.push(`${scFile}: ${r.error}`)
           }
@@ -507,7 +507,7 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
             const bytes = (currentTilemap ?? src.bytes).slice()
             let written = 0
             for (const e of cd.wordEdits) if (e.fileOffset >= 0 && e.fileOffset + 1 < bytes.length) { bytes[e.fileOffset] = e.word & 0xff; bytes[e.fileOffset + 1] = (e.word >> 8) & 0xff; written++ }
-            const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2 })
+            const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2, role: `BG${sc.layer} tilemap` })
             if (r.ok) repositioned += written
             else errors.push(`${scFile}: ${r.error}`)
           }
@@ -616,7 +616,7 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
     // .M1 is the new source of truth — diffed against the cart for CHR pixel bytes (a direct
     // planar compare, no per-row views), tilemap WORDS, and palette colors. CHR edits join the
     // shared per-file patch map; tilemap words accumulate per file and splice once.
-    const m1WordEdits = new Map<number, { src: BgTilemapSource; words: Map<number, number> }>()
+    const m1WordEdits = new Map<number, { src: BgTilemapSource; words: Map<number, number>; layer: BgRegionLayer }>()
     for (const scFile of m1Sidecars) {
       try {
         const sc = JSON.parse(readFileSync(join(dir, scFile), 'utf8')) as M1te2Sidecar
@@ -680,7 +680,7 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
           if (!src) errors.push(`${scFile}: BG${sc.layer} has no static editable tilemap file`)
           else if (tmAddr !== src.vramBase) errors.push(`${scFile}: BG${sc.layer} tilemap base mismatch (0x${tmAddr.toString(16)} vs 0x${src.vramBase.toString(16)})`)
           else {
-            const acc = m1WordEdits.get(src.fileId) ?? { src, words: new Map<number, number>() }
+            const acc = m1WordEdits.get(src.fileId) ?? { src, words: new Map<number, number>(), layer: sc.layer }
             for (const e of d.wordEdits) if (e.fileOffset >= 0) acc.words.set(e.fileOffset, e.word)
             m1WordEdits.set(src.fileId, acc)
           }
@@ -711,12 +711,12 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
       }
     }
     // Splice each tilemap file's accumulated M1TE2 word edits once, onto the live overlay.
-    for (const { src, words } of m1WordEdits.values()) {
+    for (const { src, words, layer } of m1WordEdits.values()) {
       if (words.size === 0) continue
       const bytes = (liveTiles('lz2', src.fileId) ?? src.bytes).slice()
       let written = 0
       for (const [off, word] of words) if (off >= 0 && off + 1 < bytes.length) { bytes[off] = word & 0xff; bytes[off + 1] = (word >> 8) & 0xff; written++ }
-      const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2 })
+      const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2, role: `BG${layer} tilemap` })
       if (r.ok) repositioned += written
       else errors.push(`BG tilemap 0x${src.fileId.toString(16)}: ${r.error}`)
     }

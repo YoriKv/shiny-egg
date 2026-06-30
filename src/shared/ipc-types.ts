@@ -735,6 +735,10 @@ export interface GfxEditChange {
   totalUnits: number
   /** The diff stride that defines a unit (CHR tile = 16/32, tilemap word = 2, raw = 1). */
   unitBytes: number
+  /** What the file maps to, supplied by the writing pipeline when it knows (e.g. "World map
+   *  terrain (world 0, BG1)") — the authoritative source for files `gfxFileRole` can't classify
+   *  from level data (per-world tilemaps, BG2/BG3 tilemap files). Folded into the "Maps to" detail. */
+  role?: string
 }
 
 /** One overlay-edited graphics file in the active project (the "Changed graphics"

@@ -329,8 +329,10 @@ export function saveGfxEdit(
   rowCount?: number,
   /** The editing pipeline's authoritative classification of this file (CHR pixels vs a
    *  placement tilemap) + the diff stride — so the "Changed graphics" inventory records the
-   *  exact change vs base instead of guessing. Omit only for callers that don't track it. */
-  change?: { kind: Extract<GfxEditKind, 'chr' | 'tilemap'>; unitBytes: number }
+   *  exact change vs base instead of guessing. `role` names what the file maps to when the
+   *  pipeline knows it (for files gfxFileRole can't classify from level data, e.g. per-world
+   *  tilemaps). Omit only for callers that don't track it. */
+  change?: { kind: Extract<GfxEditKind, 'chr' | 'tilemap'>; unitBytes: number; role?: string }
 ): { ok: true; file: string } | { ok: false; error: string } {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to save into.' }
@@ -355,7 +357,7 @@ export function saveGfxEdit(
       try {
         let base: Uint8Array
         try { base = gfxBaseTiles(format, fileId, tiles.length) } catch { base = new Uint8Array(0) }
-        recordGfxEditChange(file, { kind: change.kind, ...countChangedUnits(tiles, base, change.unitBytes), unitBytes: change.unitBytes })
+        recordGfxEditChange(file, { kind: change.kind, ...countChangedUnits(tiles, base, change.unitBytes), unitBytes: change.unitBytes, role: change.role })
       } catch { /* metadata is best-effort */ }
     }
     return { ok: true, file }
@@ -798,6 +800,11 @@ export function gfxFileRole(file: string): GfxFileRole {
     } else if (name.endsWith('.bin')) {
       roles.add(RAW_CHR_EDIT_LABELS[name] ?? 'Raw CHR graphics')
     }
+    // The role the writing pipeline stamped with the edit — authoritative for files level
+    // data can't classify (per-world tilemaps, BG2/BG3 tilemap files). Folded in alongside
+    // any structural role above.
+    const stamped = readGfxEditChanges()[file.replace(/\\/g, '/')]?.role
+    if (stamped) roles.add(stamped)
   } catch { /* fall through to empty */ }
   return { roles: [...roles] }
 }

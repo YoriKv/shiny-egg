@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.5 - 2026-06-30
+
+- Even more graphics export adjustments and bug fixes.
+
 ## v0.5.4 - 2026-06-30
 
 - More M1TE improvements.
