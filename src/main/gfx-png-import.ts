@@ -27,17 +27,21 @@
 //   title island            ✓        ✓        COMBINED: Mode-7 tilemap + $B1 CPC char (+ new-char alloc)
 //
 // ── Pipeline shape (shared steps factored; genuine differences kept per-track) ──
+// • Every per-file loop opens with the CHECKSUM GATE (`gate(e.file)` → changedSinceExport):
+//   an artifact still matching its export-time sha256 is skipped (the user didn't touch it),
+//   so a stale/unedited file can't revert a newer edit on re-import (the anti-thrash fix).
 // • decodeEditedToRgba (gfx-import-utils.ts): the one ".aseprite image/region OR .png" decode
 //   gate, used by every assembled-view importer.
 // • runAssembledTrack + makeCtxCache (below): the assembled-pixel loop skeleton
-//   (faithful → exists → render → decode → diff → count) shared by metasprite / world-map
-//   icon / level icon; each supplies a `apply` callback for its bespoke diff + accumulation.
-// • addTilePatches / applyTilePatches: the pixel→saveGfxEdit accumulation, shared by every
-//   track whose pixels land in LZ2/LZ16 char files.
-// The COMBINED tracks (terrain/ground/logo/island) share decodeEditedToRgba + applyTilePatches
-// but keep per-track loops: their placement save TARGET genuinely differs (LZ2 tilemap vs the
-// async asm-overlay saveLogoTilemap/saveIslandTilemap) and island adds new-char allocation, so
-// a single driver would obscure more than it merges.
+//   (gate → render → decode → diff → record) shared by metasprite / world-map icon / level icon.
+// • A changed file RECORDS its CHR-tile / palette-color / raw-CHR edits into the shared
+//   `GfxImportReconciler` (passed in) — tagged by source file — which merges across tracks AND
+//   the BG-region importer, conflict-checks (two files disagree on one tile/color → skip + log),
+//   and writes ONCE in graphics-folder-io. Single-owner PLACEMENT (per-world/layer tilemap
+//   words, logo/island asm overlays) is written DIRECTLY here (can't cross-file-conflict).
+// The COMBINED tracks (terrain/ground/logo/island) keep per-track loops: their placement save
+// TARGET genuinely differs (LZ2 tilemap vs the async asm-overlay saveLogoTilemap/saveIslandTilemap)
+// and island adds new-char allocation, so a single driver would obscure more than it merges.
 //
 // • `tileKeys` convention: every COMBINED track's manifest entry carries a per-tileset-tile
 //   key list (the file's own tileset order) so the import maps each tile/cell back to its cart
@@ -105,21 +109,22 @@ import {
 import { glyphWritesForSprite } from 'snes-framework/sprite-glyph'
 import { encodeFontSheet } from 'snes-framework/msg-font'
 import { decodePng } from 'snes-framework/png'
-import { canvasRegion, decodeEditedToRgba, decodeGfxFile, liveTiles, addTilePatches, applyTilePatches, type FilePatchMap, type SlicedTileEdit } from './gfx-import-utils'
+import { canvasRegion, decodeEditedToRgba, decodeGfxFile, liveTiles } from './gfx-import-utils'
+import { changedSinceExport, type GfxImportReconciler } from './gfx-import-reconcile'
 import { imageToGfx, lz16Layout, lz2Layout } from 'snes-framework/gfx-png'
 import { diffGfxFileAseprite, diffAsepritePalette } from 'snes-framework/gfx-aseprite'
 import { basePaletteWords, PALETTE_BLOB_BANK_FILE } from 'snes-framework/palette-edit'
-import type { PaletteEdit } from 'snes-framework/types'
 import { decodeAsepriteRegion, decodeAsepriteStructural, decodeAsepriteMultiStructural, decodeAsepriteImage, type AsepriteCell } from 'snes-framework/aseprite'
 import { type SymbolMap } from 'snes-framework/symbol-map'
 import type { GfxFileEntry } from 'snes-framework/load-graphics'
 import type { RenderHeaderRequest } from '../shared/ipc-types'
 import { loadRomAndSymbols } from './render/rom-cache'
 import { gfxLiveEdits } from './gfx-live-cache'
-import { saveGfxEdit, saveRawChrEdit, saveIslandTilemap, saveLogoTilemap, loadPaletteEdits, savePaletteEdits, loadLogoTilemapEdits, loadIslandTilemapEdits, applyScreenPlacementOverlays, applyRawChrOverlays, readRawChrBase } from './resources'
+import { saveGfxEdit, saveIslandTilemap, saveLogoTilemap, loadPaletteEdits, loadLogoTilemapEdits, loadIslandTilemapEdits, applyScreenPlacementOverlays, applyRawChrOverlays, readRawChrBase } from './resources'
 import { frameworkWorkRoot } from './framework-paths'
 import {
   MANIFEST,
+  type GfxManifestChecksums,
   type GfxManifestEntry,
   type MetaspriteManifestEntry,
   type GlyphManifestEntry,
@@ -144,13 +149,14 @@ const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a
 const erasedCellsWarning = (label: string, n: number): string =>
   `${label}: ${n} erased cell${n === 1 ? '' : 's'} set to the backdrop tile — this may look unexpected in-game; to blank a cell, paint the backdrop tile instead.`
 
-/** Decompress a gfx file's base blob to tile bytes (for the changed-vs-base check). */
+/** Decompress a gfx file's base blob to tile bytes — the live-preview base imageToGfx slices
+ *  against for index fidelity (NOT the change gate; the checksum decides change). */
 const decodeBase = (rom: Uint8Array, symbols: SymbolMap, e: GfxManifestEntry): Uint8Array =>
   liveTiles(e.format, e.fileId) ?? decodeGfxFile(rom, symbols, e.format, e.fileId, e.sizeBytes, e.rowCount)
 
-// The pixel→saveGfxEdit accumulation (FilePatchMap / addTilePatches / applyTilePatches) lives
-// in gfx-import-utils.ts — shared with bg-region-io.ts so both importers merge edits to the
-// same CHR file through one `savedFileTiles` cache.
+// CHR tiles / palette colors / raw-CHR all flow into the shared `GfxImportReconciler` (passed
+// in), which merges them across this importer AND bg-region-io.ts, conflict-checks, and writes
+// once — replacing the old per-importer FilePatchMap/savedFileTiles last-write-wins accumulation.
 
 /** A per-world context cache: `build(world)` is run once per world, memoized. Shared by
  *  the assembled per-world tracks (world-map icons, level icons) so each resolves its
@@ -165,18 +171,19 @@ function makeCtxCache<C>(build: (world: number) => C): { get: (world: number) =>
 
 /**
  * The shared loop for an "assembled-view" pixel track (metasprite / world-map icon / level
- * icon): per entry — skip non-faithful, resolve a context (`ctxOf`), re-render the assembled
- * canvas (`render`; must still be faithfully reconstructable), flatten the edited file to
- * RGBA (the shared `decodeEditedToRgba`, single-image mode), then hand `(ctx, canvas, edited)`
- * to `apply` — which owns the bespoke diff + write accumulation and returns `'imported'`
- * (edits found), `'skipped'` (unchanged), or `'error'` (apply already pushed its own error;
- * count nothing). A throw becomes an error entry. The post-loop flush (applyTilePatches /
- * saveRawChrEdit over the accumulator `apply` wrote into) stays with the caller —
- * accumulation targets differ per track (filePatches vs raw-CHR writes).
+ * icon): per entry — skip non-faithful, apply the CHECKSUM GATE (`args.gate` → skip files
+ * unedited since export), resolve a context (`ctxOf`), re-render the assembled canvas
+ * (`render`; must still be faithfully reconstructable), flatten the edited file to RGBA (the
+ * shared `decodeEditedToRgba`, single-image mode), then hand `(ctx, canvas, edited)` to `apply`
+ * — which owns the bespoke diff + RECORDS the edits into the shared reconciler, returning
+ * `'imported'` (edits found), `'skipped'` (unchanged), or `'error'` (apply already pushed its
+ * own error; count nothing). A throw becomes an error entry.
  */
 function runAssembledTrack<E extends { file: string; faithful?: boolean }, C, K extends { width: number; height: number; faithful?: boolean }>(args: {
   entries: readonly E[]
   dir: string
+  /** The checksum gate — `'unchanged'` files (still matching their export hash) are skipped. */
+  gate: (relFile: string) => 'missing' | 'unchanged' | 'changed'
   ctxOf: (e: E) => C
   render: (ctx: C, e: E) => K | null
   notReconstructable: (e: E) => string
@@ -186,8 +193,10 @@ function runAssembledTrack<E extends { file: string; faithful?: boolean }, C, K 
 }): void {
   for (const e of args.entries) {
     if (!e.faithful) continue
+    const g = args.gate(e.file)
+    if (g === 'missing') { args.count.missing(); continue }
+    if (g === 'unchanged') { args.count.skipped(); continue } // unedited since export → skip
     const p = join(args.dir, e.file)
-    if (!existsSync(p)) { args.count.missing(); continue }
     const ctx = args.ctxOf(e)
     const canvas = args.render(ctx, e)
     if (!canvas || !canvas.faithful) { args.errors.push(args.notReconstructable(e)); continue }
@@ -273,12 +282,13 @@ export interface ImportGfxResult {
  * Reports per-kind changed/unchanged/missing counts, errors, and how many other
  * sprites a shared-tile edit propagated to.
  */
-export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult> {
+export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportReconciler): Promise<ImportGfxResult> {
   const manifestPath = join(dir, MANIFEST)
   if (!existsSync(manifestPath)) {
     throw new Error(`No ${MANIFEST} in the selected folder — pick a folder you exported to.`)
   }
-  const { entries, metasprites, glyphs, mapIcons, levelIcons, mapTerrain, mapGround, mapM1, screenM1, titleLogo, titleIsland, titleScenery, storybookScene, fonts } = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+  const { checksums, entries, metasprites, glyphs, mapIcons, levelIcons, mapTerrain, mapGround, mapM1, screenM1, titleLogo, titleIsland, titleScenery, storybookScene, fonts } = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+    checksums?: GfxManifestChecksums
     entries: GfxManifestEntry[]
     metasprites?: { header: RenderHeaderRequest; sprites: MetaspriteManifestEntry[] }
     glyphs?: { header: RenderHeaderRequest; sprites: GlyphManifestEntry[] }
@@ -316,25 +326,25 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     if (placed || raw) rom = copy
   }
   let imported = 0, skipped = 0, missing = 0
+  let paletteImported = 0
   const errors: string[] = []
+  // The CHECKSUM GATE (gfx-import-reconcile.ts): an artifact whose bytes still match its
+  // export-time sha256 is skipped — the user didn't touch it, so it contributes nothing and
+  // can't revert a newer edit (the anti-thrash fix). A pre-checksum export (no `checksums`)
+  // imports unconditionally, as before.
+  const gate = (relFile: string): 'missing' | 'unchanged' | 'changed' => changedSinceExport(dir, relFile, checksums?.[relFile])
   // Fold a placement DELTA (cells changed vs base ⊕ overlay) into the existing FULL-SET overlay
-  // → the new full set for saveLogoTilemap/saveIslandTilemap (which write base ⊕ set). A cell
-  // the user reset to its base word rides along as a base-valued entry; the save skips it, so
-  // the overlay drops it. Empty delta is never passed here (callers guard on it).
+  // → the new full set for saveLogoTilemap/saveIslandTilemap (which write base ⊕ set). Screen
+  // placement is single-owner (only the logo/island track writes its tilemap), so it stays a
+  // direct save here rather than going through the cross-file reconciler.
   const mergePlacement = <T extends { offset: number; value: number }>(existing: readonly T[], delta: readonly T[]): { offset: number; value: number }[] => {
     const m = new Map<number, number>(existing.map((e) => [e.offset, e.value]))
     for (const e of delta) m.set(e.offset, e.value)
     return [...m].map(([offset, value]) => ({ offset, value }))
   }
-  // Saved tiles per gfx file (`format/fileId`), so a metasprite edit to the same
-  // sheet patches ON TOP of a raw-sheet edit instead of clobbering it.
-  const savedFileTiles = new Map<string, Uint8Array>()
-  // Screen-palette color write-back: every screen `.aseprite` track that carries
-  // `paletteOffsets` diffs its embedded palette against the EFFECTIVE current blob
-  // (base ⊕ the panel's existing palette edits) and accumulates `offset → BGR-15` here;
-  // one merged `savePaletteEdits` flush at the end (savePaletteEdits is a full-set
-  // replace shared with the Palette panel, so screen edits must merge, not clobber).
-  const screenPaletteEdits = new Map<number, number>()
+  // Palette-color comparison baseline: the EFFECTIVE current blob (base ⊕ the panel's existing
+  // palette edits). diffAsepritePalette reports only entries the imported palette CHANGED vs
+  // this, and each goes to the shared reconciler (which merges + conflict-checks across files).
   let _effectiveBlobWords: Map<number, number> | null = null
   const effectiveBlobWords = (): Map<number, number> => {
     if (_effectiveBlobWords) return _effectiveBlobWords
@@ -345,27 +355,37 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     return w
   }
   // Image-track (imageAseprite) palette write-back: diff each entry's embedded palette
-  // (`.aseprite` only) against the current blob → screenPaletteEdits. Runs separately from
-  // the pixel driver (which only hands `apply` the flattened RGBA, not the palette).
-  const accumImagePalette = (entries: readonly { file: string; paletteOffsets?: number[] }[]): void => {
-    for (const e of entries) {
-      if (!e.paletteOffsets) continue
-      const p = join(dir, e.file)
-      if (!existsSync(p) || !p.endsWith('.aseprite')) continue
+  // (`.aseprite` only) against the current blob → the reconciler. Runs separately from the
+  // pixel driver (which only hands `apply` the flattened RGBA, not the palette). Gated by
+  // checksum so an untouched export contributes nothing.
+  const accumImagePalette = (pentries: readonly { file: string; paletteOffsets?: number[] }[]): void => {
+    for (const e of pentries) {
+      if (!e.paletteOffsets || !e.file.endsWith('.aseprite') || gate(e.file) !== 'changed') continue
       try {
-        const asePal = decodeAsepriteImage(readFileSync(p)).palette
-        for (const ed of diffAsepritePalette(asePal, e.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
+        const asePal = decodeAsepriteImage(readFileSync(join(dir, e.file))).palette
+        for (const ed of diffAsepritePalette(asePal, e.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, e.file); paletteImported++ }
       } catch { /* the pixel driver already reports unreadable files */ }
     }
   }
   accumImagePalette(entries) // COLORS: region-crop (boot logo) embedded palette → master blob
   for (const e of entries) {
+    const gv = gate(e.file)
+    if (gv === 'missing') { missing++; continue }
+    if (gv === 'unchanged') { skipped++; continue }
     const p = join(dir, e.file)
-    if (!existsSync(p)) { missing++; continue }
     try {
       // Base-aware: unedited pixels keep their original index, so an untouched
       // file round-trips byte-exact (even with duplicate palette colors).
       const base = decodeBase(rom, symbols, e)
+      // Whole-file authoritative: a CHANGED sheet records its ENTIRE decompressed blob as
+      // per-tile edits into the shared reconciler (which re-encodes + saves once, conflict-
+      // checking shared tiles vs every other track). Replaces the old direct saveGfxEdit +
+      // savedFileTiles last-write-wins.
+      const recordSheet = (full: Uint8Array): void => {
+        reconciler.registerManifest([{ format: e.format, fileId: e.fileId, sizeBytes: e.sizeBytes }])
+        reconciler.recordWholeBlob(e.format, e.fileId, full, e.bpp === 4 ? 32 : 16, e.file)
+        imported++
+      }
       // Cropped screen region (e.g. the boot logo): the export is only a w×h tile
       // sub-grid of the file — a PNG, OR a single-image `.aseprite` (no tilemap). Slice
       // it against the file's base sub-region, splice the changed tiles into the full
@@ -400,9 +420,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         }
         const full = base.slice()
         cut(editedRegion, full, true)
-        const r = saveGfxEdit(e.format, e.fileId, full, e.rowCount)
-        if (r.ok) { imported++; savedFileTiles.set(`${e.format}/${e.fileId}`, full.slice()) }
-        else errors.push(`${e.file}: ${r.error}`)
+        recordSheet(full)
         continue
       }
       // Faithful Aseprite tileset (`.aseprite`, full file, SINGLE palette): flatten +
@@ -418,10 +436,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         const tileBytes = e.bpp === 4 ? 32 : 16
         const full = base.slice()
         for (const ed of edits) full.set(ed.bytes, ed.tileIndex * tileBytes)
-        const tiles = full.subarray(0, e.sizeBytes)
-        const r = saveGfxEdit(e.format, e.fileId, tiles, e.rowCount)
-        if (r.ok) { imported++; savedFileTiles.set(`${e.format}/${e.fileId}`, tiles.slice()) }
-        else errors.push(`${e.file}: ${r.error}`)
+        recordSheet(full.subarray(0, e.sizeBytes))
         continue
       }
       // PNG, or a per-tile-palette single-image `.aseprite` (the storybook sheets) — the
@@ -435,10 +450,8 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
             e.perTilePalette!.subPalettes[e.perTilePalette!.tileSub[t] ?? 0] ?? e.perTilePalette!.subPalettes[0]!
         : undefined
       const tiles = imageToGfx(img, layout, { base, index0Transparent: e.index0Transparent, tilePalette }).subarray(0, e.sizeBytes)
-      if (eq(tiles, base)) { skipped++; continue } // unchanged → no overlay
-      const r = saveGfxEdit(e.format, e.fileId, tiles, e.rowCount)
-      if (r.ok) { imported++; savedFileTiles.set(`${e.format}/${e.fileId}`, tiles.slice()) }
-      else errors.push(`${e.file}: ${r.error}`)
+      if (eq(tiles, base)) { skipped++; continue } // checksum changed but pixels identical → no-op
+      recordSheet(tiles)
     } catch (err) {
       errors.push(`${e.file}: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -463,11 +476,13 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       const k = `${u.format}/${u.fileId}/${u.fileTile}`
       ;(tileSprites.get(k) ?? tileSprites.set(k, new Set()).get(k)!).add(sid)
     }
-    // Accumulate tile patches per gfx file across all edited metasprites.
-    const filePatches: FilePatchMap = new Map()
+    // Record each edited tile into the shared reconciler, tagged by its sprite file, so two
+    // sprite views that paint a shared tile differently conflict (skipped + logged) instead of
+    // silently last-write-wins. Sprites are 4bpp (32-byte tiles).
+    reconciler.registerManifest(ctx.manifest)
     const propagated = new Set<number>()
     runAssembledTrack({
-      entries: metasprites.sprites, dir,
+      entries: metasprites.sprites, dir, gate,
       ctxOf: () => ctx,
       render: (_ctx, e) => canvases.get(e.spriteId) ?? null, // pre-rendered above (faithful only)
       notReconstructable: (e) => `${e.file}: sprite 0x${e.spriteId.toString(16)} no longer faithfully reconstructable`,
@@ -475,10 +490,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         const { edits } = diffMetaspriteTiles(ctx, canvas, edited)
         if (edits.length === 0) return 'skipped'
         for (const ed of edits) {
-          const key = `${ed.format}/${ed.fileId}`
-          const fp = filePatches.get(key) ?? { fileId: ed.fileId, format: ed.format, tiles: new Map<number, Uint8Array>() }
-          fp.tiles.set(ed.fileTile, ed.bytes)
-          filePatches.set(key, fp)
+          reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file)
           for (const sid of tileSprites.get(`${ed.format}/${ed.fileId}/${ed.fileTile}`) ?? []) if (sid !== e.spriteId) propagated.add(sid)
         }
         return 'imported'
@@ -486,9 +498,6 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       errors, count: { imported: () => spriteImported++, skipped: () => spriteSkipped++, missing: () => spriteMissing++ }
     })
     spritePropagated = propagated.size
-    // Sprites are 4bpp (32-byte tiles); start each file from any prior edit, splice
-    // the changed tiles, re-encode.
-    applyTilePatches(filePatches, { manifest: ctx.manifest, scope: 'this level', tileBytesOf: () => 32, rom, symbols, savedFileTiles, errors })
   }
 
   // World-map level-slot icon edits → the shared $74/$75 BG gfx files (via
@@ -498,22 +507,21 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   let iconImported = 0, iconSkipped = 0, iconMissing = 0
   if (mapIcons && mapIcons.length > 0) {
     const ctxCache = makeCtxCache((w) => buildWorldMapIconContext(rom, symbols, w, gfxLiveEdits()))
-    const filePatches: FilePatchMap = new Map()
     runAssembledTrack({
-      entries: mapIcons, dir,
+      entries: mapIcons, dir, gate,
       ctxOf: (e) => ctxCache.get(e.world),
       render: (ctx, e) => renderWorldMapIcon(ctx, e.name),
       notReconstructable: (e) => `${e.file}: world-map ${e.name} icon no longer faithfully reconstructable`,
-      apply: (ctx, canvas, edited) => {
+      apply: (ctx, canvas, edited, e) => {
         const { edits } = diffWorldMapIconTiles(ctx, canvas, edited)
         if (edits.length === 0) return 'skipped'
-        addTilePatches(filePatches, edits)
+        // The icon tiles live in the shared $74/$75 BG files (4bpp); any world's context resolves them.
+        reconciler.registerManifest(ctx.manifest)
+        for (const ed of edits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file)
         return 'imported'
       },
       errors, count: { imported: () => iconImported++, skipped: () => iconSkipped++, missing: () => iconMissing++ }
     })
-    // The icon tiles live in the shared $74/$75 BG files (4bpp); any world's context resolves them.
-    applyTilePatches(filePatches, { manifest: ctxCache.first()?.manifest ?? [], scope: 'the world map', tileBytesOf: () => 32, rom, symbols, savedFileTiles, errors })
     accumImagePalette(mapIcons) // COLORS: edited icon palette → master blob
   }
 
@@ -524,9 +532,8 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   let levelIconImported = 0, levelIconSkipped = 0, levelIconMissing = 0
   if (levelIcons && levelIcons.length > 0) {
     const ctxCache = makeCtxCache((w) => buildLevelIconContext(rom, symbols, w))
-    const writes: { binFile: string; offset: number; bytes: Uint8Array }[] = []
     runAssembledTrack({
-      entries: levelIcons, dir,
+      entries: levelIcons, dir, gate,
       ctxOf: (e) => ctxCache.get(e.world),
       render: (ctx, e) => renderWorldMapLevelIcon(ctx, e.slot),
       notReconstructable: (e) => `${e.file}: level icon (world ${e.world} slot ${e.slot}) no longer reconstructable`,
@@ -534,15 +541,11 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         const res = sliceLevelIconWrites(ctx, canvas, edited)
         if (!res) { errors.push(`${e.file}: icon source not in a known $53 bin`); return 'error' }
         if (!res.changed) return 'skipped'
-        writes.push(...res.writes)
+        for (const w of res.writes) reconciler.rawChr(w.binFile, w.offset, w.bytes, e.file)
         return 'imported'
       },
       errors, count: { imported: () => levelIconImported++, skipped: () => levelIconSkipped++, missing: () => levelIconMissing++ }
     })
-    if (writes.length > 0) {
-      const r = saveRawChrEdit(writes)
-      if (!r.ok) { errors.push(`level icons: ${r.error}`); levelIconImported = 0 }
-    }
     accumImagePalette(levelIcons) // COLORS: edited level-icon palette → master blob
   }
 
@@ -557,16 +560,16 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   //     (those char files are SHARED across both layers and all worlds, so an edit propagates
   //     — same as the panel/icon char).
   let mapTerrainImported = 0, mapTerrainSkipped = 0, mapTerrainMissing = 0
-  const mapTerrainPatches: FilePatchMap = new Map()
-  let mapTerrainManifestRef: GfxFileEntry[] | null = null
   if (mapTerrain && mapTerrain.length > 0) {
     for (const e of mapTerrain) {
+      const gv = gate(e.file)
+      if (gv === 'missing') { mapTerrainMissing++; continue }
+      if (gv === 'unchanged') { mapTerrainSkipped++; continue }
       const p = join(dir, e.file)
-      if (!existsSync(p)) { mapTerrainMissing++; continue }
       if (!e.file.endsWith('.aseprite')) { mapTerrainSkipped++; continue } // PNG = view-only
       try {
         const ctx = buildWorldMapTerrainContext(rom, symbols, e.world, gfxLiveEdits())
-        mapTerrainManifestRef = ctx.scene.manifest
+        reconciler.registerManifest(ctx.scene.manifest)
         const ms = decodeAsepriteMultiStructural(readFileSync(p))
         // The per-tile (char,pal,prio) key list, read from the manifest (the file's own
         // tileset order) — NOT re-derived. Fallback to deriving it only if an older export
@@ -585,53 +588,49 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
           const { tilemap, erased } = diffWorldMapTerrainPlacement(ctx, j.layer, keys, j.cells)
           terrainErased += erased
           if (!tilemap) continue // unchanged layer → no overlay
-          const r = saveGfxEdit('lz2', j.fileId, tilemap)
+          const r = saveGfxEdit('lz2', j.fileId, tilemap, undefined, { kind: 'tilemap', unitBytes: 2 })
           if (r.ok) { mapTerrainImported++; entryChanged = true }
           else errors.push(`${e.file} (0x${j.fileId.toString(16)}): ${r.error}`)
         }
         if (terrainErased > 0) errors.push(erasedCellsWarning(e.file, terrainErased))
-        // (b) PIXELS: slice the edited tileset back to the shared $74/$75/$4C CHR.
+        // (b) PIXELS: slice the edited tileset back to the shared $74/$75/$4C CHR → reconciler
+        // (4bpp, 32-byte tiles; shared across layers/worlds, so conflict-checked cross-file).
         const { edits, conflicts } = diffWorldMapTerrainPixels(ctx, keys, ms.tilePixels, ms.numTiles, ms.palette)
-        if (edits.length > 0) { addTilePatches(mapTerrainPatches, edits); entryChanged = true }
+        if (edits.length > 0) { for (const ed of edits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, e.file); entryChanged = true }
         if (conflicts > 0) errors.push(`${e.file}: ${conflicts} shared-tile pixel conflict(s) — a char used at multiple palette rows was edited inconsistently; the first edit was kept.`)
         // (c) COLORS: an edited embedded palette → the master blob (independent of a/b).
         if (e.paletteOffsets) {
-          for (const ed of diffAsepritePalette(ms.palette, e.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
+          for (const ed of diffAsepritePalette(ms.palette, e.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, e.file); paletteImported++ }
         }
         if (!entryChanged) mapTerrainSkipped++
       } catch (err) {
         errors.push(`${e.file}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
-    // Apply the accumulated pixel edits to the shared char files (merging with any prior
-    // raw-sheet / icon edits via savedFileTiles). Map gfx files are all 4bpp (32 B/tile).
-    if (mapTerrainPatches.size > 0 && mapTerrainManifestRef) {
-      applyTilePatches(mapTerrainPatches, { manifest: mapTerrainManifestRef, scope: 'the overworld map', tileBytesOf: () => 32, rom, symbols, savedFileTiles, errors })
-      mapTerrainImported += mapTerrainPatches.size
-    }
   }
   // The shared decorative-ground layout ($7E) — same model, one file. Counted with the
   // overworld-map track above. (PNG = view-only; only the .aseprite carries layout.)
   if (mapGround) {
-    const p = join(dir, mapGround.file)
-    if (!existsSync(p)) { mapTerrainMissing++ }
+    const gv = gate(mapGround.file)
+    if (gv === 'missing') { mapTerrainMissing++ }
+    else if (gv === 'unchanged') { mapTerrainSkipped++ }
     else if (!mapGround.file.endsWith('.aseprite')) { mapTerrainSkipped++ }
     else {
       try {
         const ctx = buildWorldMapGroundContext(rom, symbols)
         const keys = mapGround.tileKeys ?? groundTileKeys(ctx) // from manifest; derive only for old exports
-        const struct = decodeAsepriteStructural(readFileSync(p))
+        const struct = decodeAsepriteStructural(readFileSync(join(dir, mapGround.file)))
         const { tilemap, erased } = diffWorldMapGroundPlacement(ctx, keys, struct)
         if (erased > 0) errors.push(erasedCellsWarning(mapGround.file, erased))
-        if (!tilemap) { mapTerrainSkipped++ }
+        if (!tilemap) { mapTerrainSkipped++ } // single-owner $7E tilemap → direct save
         else {
-          const r = saveGfxEdit('lz2', mapGround.fileId, tilemap)
+          const r = saveGfxEdit('lz2', mapGround.fileId, tilemap, undefined, { kind: 'tilemap', unitBytes: 2 })
           if (r.ok) mapTerrainImported++
           else errors.push(`${mapGround.file}: ${r.error}`)
         }
         // COLORS: an edited embedded palette → the master blob (independent of placement).
         if (mapGround.paletteOffsets) {
-          for (const ed of diffAsepritePalette(struct.palette, mapGround.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
+          for (const ed of diffAsepritePalette(struct.palette, mapGround.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, mapGround.file); paletteImported++ }
         }
       } catch (err) {
         errors.push(`${mapGround.file}: ${err instanceof Error ? err.message : String(err)}`)
@@ -646,21 +645,27 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   // existing overworld/icon tallies. The .M1 itself is the source of truth — the engine
   // re-derives the scene/grid from the cart (world-map-m1te2.ts).
   if (mapM1) {
-    // ── Overworld: CHR pixels (per file) + tilemap words (per file, merged across all worlds
-    //    — $7E ground is world-invariant) + palette (→ master blob).
-    const m1Patches: FilePatchMap = new Map()
+    // ── Overworld: CHR pixels (per file → reconciler) + tilemap words (per file, direct,
+    //    single-owner) + palette (→ reconciler). $7E ground is world-invariant.
     let m1Manifest: GfxFileEntry[] | null = null
     const m1Words = new Map<number, { base: Uint8Array; words: Map<number, number> }>()
     for (const ov of mapM1.overworlds) {
-      const p = join(dir, ov.file)
-      if (!existsSync(p)) { mapTerrainMissing++; continue }
+      const gv = gate(ov.file)
+      if (gv === 'missing') { mapTerrainMissing++; continue }
+      if (gv === 'unchanged') { mapTerrainSkipped++; continue }
       try {
         const ctx = buildWorldMapTerrainContext(rom, symbols, ov.world, gfxLiveEdits())
         m1Manifest = ctx.scene.manifest
-        const d = diffOverworldM1(ctx, readFileSync(p))
+        reconciler.registerManifest(ctx.scene.manifest)
+        const d = diffOverworldM1(ctx, readFileSync(join(dir, ov.file)))
         let entryChanged = false
-        // CHR pixels — 4bpp ($74/$75/$4C) + 2bpp ($56) tiles, each spliced at its own stride.
-        for (const e of d.chrEdits) { addTilePatches(m1Patches, [e], e.tileBytes); entryChanged = true }
+        // Tileset-1 use: cells pointing into the blank, ✕-marked char-0-255 band. They still
+        // import (verbatim), but draw unrelated panel graphics in-game — flag them in red.
+        if (d.tileset1Cells > 0) {
+          errors.push(`${ov.file}: ${d.tileset1Cells} cell${d.tileset1Cells === 1 ? '' : 's'} use tileset 1 (the blank char 0–255 band, shown as a ✕ in M1TE) — these draw unrelated panel graphics in-game. Use tilesets 2–4 for overworld map tiles.`)
+        }
+        // CHR pixels — 4bpp ($74/$75/$4C) + 2bpp ($56) tiles, each at its own stride → reconciler.
+        for (const e of d.chrEdits) { reconciler.chrTile(e.format, e.fileId, e.fileTile, e.bytes, e.tileBytes, ov.file); entryChanged = true }
         // Tilemap words — accumulate per file (a file's screens/worlds write disjoint offsets).
         for (const w of d.wordEdits) {
           let acc = m1Words.get(w.fileId)
@@ -674,16 +679,12 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         // Palette colors → the master blob via the scene's provenance (skip non-blob slots).
         for (const pe of d.paletteEdits) {
           const off = ctx.scene.provenance[pe.cgramIndex] ?? -1
-          if (off >= 0) { screenPaletteEdits.set(off, pe.bgr15); entryChanged = true }
+          if (off >= 0) { reconciler.paletteWord(off, pe.bgr15, ov.file); paletteImported++; entryChanged = true }
         }
         if (entryChanged) mapTerrainImported++; else mapTerrainSkipped++
       } catch (err) {
         errors.push(`${ov.file}: ${err instanceof Error ? err.message : String(err)}`)
       }
-    }
-    // Apply the overworld CHR pixel edits (shared char — merges with everything else).
-    if (m1Patches.size > 0 && m1Manifest) {
-      applyTilePatches(m1Patches, { manifest: m1Manifest, scope: 'the overworld map', tileBytesOf: () => 32, rom, symbols, savedFileTiles, errors })
     }
     // Splice each tilemap file's accumulated word edits once (onto the live overlay if any).
     for (const [fileId, acc] of m1Words) {
@@ -691,7 +692,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       const bytes = (liveTiles('lz2', fileId) ?? acc.base).slice()
       let written = 0
       for (const [off, word] of acc.words) if (off >= 0 && off + 1 < bytes.length) { bytes[off] = word & 0xff; bytes[off + 1] = (word >> 8) & 0xff; written++ }
-      const r = saveGfxEdit('lz2', fileId, bytes)
+      const r = saveGfxEdit('lz2', fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2 })
       if (r.ok) { if (written > 0) mapTerrainImported++ }
       else errors.push(`overworld tilemap 0x${fileId.toString(16)}: ${r.error}`)
     }
@@ -699,26 +700,25 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
     // ── Icons: per-level pixels → bank-$53 (.bin nibble RMW); marker/castle → the shared
     //    $74/$75 char (via saveGfxEdit). Folds into the level-icon + map-icon tallies.
     if (mapM1.icons) {
-      const p = join(dir, mapM1.icons.file)
-      if (!existsSync(p)) { levelIconMissing++; iconMissing++ }
+      const gv = gate(mapM1.icons.file)
+      if (gv === 'missing') { levelIconMissing++; iconMissing++ }
+      else if (gv === 'unchanged') { levelIconSkipped++; iconSkipped++ }
       else {
+        const mfile = mapM1.icons.file
         try {
-          const d = diffIconsM1(rom, symbols, readFileSync(p), gfxLiveEdits())
-          if (d.levelWrites.length > 0) {
-            const r = saveRawChrEdit(d.levelWrites)
-            if (r.ok) levelIconImported += d.levelIconsChanged
-            else errors.push(`map level icons (bank $53): ${r.error}`)
-          }
+          const d = diffIconsM1(rom, symbols, readFileSync(join(dir, mfile)), gfxLiveEdits())
+          // Per-level pixels → bank-$53 raw .bin; marker/castle → shared $74/$75 char — both
+          // through the reconciler (raw + CHR), conflict-checked with every other track.
+          for (const w of d.levelWrites) reconciler.rawChr(w.binFile, w.offset, w.bytes, mfile)
+          if (d.levelWrites.length > 0) levelIconImported += d.levelIconsChanged
           if (d.markerCastleEdits.length > 0) {
-            const iconPatches: FilePatchMap = new Map()
-            addTilePatches(iconPatches, d.markerCastleEdits)
-            const mctx = m1Manifest ?? buildWorldMapTerrainContext(rom, symbols, 0).scene.manifest
-            applyTilePatches(iconPatches, { manifest: mctx, scope: 'the world map', tileBytesOf: () => 32, rom, symbols, savedFileTiles, errors })
+            reconciler.registerManifest(m1Manifest ?? buildWorldMapTerrainContext(rom, symbols, 0).scene.manifest)
+            for (const ed of d.markerCastleEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, mfile)
             iconImported += d.markerCastleChanged
           }
           if (d.conflicts > 0) errors.push(`map icons: ${d.conflicts} shared marker/castle tile conflict(s) — the first edit was kept.`)
         } catch (err) {
-          errors.push(`${mapM1.icons.file}: ${err instanceof Error ? err.message : String(err)}`)
+          errors.push(`${mfile}: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
     }
@@ -732,7 +732,9 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   let logoImported = 0, logoSkipped = 0, logoMissing = 0
   if (titleLogo) {
     const p = join(dir, titleLogo.file)
-    if (!existsSync(p)) { logoMissing++ }
+    const gv = gate(titleLogo.file)
+    if (gv === 'missing') { logoMissing++ }
+    else if (gv === 'unchanged') { logoSkipped++ }
     else if (!titleLogo.faithful) { /* preview-only: skip silently */ }
     else {
       const ctx = buildTitleLogoContext(rom, symbols, gfxLiveEdits())
@@ -765,17 +767,17 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
             }
             // COLORS: an edited embedded palette (logo BG2 rows 8..15) → the master blob.
             if (titleLogo.paletteOffsets) {
-              for (const ed of diffAsepritePalette(struct.palette, titleLogo.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
+              for (const ed of diffAsepritePalette(struct.palette, titleLogo.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, titleLogo.file); paletteImported++ }
             }
           } else {
             // PNG: pixels only (a flat sheet carries no tilemap). Crop off the swatch column.
             pixelEdits = diffTitleLogoTiles(ctx, canvas, canvasRegion(decodePng(readFileSync(p)), canvas.width, canvas.height)).edits
           }
           if (pixelEdits.length > 0) {
-            // The logo char is the lz2 $1D sheet (2bpp → 16-byte tiles).
-            const filePatches: FilePatchMap = new Map()
-            addTilePatches(filePatches, pixelEdits)
-            applyTilePatches(filePatches, { manifest: ctx.manifest, scope: 'the title scene', tileBytesOf: (f) => f === 'lz16' ? 32 : 16, rom, symbols, savedFileTiles, errors })
+            // The logo char is the lz2 $1D sheet (2bpp → 16-byte tiles), shared with the raw
+            // screens/title/f1D sheet — record into the reconciler for cross-file conflict checks.
+            reconciler.registerManifest(ctx.manifest)
+            for (const ed of pixelEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, ed.format === 'lz16' ? 32 : 16, titleLogo.file)
             changed = true
           }
           if (changed) logoImported++; else logoSkipped++
@@ -792,7 +794,9 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   let islandImported = 0, islandSkipped = 0, islandMissing = 0, islandSharedCells = 0, islandNewTiles = 0
   if (titleIsland) {
     const p = join(dir, titleIsland.file)
-    if (!existsSync(p)) { islandMissing++ }
+    const gv = gate(titleIsland.file)
+    if (gv === 'missing') { islandMissing++ }
+    else if (gv === 'unchanged') { islandSkipped++ }
     else if (!titleIsland.faithful) { /* preview-only: skip silently */ }
     else {
       const ctx = buildTitleIslandContext(rom, symbols, gfxLiveEdits())
@@ -801,15 +805,11 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         errors.push(`${titleIsland.file}: title island no longer faithfully reconstructable`)
       } else {
         try {
-          // Splice $B1 char-tile edits onto the cross-block cache, re-encode (LZ2).
-          const writeIslandPixels = (edits: readonly { char: number; bytes: Uint8Array }[]): { ok: boolean; error?: string } => {
-            const key = 'lz2/177' // $B1
-            const prior = savedFileTiles.get(key)
-            const b1 = prior ? prior.slice() : ctx.b1cpc.slice() // full decompressed $B1 (CPC)
-            for (const ed of edits) b1.set(ed.bytes, ed.char * 32)
-            const r = saveGfxEdit('lz2', 0xb1, b1)
-            if (r.ok) savedFileTiles.set(key, b1.slice())
-            return r
+          // Record $B1 char-tile edits (each island char = 32 CPC bytes at char*32) into the
+          // reconciler — re-assembled + re-encoded (LZ2) once, conflict-checked with the raw $B1 sheet.
+          const recordIslandPixels = (edits: readonly { char: number; bytes: Uint8Array }[]): void => {
+            reconciler.registerManifest([{ format: 'lz2', fileId: 0xb1, sizeBytes: ctx.b1cpc.length }])
+            for (const ed of edits) reconciler.chrTile('lz2', 0xb1, ed.char, ed.bytes, 32, titleIsland.file)
           }
           if (p.endsWith('.aseprite')) {
             // COMBINED import (assumes Manual Aseprite tileset mode): ONE .aseprite carries
@@ -826,8 +826,8 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
               errors.push(`title island: the tileset has fewer tiles than exported — tiles were deleted/reordered. Edit in Manual tileset mode (don't delete tiles) or re-export.`)
             } else {
               let ok = true
-              if (d.pixels.length > 0) { const r = writeIslandPixels(d.pixels); if (!r.ok) { errors.push(`title island ($B1): ${r.error}`); ok = false } }
-              if (ok && d.placement.length > 0) { const r = await saveIslandTilemap(mergePlacement(loadIslandTilemapEdits(), d.placement)); if (!r.ok) { errors.push(`title island (DATA_5F9800): ${r.error}`); ok = false } }
+              if (d.pixels.length > 0) recordIslandPixels(d.pixels)
+              if (d.placement.length > 0) { const r = await saveIslandTilemap(mergePlacement(loadIslandTilemapEdits(), d.placement)); if (!r.ok) { errors.push(`title island (DATA_5F9800): ${r.error}`); ok = false } }
               if (d.unmappedTiles > 0) errors.push(`title island: ${d.unmappedTiles} new tile${d.unmappedTiles === 1 ? '' : 's'} couldn't be added — only ${ctx.addableChars.length} free $B1 char slot${ctx.addableChars.length === 1 ? '' : 's'} exist (the rest are used by the world-6 island).`)
               if (d.skippedW6Tiles > 0) errors.push(`title island: ${d.skippedW6Tiles} edit${d.skippedW6Tiles === 1 ? '' : 's'} to world-6-only tiles were skipped (they'd corrupt the world-6 island) — edit those via the faithful $B1 sheet.`)
               if (d.erased > 0) errors.push(erasedCellsWarning('title island', d.erased))
@@ -838,7 +838,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
             }
             // COLORS: an edited embedded palette (Mode-7 CGRAM 0-15) → the master blob.
             if (titleIsland.paletteOffsets) {
-              for (const ed of diffAsepritePalette(struct.palette, titleIsland.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
+              for (const ed of diffAsepritePalette(struct.palette, titleIsland.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, titleIsland.file); paletteImported++ }
             }
           } else {
             // PNG: pixels only (a flat PNG carries no tilemap/placement). The PNG has a
@@ -848,9 +848,8 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
             if (edits.length === 0) { islandSkipped++ }
             else {
               islandSharedCells = sharedCells
-              const r = writeIslandPixels(edits)
-              if (r.ok) islandImported++
-              else errors.push(`title island ($B1): ${r.error}`)
+              recordIslandPixels(edits)
+              islandImported++
             }
           }
         } catch (err) {
@@ -866,7 +865,9 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   let sceneryImported = 0, scenerySkipped = 0, sceneryMissing = 0
   if (titleScenery) {
     const p = join(dir, titleScenery.file)
-    if (!existsSync(p)) { sceneryMissing++ }
+    const gv = gate(titleScenery.file)
+    if (gv === 'missing') { sceneryMissing++ }
+    else if (gv === 'unchanged') { scenerySkipped++ }
     else {
       try {
         const ctx = buildTitleSceneryContext(rom, symbols)
@@ -874,15 +875,11 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
         const edited = decodeEditedToRgba(p, 'image', canvas.width, canvas.height)
         const { region, changed } = diffTitleScenery(ctx, edited)
         if (changed === 0) { scenerySkipped++ }
-        else {
-          const r = saveRawChrEdit([{ binFile: SCENERY_BIN_FILE, offset: 0, bytes: region }])
-          if (r.ok) sceneryImported++
-          else errors.push(`title scenery (DATA_560000.bin): ${r.error}`)
-        }
+        else { reconciler.rawChr(SCENERY_BIN_FILE, 0, region, titleScenery.file); sceneryImported++ }
         // COLORS: an edited embedded palette (OBJ row 7) → the master blob (Aseprite mode only).
         if (titleScenery.paletteOffsets && p.endsWith('.aseprite')) {
           const asePal = decodeAsepriteImage(readFileSync(p)).palette
-          for (const ed of diffAsepritePalette(asePal, titleScenery.paletteOffsets, effectiveBlobWords())) screenPaletteEdits.set(ed.offset, ed.value)
+          for (const ed of diffAsepritePalette(asePal, titleScenery.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, titleScenery.file); paletteImported++ }
         }
       } catch (err) {
         errors.push(`${titleScenery.file}: ${err instanceof Error ? err.message : String(err)}`)
@@ -895,8 +892,10 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   // threshold and write only when the bytes actually changed vs base.
   let fontImported = 0, fontSkipped = 0, fontMissing = 0
   for (const f of fonts ?? []) {
+    const gv = gate(f.file)
+    if (gv === 'missing') { fontMissing++; continue }
+    if (gv === 'unchanged') { fontSkipped++; continue }
     const p = join(dir, f.file)
-    if (!existsSync(p)) { fontMissing++; continue }
     try {
       const edited = decodeEditedToRgba(p, 'image', f.width, f.height)
       const base = readRawChrBase(f.binFile)
@@ -904,9 +903,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       let changed = bytes.length !== base.length
       for (let i = 0; !changed && i < bytes.length; i++) if (bytes[i] !== base[i]) changed = true
       if (!changed) { fontSkipped++; continue }
-      const r = saveRawChrEdit([{ binFile: f.binFile, offset: 0, bytes }])
-      if (r.ok) fontImported++
-      else errors.push(`${f.file} (${f.binFile}): ${r.error}`)
+      reconciler.rawChr(f.binFile, 0, bytes, f.file); fontImported++
     } catch (err) {
       errors.push(`${f.file}: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -919,7 +916,9 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   let sceneImported = 0, sceneSkipped = 0, sceneMissing = 0
   if (storybookScene) {
     const p = join(dir, storybookScene.file)
-    if (!existsSync(p)) { sceneMissing++ }
+    const gv = gate(storybookScene.file)
+    if (gv === 'missing') { sceneMissing++ }
+    else if (gv === 'unchanged') { sceneSkipped++ }
     else if (!storybookScene.faithful) { /* preview-only: skip silently */ }
     else {
       try {
@@ -932,9 +931,9 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
           const pixelEdits = diffStorybookSceneTiles(ctx, canvas, edited).edits
           if (pixelEdits.length === 0) { sceneSkipped++ }
           else {
-            const filePatches: FilePatchMap = new Map()
-            addTilePatches(filePatches, pixelEdits)
-            applyTilePatches(filePatches, { manifest: [ctx.f27], scope: 'the storybook scene', tileBytesOf: () => 16, rom, symbols, savedFileTiles, errors })
+            // f27 is lz2/2bpp → 16-byte tiles; record into the reconciler (shared with the raw f27 sheet).
+            reconciler.registerManifest([ctx.f27])
+            for (const ed of pixelEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 16, storybookScene.file)
             sceneImported++
           }
           // Color write-back: an edited embedded palette → the master blob (Aseprite mode
@@ -942,9 +941,7 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
           // so a palette-only change still applies. Base-aware diff → unedited = no-op.
           if (storybookScene.paletteOffsets && p.endsWith('.aseprite')) {
             const asePal = decodeAsepriteRegion(readFileSync(p)).palette
-            for (const ed of diffAsepritePalette(asePal, storybookScene.paletteOffsets, effectiveBlobWords())) {
-              screenPaletteEdits.set(ed.offset, ed.value)
-            }
+            for (const ed of diffAsepritePalette(asePal, storybookScene.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, storybookScene.file); paletteImported++ }
           }
         }
       } catch (err) {
@@ -961,47 +958,41 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   // re-derives the scene from the cart (screen-m1te2.ts).
   if (screenM1 && screenM1.length > 0) {
     // Map an .M1's CGRAM-index palette edits → the master blob via the scene's provenance.
-    const accumScreenM1Palette = (edits: ScreenPaletteEdit[], provenance: Int32Array): void => {
-      for (const pe of edits) { const off = provenance[pe.cgramIndex] ?? -1; if (off >= 0) screenPaletteEdits.set(off, pe.bgr15) }
+    const accumScreenM1Palette = (edits: ScreenPaletteEdit[], provenance: Int32Array, source: string): void => {
+      for (const pe of edits) { const off = provenance[pe.cgramIndex] ?? -1; if (off >= 0) { reconciler.paletteWord(off, pe.bgr15, source); paletteImported++ } }
     }
     for (const e of screenM1) {
-      const p = join(dir, e.file)
-      if (!existsSync(p)) {
-        if (e.kind === 'island') islandMissing++; else sceneMissing++
-        continue
-      }
+      const gv = gate(e.file)
+      if (gv === 'missing') { if (e.kind === 'island') islandMissing++; else sceneMissing++; continue }
+      if (gv === 'unchanged') { if (e.kind === 'island') islandSkipped++; else sceneSkipped++; continue }
       try {
-        const bytes = readFileSync(p)
+        const bytes = readFileSync(join(dir, e.file))
         if (e.kind === 'island') {
           const ctx = buildTitleIslandContext(rom, symbols, gfxLiveEdits())
           const d = diffTitleIslandM1(ctx, bytes)
           let changed = false
           if (d.charEdits.length > 0) {
-            // Splice the CPC char edits into the full $B1 blob, re-encode (LZ2) — merging with
-            // any prior $B1 edit (the Aseprite island path uses the same 'lz2/177' cache key).
-            const key = 'lz2/177' // $B1
-            const b1 = (savedFileTiles.get(key) ?? ctx.b1cpc).slice()
-            for (const ce of d.charEdits) b1.set(ce.bytes, ce.char * 32)
-            const r = saveGfxEdit('lz2', 0xb1, b1)
-            if (r.ok) { savedFileTiles.set(key, b1.slice()); changed = true } else errors.push(`title island ($B1): ${r.error}`)
+            // $B1 CPC char edits → reconciler (each char = 32 bytes; merges with the Aseprite island path).
+            reconciler.registerManifest([{ format: 'lz2', fileId: 0xb1, sizeBytes: ctx.b1cpc.length }])
+            for (const ce of d.charEdits) reconciler.chrTile('lz2', 0xb1, ce.char, ce.bytes, 32, e.file)
+            changed = true
           }
           if (d.placement.length > 0) {
             const r = await saveIslandTilemap(mergePlacement(loadIslandTilemapEdits(), d.placement))
             if (r.ok) changed = true; else errors.push(`title island (DATA_5F9800): ${r.error}`)
           }
-          accumScreenM1Palette(d.paletteEdits, ctx.provenance)
+          accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
           if (changed) islandImported++; else islandSkipped++
         } else {
           const ctx = buildStorybookSceneContext(rom, symbols, gfxLiveEdits())
           const d = diffStorybookSceneM1(ctx, bytes)
           let changed = false
           if (d.chrEdits.length > 0) {
-            const fp: FilePatchMap = new Map()
-            addTilePatches(fp, d.chrEdits, 16) // f27 is lz2/2bpp → 16-byte tiles
-            applyTilePatches(fp, { manifest: [ctx.f27], scope: 'the storybook scene', tileBytesOf: () => 16, rom, symbols, savedFileTiles, errors })
+            reconciler.registerManifest([ctx.f27])
+            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, 16, e.file) // f27 lz2/2bpp → 16-byte tiles
             changed = true
           }
-          accumScreenM1Palette(d.paletteEdits, ctx.provenance)
+          accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
           if (changed) sceneImported++; else sceneSkipped++
         }
       } catch (err) {
@@ -1014,17 +1005,17 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
   // byte-validated glyphs are editable; a shared source affects its other sprites.
   let glyphImported = 0, glyphSkipped = 0, glyphMissing = 0, glyphShared = 0
   if (glyphs && glyphs.sprites.length > 0) {
-    const glyphWrites: { binFile: string; offset: number; bytes: Uint8Array }[] = []
     const affected = new Set<number>()
     for (const e of glyphs.sprites) {
-      const p = join(dir, e.file)
-      if (!existsSync(p)) { glyphMissing++; continue }
+      const gv = gate(e.file)
+      if (gv === 'missing') { glyphMissing++; continue }
+      if (gv === 'unchanged') { glyphSkipped++; continue }
       try {
-        const reg = decodeEditedToRgba(p, 'image', e.width, e.height) // glyphs are PNG-only (no .aseprite export)
+        const reg = decodeEditedToRgba(join(dir, e.file), 'image', e.width, e.height) // glyphs are PNG-only (no .aseprite export)
         const res = glyphWritesForSprite(rom, symbols, glyphs.header, e.spriteNum, reg)
         if (!res) { errors.push(`${e.file}: sprite 0x${e.spriteNum.toString(16)} isn't an editable glyph`); continue }
         if (!res.changed) { glyphSkipped++; continue }
-        glyphWrites.push(...res.writes)
+        for (const w of res.writes) reconciler.rawChr(w.binFile, w.offset, w.bytes, e.file)
         glyphImported++
         for (const sid of res.sharedWith) affected.add(sid)
       } catch (err) {
@@ -1032,25 +1023,10 @@ export async function importGfxPngsFromDir(dir: string): Promise<ImportGfxResult
       }
     }
     glyphShared = affected.size
-    if (glyphWrites.length > 0) {
-      const r = saveRawChrEdit(glyphWrites)
-      if (!r.ok) { errors.push(`sprite glyphs: ${r.error}`); glyphImported = 0 }
-    }
   }
 
-  // Flush every accumulated screen-palette color edit in ONE merged Bank57 overlay write.
-  // savePaletteEdits is a full-set replace shared with the Palette panel, so merge: keep the
-  // panel's existing edits, override per-offset with the screen edits (which already differ
-  // from the effective current blob, so an unedited round-trip writes nothing).
-  let paletteImported = 0
-  if (screenPaletteEdits.size > 0) {
-    const merged: PaletteEdit[] = loadPaletteEdits().filter(ed => !screenPaletteEdits.has(ed.offset))
-    for (const [offset, value] of screenPaletteEdits) merged.push({ offset, value })
-    const r = await savePaletteEdits(merged)
-    if (r.ok) paletteImported = screenPaletteEdits.size
-    else errors.push(`screen palette write-back: ${r.error ?? 'save failed'}`)
-  }
-
+  // The actual writes (CHR re-encode, palette merge, raw-CHR, conflict resolution) happen in
+  // reconciler.apply() — called ONCE by graphics-folder-io after BOTH importers have recorded.
   return {
     imported, skipped, missing,
     spriteImported, spriteSkipped, spriteMissing, spritePropagated,

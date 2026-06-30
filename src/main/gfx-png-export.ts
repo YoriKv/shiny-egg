@@ -40,6 +40,7 @@ import { imageAseprite } from 'snes-framework/gfx-aseprite'
 import { encodePng } from 'snes-framework/png'
 import type { RenderHeaderRequest, ExportGfxOptions, GfxExportTrack } from '../shared/ipc-types'
 import { loadRomAndSymbols } from './render/rom-cache'
+import { fileChecksum } from './gfx-import-conflict'
 import { gfxLiveEdits } from './gfx-live-cache'
 import {
   loadPaletteEdits,
@@ -55,6 +56,7 @@ import { PALETTE_BLOB_LABEL } from 'snes-framework/palette-edit'
 import { type SymbolMap } from 'snes-framework/symbol-map'
 import {
   MANIFEST,
+  type GfxManifestChecksums,
   type GfxManifestEntry,
   type MetaspriteManifestEntry,
   type GlyphManifestEntry,
@@ -178,6 +180,14 @@ export function exportGfxPngsToDir(
   mkdirSync(outDir, { recursive: true })
   const manifest: GfxManifestEntry[] = []
   const used = new Set<string>()
+  // Per-artifact sha256, keyed by the SAME manifest-relative path that lands in each entry's
+  // `file` — the import checksum gate (gfx-import-reconcile.ts) looks edits up by that key, so
+  // every export write goes through `emit` (= writeArtifact + record the hash). See req #2.
+  const checksums: GfxManifestChecksums = {}
+  const emit = (file: string, bytes: Uint8Array): void => {
+    writeArtifact(outDir, file, bytes)
+    checksums[file] = fileChecksum(bytes)
+  }
 
   // `format: 'aseprite'` writes the assembled screens / metasprites as Aseprite
   // projects (the screens' title logo + island assemble as real tilemaps).
@@ -217,7 +227,7 @@ export function exportGfxPngsToDir(
     const useAse = aseFmt && e.aseprite
     const file = rebase(useAse ? e.file.replace(/\.png$/, '.aseprite') : e.file)
     used.add(file)
-    writeArtifact(outDir, file, useAse ? e.aseprite! : e.png)
+    emit(file, useAse ? e.aseprite! : e.png)
     manifest.push({
       file,
       description: e.description,
@@ -245,7 +255,7 @@ export function exportGfxPngsToDir(
     const useAse = aseFmt && m.aseprite
     const leaf = `${idHex}${nm ? '-' + slug(nm) : ''}.${useAse ? 'aseprite' : 'png'}`
     const file = m.faithful ? `metasprite/${leaf}` : `metasprite/preview/${leaf}`
-    writeArtifact(outDir, file, useAse ? m.aseprite! : m.png)
+    emit(file, useAse ? m.aseprite! : m.png)
     metaManifest.push({ file, spriteId: m.spriteId, faithful: m.faithful, hasDynamicBody: m.hasDynamicBody, width: m.width, height: m.height })
   }
 
@@ -258,7 +268,7 @@ export function exportGfxPngsToDir(
     const idHex = gl.spriteNum.toString(16).toUpperCase().padStart(3, '0')
     const nm = opts.spriteNames?.[gl.spriteNum]
     const file = `sprite-glyph/${idHex}${nm ? '-' + slug(nm) : ''}.png`
-    writeArtifact(outDir, file, gl.png)
+    emit(file, gl.png)
     glyphManifest.push({ file, spriteNum: gl.spriteNum, width: gl.width, height: gl.height, sharedWith: gl.sharedWith })
   }
 
@@ -271,7 +281,7 @@ export function exportGfxPngsToDir(
   for (const ic of mapIcons) {
     const useAse = aseFmt && ic.aseprite
     const file = rebase(useAse ? ic.file.replace(/\.png$/, '.aseprite') : ic.file)
-    writeArtifact(outDir, file, useAse ? ic.aseprite! : ic.png)
+    emit(file, useAse ? ic.aseprite! : ic.png)
     mapIconManifest.push({ file, world: ic.world, name: ic.name, faithful: ic.faithful, width: ic.width, height: ic.height, paletteOffsets: useAse ? ic.paletteOffsets : undefined })
   }
 
@@ -285,7 +295,7 @@ export function exportGfxPngsToDir(
   for (const ic of levelIcons) {
     const useAse = aseFmt && ic.aseprite
     const file = rebase(`screens/map/world-${ic.world}/level-${ic.slot}-${slug(ic.name)}.${useAse ? 'aseprite' : 'png'}`)
-    writeArtifact(outDir, file, useAse ? ic.aseprite! : ic.png)
+    emit(file, useAse ? ic.aseprite! : ic.png)
     levelIconManifest.push({ file, world: ic.world, slot: ic.slot, name: ic.name, faithful: ic.faithful, width: ic.width, height: ic.height, paletteOffsets: useAse ? ic.paletteOffsets : undefined })
   }
 
@@ -300,7 +310,7 @@ export function exportGfxPngsToDir(
   for (const m of mapTerrain) {
     const useAse = aseFmt && m.aseprite
     const file = rebase(useAse ? m.file.replace(/\.png$/, '.aseprite') : m.file)
-    writeArtifact(outDir, file, useAse ? m.aseprite! : m.png)
+    emit(file, useAse ? m.aseprite! : m.png)
     mapTerrainManifest.push({ file, world: m.world, bg1FileId: m.bg1FileId, bg2FileId: m.bg2FileId, width: m.width, height: m.height, tileKeys: m.tileKeys, paletteOffsets: useAse ? m.paletteOffsets : undefined })
   }
 
@@ -313,7 +323,7 @@ export function exportGfxPngsToDir(
     const g = exportWorldMapGround(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() })
     const useAse = aseFmt && g.aseprite
     const file = rebase(useAse ? g.file.replace(/\.png$/, '.aseprite') : g.file)
-    writeArtifact(outDir, file, useAse ? g.aseprite! : g.png)
+    emit(file, useAse ? g.aseprite! : g.png)
     mapGroundManifest = { file, fileId: g.fileId, width: g.width, height: g.height, tileKeys: g.tileKeys, paletteOffsets: useAse ? g.paletteOffsets : undefined }
   }
 
@@ -331,7 +341,7 @@ export function exportGfxPngsToDir(
     let icons: MapM1Manifest['icons'] = null
     for (const m of m1Files) {
       const file = rebase(m.file)
-      writeArtifact(outDir, file, m.bytes)
+      emit(file, m.bytes)
       if (m.kind === 'overworld') {
         overworlds.push({ file, world: m.world!, bg1FileId: m.bg1FileId!, bg2FileId: m.bg2FileId!, bg3FileId: m.bg3FileId! })
       } else icons = { file }
@@ -350,7 +360,7 @@ export function exportGfxPngsToDir(
     const file = rebase(`screens/title/logo.${useAse ? 'aseprite' : 'png'}`)
     const logoKeys = useAse ? logoTileKeys(ctx) : undefined // serialized so the import reuses this tileset order
     const logoAse = logoKeys ? titleLogoAseprite(ctx, canvas, logoKeys) : undefined
-    writeArtifact(outDir, file, logoAse ? logoAse.bytes : titleLogoPng(ctx, canvas))
+    emit(file, logoAse ? logoAse.bytes : titleLogoPng(ctx, canvas))
     titleLogoManifest = { file, faithful: canvas.faithful, width: canvas.width, height: canvas.height, tileKeys: logoKeys, paletteOffsets: logoAse?.paletteOffsets }
   }
 
@@ -366,7 +376,7 @@ export function exportGfxPngsToDir(
     const file = rebase(`screens/title/island.${useAse ? 'aseprite' : 'png'}`)
     const tileChars = useAse ? islandTileChars(ctx) : undefined // serialized so the import reuses this tileset order
     const islandAse = tileChars ? titleIslandAseprite(ctx, canvas, tileChars) : undefined
-    writeArtifact(outDir, file, islandAse ? islandAse.bytes : titleIslandPng(ctx, canvas))
+    emit(file, islandAse ? islandAse.bytes : titleIslandPng(ctx, canvas))
     titleIslandManifest = { file, faithful: canvas.faithful, width: canvas.width, height: canvas.height, tileKeys: tileChars, paletteOffsets: islandAse?.paletteOffsets }
   }
 
@@ -378,7 +388,7 @@ export function exportGfxPngsToDir(
     const titleScenery = exportTitleScenery(rom, symbols, { aseprite: aseFmt })
     const useAse = aseFmt && titleScenery.aseprite
     const file = rebase(useAse ? titleScenery.file.replace(/\.png$/, '.aseprite') : titleScenery.file)
-    writeArtifact(outDir, file, useAse ? titleScenery.aseprite! : titleScenery.png)
+    emit(file, useAse ? titleScenery.aseprite! : titleScenery.png)
     titleSceneryManifest = { file, width: titleScenery.width, height: titleScenery.height, paletteOffsets: useAse ? titleScenery.paletteOffsets : undefined }
   }
 
@@ -390,7 +400,7 @@ export function exportGfxPngsToDir(
     const scene = exportStorybookScene(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() })
     const useAse = aseFmt && scene.aseprite && scene.faithful
     const file = rebase(useAse ? scene.file.replace(/\.png$/, '.aseprite') : scene.file)
-    writeArtifact(outDir, file, useAse ? scene.aseprite! : scene.png)
+    emit(file, useAse ? scene.aseprite! : scene.png)
     storybookSceneManifest = { file, faithful: scene.faithful, width: scene.width, height: scene.height, paletteOffsets: useAse ? scene.paletteOffsets : undefined }
   }
 
@@ -414,7 +424,7 @@ export function exportGfxPngsToDir(
       const bytes = aseFmt
         ? imageAseprite({ rgba: img.rgba, width: img.width, height: img.height, palette: Uint32Array.of(0xff000000, 0xffffffff), index0Transparent: false, layerName: key })
         : encodePng(img)
-      writeArtifact(outDir, file, bytes)
+      emit(file, bytes)
       fontManifest.push({
         file,
         binFile,
@@ -437,7 +447,7 @@ export function exportGfxPngsToDir(
   if (wantSystem && m1Fmt) {
     for (const s of exportScreenM1(rom, symbols)) {
       const file = rebase(s.file)
-      writeArtifact(outDir, file, s.bytes)
+      emit(file, s.bytes)
       screenM1Manifest.push({ file, kind: s.kind })
     }
   }
@@ -446,6 +456,7 @@ export function exportGfxPngsToDir(
     join(outDir, MANIFEST),
     JSON.stringify(
       {
+        checksums,
         entries: manifest,
         metasprites: { header, sprites: metaManifest },
         glyphs: { header, sprites: glyphManifest },

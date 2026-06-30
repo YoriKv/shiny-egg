@@ -67,7 +67,9 @@ import type {
   PoolOverview,
   RomVersion
 } from 'snes-framework/types'
-import type { GfxEditEntry, GfxFileRole, ResetGfxEditResult, ResetLevelResult, SetExitDestResult, SetExitEntranceResult } from '../shared/ipc-types'
+import type { GfxEditEntry, GfxEditKind, GfxFileRole, ResetGfxEditResult, ResetLevelResult, SetExitDestResult, SetExitEntranceResult } from '../shared/ipc-types'
+import { countChangedUnits } from './gfx-import-conflict'
+import { readGfxEditChanges, recordGfxEditChange, removeGfxEditChange } from './gfx-edit-meta'
 import { loadLevelGfx } from 'snes-framework/load-graphics'
 import { isWorld6Record } from 'snes-framework/level'
 import { loadRomAndSymbols } from './render/rom-cache'
@@ -324,7 +326,11 @@ export function saveGfxEdit(
   format: 'lz2' | 'lz16',
   fileId: number,
   tiles: Uint8Array,
-  rowCount?: number
+  rowCount?: number,
+  /** The editing pipeline's authoritative classification of this file (CHR pixels vs a
+   *  placement tilemap) + the diff stride — so the "Changed graphics" inventory records the
+   *  exact change vs base instead of guessing. Omit only for callers that don't track it. */
+  change?: { kind: Extract<GfxEditKind, 'chr' | 'tilemap'>; unitBytes: number }
 ): { ok: true; file: string } | { ok: false; error: string } {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to save into.' }
@@ -344,6 +350,14 @@ export function saveGfxEdit(
     // and persist it so the preview survives a project reopen (gfx-live-persist.ts).
     setGfxLiveEdit(format, fileId, tiles)
     persistGfxLiveCache(projectId)
+    // Record the exact change vs base (best-effort — never fail the save over metadata).
+    if (change) {
+      try {
+        let base: Uint8Array
+        try { base = gfxBaseTiles(format, fileId, tiles.length) } catch { base = new Uint8Array(0) }
+        recordGfxEditChange(file, { kind: change.kind, ...countChangedUnits(tiles, base, change.unitBytes), unitBytes: change.unitBytes })
+      } catch { /* metadata is best-effort */ }
+    }
     return { ok: true, file }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -397,6 +411,11 @@ export function saveRawChrEdit(
     }
     writeFileAtomicSync(overlayP, buf)
     written.push(path.join('assets', 'yi', binFile))
+    // Record the exact change vs base for the Changed-graphics inventory (raw `.bin`s are
+    // uncompressed, so a byte-stride diff is the natural unit). Best-effort.
+    try {
+      recordGfxEditChange(binFile, { kind: 'raw', ...countChangedUnits(buf, readRawChrBase(binFile), 1), unitBytes: 1 })
+    } catch { /* metadata is best-effort */ }
   }
   return { ok: true, files: written }
 }
@@ -415,6 +434,7 @@ export function resetGfxEdit(format: 'lz2' | 'lz16', fileId: number): { ok: bool
   if (!existsSync(p)) return { ok: true, removed: false }
   rmSync(p, { force: true })
   gfxLiveResetToBase(format, fileId)
+  removeGfxEditChange(file)
   return { ok: true, removed: true }
 }
 
@@ -607,6 +627,10 @@ export function listGfxEdits(): GfxEditEntry[] {
     return labels.indexOf(blobLabel(name))
   }
 
+  // The pipeline-recorded change-vs-base per overlay file (keyed by the same rel path) — so
+  // each entry can report exactly what it changed without the inventory re-deriving it.
+  const changes = readGfxEditChanges()
+
   const out: GfxEditEntry[] = []
   const scan = (dir: string, relPrefix: string): void => {
     if (!existsSync(dir)) return
@@ -620,6 +644,7 @@ export function listGfxEdits(): GfxEditEntry[] {
       }
       if (!st.isFile()) continue
       const file = `${relPrefix}${name}`
+      const change = changes[file]
       const m = name.match(/\.(lz2|lz16)$/)
       if (m) {
         const format = m[1] as 'lz2' | 'lz16'
@@ -628,12 +653,13 @@ export function listGfxEdits(): GfxEditEntry[] {
           file,
           label: id >= 0 ? `Gfx file 0x${id.toString(16).toUpperCase()} (${format.toUpperCase()})` : `${name} (${format.toUpperCase()})`,
           kind: 'compressed',
-          bytes: st.size
+          bytes: st.size,
+          change
         })
       } else if (name.endsWith('.bin')) {
         // Every overlay `.bin` is a raw-CHR graphics edit — labelled where known,
         // else by filename (so nothing edited goes untracked / un-resettable).
-        out.push({ file, label: RAW_CHR_EDIT_LABELS[name] ?? name, kind: 'raw-chr', bytes: st.size })
+        out.push({ file, label: RAW_CHR_EDIT_LABELS[name] ?? name, kind: 'raw-chr', bytes: st.size, change })
       }
     }
   }
@@ -650,7 +676,8 @@ const SCREEN_FILE_ROLES: Record<number, string> = {
   0xb1: 'Title screen — floating island',
   0xb9: 'Boss Mode-7 background', 0xba: 'Boss Mode-7 background', 0xbb: 'Boss Mode-7 background',
   0xbc: 'Boss Mode-7 background', 0xbd: 'Boss Mode-7 background',
-  0x74: 'World map', 0x75: 'World map'
+  0x74: 'World map', 0x75: 'World map',
+  0x7e: 'World map ground tilemap (BG3)' // the BG1/BG2 terrain tilemaps are per-world ($7C/$7D-class), resolved at export
 }
 
 /** Cart-structural index `format/fileId` → the role(s) it's loaded as — built once
@@ -701,7 +728,7 @@ function gfxRoleIndex(): Map<string, Set<string>> {
  *  tileset-combo's gfx manifest — same walk as `gfxRoleIndex`. Static for the cart,
  *  so cached for the session. Empty when there's no build/.sym (gfx diff then
  *  covers lz2 only). */
-export interface GfxSizeEntry { format: 'lz2' | 'lz16'; fileId: number; sizeBytes: number; rowCount?: number }
+export interface GfxSizeEntry { format: 'lz2' | 'lz16'; fileId: number; sizeBytes: number; rowCount?: number; bpp: 2 | 4 }
 let gfxSizeCache: Map<string, GfxSizeEntry> | null = null
 export function gfxSizeRegistry(): Map<string, GfxSizeEntry> {
   if (gfxSizeCache) return gfxSizeCache
@@ -729,11 +756,17 @@ export function gfxSizeRegistry(): Map<string, GfxSizeEntry> {
       for (const e of manifest) {
         const key = `${e.format}/${e.fileId}`
         if (!map.has(key)) {
+          // bpp = CHR depth → tile stride (16 for 2bpp, 32 for 4bpp). Only BG3 char files
+          // (DP $15-$16 = dpSlot 5-6) are 2bpp; everything else is 4bpp, and lz16 is 4bpp
+          // structurally (512 B/row = 16 tiles). Matches inferRenderParams' dpSlot rule
+          // (render-gfx-files.ts) — the authoritative classification.
+          const bpp: 2 | 4 = e.format === 'lz16' ? 4 : e.dpSlot === 5 || e.dpSlot === 6 ? 2 : 4
           map.set(key, {
             format: e.format,
             fileId: e.fileId,
             sizeBytes: e.sizeBytes,
-            rowCount: e.format === 'lz16' ? e.sizeBytes / 512 : undefined
+            rowCount: e.format === 'lz16' ? e.sizeBytes / 512 : undefined,
+            bpp
           })
         }
       }
@@ -795,6 +828,7 @@ export function resetGfxEditFile(file: string): ResetGfxEditResult {
     else clearGfxLiveCache()
     persistGfxLiveCache(projectId) // keep the on-disk preview cache in sync
   }
+  removeGfxEditChange(norm)
   return { ok: true, removed: true }
 }
 

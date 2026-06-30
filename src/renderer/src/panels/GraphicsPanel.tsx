@@ -1,5 +1,5 @@
 import {Fragment, useCallback, useEffect, useRef, useState, type JSX} from 'react'
-import type {AsepriteInfo, BgRegionLayer, BgRegionRect, BgRegionFormat, GfxExportTrack, GfxEditEntry, GfxFileRole, LevelData, M1ExportFile} from '../../../preload/api'
+import type {AsepriteInfo, BgRegionLayer, BgRegionRect, BgRegionFormat, GfxExportTrack, GfxEditChange, GfxEditEntry, GfxFileRole, LevelData, M1ExportFile} from '../../../preload/api'
 import {DiscardChangesModal} from '../DiscardChangesModal'
 import {headerFromLevel} from './TilesPanel'
 import {getSprite} from '../data/obj-metadata'
@@ -22,6 +22,21 @@ const allSpriteNames = (): Record<number, string> => {
 
 const sizeLabel = (bytes: number): string =>
     bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`
+
+/** The unit noun for a change's kind (CHR pixels = tiles, tilemap = cells, raw = bytes). */
+const changeUnit = (kind: GfxEditChange['kind'], n: number): string =>
+    kind === 'tilemap' ? (n === 1 ? 'cell' : 'cells') : kind === 'raw' ? 'bytes' : (n === 1 ? 'tile' : 'tiles')
+
+/** Compact inline badge of what an edited file changed vs base — e.g. "14 tiles", "3 cells",
+ *  "320 bytes". The exact, pipeline-recorded count (never a guess). */
+const changeBadge = (c: GfxEditChange): string => `${c.changedUnits} ${changeUnit(c.kind, c.changedUnits)}`
+
+/** Full sentence for the expand — e.g. "14 of 256 tiles repainted" / "3 of 1024 cells
+ *  re-placed" / "320 of 8192 bytes changed". */
+const changeSentence = (c: GfxEditChange): string => {
+    const verb = c.kind === 'tilemap' ? 're-placed' : c.kind === 'raw' ? 'changed' : 'repainted'
+    return `${c.changedUnits} of ${c.totalUnits} ${changeUnit(c.kind, c.totalUnits)} ${verb}`
+}
 
 /** Last path segment of a folder, for a compact list label (full path in title). */
 const folderName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
@@ -128,7 +143,7 @@ export function GraphicsBody({
     const [folders, setFolders] = useState<string[]>([])
     // Exported .M1 session files per folder (clickable → open in M1TE), keyed by folder dir.
     const [m1Files, setM1Files] = useState<Record<string, M1ExportFile[]>>({})
-    const [importLog, setImportLog] = useState<{ dir: string; lines: string[]; errors: string[] } | null>(null)
+    const [importLog, setImportLog] = useState<{ dir: string; lines: string[]; errors: string[]; warnings: string[] } | null>(null)
     // Located Aseprite + its probed version (for opening exported .aseprite projects,
     // and gating the tilemap-export option below).
     const [asepriteInfo, setAsepriteInfo] = useState<AsepriteInfo | null>(null)
@@ -159,6 +174,14 @@ export function GraphicsBody({
     // castle). Boot/Story/Title exports the tilemap-based screens (title logo, island, storybook
     // scene) as one .M1 each. BG1 needs a selected area (the export gates on it). M1TE is bundled.
     const m1te2Ok = isRegion || target === 'worldmap' || target === 'systemscreens'
+    // The format that will actually be USED for the current target — drives BOTH the radio
+    // selection and the export call, so exactly one radio is checked even when a stale
+    // selection lingers (e.g. an 'm1te2' pick after switching to a target that can't do it, or
+    // an 'aseprite' pick once the located Aseprite is found too old). Falls back to PNG.
+    const effectiveFormat: BgRegionFormat =
+        m1te2Ok && exportFormat === 'm1te2' ? 'm1te2'
+            : asepriteOk && !tilemapTooOld && (exportFormat === 'aseprite' || exportFormat === 'aseprite-layout') ? exportFormat
+                : 'png'
     // Aseprite export is PIXEL editing only: `aseprite` = the 8×8-CHR pixel tilemap (the
     // foundational pixel unit; a shared CHR is one tile). The 16×16-word PLACEMENT export
     // (`aseprite-layout`, BG2/BG3) is still supported by the backend but has NO UI for now —
@@ -228,12 +251,16 @@ export function GraphicsBody({
         if (exportFormat === 'm1te2' && !m1te2Ok) setExportFormat('png')
     }, [m1te2Ok, exportFormat])
 
-    // Default to Aseprite once a tilemap-capable Aseprite is located (the async probe lands
-    // after first paint, and re-locating re-runs this) — unless the user has already picked a
-    // format by hand. Not located / too old stays on PNG (the too-old effect above wins).
+    // Pick the best default export format for the current target, until the user picks one by
+    // hand (formatTouched). Prefer M1TE2 wherever it's offered — it's bundled (no external app)
+    // and a single self-contained .M1 — then a located, tilemap-capable Aseprite, else PNG.
+    // Re-runs on target change (m1te2Ok) and when the async Aseprite probe lands.
     useEffect(() => {
-        if (!formatTouched.current && asepritePath && !tilemapTooOld) setExportFormat('aseprite')
-    }, [asepritePath, tilemapTooOld])
+        if (formatTouched.current) return
+        if (m1te2Ok) setExportFormat('m1te2')
+        else if (asepriteOk && asepritePath && !tilemapTooOld) setExportFormat('aseprite')
+        else setExportFormat('png')
+    }, [m1te2Ok, asepriteOk, asepritePath, tilemapTooOld])
 
     const onLocateAseprite = async (): Promise<void> => {
         setAsepriteError(null)
@@ -252,7 +279,8 @@ export function GraphicsBody({
         setStatus(null)
         // A pre-1.3 Aseprite can't open tilemaps; never emit them (belt-and-braces with
         // the disabled radio + the coercion effect). M1TE2 isn't gated by the Aseprite version.
-        const fmt: BgRegionFormat = exportFormat === 'm1te2' ? 'm1te2' : tilemapTooOld ? 'png' : exportFormat
+        // `effectiveFormat` already resolves m1te2/aseprite/png for the current target.
+        const fmt: BgRegionFormat = effectiveFormat
         if (isRegion) {
             // isRegion ⇒ a BG layer (never a screen track), so the guard above ensured header+level.
             const r = await window.shinyEgg.editor.exportBgRegion(header!, {
@@ -303,12 +331,12 @@ export function GraphicsBody({
         r: Awaited<ReturnType<typeof window.shinyEgg.editor.importGraphics>>
     ): Promise<void> => {
         if ('canceled' in r) return
-        if (!r.ok) { setImportLog({dir: '', lines: [], errors: [r.error]}); return }
+        if (!r.ok) { setImportLog({dir: '', lines: [], errors: [r.error], warnings: []}); return }
         if (r.changed > 0) onMutated()
         // Palette recolors were persisted behind the edit-session's back — tell the app to
         // reload its palette draft so the canvas live-preview shows the imported colors.
         if (r.paletteChanged > 0) onPaletteImported()
-        setImportLog({dir: r.dir, lines: r.log, errors: r.errors})
+        setImportLog({dir: r.dir, lines: r.log, errors: r.errors, warnings: r.warnings})
         await refreshEdits()
         await refreshFolders()
     }
@@ -390,11 +418,11 @@ export function GraphicsBody({
                         Locate Aseprite…
                     </button>
                 )}
-                {(asepritePath || (m1te2Ok && exportFormat === 'm1te2')) && (
+                {(asepritePath || effectiveFormat === 'm1te2') && (
                     <label
                         className="se-graphics__radio"
                         title={
-                            exportFormat === 'm1te2'
+                            effectiveFormat === 'm1te2'
                                 ? 'After extracting, open the .M1 in M1TE automatically (straight to this BG layer)'
                                 : 'After extracting a single region file, open it in Aseprite automatically'
                         }
@@ -461,7 +489,7 @@ export function GraphicsBody({
                         <input
                             type="radio"
                             name="se-gfx-format"
-                            checked={!asepriteOk || tilemapTooOld || exportFormat === 'png'}
+                            checked={effectiveFormat === 'png'}
                             onChange={() => pickFormat('png')}
                         />
                         PNG
@@ -479,7 +507,7 @@ export function GraphicsBody({
                         <input
                             type="radio"
                             name="se-gfx-format"
-                            checked={asepriteOk && !tilemapTooOld && exportFormat === 'aseprite'}
+                            checked={effectiveFormat === 'aseprite'}
                             disabled={!asepriteOk || tilemapTooOld}
                             onChange={() => pickFormat('aseprite')}
                         />
@@ -500,7 +528,7 @@ export function GraphicsBody({
                         <input
                             type="radio"
                             name="se-gfx-format"
-                            checked={m1te2Ok && exportFormat === 'm1te2'}
+                            checked={effectiveFormat === 'm1te2'}
                             disabled={!m1te2Ok}
                             onChange={() => pickFormat('m1te2')}
                         />
@@ -532,6 +560,25 @@ export function GraphicsBody({
                         Import folder…
                     </button>
                 </div>
+
+                {importLog && (
+                    <div className="se-graphics__log">
+                        {importLog.dir && (
+                            <p className="se-graphics__status" title={importLog.dir}>
+                                Imported from {folderName(importLog.dir)}
+                            </p>
+                        )}
+                        {importLog.lines.map((line, i) => (
+                            <p key={`l${i}`} className="se-graphics__log-line">{line}</p>
+                        ))}
+                        {importLog.errors.map((err, i) => (
+                            <p key={`e${i}`} className="se-graphics__log-error">⚠ {err}</p>
+                        ))}
+                        {importLog.warnings.map((warn, i) => (
+                            <p key={`w${i}`} className="se-graphics__log-warning">⚠ {warn}</p>
+                        ))}
+                    </div>
+                )}
                 {status && <p className="se-graphics__status">{status}</p>}
 
                 <div className="se-graphics__changes">
@@ -614,7 +661,9 @@ export function GraphicsBody({
                                 <li className="se-graphics__item">
                                     <span className="se-graphics__item-label" title="Master-palette color edits (imported or edited here / in the Palette panel)">
                                         Palette colors
-                                        <span className="se-graphics__tag">{paletteEditCount}</span>
+                                    </span>
+                                    <span className="se-graphics__item-size">
+                                        {paletteEditCount} {paletteEditCount === 1 ? 'color' : 'colors'} changed
                                     </span>
                                     <button
                                         className="se-graphics__item-reset"
@@ -640,7 +689,9 @@ export function GraphicsBody({
                                             {e.label}
                                             {e.kind === 'raw-chr' && <span className="se-graphics__tag">shared</span>}
                                         </span>
-                                        <span className="se-graphics__item-size">{sizeLabel(e.bytes)}</span>
+                                        <span className="se-graphics__item-size" title={`${sizeLabel(e.bytes)} on disk`}>
+                                            {e.change ? changeBadge(e.change) : sizeLabel(e.bytes)}
+                                        </span>
                                         <button
                                             className="se-graphics__item-reset"
                                             onClick={() => setPendingReset(e)}
@@ -652,9 +703,12 @@ export function GraphicsBody({
                                     </li>
                                     {detail[e.file] !== undefined && (
                                         <li className="se-graphics__detail">
-                                            {detail[e.file] === 'loading'
-                                                ? 'Loading…'
-                                                : detailText(detail[e.file] as GfxFileRole)}
+                                            {e.change && <div>{changeSentence(e.change)}</div>}
+                                            <div>
+                                                {detail[e.file] === 'loading'
+                                                    ? 'Loading…'
+                                                    : detailText(detail[e.file] as GfxFileRole)}
+                                            </div>
                                         </li>
                                     )}
                                 </Fragment>
@@ -662,22 +716,6 @@ export function GraphicsBody({
                         </ul>
                     )}
                 </div>
-
-                {importLog && (
-                    <div className="se-graphics__log">
-                        {importLog.dir && (
-                            <p className="se-graphics__status" title={importLog.dir}>
-                                Imported from {folderName(importLog.dir)}
-                            </p>
-                        )}
-                        {importLog.lines.map((line, i) => (
-                            <p key={`l${i}`} className="se-graphics__log-line">{line}</p>
-                        ))}
-                        {importLog.errors.map((err, i) => (
-                            <p key={`e${i}`} className="se-graphics__log-error">⚠ {err}</p>
-                        ))}
-                    </div>
-                )}
 
                 <DiscardChangesModal
                     open={pendingReset !== null}

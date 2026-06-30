@@ -42,11 +42,35 @@ assert(ov.world === 0, 'world 0 → one overworld .M1');
 assert(ov.bg1FileId === terrainLayerFileId(c, 0) && ov.bg2FileId === terrainLayerFileId(c, 1) && ov.bg3FileId === 0x7e,
   'overworld wires BG1→$7C-class, BG2→$7D-class, BG3→$7E');
 
-// Unedited → zero edits of any kind.
+// Unedited → zero edits of any kind. (Also implicitly pins the tileset-1 ✕ skip: the export
+// now writes a ✕ marker to char 1-255, yet the diff reports 0 CHR edits.)
 {
   const d = diffOverworldM1(c, ov.bytes);
   assert(d.chrEdits.length === 0 && d.wordEdits.length === 0 && d.paletteEdits.length === 0,
     `unedited overworld .M1 → 0 edits (chr ${d.chrEdits.length}, word ${d.wordEdits.length}, pal ${d.paletteEdits.length})`);
+  assert(d.tileset1Cells === 0, 'a vanilla overworld references no tileset-1 cells');
+}
+
+// Tileset-1 ✕ marker: the unloaded char-0-255 band is fully painted (ALL of tiles 0..255,
+// incl. tile 0 — YI has no empty-tile sentinel), and a cell pointing into it is flagged but
+// still round-trips verbatim. char 0 is flagged like any other tileset-1 char.
+{
+  const doc = parseM1te2(ov.bytes);
+  const tileBlank = (t: number): boolean => { for (let i = 0; i < 32; i++) if (doc.chr4bpp[t * 32 + i] !== 0) return false; return true; };
+  assert(!tileBlank(0) && !tileBlank(1) && !tileBlank(255), 'tileset-1 tiles 0..255 all carry the ✕ marker (incl. tile 0)');
+
+  const word = (0x64 | (3 << 10)) & 0xffff; // char 100 (tileset 1), some palette row
+  const doc2 = parseM1te2(ov.bytes);
+  doc2.maps[0][0] = word;
+  const d2 = diffOverworldM1(c, encodeM1te2(doc2));
+  assert(d2.tileset1Cells === 1, `a tileset-1 BG1 cell is flagged (got ${d2.tileset1Cells})`);
+  assert(d2.wordEdits.some((w) => w.word === word), 'the tileset-1 cell still round-trips its verbatim word (still imports)');
+
+  // A char-0 cell (M1TE's "empty"/erase) is flagged too — YI draws char 0 from char base $4000.
+  const doc3 = parseM1te2(ov.bytes);
+  doc3.maps[0][0] = 0; // char 0 on a BG1 cell that was non-zero in vanilla
+  const d3 = diffOverworldM1(c, encodeM1te2(doc3));
+  assert(d3.tileset1Cells === 1, `a char-0 BG1 cell is flagged as tileset-1 use (got ${d3.tileset1Cells})`);
 }
 
 // A 1-tile CHR edit (tile 0x180 = VRAM $7000 = the $74 terrain char) → exactly that file/tile.

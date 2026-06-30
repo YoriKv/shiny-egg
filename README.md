@@ -43,6 +43,7 @@ Shiny Egg is my attempt to give back to a community that I've gotten so much joy
 from over many years. It's also built on the work of many others and without that
 work this tool couldn't exist. So thank you to these folks and many more.
 
+- **Thoss** - the Shiny Egg Logo.
 - **Yoshifanatic** - the SNES ROM Framework and YI disassembly this editor is
   built on.
 - **Raidenthequick & brunovalads** - the YI disassembly and brunovalads' BizHawk
@@ -76,7 +77,6 @@ work this tool couldn't exist. So thank you to these folks and many more.
 
 ## Legal Disclaimers
 
-- The app icon was made with https://game-icons.net/
 - Yoshi's Island is © Nintendo. This is an unofficial fan-made tool, not
   affiliated with or endorsed by Nintendo.
 - No game ROM is included or distributed with this editor. You must supply your

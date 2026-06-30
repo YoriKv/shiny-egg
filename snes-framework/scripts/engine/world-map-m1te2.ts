@@ -64,6 +64,49 @@ const wordIndex = (c: number, r: number): number => (c >= 32 ? 0x400 : 0) + r * 
 /** Read a 16-bit BG word at word-index `wi` from a screen-block tilemap byte buffer. */
 const wordAt = (tm: Uint8Array, wi: number): number => tm[wi * 2]! | (tm[wi * 2 + 1]! << 8);
 
+// ── tileset-1 "blank" marker ─────────────────────────────────────────────────
+// The overworld BG char base is VRAM $4000, but the 4bpp map char ($4C/$74/$75) loads
+// at $6000+ — a 256-tile gap — so the first 4bpp tileset (char 0-255, what M1TE shows
+// as "tileset 1") maps to an UNLOADED VRAM band. It is blank in the editor and the real
+// overworld never references it (`mapGfx` loads nothing at $4000; every BG1/BG2 word
+// uses char 256+, and vanilla "blank" foreground is char 447 — a loaded transparent tile,
+// NOT char 0). But at runtime the game fills $4000-$6000 with the unrelated level-select
+// panel char, so a cell that points into tileset 1 draws garbage in-game while showing
+// transparent in M1TE. We paint EVERY tileset-1 tile (0..255) with a ✕ so the trap is
+// visible, and the import flags any cell that references it (`tileset1Cells`).
+//
+// Tile 0 is marked too. M1TE treats char 0 as its "empty" tile (its erase tool writes
+// char 0, and it keeps tile 0 blank), but YI has no such sentinel: scenes render purely
+// through PPU registers (BGMODE/NBA/SC/TM·TS/color-math — see scene-regs.ts), the
+// overworld tilemap is just lz2-decompressed + DMA'd raw (CODE_17CDCF), and the PPU
+// fetches char 0 from char base $4000 like any other char — "empty" is strictly per-pixel
+// color index 0, never a per-char rule. So char 0 is the same trap as 1-255. (The ✕ never
+// reaches the cart: nothing backs $4000-$6000, so the diff skips tiles 0..255 — it is a
+// pure editor-side marker. M1TE's erase will draw a ✕ until its erase is fixed.)
+//
+// The ✕ uses pixel index 15 — the LAST color of whatever 4bpp palette row M1TE shows the
+// tileset in. M1TE draws each tile pixel as `palette[selectedRow*16 + index]` and picks the
+// row from the user's palette selection (it ignores the .M1 header), so we can't pin a
+// specific row; index 15 lands on a consistent end-of-row slot whatever row is selected.
+const TILESET1_TILES = 256;
+const TILESET1_X_INDEX = 15;
+
+/** The 8×8 4bpp planar "✕" tile — pixel index 15 on both diagonals, index 0 elsewhere. */
+function buildXMarkerTile(): Uint8Array {
+  const idx = new Uint8Array(64);
+  for (let i = 0; i < 8; i++) { idx[i * 8 + i] = TILESET1_X_INDEX; idx[i * 8 + (7 - i)] = TILESET1_X_INDEX; }
+  const out = new Uint8Array(TILE4);
+  encode4bppTile(idx, 0, out, 0);
+  return out;
+}
+
+/** Paint all 256 tiles of a 4bpp CHR window (tileset 1) with the ✕ marker. Mutates `chr4`
+ *  in place. The diff skips this same range, so it never round-trips as a CHR edit. */
+function fillTileset1Marker(chr4: Uint8Array): void {
+  const x = buildXMarkerTile();
+  for (let t = 0; t < TILESET1_TILES; t++) chr4.set(x, t * TILE4);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // OVERWORLD — one .M1 per world (the full 64×32 screen, BG1+BG2+BG3 composited).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,6 +135,7 @@ export function buildOverworldM1(c: WorldMapTerrainContext): OverworldM1 {
   const vram = c.scene.vram;
   const palette = c.scene.cgram.slice(0, 256); // 128 BG colors; encodeM1te2 masks bit15
   const chr4 = chrWindow(vram, MAP_CHAR_BASE, TILE4);
+  fillTileset1Marker(chr4); // mark the unloaded char-0-255 band with a red ✕ (see note above)
   const chr2 = chrWindow(vram, GROUND_CHAR_VRAM, TILE2);
   const ground = groundTilemap(vram);
   const m0 = new Uint16Array(MAP_STRIDE * MAP_STRIDE); // BG1
@@ -128,6 +172,10 @@ export interface OverworldM1Diff {
   paletteEdits: M1tePaletteEdit[];
   /** CHR tiles changed but not resolvable to a map gfx file (wrap / unknown). */
   skippedTiles: number;
+  /** BG1/BG2 cells referencing tileset 1 (char 0-255 — the unloaded, ✕-marked band).
+   *  These still round-trip verbatim, but draw unrelated panel gfx in-game, so the
+   *  import surfaces them as an error (see the tileset-1 marker note). */
+  tileset1Cells: number;
 }
 
 /**
@@ -143,9 +191,11 @@ export function diffOverworldM1(c: WorldMapTerrainContext, m1Bytes: Uint8Array):
   const ground = groundTilemap(vram);
 
   // ── CHR — 4bpp BG char ($4000 window → $74/$75/$4C) then 2bpp ground char ($2000 → $56).
+  // Tiles 0..255 are the ✕-marked tileset-1 band (no backing file at $4000-$6000), so they
+  // are never editable — skip them so the synthetic marker doesn't read back as a CHR edit.
   const chrEdits: OverworldChrEdit[] = [];
   let skippedTiles = 0;
-  for (let t = 0; t < 1024; t++) {
+  for (let t = TILESET1_TILES; t < 1024; t++) {
     const vramByte = (MAP_CHAR_BASE + t * TILE4) & 0xffff;
     if (vramByte + TILE4 > vram.length || sameBytes(doc.chr4bpp, t * TILE4, vram, vramByte, TILE4)) continue;
     const f = fileForVramByteBpp(manifest, vramByte, TILE4);
@@ -167,19 +217,25 @@ export function diffOverworldM1(c: WorldMapTerrainContext, m1Bytes: Uint8Array):
     { slot: 2, tm: ground, fileId: GROUND_TM_FILE_ID }
   ];
   const wordEdits: OverworldWordEdit[] = [];
+  let tileset1Cells = 0;
   for (const s of slots) {
     const map = doc.maps[s.slot]!;
     for (let r = 0; r < ROWS; r++) {
       for (let cc = 0; cc < COLS; cc++) {
         const wi = wordIndex(cc, r);
         const docWord = map[r * MAP_STRIDE + cc]! & 0xffff;
+        // BG1/BG2 (slots 0/1, 4bpp char base $4000) cells pointing into the ✕-marked
+        // tileset-1 band (char 0-255 — char 0 included: YI has no empty-tile sentinel, so
+        // it is the same trap as 1-255). BG3 (slot 2) is excluded — its 2bpp char base
+        // $2000 puts the real $56 ground in tileset 0, so it is not blank.
+        if (s.slot !== 2 && (docWord & 0x3ff) < TILESET1_TILES) tileset1Cells++;
         if (docWord !== wordAt(s.tm, wi)) wordEdits.push({ fileId: s.fileId, fileOffset: wi * 2, word: docWord });
       }
     }
   }
 
   // ── Palette — changed CGRAM rows 0-7, skipping the auto-blacked transparent slots.
-  return { chrEdits, wordEdits, paletteEdits: diffM1tePalette(doc.palette, cgram), skippedTiles };
+  return { chrEdits, wordEdits, paletteEdits: diffM1tePalette(doc.palette, cgram), skippedTiles, tileset1Cells };
 }
 
 /** The base (cart) screen-block tilemap bytes for one of an overworld file's tilemap files —

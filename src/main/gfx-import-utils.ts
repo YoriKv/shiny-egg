@@ -5,9 +5,7 @@ import { decodePng, type ImageData } from 'snes-framework/png'
 import { decodeAsepriteImage, decodeAsepriteRegion } from 'snes-framework/aseprite'
 import { lz2, lz16 } from 'snes-framework/decompress'
 import { snesToPC, type SymbolMap } from 'snes-framework/symbol-map'
-import type { GfxFileEntry } from 'snes-framework/load-graphics'
 import { gfxLiveEdits } from './gfx-live-cache'
-import { saveGfxEdit } from './resources'
 
 /** How a track's `.aseprite` flattens to RGBA: `'image'` = a single-image project
  *  (`decodeAsepriteImage`, the assembled-view exports); `'region'` = a tilemap layer
@@ -72,63 +70,8 @@ export function decodeGfxFile(
   return out
 }
 
-// ── Per-(format,fileId) CHR tile-edit accumulation → saveGfxEdit ────────────────
-// Shared by every importer that slices pixels back to CHR (the assembled-view
-// tracks in gfx-png-import.ts AND the BG regions in bg-region-io.ts): each slicer
-// emits per-tile edits which merge here before ONE re-encode per file. A
-// `savedFileTiles` cache (passed in) makes edits to the SAME file across import
-// blocks (e.g. a raw sheet + an assembled view + a BG region) merge last-write-wins
-// instead of clobbering.
-
-/** One sliced CHR tile edit, ready to fold into a FilePatchMap. */
-export interface SlicedTileEdit { format: 'lz2' | 'lz16'; fileId: number; fileTile: number; bytes: Uint8Array }
-
-/** Accumulated changed tiles per `${format}/${fileId}`. `tileBytes` is recorded when the
- *  caller knows it varies per file (BG regions: BG2 4bpp=32 vs BG3 2bpp=16 — same lz2
- *  format, different stride); when omitted, `applyTilePatches` falls back to `tileBytesOf`. */
-export type FilePatchMap = Map<string, { fileId: number; format: 'lz2' | 'lz16'; tileBytes?: number; tiles: Map<number, Uint8Array> }>
-
-/** Fold a slicer's edits into the patch map (last write wins per file-tile). Pass
- *  `tileBytes` when it's file-specific (BG regions); omit to resolve it at apply time. */
-export function addTilePatches(filePatches: FilePatchMap, edits: readonly SlicedTileEdit[], tileBytes?: number): void {
-  for (const ed of edits) {
-    const key = `${ed.format}/${ed.fileId}`
-    const fp = filePatches.get(key) ?? { fileId: ed.fileId, format: ed.format, tileBytes, tiles: new Map<number, Uint8Array>() }
-    fp.tiles.set(ed.fileTile, ed.bytes)
-    filePatches.set(key, fp)
-  }
-}
-
-/** Re-encode each patched gfx file: start from the cross-block `savedFileTiles` cache (else
- *  the live-edit overlay, else the cart blob), splice the changed tiles at the file's tile
- *  stride (`fp.tileBytes` if set, else `tileBytesOf(format)`), and `saveGfxEdit`. Returns the
- *  number of files saved. `scope` names the loaded set for the "not loaded" error. */
-export function applyTilePatches(filePatches: FilePatchMap, args: {
-  manifest: GfxFileEntry[]
-  scope: string
-  tileBytesOf: (format: 'lz2' | 'lz16') => number
-  rom: Uint8Array
-  symbols: SymbolMap
-  savedFileTiles: Map<string, Uint8Array>
-  errors: string[]
-}): { applied: number } {
-  const { manifest, scope, tileBytesOf, rom, symbols, savedFileTiles, errors } = args
-  let applied = 0
-  for (const [key, fp] of filePatches) {
-    try {
-      const me = manifest.find((m) => m.format === fp.format && m.fileId === fp.fileId)
-      if (!me) { errors.push(`gfx file 0x${fp.fileId.toString(16)}: not loaded in ${scope}`); continue }
-      const rowCount = fp.format === 'lz16' ? me.sizeBytes / 512 : undefined
-      const tileBytes = fp.tileBytes ?? tileBytesOf(fp.format)
-      const prior = savedFileTiles.get(key)
-      const tiles = prior ? prior.slice() : (liveTiles(fp.format, fp.fileId) ?? decodeGfxFile(rom, symbols, fp.format, fp.fileId, me.sizeBytes, rowCount))
-      for (const [fileTile, bytes] of fp.tiles) tiles.set(bytes, fileTile * tileBytes)
-      const r = saveGfxEdit(fp.format, fp.fileId, tiles, rowCount)
-      if (r.ok) { savedFileTiles.set(key, tiles.slice()); applied++ }
-      else errors.push(`gfx file 0x${fp.fileId.toString(16)}: ${r.error}`)
-    } catch (err) {
-      errors.push(`gfx file 0x${fp.fileId.toString(16)}: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-  return { applied }
-}
+// The per-(format,fileId) CHR tile-edit accumulation + re-encode that used to live here was
+// replaced by the cross-file conflict reconciler (gfx-import-reconcile.ts): every importer now
+// records CHR tiles into ONE shared `GfxImportReconciler` (tagged by source file), which merges,
+// conflict-checks, and re-encodes once. `decodeGfxFile` + `liveTiles` above remain the shared
+// decode/base primitives the reconciler's apply uses.

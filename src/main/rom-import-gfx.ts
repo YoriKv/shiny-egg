@@ -29,6 +29,9 @@ export interface GfxDiffItem {
   tiles: Uint8Array
   /** lz16 only — tile-row count (`saveGfxEdit` needs it to re-encode). */
   rowCount?: number
+  /** CHR depth → tile stride (16 for 2bpp BG3, 32 for 4bpp). From the base cart's gfx
+   *  classification (gfxSizeRegistry); used to count "tiles changed" at the right granularity. */
+  bpp: 2 | 4
 }
 
 export interface GfxDiffResult {
@@ -97,18 +100,21 @@ export function diffForeignGfx(foreign: Uint8Array, base: Uint8Array, symbols: S
         skipped++ // the hack resized this sheet — can't splice it cleanly
         continue
       }
-      if (!bytesEqual(baseTiles, foreignTiles)) changed.push({ format: 'lz2', fileId, tiles: foreignTiles })
+      // bpp from the base cart's classification (BG3 = 2bpp); 4bpp default for sheets not
+      // level-loaded (screens), which are 4bpp by convention.
+      const bpp = gfxSizeRegistry().get(`lz2/${fileId}`)?.bpp ?? 4
+      if (!bytesEqual(baseTiles, foreignTiles)) changed.push({ format: 'lz2', fileId, tiles: foreignTiles, bpp })
     }
   }
 
   // ── lz16: registry-sized blobs only (decompressed size from the level walk) ──
-  for (const { format, fileId, sizeBytes, rowCount } of gfxSizeRegistry().values()) {
+  for (const { format, fileId, sizeBytes, rowCount, bpp } of gfxSizeRegistry().values()) {
     if (format !== 'lz16') continue
     try {
       const baseTiles = decodeGfxFile(base, symbols, 'lz16', fileId, sizeBytes, rowCount)
       const foreignTiles = decodeGfxFile(foreign, symbols, 'lz16', fileId, sizeBytes, rowCount)
       if (!bytesEqual(baseTiles, foreignTiles)) {
-        changed.push({ format: 'lz16', fileId, tiles: foreignTiles, rowCount })
+        changed.push({ format: 'lz16', fileId, tiles: foreignTiles, rowCount, bpp })
       }
     } catch {
       skipped++ // foreign stream wouldn't decode at the base size (resized/relocated)

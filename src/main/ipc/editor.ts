@@ -16,7 +16,7 @@ import type {
   SaveResourceResult
 } from 'snes-framework/types'
 import { exportGfxPngsToDir } from '../gfx-png-export'
-import { exportBgRegionToDir, importBgRegionFromDir, listM1Files } from '../bg-region-io'
+import { exportBgRegionToDir, importBgRegionFolder, listM1Files } from '../bg-region-io'
 import { importGraphicsFolder } from '../graphics-folder-io'
 import { addRegionExportFolder, listRegionExportFolders, removeRegionExportFolder } from '../region-exports'
 import { asepriteInfo, openInAseprite } from '../aseprite-app'
@@ -309,7 +309,7 @@ export function registerEditorIpc(): void {
     return r
   })
   // Import a specific tracked folder (no dialog) — slices every region back + logs.
-  ipcMain.handle('editor:importRegionFolder', async (_event, dir: string): Promise<BgRegionImportResult> => importBgRegionFromDir(dir))
+  ipcMain.handle('editor:importRegionFolder', async (_event, dir: string): Promise<BgRegionImportResult> => importBgRegionFolder(dir))
   // Ad-hoc import via folder dialog (also remembers the folder).
   ipcMain.handle('editor:importBgRegion', async (): Promise<BgRegionImportResult> => {
     const win = BrowserWindow.getFocusedWindow()
@@ -320,7 +320,7 @@ export function registerEditorIpc(): void {
     const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
     if (picked.canceled || picked.filePaths.length === 0) return { canceled: true }
     const dir = picked.filePaths[0]!
-    const r = await importBgRegionFromDir(dir)
+    const r = await importBgRegionFolder(dir)
     if (r.ok) addRegionExportFolder(dir)
     return r
   })

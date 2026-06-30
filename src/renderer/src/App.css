@@ -5057,6 +5057,15 @@ h3 { margin: 0; }
   word-break: break-word;
 }
 
+/* Advisory import notices (shared-data side effects) — amber, not red: the import
+   succeeded, this is a heads-up, not a failure. */
+.se-graphics__log-warning {
+  margin: 0;
+  font-size: 10px;
+  color: var(--sev-warning, #d9a441);
+  word-break: break-word;
+}
+
 /* Changed-graphics list + per-file reset. */
 .se-graphics__changes {
   display: flex;

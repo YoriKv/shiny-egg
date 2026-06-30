@@ -715,6 +715,28 @@ export type SaveGfxEditResult =
  *  blob actually existed (→ the built ROM is now stale). */
 export type ResetGfxEditResult = { ok: boolean; removed?: boolean; error?: string }
 
+/** What KIND of data an overlay-edited graphics file holds — declared by the editing
+ *  pipeline that wrote it (NOT inferred at read time), so the change summary is exact:
+ *    `chr`     — 8×8 CHR pixel tiles (a tileset / sprite / HUD sheet). Unit = a tile.
+ *    `tilemap` — 2-byte placement words (which tile + flip + palette per cell). Unit = a cell.
+ *    `raw`     — uncompressed `.bin` bytes (animation CHR, chunky icon/scenery banks). Unit = a byte. */
+export type GfxEditKind = 'chr' | 'tilemap' | 'raw'
+
+/** The exact change an overlay-edited graphics file carries vs the pristine base — computed
+ *  by the editing pipeline at write time (the `saveGfxEdit` / `saveRawChrEdit` chokepoint
+ *  diffs the new blob against the base in `unitBytes` strides), so the "Changed graphics"
+ *  inventory reports a real count rather than guessing. Absent on edits made before this was
+ *  tracked (those fall back to no change detail). */
+export interface GfxEditChange {
+  kind: GfxEditKind
+  /** Units (per {@link kind}) that differ from base. */
+  changedUnits: number
+  /** Total units in the file (so the UI can show "N of M"). */
+  totalUnits: number
+  /** The diff stride that defines a unit (CHR tile = 16/32, tilemap word = 2, raw = 1). */
+  unitBytes: number
+}
+
 /** One overlay-edited graphics file in the active project (the "Changed graphics"
  *  list / per-file reset). `file` is the overlay path relative to `assets/yi` —
  *  the reset target. */
@@ -725,6 +747,9 @@ export interface GfxEditEntry {
   /** A compressed gfx blob vs the shared raw animation CHR. */
   kind: 'compressed' | 'raw-chr'
   bytes: number
+  /** The exact change vs base (tiles repainted / cells re-placed / bytes changed), recorded
+   *  by the pipeline that wrote the edit. Absent for edits that predate change tracking. */
+  change?: GfxEditChange
 }
 
 /** What a graphics file maps back to — the role(s) it's loaded as across the cart
@@ -879,9 +904,14 @@ export type ImportGraphicsResult =
        *  swatch). Non-zero ⇒ the renderer reloads its palette draft so the live preview
        *  reflects the import (the edits were persisted behind the edit-session's back). */
       paletteChanged: number
-      /** Pre-formatted log + error lines for display (gfx counts + region log). */
+      /** Pre-formatted log lines for display (gfx counts + region log). */
       log: string[]
+      /** Hard failures — a file couldn't be imported. Shown red. */
       errors: string[]
+      /** Advisory side-effect notices: the import succeeded, but an edit reached
+       *  data shared with other sprites / levels / worlds (the master palette blob,
+       *  shared CHR tiles/glyphs, the all-worlds map icons). Shown amber, not red. */
+      warnings: string[]
     }
   | { ok: false; error: string }
   | { canceled: true }

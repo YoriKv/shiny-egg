@@ -1204,7 +1204,9 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
     let saved = 0
     const errs: string[] = []
     for (const it of cached.gfxItems) {
-      const r = saveGfxEdit(it.format, it.fileId, it.tiles, it.rowCount)
+      // Tile stride from the sheet's real bpp (16 for 2bpp BG3, 32 for 4bpp) — so the
+      // "tiles changed" count is exact, not assumed.
+      const r = saveGfxEdit(it.format, it.fileId, it.tiles, it.rowCount, { kind: 'chr', unitBytes: it.bpp === 2 ? 16 : 32 })
       if (r.ok) saved++
       else errs.push(`0x${it.fileId.toString(16)} (${it.format}): ${r.error}`)
     }

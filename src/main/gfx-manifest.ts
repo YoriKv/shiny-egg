@@ -9,6 +9,13 @@ import { type TileRegion } from 'snes-framework/screen-gfx'
 /** The manifest filename at the export-dir root. */
 export const MANIFEST = 'gfx-manifest.json'
 
+/** Top-level `checksums` map in gfx-manifest.json: each manifest-relative artifact path →
+ *  sha256 (hex) of its bytes at export. The import checksum gate (gfx-import-reconcile.ts
+ *  `changedSinceExport`) skips any artifact whose current bytes still match — so a file the
+ *  user never touched contributes nothing and can't revert a newer edit on re-import. Absent
+ *  on pre-checksum exports (those import unconditionally, as before). */
+export type GfxManifestChecksums = Record<string, string>
+
 export interface GfxManifestEntry {
   /** Relative path (incl. category folder) under the export dir. */
   file: string

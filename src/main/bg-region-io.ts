@@ -26,7 +26,9 @@ import { decodeAsepriteRegion, decodeAsepriteStructural } from 'snes-framework/a
 import { resolveBgTilemapSource, type BgTilemapSource } from 'snes-framework/load-bg-tilemaps'
 import { decodeLevelFromLevelData } from 'snes-framework/object-decode'
 import { decodePng, type ImageData } from 'snes-framework/png'
-import { canvasRegion, liveTiles, addTilePatches, applyTilePatches, type FilePatchMap } from './gfx-import-utils'
+import { canvasRegion, liveTiles } from './gfx-import-utils'
+import { fileChecksum } from './gfx-import-conflict'
+import { GfxImportReconciler } from './gfx-import-reconcile'
 import { loadLevelPalettes } from 'snes-framework/load-palettes'
 import { type SymbolMap } from 'snes-framework/symbol-map'
 import type { GfxFileEntry, LevelData, PaletteEdit } from 'snes-framework/types'
@@ -34,7 +36,7 @@ import type { RenderHeaderRequest, BgRegionLayer, BgRegionRect, BgRegionFormat, 
 import { frameworkWorkRoot } from './framework-paths'
 import { loadRomAndSymbols } from './render/rom-cache'
 import { resourcePaletteToBase, applyPaletteEdits } from './render/render-core'
-import { saveGfxEdit, savePaletteEdits, loadPaletteEdits } from './resources'
+import { saveGfxEdit, loadPaletteEdits } from './resources'
 import { gfxLiveEdits } from './gfx-live-cache'
 
 // ── palette helpers (5-bit SNES ⇆ 8-bit RGB) ───────────────────────────────
@@ -85,6 +87,9 @@ interface BgRegionSidecar {
   /** Legacy field from an earlier separate placement export — no longer written;
    *  kept only so old sidecars still parse. */
   placement?: boolean
+  /** sha256 of the exported image artifact (`.png`/`.aseprite`) — the import checksum gate
+   *  skips a region whose bytes still match (unedited since export). Absent on old exports. */
+  checksum?: string
 }
 
 /** Sidecar for an M1TE2 `.M1` export (written as `bg{1,2,3}-region.m1.json`, distinct from
@@ -103,6 +108,8 @@ interface M1te2Sidecar {
   /** BG1 only — the per-Map16-cell metadata, so import rebuilds the region (+ its 8×8 sub-tile
    *  tileset) without re-decoding the level. Absent for BG2/BG3 (their context is the tilemap). */
   cells?: Bg1RegionCell[]
+  /** sha256 of the exported `.M1` artifact — the import checksum gate skips an unedited session. */
+  checksum?: string
 }
 
 /** Build the exported palette layout (used rows × stride) with each entry's CGRAM
@@ -139,13 +146,6 @@ export type BgRegionExportOk = Extract<BgRegionExportResult, { ok: true }>
  *  type can't drift — every field is defined once in `ipc-types.ts`. */
 export type BgRegionImportOk = Extract<BgRegionImportResult, { ok: true }>
 type Err = { ok: false; error: string }
-
-/** Merge detected palette edits over the project's existing ones (offset-keyed). */
-function mergePaletteEdits(existing: PaletteEdit[], detected: PaletteEdit[]): PaletteEdit[] {
-  const m = new Map(existing.map((e) => [e.offset, e.value]))
-  for (const e of detected) m.set(e.offset, e.value)
-  return [...m].map(([offset, value]) => ({ offset, value }))
-}
 
 const fileBase = (layer: BgRegionLayer): string => `bg${layer}-region`
 
@@ -273,7 +273,8 @@ export function exportBgRegionToDir(
       const m1sc: M1te2Sidecar = {
         format: 'm1te2', layer, header, bpp, tileSize,
         width: regionWidth, height: regionHeight,
-        cells: layer === 1 ? cells : undefined
+        cells: layer === 1 ? cells : undefined,
+        checksum: fileChecksum(m1.bytes)
       }
       writeFileSync(join(dir, `${base}.m1.json`), JSON.stringify(m1sc, null, 2))
       return { ok: true, file: `${base}.M1`, cells: editableCount, dir, warning: cropWarning }
@@ -326,6 +327,7 @@ export function exportBgRegionToDir(
       }
     }
 
+    sidecar.checksum = fileChecksum(image) // the import checksum gate skips an unedited region
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, `${base}.${ext}`), image)
     writeFileSync(join(dir, `${base}.json`), JSON.stringify(sidecar, null, 2))
@@ -389,7 +391,7 @@ function quantizeRegion(rgba: Uint8Array): void {
  * region back to CHR tile edits and `saveGfxEdit` only the changed files. Edits to
  * the same file across regions merge (decode once, patch all, save once).
  */
-export async function importBgRegionFromDir(dir: string): Promise<BgRegionImportOk | Err> {
+export async function importBgRegionFromDir(dir: string, reconciler: GfxImportReconciler): Promise<BgRegionImportOk | Err> {
   try {
     const { rom, symbols } = loadRomAndSymbols()
     const dirFiles = readdirSync(dir)
@@ -400,22 +402,23 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
     const errors: string[] = []
     const log: string[] = []
     const perRegion: RegionImportLogEntry[] = []
-    // CHR tile-edit accumulation (shared with gfx-png-import via gfx-import-utils): edits
-    // merge per file across regions, then ONE re-encode each. `savedFileTiles` carries the
-    // cross-region merge; `manifestRef` is the (full-scene) manifest for the final apply.
-    const filePatches: FilePatchMap = new Map()
-    const savedFileTiles = new Map<string, Uint8Array>()
-    let manifestRef: GfxFileEntry[] = []
-    const paletteByOffset = new Map<number, number>() // master-blob offset → BGR-15
+    // CHR tile edits + palette colors now flow into the SHARED reconciler (gfx-import-reconcile),
+    // which merges across regions AND with the gfx-png importer, conflict-checks, and writes once
+    // in graphics-folder-io. Tilemap WORD placement stays a direct saveGfxEdit here (single-owner).
     let conflicts = 0
     let regions = 0
     let mismatches = 0
     let repositioned = 0 // index-based placement edits (tilemap words written)
+    // CHECKSUM GATE: skip a region whose exported artifact still matches its sidecar checksum
+    // (unedited since export) — the anti-thrash fix. `unchanged(artifact, sc)` reads the file.
+    const unchanged = (artifact: string, sc: { checksum?: string }): boolean =>
+      !!sc.checksum && existsSync(artifact) && fileChecksum(readFileSync(artifact)) === sc.checksum
 
     for (const scFile of sidecars) {
       const sc = JSON.parse(readFileSync(join(dir, scFile), 'utf8')) as BgRegionSidecar
       const asePath = join(dir, scFile.replace(/\.json$/, '.aseprite'))
       const pngPath = join(dir, scFile.replace(/\.json$/, '.png'))
+      if (unchanged(existsSync(asePath) ? asePath : pngPath, sc)) continue // unedited → skip
 
       const cpr = sc.bpp === 4 ? 16 : 4
       const aseMode: 'pixels' | 'layout' = sc.asepriteMode ?? 'pixels'
@@ -444,7 +447,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
             const bytes = src.bytes.slice()
             let written = 0
             for (const e of pd.edits) if (e.fileOffset >= 0 && e.fileOffset + 1 < bytes.length) { bytes[e.fileOffset] = e.word & 0xff; bytes[e.fileOffset + 1] = (e.word >> 8) & 0xff; written++ }
-            const r = saveGfxEdit('lz2', src.fileId, bytes)
+            const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2 })
             if (r.ok) { repositioned += written; log.push(`${scFile} (BG${sc.layer} layout): ${written} tile${written === 1 ? '' : 's'} repositioned${pd.skipped ? ` (${pd.skipped} non-editable/new skipped)` : ''}`) }
             else errors.push(`${scFile}: ${r.error}`)
           }
@@ -474,7 +477,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         // write — detect + persist them to the master blob (same as the flatten path).
         if (sc.palette && sc.palette.length) {
           const det = detectPaletteEdits(sc.palette, (idx) => (idx < struct.palette.length ? struct.palette[idx]! : undefined))
-          for (const pe of det.edits) paletteByOffset.set(pe.offset, pe.value)
+          for (const pe of det.edits) reconciler.paletteWord(pe.offset, pe.value, scFile)
           if (det.edits.length) log.push(`${scFile}: ${det.edits.length} palette color${det.edits.length === 1 ? '' : 's'} changed`)
           if (det.uneditable > 0) {
             errors.push(`${scFile}: ${det.uneditable} recolored palette entr${det.uneditable === 1 ? 'y is' : 'ies are'} not editable through the palette (not master-blob-sourced — e.g. a transparent/backdrop slot)`)
@@ -492,9 +495,9 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         conflicts += cd.conflicts
         mismatches += cd.mismatches
         regions++
-        // Step 1 — CHR pixel tiles (merged per file, re-encoded once after the loop).
-        addTilePatches(filePatches, cd.tileEdits, sc.bpp === 4 ? 32 : 16)
-        manifestRef = bgCtx.manifest
+        // Step 1 — CHR pixel tiles → the shared reconciler (re-encoded once, conflict-checked).
+        reconciler.registerManifest(bgCtx.manifest)
+        for (const ed of cd.tileEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, sc.bpp === 4 ? 32 : 16, scFile)
         // Step 2 — tilemap WORD writes → splice the decompressed tilemap file (onto the
         // CURRENT tilemap so successive placement imports accumulate).
         if (cd.wordEdits.length > 0) {
@@ -504,7 +507,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
             const bytes = (currentTilemap ?? src.bytes).slice()
             let written = 0
             for (const e of cd.wordEdits) if (e.fileOffset >= 0 && e.fileOffset + 1 < bytes.length) { bytes[e.fileOffset] = e.word & 0xff; bytes[e.fileOffset + 1] = (e.word >> 8) & 0xff; written++ }
-            const r = saveGfxEdit('lz2', src.fileId, bytes)
+            const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2 })
             if (r.ok) repositioned += written
             else errors.push(`${scFile}: ${r.error}`)
           }
@@ -554,7 +557,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
       if (sc.palette && sc.palette.length) {
         const det = detectPaletteEdits(sc.palette, importedPaletteAt)
         effective = det.effective
-        for (const pe of det.edits) paletteByOffset.set(pe.offset, pe.value)
+        for (const pe of det.edits) reconciler.paletteWord(pe.offset, pe.value, scFile)
         if (det.edits.length) log.push(`${scFile}: ${det.edits.length} palette color${det.edits.length === 1 ? '' : 's'} changed`)
         if (det.uneditable > 0) {
           errors.push(`${scFile}: ${det.uneditable} recolored palette entr${det.uneditable === 1 ? 'y is' : 'ies are'} not editable through the palette (not master-blob-sourced — e.g. a transparent/backdrop slot)`)
@@ -604,8 +607,8 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         errors.push(`${scFile}: ${diff.mismatches} pixel${diff.mismatches === 1 ? '' : 's'} used a color not in their tile's palette row — clamped to index 0 (wrong palette row?)`)
       }
 
-      addTilePatches(filePatches, diff.edits, tileBytes)
-      manifestRef = manifest
+      reconciler.registerManifest(manifest)
+      for (const ed of diff.edits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, tileBytes, scFile)
     }
 
     // ── M1TE2 ".M1" session imports ─────────────────────────────────────────────
@@ -620,6 +623,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         const m1Name = scFile.replace(/\.m1\.json$/, '.M1')
         const m1Path = join(dir, m1Name)
         if (!existsSync(m1Path)) { errors.push(`${scFile}: missing ${m1Name}`); continue }
+        if (unchanged(m1Path, sc)) continue // unedited .M1 → skip (checksum gate)
 
         // BG1 area: an 8×8 Map16-sub-tile tilemap → CHR pixels + palette only (no placement —
         // BG1's layout is the level editor). Rebuild the region from the sidecar's cells (no
@@ -631,8 +635,8 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
           const region = { rgba: new Uint8Array(0), width: sc.width, height: sc.height, cells: sc.cells ?? [], paletteRowsUsed: [] }
           const d = diffBg1RegionM1te2(ctx, region, readFileSync(m1Path))
           regions++
-          manifestRef = ctx.manifest
-          addTilePatches(filePatches, d.tileEdits, 32)
+          reconciler.registerManifest(ctx.manifest)
+          for (const ed of d.tileEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, 32, scFile)
           let uneditable = 0
           if (d.paletteEdits.length) {
             const provenance = new Int32Array(256)
@@ -640,7 +644,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
             for (const pe of d.paletteEdits) {
               const off = provenance[pe.cgramIndex] ?? -1
               if (off < 0) { uneditable++; continue }
-              paletteByOffset.set(off, pe.bgr15)
+              reconciler.paletteWord(off, pe.bgr15, scFile)
             }
           }
           perRegion.push({ file: scFile, layer: 1, source: 'm1te2', tiles: d.tileEdits.length, mismatches: 0, conflicts: 0 })
@@ -666,10 +670,10 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
         const currentTilemap = src && tmAddr === src.vramBase ? (liveTiles('lz2', src.fileId) ?? src.bytes) : undefined
         const d = diffBgRegionM1te2(bgCtx, region, readFileSync(m1Path), tmAddr, { currentTilemap })
         regions++
-        manifestRef = bgCtx.manifest
 
-        // CHR pixels → the shared per-file patch map (re-encoded with everything else below).
-        addTilePatches(filePatches, d.tileEdits, sc.bpp === 4 ? 32 : 16)
+        // CHR pixels → the shared reconciler (re-encoded with everything else, conflict-checked).
+        reconciler.registerManifest(bgCtx.manifest)
+        for (const ed of d.tileEdits) reconciler.chrTile(ed.format, ed.fileId, ed.fileTile, ed.bytes, sc.bpp === 4 ? 32 : 16, scFile)
 
         // Tilemap words → accumulate per tilemap file (spliced once after the loop).
         if (d.wordEdits.length > 0) {
@@ -690,7 +694,7 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
           for (const pe of d.paletteEdits) {
             const off = provenance[pe.cgramIndex] ?? -1
             if (off < 0) { uneditable++; continue }
-            paletteByOffset.set(off, pe.bgr15)
+            reconciler.paletteWord(off, pe.bgr15, scFile)
           }
         }
 
@@ -712,32 +716,38 @@ export async function importBgRegionFromDir(dir: string): Promise<BgRegionImport
       const bytes = (liveTiles('lz2', src.fileId) ?? src.bytes).slice()
       let written = 0
       for (const [off, word] of words) if (off >= 0 && off + 1 < bytes.length) { bytes[off] = word & 0xff; bytes[off + 1] = (word >> 8) & 0xff; written++ }
-      const r = saveGfxEdit('lz2', src.fileId, bytes)
+      const r = saveGfxEdit('lz2', src.fileId, bytes, undefined, { kind: 'tilemap', unitBytes: 2 })
       if (r.ok) repositioned += written
       else errors.push(`BG tilemap 0x${src.fileId.toString(16)}: ${r.error}`)
     }
 
-    // Re-encode each patched CHR file once (live-overlay/cart-aware, cross-region merged).
-    const { applied } = applyTilePatches(filePatches, {
-      manifest: manifestRef, scope: 'this level', tileBytesOf: () => 32, rom, symbols, savedFileTiles, errors
-    })
-    log.push(`Saved ${applied} gfx file${applied === 1 ? '' : 's'}.`)
-
-    // Persist palette color edits to the master blob (merged with existing edits).
-    let paletteChanged = 0
-    if (paletteByOffset.size) {
-      const detected: PaletteEdit[] = [...paletteByOffset].map(([offset, value]) => ({ offset, value }))
-      const r = await savePaletteEdits(mergePaletteEdits(loadPaletteEdits(), detected))
-      if (r.ok) {
-        paletteChanged = detected.length
-        log.push(`Saved ${paletteChanged} palette color${paletteChanged === 1 ? '' : 's'}.`)
-      } else {
-        errors.push(`palette: ${r.error}`)
-      }
-    }
-
-    return { ok: true, dir, applied, repositioned, conflicts, regions, mismatches, paletteChanged, perRegion, log, errors }
+    // CHR re-encode + palette merge + cross-file conflict resolution happen ONCE in
+    // reconciler.apply() (graphics-folder-io), after the gfx-png importer has also recorded.
+    // `applied`/`paletteChanged` are reported from there; here they're 0 (this importer only
+    // records them + does the single-owner tilemap-word saves counted in `repositioned`).
+    return { ok: true, dir, applied: 0, repositioned, conflicts, regions, mismatches, paletteChanged: 0, perRegion, log, errors }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * Standalone BG-region import (the "Region"-only IPC entry points that DON'T go through the
+ * unified `importGraphicsFolder`): own a reconciler, record, then `apply()` it here so the
+ * caller gets a complete result. The unified path shares ONE reconciler across both importers
+ * instead (graphics-folder-io), so it calls `importBgRegionFromDir` directly.
+ */
+export async function importBgRegionFolder(dir: string): Promise<BgRegionImportOk | Err> {
+  const reconciler = new GfxImportReconciler()
+  const r = await importBgRegionFromDir(dir, reconciler)
+  if (!r.ok) return r
+  const { rom, symbols } = loadRomAndSymbols()
+  const a = await reconciler.apply(rom, symbols)
+  return {
+    ...r,
+    applied: a.applied,
+    paletteChanged: a.paletteChanged,
+    log: [...r.log, `Saved ${a.applied} gfx file${a.applied === 1 ? '' : 's'}, ${a.paletteChanged} palette color${a.paletteChanged === 1 ? '' : 's'}.`],
+    errors: [...r.errors, ...a.conflicts]
   }
 }

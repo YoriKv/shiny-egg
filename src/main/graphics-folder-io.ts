@@ -6,10 +6,12 @@ import { existsSync, readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { importGfxPngsFromDir, type ImportGfxResult as GfxImportCounts } from './gfx-png-import'
 import { importBgRegionFromDir } from './bg-region-io'
+import { GfxImportReconciler } from './gfx-import-reconcile'
+import { loadRomAndSymbols } from './render/rom-cache'
 import type { ImportGraphicsResult } from '../shared/ipc-types'
 
-/** Flatten the all-graphics import counts into log lines + errors + a changed total. */
-function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; changed: number; paletteChanged: number } {
+/** Flatten the all-graphics import counts into log lines + errors + warnings + a changed total. */
+function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; warnings: string[]; changed: number; paletteChanged: number } {
   const log: string[] = []
   const push = (n: number, label: string): void => { if (n > 0) log.push(`${n} ${label}${n === 1 ? '' : 's'} changed`) }
   push(r.imported, 'gfx file')
@@ -27,15 +29,20 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   if (r.skipped > 0 || r.imported > 0) log.push(`${r.skipped} unchanged`)
 
   const errors = [...r.errors]
-  if (r.spritePropagated > 0) errors.push(`${r.spritePropagated} other sprite${r.spritePropagated === 1 ? '' : 's'} share edited tiles and also changed.`)
-  if (r.glyphShared > 0) errors.push(`${r.glyphShared} other sprite${r.glyphShared === 1 ? '' : 's'} share an edited glyph.`)
-  if (r.islandSharedCells > 0) errors.push(`Island tiles are shared — your edit also changed ${r.islandSharedCells} other island cell${r.islandSharedCells === 1 ? '' : 's'}.`)
-  if (r.iconImported > 0) errors.push('Map-icon edits apply to all worlds (the marker/castle tiles are shared).')
-  if (r.paletteImported > 0) errors.push('Screen-palette color edits write to the shared master palette blob — a color also used by another screen or level changes there too.')
+  // The import succeeded; these note that an edit reached data SHARED with other
+  // sprites / levels / worlds, so the change has wider reach than the user picked.
+  // They're advisories, not failures — keep them out of `errors` so they render
+  // amber (warning), not red. See the renderer's two log channels in GraphicsPanel.
+  const warnings: string[] = []
+  if (r.spritePropagated > 0) warnings.push(`${r.spritePropagated} other sprite${r.spritePropagated === 1 ? '' : 's'} share edited tiles and also changed.`)
+  if (r.glyphShared > 0) warnings.push(`${r.glyphShared} other sprite${r.glyphShared === 1 ? '' : 's'} share an edited glyph.`)
+  if (r.islandSharedCells > 0) warnings.push(`Island tiles are shared — your edit also changed ${r.islandSharedCells} other island cell${r.islandSharedCells === 1 ? '' : 's'}.`)
+  if (r.iconImported > 0) warnings.push('Map-icon edits apply to all worlds (the marker/castle tiles are shared).')
+  if (r.paletteImported > 0) warnings.push('Screen-palette color edits write to the shared master palette blob — a color also used by another screen or level changes there too.')
 
   const changed = r.imported + r.spriteImported + r.iconImported +
     r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.sceneImported + r.glyphImported + r.fontImported + r.paletteImported
-  return { log, errors, changed, paletteChanged: r.paletteImported }
+  return { log, errors, warnings, changed, paletteChanged: r.paletteImported }
 }
 
 /**
@@ -65,36 +72,58 @@ export async function importGraphicsFolder(dir: string): Promise<Exclude<ImportG
 
     const log: string[] = []
     const errors: string[] = []
+    const warnings: string[] = []
     let changed = 0
     let paletteChanged = 0
+    let repositioned = 0
+
+    // ONE reconciler for the whole folder: both importers RECORD their CHR/palette/raw edits
+    // into it (tagged by source file), then a single apply() resolves cross-file conflicts and
+    // writes once — so an edit shared by a screen `.aseprite` AND a BG region reconciles together
+    // (gfx-import-reconcile.ts). Direct tilemap-word/screen-placement saves (single-owner) still
+    // happen inside the importers.
+    const reconciler = new GfxImportReconciler()
 
     for (const gfxDir of gfxDirs) {
       // Label each by its subfolder (e.g. "All graphics (map)"); the dir itself is unlabelled.
       const label = gfxDir === dir ? 'All graphics:' : `All graphics (${basename(gfxDir)}):`
       try {
-        const g = gfxResultToLog(await importGfxPngsFromDir(gfxDir)) // throws on a missing/invalid manifest
+        const g = gfxResultToLog(await importGfxPngsFromDir(gfxDir, reconciler)) // throws on a missing/invalid manifest
         log.push(label, ...g.log.map((l) => `  ${l}`))
         errors.push(...g.errors)
+        warnings.push(...g.warnings)
         changed += g.changed
-        paletteChanged += g.paletteChanged
       } catch (e) {
         errors.push(`${label} ${e instanceof Error ? e.message : String(e)}`)
       }
     }
 
     if (hasRegion) {
-      const r = await importBgRegionFromDir(dir)
+      const r = await importBgRegionFromDir(dir, reconciler)
       if (r.ok) {
         log.push('BG regions:', ...r.log.map((l) => `  ${l}`))
         errors.push(...r.errors)
-        changed += r.applied + r.paletteChanged + r.repositioned
-        paletteChanged += r.paletteChanged
+        changed += r.regions + r.repositioned
+        repositioned += r.repositioned
       } else {
         errors.push(`BG regions: ${r.error}`)
       }
     }
 
-    return { ok: true, dir, changed, paletteChanged, log, errors }
+    // Resolve + write everything once. Conflicts (two changed files disagree on a tile/color)
+    // are skipped and surfaced as errors (red); the rest is applied.
+    const { rom, symbols } = loadRomAndSymbols()
+    const applyRes = await reconciler.apply(rom, symbols)
+    paletteChanged += applyRes.paletteChanged
+    changed += applyRes.applied + applyRes.paletteChanged + applyRes.rawApplied + repositioned
+    if (applyRes.applied + applyRes.paletteChanged + applyRes.rawApplied > 0) {
+      log.push(`Saved ${applyRes.applied} gfx file${applyRes.applied === 1 ? '' : 's'}, ${applyRes.paletteChanged} palette color${applyRes.paletteChanged === 1 ? '' : 's'}, ${applyRes.rawApplied} raw sheet${applyRes.rawApplied === 1 ? '' : 's'}.`)
+    }
+    if (applyRes.conflicts.length > 0) {
+      errors.push(`${applyRes.conflicts.length} edit${applyRes.conflicts.length === 1 ? '' : 's'} skipped — two files changed the same data differently:`, ...applyRes.conflicts.map((c) => `  ${c}`))
+    }
+
+    return { ok: true, dir, changed, paletteChanged, log, errors, warnings }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
