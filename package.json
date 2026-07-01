@@ -1,6 +1,6 @@
 {
   "name": "shiny-egg",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "A Yoshi's Island (SNES) level editor",
   "main": "./out/main/index.js",
   "author": "",
@@ -18,6 +18,7 @@
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:renderer",
     "test:renderer": "vitest run",
     "test:render-parity": "vitest run -c vitest.render-parity.config.ts",
+    "publish-wiki": "node scripts/publish-wiki.ts",
     "xref": "node snes-framework/scripts/cli.ts xref",
     "closure": "node snes-framework/scripts/cli.ts closure",
     "level-lookup": "node snes-framework/scripts/cli.ts level-lookup",
@@ -33,6 +34,7 @@
     "validate-dynbody-asm": "node snes-framework/scripts/engine/validate-dynbody-asm.ts"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "snes-framework": "workspace:*"
   },
   "devDependencies": {

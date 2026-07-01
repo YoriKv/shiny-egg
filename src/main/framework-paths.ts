@@ -66,6 +66,14 @@ export function projectRoot(id: string): string {
   return join(projectsRoot(), id)
 }
 
+// Automatic timestamped project backups (see src/main/backup.ts). Deliberately a
+// SIBLING of projectsRoot(), not a child, so backups are never swept into a
+// project's own archive, deleted alongside a project, or seen by any code that
+// walks projects/.
+export function backupsRoot(): string {
+  return join(app.getPath('userData'), 'backups')
+}
+
 // Sparse overlay of changed files (mirrors the workRoot tree).
 export function overlayRoot(id: string): string {
   return join(projectRoot(id), 'overlay')

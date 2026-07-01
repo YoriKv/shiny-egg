@@ -37,6 +37,8 @@ the changelog for the latest updates.
    assets. You will only have to do this once.
 3. Pick a level to start editing.
 
+A full **Getting Started** guide is available on the **[wiki](../../wiki)**.
+
 ## Thank You
 
 Shiny Egg is my attempt to give back to a community that I've gotten so much joy

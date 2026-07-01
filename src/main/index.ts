@@ -5,6 +5,7 @@ import { join } from 'node:path'
 // installer / shortcut icons from `resources/icon.png` (the buildResources dir).
 import icon from '../../resources/icon.png?asset'
 import { ensureFrameworkWorkRoot } from './framework-paths'
+import { backupOnQuit, startAutoBackup, stopAutoBackup } from './backup'
 import { getBizHawk } from './bizhawk'
 import { registerFrameworkIpc } from './ipc/framework'
 import { registerEditorIpc } from './ipc/editor'
@@ -105,6 +106,8 @@ registerValidationIpc()
 app.whenReady().then(async () => {
   await ensureFrameworkWorkRoot()
   createWindow()
+  // Silent 10-minute safety-net backups of the current project (no UI).
+  startAutoBackup()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -116,6 +119,18 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
+// One final safety-net backup on quit (if the project changed since the last
+// one), then let the quit proceed. before-quit is synchronous, so we hold the
+// quit with preventDefault, run the async backup (bounded by a timeout), and
+// re-quit once done — `quitBackupDone` short-circuits that second pass.
+let quitBackupDone = false
+app.on('before-quit', (event) => {
+  stopAutoBackup()
   getBizHawk().stop()
+  if (quitBackupDone) return
+  event.preventDefault()
+  void backupOnQuit().finally(() => {
+    quitBackupDone = true
+    app.quit()
+  })
 })

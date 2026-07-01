@@ -1067,6 +1067,32 @@ export default function App(): JSX.Element {
   }, [pendingClose, closeDocs, closeWindow])
   const onCloseCancel = useCallback(() => setPendingClose(null), [])
 
+  // Resolved EmuHawk.exe path, or null until BizHawk is located. Drives the
+  // toolbar's Launch / Test Level vs "Locate BizHawk" choice. In dev the main
+  // process resolves a `../bizhawk/EmuHawk.exe` fallback, so this is usually
+  // non-null without any action.
+  const [bizhawkExe, setBizhawkExe] = useState<string | null>(null)
+  // Re-query the resolved path. The main process forgets a saved location that's
+  // gone or won't launch (bizhawk.ts), so re-checking after a failed launch (or
+  // at boot) flips the toolbar back to "Locate BizHawk" once the path is stale.
+  const refreshBizhawkExe = useCallback(() => {
+    void window.shinyEgg.bizhawk.getExe().then(setBizhawkExe)
+  }, [])
+  useEffect(() => {
+    refreshBizhawkExe()
+  }, [refreshBizhawkExe])
+  // "Locate BizHawk": pick EmuHawk.exe (persisted main-side) and flip the toolbar
+  // to Launch / Test Level. Surfaces a rejected pick (wrong file) to the log.
+  const onLocateBizhawk = useCallback(async () => {
+    try {
+      const r = await window.shinyEgg.bizhawk.locate()
+      if (r.ok && r.path) setBizhawkExe(r.path)
+      else if (r.error) appendLog(`Locate BizHawk: ${r.error}`)
+    } catch (err) {
+      appendLog(`Locate BizHawk: ${(err as Error).message}`)
+    }
+  }, [appendLog])
+
   // Launch / Test Level orchestration (save → build → boot EmuHawk, with the
   // catalog / sub-room warp-chain / orphan-room boot paths + the Set-Spawn
   // override). See hooks/useEmulatorActions.
@@ -1082,29 +1108,9 @@ export default function App(): JSX.Element {
     rootLevelRecordId,
     testSpawn,
     testInventory,
-    appendLog
+    appendLog,
+    refreshBizhawkExe
   })
-
-  // Resolved EmuHawk.exe path, or null until BizHawk is located. Drives the
-  // toolbar's Launch / Test Level vs "Locate BizHawk" choice. In dev the main
-  // process resolves a `../bizhawk/EmuHawk.exe` fallback, so this is usually
-  // non-null without any action.
-  const [bizhawkExe, setBizhawkExe] = useState<string | null>(null)
-  useEffect(() => {
-    void window.shinyEgg.bizhawk.getExe().then(setBizhawkExe)
-  }, [])
-  // "Locate BizHawk": pick EmuHawk.exe (persisted main-side) and flip the toolbar
-  // to Launch / Test Level. Surfaces a rejected pick (wrong file) to the log.
-  const onLocateBizhawk = useCallback(async () => {
-    try {
-      const r = await window.shinyEgg.bizhawk.locate()
-      if (r.ok && r.path) setBizhawkExe(r.path)
-      else if (r.error) appendLog(`Locate BizHawk: ${r.error}`)
-    } catch (err) {
-      appendLog(`Locate BizHawk: ${(err as Error).message}`)
-    }
-  }, [appendLog])
-
 
   // Subscribe App to catalog mutations so a post-extract refresh propagates
   // re-renders down to every getLevel()-reading child (Canvas, SubLevelMenu,

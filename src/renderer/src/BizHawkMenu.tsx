@@ -1,5 +1,6 @@
-import { type JSX } from 'react'
+import { useState, type JSX } from 'react'
 import type { TestInventory } from '../../preload/api'
+import { ContextMenu } from './ContextMenu'
 
 /** Egg-trail capacity: eggs + keys can't exceed this (the cart's between-level
  *  snapshot holds 6 items). Shared with App's persisted-state clamp. */
@@ -100,7 +101,10 @@ function InvStepper({
  *
  * Until BizHawk is located (no saved path and no dev fallback), neither action
  * can run, so both buttons are replaced by a one-time **Locate BizHawk** step
- * that points the editor at EmuHawk.exe and persists it.
+ * that points the editor at EmuHawk.exe and persists it. Once located,
+ * right-clicking the area opens a **Change BizHawk installation…** menu that
+ * re-runs that same picker — the deliberate way to re-point BizHawk at a
+ * different install (the automatic clear only fires when a launch fails).
  */
 export function BizHawkMenu({
   selectedLevelRecordId,
@@ -112,6 +116,12 @@ export function BizHawkMenu({
   testInventory,
   onTestInventoryChange
 }: BizHawkMenuProps): JSX.Element {
+  // Right-click menu (located state) to re-point BizHawk at a different install
+  // — the same picker as "Locate BizHawk", reachable without waiting for a
+  // launch to fail. Viewport coords; the fixed-position ContextMenu handles
+  // outside-click / Escape dismissal.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+
   if (!located) {
     return (
       <div className="se-bizhawk">
@@ -128,13 +138,19 @@ export function BizHawkMenu({
   }
   const canAdd = testInventory.eggs + testInventory.keys < MAX_TEST_INVENTORY_ITEMS
   return (
-    <div className="se-bizhawk">
+    <div
+      className="se-bizhawk"
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setCtxMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
       <button
         type="button"
         className="se-tool se-tool--bizhawk"
         onClick={onLaunch}
         disabled={busy}
-        title="Save (if dirty) → Build (if needed) → Launch Emulator."
+        title="Save (if dirty) → Build (if needed) → Launch Emulator.  (Right-click to change BizHawk install)"
       >
         Launch
       </button>
@@ -174,6 +190,14 @@ export function BizHawkMenu({
           }
         />
       </div>
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={[{ label: 'Change BizHawk installation…', onClick: onLocate }]}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   )
 }

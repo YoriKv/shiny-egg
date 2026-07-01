@@ -107,3 +107,43 @@ jobs:
             artifacts/**/*-linux.AppImage
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+  # Mirror the docs/ tutorial to this repo's GitHub wiki on each release. Runs
+  # independently of `release` (a wiki hiccup never blocks a release) but only
+  # after a green build, and only on a tag push. Auth is the built-in
+  # GITHUB_TOKEN — `contents: write` (declared above) covers wiki pushes, so no
+  # secret is needed, but the wiki MUST already be initialized (Settings →
+  # Wikis, with one page created via the web UI once); a push to a wiki that has
+  # never been created fails with "repository not found".
+  publish-wiki:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Clone wiki
+        run: |
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki
+
+      - name: Build wiki pages from docs/
+        run: node scripts/publish-wiki.ts --out wiki --repo "${{ github.repository }}"
+
+      - name: Commit + push wiki
+        working-directory: wiki
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki already up to date — nothing to push."
+          else
+            git commit -m "Docs sync for ${GITHUB_REF_NAME}"
+            git push
+          fi

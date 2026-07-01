@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.7 - 2026-07-01
+
+- Automatic backups of open project taken every 10 minutes stored as zip files.
+- Getting Started guide in github wiki.
+
 ## v0.5.6 - 2026-06-30
 
 - New version of M1TE with a bunch more UX updates, fixes, and improvements.

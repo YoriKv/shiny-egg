@@ -23,7 +23,7 @@ import { outputSfcName } from 'snes-framework/rom-versions'
 import { readExtractionState } from 'snes-framework/state'
 import { bizhawkExeName, builtArtifactDir, devBizhawkPath, frameworkWorkRoot } from './framework-paths'
 import { getCurrentProjectId } from './projects'
-import { getSettings } from './settings'
+import { getSettings, updateSettings } from './settings'
 import type { BizhawkWarp, TestInventory } from '../shared/ipc-types'
 import { hex } from 'snes-framework/hex'
 
@@ -50,11 +50,30 @@ function inventorySpriteIds(inv: TestInventory | undefined): number[] {
  * then the dev-only `../bizhawk/EmuHawk.exe` fallback, else null when BizHawk
  * hasn't been located yet. The renderer reads this (via `bizhawk:getExe`) to
  * decide whether to show Launch / Test Level or the "Locate BizHawk" button.
+ *
+ * Self-healing: if a path was saved but the file is gone (BizHawk moved or
+ * uninstalled), the stale path is forgotten here so the toolbar reverts to
+ * "Locate BizHawk" and the user can re-point it — the "isn't found at the
+ * stored location" half of the error recovery.
  */
 export function resolveBizhawkExe(): string | null {
   const saved = getSettings().bizhawkPath
-  if (saved && existsSync(saved)) return saved
+  if (saved) {
+    if (existsSync(saved)) return saved
+    updateSettings({ bizhawkPath: undefined }) // stale — forget so re-location is offered
+  }
   return devBizhawkPath() // dev-only, existence-checked; null in packaged builds
+}
+
+/**
+ * Forget the saved EmuHawk.exe path IF it's the exe we just tried to launch —
+ * the "fails to launch" half of the recovery. Called when that exe is missing
+ * or a spawn error proves it can't run, so the toolbar reverts to "Locate
+ * BizHawk" for re-pointing. No-op when the dev fallback (not a saved path) was
+ * the one that failed — there's nothing to clear.
+ */
+function forgetBizhawkPathIfSaved(exe: string): void {
+  if (getSettings().bizhawkPath === exe) updateSettings({ bizhawkPath: undefined })
 }
 
 // Harness Lua lives at the repo root in <repo>/bizhawk-harness/render.lua
@@ -123,7 +142,12 @@ class BizHawkSupervisor {
     if (!exe) {
       throw new Error(`BizHawk not located — click "Locate BizHawk" and select ${bizhawkExeName()}.`)
     }
-    if (!existsSync(exe)) throw new Error(`BizHawk not found at ${exe}`)
+    if (!existsSync(exe)) {
+      // Vanished between resolve and spawn — forget it (if saved) so the toolbar
+      // offers re-location rather than repeatedly failing on a dead path.
+      forgetBizhawkPathIfSaved(exe)
+      throw new Error(`BizHawk not found at ${exe}`)
+    }
     if (!existsSync(lua)) throw new Error(`Harness Lua not found at ${lua}`)
     if (!existsSync(cart)) {
       throw new Error(`Built ROM not found at ${cart} — run Build first.`)
@@ -175,27 +199,53 @@ class BizHawkSupervisor {
     child.on('error', (err) => {
       // eslint-disable-next-line no-console
       console.error('[bizhawk] spawn error:', err)
+      // A spawn error before the harness connects means this exe couldn't be
+      // launched (bad path / not executable / wrong arch). If it's the user's
+      // saved BizHawk, forget it so the toolbar reverts to "Locate BizHawk" for
+      // re-pointing. A post-connect error leaves the working path alone.
+      if (!this.client) forgetBizhawkPathIfSaved(exe)
     })
 
-    // Wait for the harness Lua to dial in. BizHawk + .NET + ROM load takes
-    // a few seconds; give it generous slack.
-    await this.waitForConnect(30_000)
+    // Wait for the harness Lua to dial in. BizHawk + .NET + ROM load takes a few
+    // seconds; give it generous slack. A spawn error or an early exit rejects
+    // immediately (no 30 s wait on an exe that can't run); otherwise the timeout
+    // bounds a hung boot. On any failure, tear the half-started process/server
+    // down so the next attempt starts clean.
+    try {
+      await this.waitForConnect(30_000, child)
+    } catch (err) {
+      this.stop()
+      throw err
+    }
   }
 
-  private waitForConnect(timeoutMs: number): Promise<void> {
+  private waitForConnect(timeoutMs: number, child: ChildProcess): Promise<void> {
     if (this.client) return Promise.resolve()
     return new Promise((resolveConn, rejectConn) => {
-      const timer = setTimeout(() => {
-        rejectConn(new Error(`BizHawk did not connect within ${timeoutMs}ms`))
-      }, timeoutMs)
-      const onTick = (): void => {
-        if (this.client) {
-          clearTimeout(timer)
-          this.server!.off('connection', onTick)
-          resolveConn()
-        }
+      let settled = false
+      const finish = (fn: () => void): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        this.server?.off('connection', onConn)
+        child.off('error', onErr)
+        child.off('exit', onExit)
+        fn()
       }
-      this.server!.on('connection', onTick)
+      const onConn = (): void => {
+        if (this.client) finish(resolveConn)
+      }
+      const onErr = (err: Error): void =>
+        finish(() => rejectConn(new Error(`Failed to launch BizHawk: ${err.message}`)))
+      const onExit = (code: number | null): void =>
+        finish(() => rejectConn(new Error(`BizHawk exited before connecting (exit code ${code})`)))
+      const timer = setTimeout(
+        () => finish(() => rejectConn(new Error(`BizHawk did not connect within ${timeoutMs}ms`))),
+        timeoutMs
+      )
+      this.server!.on('connection', onConn)
+      child.on('error', onErr)
+      child.on('exit', onExit)
     })
   }
 

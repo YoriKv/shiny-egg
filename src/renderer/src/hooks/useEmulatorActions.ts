@@ -36,6 +36,10 @@ export interface EmulatorActionsParams {
   /** Items to seed into Yoshi's egg trail on Test Level boot (toolbar dropdown). */
   testInventory: TestInventory
   appendLog: (line: string) => void
+  /** Re-query the located EmuHawk.exe path. Called after a failed launch: the
+   *  main process forgets a saved-but-unlaunchable path, so this flips the
+   *  toolbar back to "Locate BizHawk" for re-pointing. */
+  refreshBizhawkExe: () => void
 }
 
 export interface EmulatorActionsApi {
@@ -63,7 +67,8 @@ export function useEmulatorActions({
   rootLevelRecordId,
   testSpawn,
   testInventory,
-  appendLog
+  appendLog,
+  refreshBizhawkExe
 }: EmulatorActionsParams): EmulatorActionsApi {
   const [emuBusy, setEmuBusy] = useState<boolean>(false)
   const emuBusyRef = useRef<boolean>(false)
@@ -136,6 +141,7 @@ export function useEmulatorActions({
         await window.shinyEgg.bizhawk.launch()
       } catch (err) {
         append(`Test Level: launch failed — ${(err as Error).message}`)
+        refreshBizhawkExe()
         return
       }
       // Three paths into the cart:
@@ -261,7 +267,8 @@ export function useEmulatorActions({
       saveAndBuildIfNeeded,
       blockers,
       testSpawn,
-      testInventory
+      testInventory,
+      refreshBizhawkExe
     ]
   )
 
@@ -276,9 +283,10 @@ export function useEmulatorActions({
         await window.shinyEgg.bizhawk.launch()
       } catch (err) {
         append(`Launch: failed — ${(err as Error).message}`)
+        refreshBizhawkExe()
       }
     },
-    [saveAndBuildIfNeeded]
+    [saveAndBuildIfNeeded, refreshBizhawkExe]
   )
 
   // Emulator-action wrappers shared by the toolbar buttons (BizHawkMenu) and the
