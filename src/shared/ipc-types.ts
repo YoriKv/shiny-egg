@@ -1215,6 +1215,15 @@ export interface RomImportGradient {
   conflicts: number
 }
 
+/** Per-level Yoshi-color changes detected in the foreign cart
+ *  (`DATA_yoshi_level_colors`: one color id per translevel slot). */
+export interface RomImportYoshiColors {
+  /** Translevel slots whose Yoshi color id differs from base. */
+  changed: number
+  /** Of those, how many you've already edited in this project (overwrite warning). */
+  conflicts: number
+}
+
 /** Title-screen tilemap PLACEMENT changes detected in the foreign cart — shared
  *  by the title-island (Bank57) and title-logo (Bank0F) tilemaps. */
 export interface RomImportTilemap {
@@ -1265,13 +1274,26 @@ export type RomImportReport =
       levelPtrsResolved: boolean
       anchors: AnchorResolution[]
       levels: RomImportLevel[]
-      counts: { changed: number; full: number; rawOnly: number; blocked: number; conflicts: number }
+      counts: {
+        changed: number
+        full: number
+        rawOnly: number
+        /** Genuine import problems only (clobbered/abandoned slots, engine-driven
+         *  records) — EXCLUDES levels the hack merely emptied (see `emptied`). */
+        blocked: number
+        /** Levels the hack cleanly emptied/removed (a normal non-error state —
+         *  removed from the project by default, not something to investigate). */
+        emptied: number
+        conflicts: number
+      }
       palette: RomImportPalette
       names: RomImportNames
       messages: RomImportMessages
       worldMap: RomImportWorldMap
       /** Backdrop-gradient stop changes (16 BG color gradients). */
       gradient: RomImportGradient
+      /** Per-level Yoshi-color changes (DATA_yoshi_level_colors). */
+      yoshiColors: RomImportYoshiColors
       /** Title-island tilemap placement changes (Bank57 Mode-7 cells). */
       islandTilemap: RomImportTilemap
       /** Title-logo tilemap placement changes (Bank0F BG cells). */
@@ -1303,6 +1325,8 @@ export interface RomImportSelection {
   worldMap: boolean
   /** Import the backdrop-gradient stop changes. */
   gradient: boolean
+  /** Import the per-level Yoshi-color changes. */
+  yoshiColors: boolean
   /** Import the title-island tilemap placement changes. */
   islandTilemap: boolean
   /** Import the title-logo tilemap placement changes. */
@@ -1350,6 +1374,8 @@ export type RomImportApplyResult =
       worldMap: { applied: boolean; entrances: number; midway: number; indexRemaps: number; error?: string }
       /** Backdrop-gradient apply outcome (when selected). */
       gradient: { applied: boolean; stops: number; error?: string }
+      /** Per-level Yoshi-color apply outcome (when selected). */
+      yoshiColors: { applied: boolean; changed: number; error?: string }
       /** Title-island tilemap apply outcome (when selected). */
       islandTilemap: { applied: boolean; cells: number; error?: string }
       /** Title-logo tilemap apply outcome (when selected). */

@@ -28,6 +28,7 @@ type CatKey =
   | 'messages'
   | 'worldMap'
   | 'gradient'
+  | 'yoshiColors'
   | 'islandTilemap'
   | 'logoTilemap'
   | 'introStory'
@@ -40,6 +41,7 @@ const NO_CATS: Record<CatKey, boolean> = {
   messages: false,
   worldMap: false,
   gradient: false,
+  yoshiColors: false,
   islandTilemap: false,
   logoTilemap: false,
   introStory: false,
@@ -148,6 +150,7 @@ export function ImportRomDialog({
         messages: (r.messages.changed > 0 || r.messages.blanked > 0) && !r.messages.overBudget,
         worldMap: r.worldMap.entrances > 0 || r.worldMap.midway > 0 || r.worldMap.indexRemaps > 0,
         gradient: r.gradient.changedStops > 0,
+        yoshiColors: r.yoshiColors.changed > 0,
         islandTilemap: r.islandTilemap.changedCells > 0,
         logoTilemap: r.logoTilemap.changedCells > 0,
         introStory: r.introStory.changed > 0 && !r.introStory.overBudget,
@@ -216,9 +219,12 @@ export function ImportRomDialog({
     })
   }
 
+  // Backdrop is intentionally NOT click-to-close — the import is a multi-step
+  // review the user shouldn't lose to a stray outside click. Dismiss via the
+  // Cancel button or Escape (the keydown handler above).
   return (
-    <div className="se-modal-backdrop" onMouseDown={() => phase !== 'analyzing' && phase !== 'applying' && onClose()}>
-      <div className="se-modal se-modal--import" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="se-modal-backdrop">
+      <div className="se-modal se-modal--import">
         <h3 className="se-modal__title">Import from modified ROM</h3>
 
         <div className="se-import__body">
@@ -236,9 +242,10 @@ export function ImportRomDialog({
               </p>
               <p className="se-meta se-import__hint">
                 Imports level object/sprite/exit placements, world-map spawns &amp; level
-                progression, palette colors &amp; backdrop gradients, graphics (GFX sheets),
-                title-screen island/logo layouts, level-name strings, message-box text, and
-                intro/ending cutscene text. Map16 page tables and custom code are not yet imported.
+                progression, palette colors &amp; backdrop gradients, per-level Yoshi colors,
+                graphics (GFX sheets), title-screen island/logo layouts, level-name strings,
+                message-box text, and intro/ending cutscene text. Map16 page tables and custom
+                code are not yet imported.
               </p>
               {error && <p className="se-import__error">{error}</p>}
               <button
@@ -355,6 +362,7 @@ function ReportView({
         report.worldMap.midway > 0 ||
         report.worldMap.indexRemaps > 0 ||
         report.gradient.changedStops > 0 ||
+        report.yoshiColors.changed > 0 ||
         report.islandTilemap.changedCells > 0 ||
         report.logoTilemap.changedCells > 0 ||
         report.introStory.changed > 0 ||
@@ -490,6 +498,25 @@ function ReportView({
                 {report.gradient.conflicts > 0 && (
                   <span className="se-import__tag se-import__tag--warn" title="These gradient stops are also edited in your project — importing overwrites them.">
                     {report.gradient.conflicts} overwrite
+                  </span>
+                )}
+              </span>
+            </label>
+          )}
+          {report.yoshiColors.changed > 0 && (
+            <label className="se-import__cat">
+              <input
+                type="checkbox"
+                checked={cats.yoshiColors}
+                disabled={phase !== 'report'}
+                onChange={() => onToggleCat('yoshiColors')}
+              />
+              <span className="se-import__catname">Yoshi level colors</span>
+              <span className="se-import__catinfo">
+                {report.yoshiColors.changed} level{report.yoshiColors.changed === 1 ? '' : 's'} changed
+                {report.yoshiColors.conflicts > 0 && (
+                  <span className="se-import__tag se-import__tag--warn" title="These levels' Yoshi colors are also edited in your project — importing overwrites them.">
+                    {report.yoshiColors.conflicts} overwrite
                   </span>
                 )}
               </span>
@@ -632,6 +659,14 @@ function ReportView({
             {report.counts.rawOnly > 0 && (
               <span className="se-import__pill se-import__pill--raw">{report.counts.rawOnly} raw-only</span>
             )}
+            {report.counts.emptied > 0 && (
+              <span
+                className="se-import__pill se-import__pill--emptied"
+                title="Levels the hack removed — Shiny Egg removes them from your project too (a normal cleanup, not an import problem)."
+              >
+                {report.counts.emptied} emptied
+              </span>
+            )}
             {report.counts.blocked > 0 && (
               <span className="se-import__pill se-import__pill--blocked">{report.counts.blocked} blocked</span>
             )}
@@ -727,6 +762,7 @@ function ImportLog({ applyResult }: { applyResult: RomImportApplyResult }): JSX.
     applyResult.messages.applied ||
     applyResult.worldMap.applied ||
     applyResult.gradient.applied ||
+    applyResult.yoshiColors.applied ||
     applyResult.islandTilemap.applied ||
     applyResult.logoTilemap.applied ||
     applyResult.introStory.applied ||
@@ -794,6 +830,15 @@ function ImportLog({ applyResult }: { applyResult: RomImportApplyResult }): JSX.
       )}
       {applyResult.gradient.error && (
         <p className="se-import__error">Gradient import failed: {applyResult.gradient.error}</p>
+      )}
+      {applyResult.yoshiColors.applied && (
+        <p>
+          Imported <strong>{applyResult.yoshiColors.changed}</strong> level Yoshi color
+          {applyResult.yoshiColors.changed === 1 ? '' : 's'}.
+        </p>
+      )}
+      {applyResult.yoshiColors.error && (
+        <p className="se-import__error">Yoshi-color import failed: {applyResult.yoshiColors.error}</p>
       )}
       {applyResult.islandTilemap.applied && (
         <p>
@@ -1013,10 +1058,17 @@ function LevelRow({
   onToggle: () => void
 }): JSX.Element {
   const unblocks = level.importability === 'blocked' && !!level.unblockAction && unblockOn
+  // Emptied = the hack removed this level (blocked at the analyzer, but a normal
+  // non-error state). Tag + style it distinctly from a genuinely-blocked slot.
+  const isEmptied = !!level.emptied
   const f = level.foreign
   const b = level.base
   return (
-    <label className={`se-import__row${level.importability === 'blocked' && !unblocks ? ' is-blocked' : ''}`}>
+    <label
+      className={`se-import__row${
+        isEmptied ? ' is-emptied' : level.importability === 'blocked' && !unblocks ? ' is-blocked' : ''
+      }`}
+    >
       <input type="checkbox" checked={checked} disabled={disabled} onChange={onToggle} />
       <span className="se-import__rowid">{hex(level.recordId)}</span>
       <span className="se-import__rowname">{name ?? '—'}</span>
@@ -1041,7 +1093,15 @@ function LevelRow({
           raw
         </span>
       )}
-      {level.importability === 'blocked' && !unblocks && (
+      {isEmptied && (
+        <span
+          className="se-import__tag se-import__tag--emptied"
+          title="The hack removed this level's data — Shiny Egg removes it from your project too (a normal cleanup, not an import problem)."
+        >
+          emptied
+        </span>
+      )}
+      {!isEmptied && level.importability === 'blocked' && !unblocks && (
         <span className="se-import__tag se-import__tag--blocked" title={level.blockedReason}>
           blocked
         </span>

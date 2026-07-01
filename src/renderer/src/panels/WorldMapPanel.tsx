@@ -16,9 +16,11 @@
 // checkpoint re-entry level is a sub-room dropdown; entrance state is a friendly
 // enum. Re-renders on catalog refresh.
 
-import { useState, type JSX } from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { WorldMapEditorApi } from '../edit-session/useWorldMapEditor'
+import type { YoshiColorsEditorApi } from '../edit-session/useYoshiColorsEditor'
 import type {
+  PaletteCatalogGroup,
   WorldMapEntrance,
   WorldMapMidwayEntrance,
   WorldMapModel
@@ -27,7 +29,111 @@ import { getAllLevels, getLevel, useLevelsCatalog } from '../data/levels'
 import { useSubLevelBFS } from '../hooks/useSubLevelBFS'
 import { ENTRANCE_TYPES } from '../data/property-schema'
 import { EnumField, LevelPicker, LevelRefField, NumberField } from './field-widgets'
+import { bgr15ToHex } from '../lib/bgr15'
 import { hex0x } from '../lib/hex'
+
+/** Yoshi color id → friendly name (id = index; matches DATA_yoshi_level_colors's
+ *  $00 green … $07 brown). Renderer-local so the panel needn't import the Node
+ *  framework module. */
+const YOSHI_COLOR_NAMES = ['Green', 'Light Blue', 'Yellow', 'Red', 'Pink', 'Cyan', 'Purple', 'Brown'] as const
+
+/** A horizontal strip of color swatches (one Yoshi palette row). */
+function SwatchStrip({ colors }: { colors: string[] }): JSX.Element {
+  return (
+    <span className="se-yoshi__strip">
+      {colors.map((c, i) => (
+        <span key={i} className="se-yoshi__sw" style={{ background: c }} />
+      ))}
+    </span>
+  )
+}
+
+/**
+ * The per-level Yoshi-color dropdown. Shows the selected color's palette row as a
+ * swatch strip; opening lists all 8 colors as clickable strips. `rows[colorId]`
+ * is that color's palette as CSS hex, already composed with the live palette
+ * draft (so an in-progress palette edit previews here). Closes on outside
+ * click / Escape / selection.
+ */
+function YoshiColorField({
+  value,
+  rows,
+  onChange
+}: {
+  value: number
+  rows: string[][]
+  onChange: (colorId: number) => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  // Fixed-position anchor (the panel list is `overflow:auto`, so an absolutely-
+  // positioned menu would clip on the bottom rows). Recomputed on open.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (): void => setOpen(false)
+    const onDoc = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    // The menu is fixed-positioned, so any scroll/resize would leave it stranded —
+    // close instead of tracking.
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+  const toggle = (): void => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ left: r.left, top: r.bottom + 2 })
+    }
+    setOpen((o) => !o)
+  }
+  const name = YOSHI_COLOR_NAMES[value] ?? `#${value}`
+  return (
+    <div className="se-yoshi" ref={ref}>
+      <button
+        ref={btnRef}
+        type="button"
+        className="se-yoshi__btn"
+        title={`Yoshi color: ${name} (color ${value})`}
+        onClick={toggle}
+      >
+        <SwatchStrip colors={rows[value] ?? []} />
+        <span className="se-yoshi__name">{name}</span>
+        <span className="se-yoshi__caret">▾</span>
+      </button>
+      {open && pos && (
+        <div className="se-yoshi__menu" style={{ left: pos.left, top: pos.top }}>
+          {rows.map((row, id) => (
+            <button
+              key={id}
+              type="button"
+              className={`se-yoshi__opt${id === value ? ' is-sel' : ''}`}
+              onClick={() => {
+                onChange(id)
+                setOpen(false)
+              }}
+            >
+              <SwatchStrip colors={row} />
+              <span className="se-yoshi__name">{YOSHI_COLOR_NAMES[id] ?? `#${id}`}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** One world-map slot row. The shape is FIXED (6 worlds × 12 translevel slots)
  *  so worlds stay listed and editable even when every level was removed:
@@ -259,18 +365,49 @@ function worldOf(label: string): number | undefined {
 }
 
 /** The World Map window body. `editor` is the App-level entrance-table document;
- *  `onJump(recordId, x, y)` loads that level + focuses the cell (the per-line jump
- *  buttons). */
+ *  `yoshi` the per-level Yoshi-color document; `paletteDraft` the live palette
+ *  edit map (offset→BGR15) so the color previews reflect in-progress palette
+ *  edits; `onJump(recordId, x, y)` loads that level + focuses the cell. */
 export function WorldMapBody({
   editor,
+  yoshi,
+  paletteDraft,
   onJump
 }: {
   editor: WorldMapEditorApi
+  yoshi: YoshiColorsEditorApi
+  paletteDraft: Map<number, number>
   onJump?: (recordId: number, x: number, y: number) => void
 }): JSX.Element {
   const catalog = useLevelsCatalog()
   const [nav, setNav] = useState<WmNav>({ view: 'worlds' })
   const { model } = editor
+
+  // The 8 Yoshi-color palette rows (OBJ pal 5), from the whole-game palette
+  // catalog's `yoshi` group — each entry's swatches are one color's palette. The
+  // `base` is pristine; the live palette draft overlays it by blob offset, so the
+  // dropdown previews the SAME colors the canvas shows (saved + unsaved edits).
+  // Base changes only on rebuild/extract, so a one-shot fetch on mount suffices.
+  const [yoshiGroup, setYoshiGroup] = useState<PaletteCatalogGroup | null>(null)
+  useEffect(() => {
+    let alive = true
+    void window.shinyEgg.render.paletteCatalog().then((cat) => {
+      if (alive) setYoshiGroup(cat?.catalog.find((g) => g.id === 'yoshi') ?? null)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  const yoshiRows = useMemo(
+    () =>
+      yoshiGroup?.entries.map((e) =>
+        e.swatches.map((s) => {
+          const edit = s.offset >= 0 ? paletteDraft.get(s.offset) : undefined
+          return bgr15ToHex(edit ?? s.base)
+        })
+      ) ?? null,
+    [yoshiGroup, paletteDraft]
+  )
 
   // Discover the drilled level's sub-rooms for the checkpoint dropdown. Computed
   // before the guards (null-safe) so the hook order is stable.
@@ -384,79 +521,118 @@ export function WorldMapBody({
       {view === 'world' && curGroup && (
         <div className="se-worldmap__list">
           <p className="se-worldmap__note">
-            Each level's data mapping (<b>plays</b>) and progression (<b>→</b>) — the
-            world's flow. No live preview; Test Level to verify. Click a level to edit
-            its spawn + checkpoints. Unwired slots (removed levels) can be re-wired to
-            their base records here.
+            Each level's data record (<b>Plays</b>), progression (<b>Unlocks</b>) and{' '}
+            <b>Yoshi</b> color — the world's flow. No live preview; Test Level to verify. Click a
+            level to edit its spawn + checkpoints; unwired slots (removed levels) can be re-wired.
           </p>
-          {slots.map((s) => {
-            if (s.kind === 'bonus') {
-              return (
-                <div className="se-worldmap__row se-worldmap__row--empty" key={s.translevelId}>
-                  <span className="se-worldmap__slot">{s.slot}</span>
-                  <span
-                    className="se-worldmap__name se-worldmap__empty-label"
-                    title="The bonus tile boots a GameMode $2A minigame code scene — it has no entrance record or level data to edit."
-                  >
-                    {s.name}
-                  </span>
-                </div>
-              )
-            }
-            if (s.kind === 'unwired' || !s.e) {
-              return (
-                <div className="se-worldmap__row se-worldmap__row--empty" key={s.translevelId}>
-                  <span className="se-worldmap__slot">{s.slot}</span>
-                  <span className="se-worldmap__name se-worldmap__empty-label" title={s.name}>
-                    unwired — {s.name}
-                  </span>
-                  <RowButton
-                    label="+ wire"
-                    title="Re-wire this slot to its base entrance record (the tile plays a level again; pick which one with the plays field)"
-                    onClick={() => editor.setSlotWired(s.translevelId, true)}
-                  />
-                </div>
-              )
-            }
-            const e = s.e
-            return (
-              <div className="se-worldmap__row" key={s.translevelId}>
-                <button
-                  type="button"
-                  className="se-worldmap__slot-link"
-                  title="Edit spawn + checkpoints"
-                  onClick={() => setNav({ view: 'level', group: curGroup, translevelId: s.translevelId })}
-                >
-                  <span className="se-worldmap__slot">{s.slot}</span>
-                  <span className="se-worldmap__name" title={s.name}>
-                    {s.name}
-                  </span>
-                </button>
-                <span
-                  className="se-worldmap__cell se-worldmap__cell--prog"
-                  title="Plays this data record (remap the tile to a different level's data)"
-                >
-                  <span className="se-worldmap__cell-label">plays</span>
-                  <LevelRefField
-                    value={e.levelDataId}
-                    onCommit={(v) => editor.setEntranceField(e.index, { levelDataId: v })}
-                  />
-                </span>
-                <span
-                  className="se-worldmap__cell se-worldmap__cell--prog"
-                  title="Progression target — the MAP SLOT the Yoshi token advances to (unlocks) after clearing this one"
-                >
-                  <span className="se-worldmap__cell-label">→</span>
-                  <SlotRefField
-                    model={model}
-                    ctx={ctx}
-                    value={e.progTarget}
-                    onCommit={(v) => editor.setEntranceField(e.index, { progTarget: v })}
-                  />
-                </span>
-              </div>
-            )
-          })}
+          <table className="se-worldmap__table">
+            <thead>
+              <tr>
+                <th className="se-worldmap__th-slot">Level</th>
+                <th className="se-worldmap__th-name">Name</th>
+                <th title="The data record this tile plays — remap it to a different level's data.">
+                  Plays
+                </th>
+                <th title="Progression target — the map slot the Yoshi token advances to (unlocks) after clearing this one.">
+                  Unlocks
+                </th>
+                <th title="Which Yoshi color plays this level (DATA_yoshi_level_colors). The swatch row is that Yoshi's palette (previews live palette edits).">
+                  Yoshi
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {slots.map((s) => {
+                if (s.kind === 'bonus') {
+                  return (
+                    <tr className="se-worldmap__trow is-empty" key={s.translevelId}>
+                      <td className="se-worldmap__c-slot">{s.slot}</td>
+                      <td
+                        className="se-worldmap__c-name se-worldmap__empty-label"
+                        colSpan={4}
+                        title="The bonus tile boots a GameMode $2A minigame code scene — it has no entrance record or level data to edit."
+                      >
+                        {s.name}
+                      </td>
+                    </tr>
+                  )
+                }
+                if (s.kind === 'unwired' || !s.e) {
+                  return (
+                    <tr className="se-worldmap__trow is-empty" key={s.translevelId}>
+                      <td className="se-worldmap__c-slot">{s.slot}</td>
+                      <td
+                        className="se-worldmap__c-name se-worldmap__empty-label"
+                        colSpan={3}
+                        title={s.name}
+                      >
+                        unwired — {s.name}
+                      </td>
+                      <td className="se-worldmap__c-yoshi">
+                        <RowButton
+                          label="+ wire"
+                          title="Re-wire this slot to its base entrance record (the tile plays a level again; pick which one with the Plays field)"
+                          onClick={() => editor.setSlotWired(s.translevelId, true)}
+                        />
+                      </td>
+                    </tr>
+                  )
+                }
+                const e = s.e
+                const drill = (): void =>
+                  setNav({ view: 'level', group: curGroup, translevelId: s.translevelId })
+                return (
+                  <tr className="se-worldmap__trow" key={s.translevelId}>
+                    <td className="se-worldmap__c-slot">
+                      <button
+                        type="button"
+                        className="se-worldmap__cell-link"
+                        title="Edit spawn + checkpoints"
+                        onClick={drill}
+                      >
+                        {s.slot}
+                      </button>
+                    </td>
+                    <td className="se-worldmap__c-name">
+                      <button
+                        type="button"
+                        className="se-worldmap__cell-link se-worldmap__name-link"
+                        title={`${s.name} — edit spawn + checkpoints`}
+                        onClick={drill}
+                      >
+                        {s.name}
+                      </button>
+                    </td>
+                    <td className="se-worldmap__c-plays">
+                      <LevelRefField
+                        value={e.levelDataId}
+                        onCommit={(v) => editor.setEntranceField(e.index, { levelDataId: v })}
+                      />
+                    </td>
+                    <td className="se-worldmap__c-prog">
+                      <SlotRefField
+                        model={model}
+                        ctx={ctx}
+                        value={e.progTarget}
+                        onCommit={(v) => editor.setEntranceField(e.index, { progTarget: v })}
+                      />
+                    </td>
+                    <td className="se-worldmap__c-yoshi">
+                      {yoshiRows ? (
+                        <YoshiColorField
+                          value={yoshi.colorFor(s.translevelId) ?? 0}
+                          rows={yoshiRows}
+                          onChange={(id) => yoshi.setColor(s.translevelId, id)}
+                        />
+                      ) : (
+                        <span className="se-meta-xs">…</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -551,15 +727,26 @@ export function WorldMapBody({
       )}
 
       <div className="se-worldmap__footer">
-        {editor.saveError && <span className="se-strings__warn">{editor.saveError}</span>}
-        {editor.dirty && <span className="se-meta-xs se-worldmap__dirty">unsaved</span>}
+        {/* One Save covers both docs the panel edits — the entrance table and the
+            Yoshi-color table (each writes its own overlay file). */}
+        {(editor.saveError || yoshi.saveError) && (
+          <span className="se-strings__warn">{editor.saveError ?? yoshi.saveError}</span>
+        )}
+        {(editor.dirty || yoshi.dirty) && (
+          <span className="se-meta-xs se-worldmap__dirty">unsaved</span>
+        )}
         <button
           type="button"
           className="se-btn is-primary se-worldmap__save"
-          disabled={!editor.dirty || editor.saving}
-          onClick={() => void editor.save()}
+          disabled={(!editor.dirty && !yoshi.dirty) || editor.saving || yoshi.saving}
+          onClick={() =>
+            void Promise.all([
+              editor.dirty ? editor.save() : Promise.resolve(true),
+              yoshi.dirty ? yoshi.save() : Promise.resolve(true)
+            ])
+          }
         >
-          {editor.saving ? 'Saving…' : 'Save'}
+          {editor.saving || yoshi.saving ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>

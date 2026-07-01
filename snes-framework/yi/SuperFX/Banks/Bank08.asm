@@ -7527,10 +7527,13 @@ CODE_08A97B:
 ; three-way byte-exact sweep — 261 / 265 entries in
 ; DATA_06F95E match byte-for-byte across decomp.exe FORMAT=1, an
 ; independent reference port, and this routine running live in
-; Mesen. The 4 outlier entries 44-47 share entry 48's stream
-; terminator at $18:B241 and are mid-stream pointers, not standalone
-; decompressions — the implementations legitimately diverge on the
-; backrefs that reach before each entry's start position.
+; Mesen. The 4 outlier entries 44-47 (LZ2 file IDs $2C-$2F) are NOT LZ2 at
+; all: they are orphaned LZ16 blobs occupying LZ2-table slots (LC_LZ16
+; FORMAT=15, 4 KB each; see DATA_589AE6 in Bank57.asm). Decoding them as LZ2
+; overruns the blob with no terminator and wanders to entry 48's $FF at
+; $18:B241 — an artifact of the wrong-format decode, not a real shared
+; stream. They are unreferenced (no loader path resolves to LZ2 ID $2C-$2F),
+; so they are excluded from the byte-exact sweep above.
 ;---------------------------------------------------------------------------
 
 CODE_08A980:

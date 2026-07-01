@@ -60,7 +60,8 @@ import {
 } from './rom-import-gfx'
 import { applyLevelRemoval } from './level-removal'
 import { snesToPC, vendoredV10SymbolMap } from 'snes-framework/symbol-map'
-import type { PaletteEdit, StringTableModel, WorldMapModel } from 'snes-framework/types'
+import { YOSHI_COLOR_SLOTS, YOSHI_COLOR_MAX } from 'snes-framework/yoshi-colors'
+import type { PaletteEdit, StringTableModel, WorldMapModel, YoshiColorsModel } from 'snes-framework/types'
 import type {
   RomImportApplyResult,
   RomImportGfx,
@@ -73,7 +74,8 @@ import type {
   RomImportReport,
   RomImportSelection,
   RomImportTilemap,
-  RomImportWorldMap
+  RomImportWorldMap,
+  RomImportYoshiColors
 } from '../shared/ipc-types'
 import { frameworkWorkRoot, overlayRoot, referenceCartPath } from './framework-paths'
 import { stripCopierHeader } from 'snes-framework/rom-header'
@@ -89,6 +91,7 @@ import {
   loadLogoTilemapEdits,
   loadPaletteEdits,
   loadWorldMapResource,
+  loadYoshiColorsResource,
   poolViolationMessage,
   saveAsmRegionResource,
   saveGfxEdit,
@@ -99,7 +102,8 @@ import {
   saveLevelResource,
   saveLogoTilemap,
   savePaletteEdits,
-  saveWorldMapResource
+  saveWorldMapResource,
+  saveYoshiColorsResource
 } from './resources'
 
 const LEVEL_DATA_REL = path.join('assets', 'yi', 'LevelData')
@@ -138,6 +142,9 @@ interface CachedAnalysis {
   worldMapIndexRemaps: number
   /** Backdrop-gradient stop edits to import (offset → BGR-15), or empty. */
   gradientEdits: GradientEdit[]
+  /** Yoshi-color model with the hack's per-slot changes layered on, or null when none. */
+  yoshiModel: YoshiColorsModel | null
+  yoshiChanges: number
   /** Title-island tilemap cell edits to import, or empty. */
   islandEdits: IslandTilemapEdit[]
   /** Title-logo tilemap cell edits to import, or empty. */
@@ -514,6 +521,50 @@ function analyzeGradient(foreign: Buffer): GradientAnalysis {
   }
 }
 
+interface YoshiColorsAnalysis extends RomImportYoshiColors {
+  /** The overlay-first model with the hack's per-slot color changes layered on,
+   *  or null when nothing changed / can't read. */
+  model: YoshiColorsModel | null
+}
+
+/**
+ * Diff the foreign cart's per-level Yoshi-color table (`DATA_yoshi_level_colors`,
+ * 72 bytes at a fixed vanilla address) against base and layer the changed slots
+ * onto the project's overlay-first Yoshi-color model. Only meaningful on a
+ * V1.0-derived cart (fixed address). A slot the hack left at vanilla is never
+ * touched (unrelated user edits survive); a slot the user already edited that the
+ * hack also changed counts as a conflict (import overwrites it). The Yoshi twin of
+ * {@link analyzeGradient}, but model-based (like the world-map import) since the
+ * table is edited as a whole model, not offset edits.
+ */
+function analyzeYoshiColors(foreign: Buffer, base: Buffer): YoshiColorsAnalysis {
+  const empty: YoshiColorsAnalysis = { model: null, changed: 0, conflicts: 0 }
+  try {
+    const pc = vendoredV10SymbolMap().pc('DATA_yoshi_level_colors')
+    if (pc < 0 || pc + YOSHI_COLOR_SLOTS > foreign.length || pc + YOSHI_COLOR_SLOTS > base.length) {
+      return empty
+    }
+    // Overlay-first model = what we layer onto (preserves prior Yoshi-color edits).
+    const model = loadYoshiColorsResource()
+    if (model.colors.length !== YOSHI_COLOR_SLOTS) return empty
+    let changed = 0
+    let conflicts = 0
+    for (let slot = 0; slot < YOSHI_COLOR_SLOTS; slot++) {
+      const b = base[pc + slot]!
+      const f = foreign[pc + slot]!
+      if (f === b) continue // unchanged from vanilla
+      if (f > YOSHI_COLOR_MAX) continue // not a valid color id — don't import garbage
+      if (model.colors[slot] !== b) conflicts++ // project already edited this slot
+      model.colors[slot] = f
+      changed++
+    }
+    if (changed === 0) return empty
+    return { model, changed, conflicts }
+  } catch {
+    return empty
+  }
+}
+
 interface IslandAnalysis extends RomImportTilemap {
   edits: IslandTilemapEdit[]
 }
@@ -745,6 +796,7 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     hasConflict: false
   }
   const gradient: RomImportGradient = { changedStops: 0, conflicts: 0 }
+  const yoshiColors: RomImportYoshiColors = { changed: 0, conflicts: 0 }
   const islandTilemap: RomImportTilemap = { changedCells: 0, conflicts: 0 }
   const logoTilemap: RomImportTilemap = { changedCells: 0, conflicts: 0 }
   const introStory: RomImportGlyphText = { changed: 0, skipped: 0, overBudget: false, hasConflict: false }
@@ -761,6 +813,8 @@ export function analyzeRom(foreignPath: string): RomImportReport {
   let worldMapMidway = 0
   let worldMapIndexRemaps = 0
   let gradientEdits: GradientEdit[] = []
+  let yoshiModel: YoshiColorsModel | null = null
+  let yoshiChanges = 0
   let islandEdits: IslandTilemapEdit[] = []
   let logoEdits: LogoTilemapEdit[] = []
   let introModel: StringTableModel | null = null
@@ -806,6 +860,11 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     gradientEdits = grad.edits
     gradient.changedStops = grad.changedStops
     gradient.conflicts = grad.conflicts
+    const yc = analyzeYoshiColors(foreign, base)
+    yoshiModel = yc.model
+    yoshiChanges = yc.changed
+    yoshiColors.changed = yc.changed
+    yoshiColors.conflicts = yc.conflicts
     const isl = analyzeIslandTilemap(foreign)
     islandEdits = isl.edits
     islandTilemap.changedCells = isl.changedCells
@@ -862,6 +921,8 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     worldMapMidway,
     worldMapIndexRemaps,
     gradientEdits,
+    yoshiModel,
+    yoshiChanges,
     islandEdits,
     logoEdits,
     introModel,
@@ -933,7 +994,13 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     changed: levels.length,
     full: levels.filter((l) => l.importability === 'full').length,
     rawOnly: levels.filter((l) => l.importability === 'raw-only').length,
-    blocked: levels.filter((l) => l.importability === 'blocked').length,
+    // Emptied levels are marked 'blocked' by the analyzer (there's nothing to
+    // import), but that's a NORMAL non-error state — the hack removed the level
+    // and Shiny Egg removes it too (the emptiedRemoved cleanup on apply). Count
+    // them separately so `blocked` means only genuine import problems (clobbered
+    // slots, engine-driven records) the user might need to investigate.
+    blocked: levels.filter((l) => l.importability === 'blocked' && !l.emptied).length,
+    emptied: levels.filter((l) => l.emptied).length,
     conflicts: levels.filter((l) => l.hasOverlayConflict).length
   }
 
@@ -951,6 +1018,7 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     messages,
     worldMap,
     gradient,
+    yoshiColors,
     islandTilemap,
     logoTilemap,
     introStory,
@@ -1149,6 +1217,19 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
     }
   }
 
+  // Yoshi-color table (Bank02.asm, own file) — save the overlay-first model with
+  // the hack's per-slot changes layered on. Independent of the other writes.
+  const yoshiColors = { applied: false, changed: 0, error: undefined as string | undefined }
+  if (sel.yoshiColors && cached.yoshiModel) {
+    const r = await saveYoshiColorsResource(cached.yoshiModel)
+    if (r.ok) {
+      yoshiColors.applied = true
+      yoshiColors.changed = cached.yoshiChanges
+    } else {
+      yoshiColors.error = r.error
+    }
+  }
+
   const islandTilemap = { applied: false, cells: 0, error: undefined as string | undefined }
   if (sel.islandTilemap && cached.islandEdits.length > 0) {
     const r = await saveIslandTilemap(mergeOffsetEdits(loadIslandTilemapEdits(), cached.islandEdits))
@@ -1251,6 +1332,7 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
     messages,
     worldMap,
     gradient,
+    yoshiColors,
     islandTilemap,
     logoTilemap,
     introStory,

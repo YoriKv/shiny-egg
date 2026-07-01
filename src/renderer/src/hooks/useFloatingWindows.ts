@@ -194,6 +194,9 @@ const INITIAL_WINDOWS: WindowDef[] = [
     // the toolbar.
     pos: { x: 760, y: 120 },
     width: 600,
+    // A default height (not auto-size) so the body's overflow scrolls instead of
+    // the whole window growing when the log / changed-graphics list gets long.
+    height: 560,
     z: 8,
     open: false,
     anchor: 'top-center',

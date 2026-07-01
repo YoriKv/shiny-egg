@@ -230,6 +230,10 @@ export function vendoredV10SymbolMap(): SymbolMap {
   add('DATA_bg3_palette_ptrs', 0x00b974);
   add('DATA_sprite_palette_ptrs', 0x00b9f4);
   add('DATA_yoshi_palette_ptrs', 0x00ba14);
+  // Per-level Yoshi-color LUT (Bank02, 72 bytes indexed by translevel slot; each
+  // byte = a Yoshi color id that selects a DATA_yoshi_palette_ptrs row). Read at
+  // level load (Bank17 CODE_17E729). Used by the ROM importer + diff inventory.
+  add('DATA_yoshi_level_colors', 0x028000);
 
   // Graphics pipeline (load_level_gfx consumers)
   add('DATA_scene_gfx_layout', 0x00ad6d);

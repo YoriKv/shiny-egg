@@ -57,14 +57,21 @@ function blobCount(format: 'lz2' | 'lz16'): number {
 }
 
 /** Decompress an lz2 sheet self-terminating; the tiles sliced to the true decoded
- *  length, or null when the pointer/stream isn't a valid sheet. */
-function decodeLz2Sized(rom: Uint8Array, tablePc: number, fileId: number): Uint8Array | null {
+ *  length plus how many SOURCE bytes the decode consumed, or null when the
+ *  pointer/stream isn't a valid sheet. `srcConsumed` lets the caller reject an
+ *  entry that reads past its pointer-table slot (the orphan guard in
+ *  `diffForeignGfx`). */
+function decodeLz2Sized(
+  rom: Uint8Array,
+  tablePc: number,
+  fileId: number
+): { tiles: Uint8Array; srcConsumed: number } | null {
   try {
     const p = tablePc + fileId * 3
     const srcPC = snesToPC(rom[p]! | (rom[p + 1]! << 8) | (rom[p + 2]! << 16))
     const buf = new Uint8Array(MAX_GFX_BYTES)
-    const { destEnd } = lz2(rom, srcPC, buf, 0)
-    return destEnd > 0 ? buf.slice(0, destEnd) : null
+    const { destEnd, srcEnd } = lz2(rom, srcPC, buf, 0)
+    return destEnd > 0 ? { tiles: buf.slice(0, destEnd), srcConsumed: srcEnd - srcPC } : null
   } catch {
     return null
   }
@@ -88,22 +95,52 @@ export function diffForeignGfx(foreign: Uint8Array, base: Uint8Array, symbols: S
   const lz2Table = symbols.tryPc('DATA_lz2_compressed_gfx_ptrs')
   if (lz2Table !== undefined) {
     const n = blobCount('lz2')
+    // Each entry's SOURCE slot = distance from its pointer to the next-higher
+    // pointer (blobs are packed contiguously; the table isn't address-sorted, so
+    // sort). A self-terminating decode that consumes past this slot has read into
+    // the following blob — the signal the orphan guard below keys on.
+    const starts: number[] = []
+    for (let id = 0; id < n; id++) {
+      const p = lz2Table + id * 3
+      starts.push(snesToPC(base[p]! | (base[p + 1]! << 8) | (base[p + 2]! << 16)))
+    }
+    const sortedStarts = [...new Set(starts)].sort((a, b) => a - b)
+    const slotLenOf = (startPC: number): number => {
+      for (const s of sortedStarts) if (s > startPC) return s - startPC
+      return Infinity // last blob in address order — bounded by the arena, never over-reads
+    }
     for (let fileId = 0; fileId < n; fileId++) {
-      const baseTiles = decodeLz2Sized(base, lz2Table, fileId)
-      if (!baseTiles) continue // not a real sheet on base — skip silently
-      const foreignTiles = decodeLz2Sized(foreign, lz2Table, fileId)
-      if (!foreignTiles) {
+      const baseDec = decodeLz2Sized(base, lz2Table, fileId)
+      if (!baseDec) continue // not a real sheet on base — skip silently
+      // ORPHAN GUARD. Four LZ2-table slots (file IDs $2C-$2F) do NOT hold LZ2:
+      // they hold orphaned LZ16 graphics (LC_LZ16 FORMAT=15, 4 KB each) left in
+      // the ROM but referenced by no loader — the live $2C-$2F graphics load via
+      // the LZ16 table from other addresses (see
+      // snes-framework/yi/Banks/Bank57.asm, the DATA_589AE6 note). Decoding those
+      // LZ16 bytes with the LZ2 decoder finds no $FF terminator inside the 4 KB
+      // blob and overruns into the following blob(s), producing a hugely inflated
+      // bogus "sheet" (e.g. 10466 B vs the real 4096). Importing that re-encodes a
+      // blob that overflows its 4 KB VRAM slot at runtime, and — because it inflates
+      // the gfx arena past its slack — can force the whole overflow-relocation path
+      // (the corruption seen in the "eggcellent" import). We can't tell LZ16-in-an-
+      // LZ2-slot from a real LZ2 sheet by the bytes, but we can tell structurally:
+      // a valid self-terminating LZ2 blob stops within its own pointer-table slot,
+      // so an entry whose decode reads PAST its slot isn't valid LZ2 → skip it.
+      // Measured cart-wide this flags exactly those four and no real sheet.
+      if (baseDec.srcConsumed > slotLenOf(starts[fileId]!)) continue
+      const foreignDec = decodeLz2Sized(foreign, lz2Table, fileId)
+      if (!foreignDec) {
         skipped++ // base decoded but foreign didn't (repointed to garbage)
         continue
       }
-      if (foreignTiles.length !== baseTiles.length) {
+      if (foreignDec.tiles.length !== baseDec.tiles.length) {
         skipped++ // the hack resized this sheet — can't splice it cleanly
         continue
       }
       // bpp from the base cart's classification (BG3 = 2bpp); 4bpp default for sheets not
       // level-loaded (screens), which are 4bpp by convention.
       const bpp = gfxSizeRegistry().get(`lz2/${fileId}`)?.bpp ?? 4
-      if (!bytesEqual(baseTiles, foreignTiles)) changed.push({ format: 'lz2', fileId, tiles: foreignTiles, bpp })
+      if (!bytesEqual(baseDec.tiles, foreignDec.tiles)) changed.push({ format: 'lz2', fileId, tiles: foreignDec.tiles, bpp })
     }
   }
 

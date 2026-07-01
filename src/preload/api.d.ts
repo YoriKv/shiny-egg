@@ -32,7 +32,8 @@ import type {
   SaveResourceResult,
   WorldMapEntrance,
   WorldMapMidwayEntrance,
-  WorldMapModel
+  WorldMapModel,
+  YoshiColorsModel
 } from 'snes-framework/types'
 import type { CollisionEntry } from 'snes-framework/collision'
 import type {
@@ -189,7 +190,8 @@ export type {
   ValidationSeverity,
   WorldMapEntrance,
   WorldMapMidwayEntrance,
-  WorldMapModel
+  WorldMapModel,
+  YoshiColorsModel
 } from 'snes-framework/types'
 export type {
   CollisionEntry,
@@ -511,6 +513,7 @@ export interface EditorAPI {
    *  kinds return `unknown` (the caller narrows). */
   loadResource(resource: { kind: 'level'; recordId: number }): Promise<LevelData>
   loadResource(resource: { kind: 'world-map' }): Promise<WorldMapModel>
+  loadResource(resource: { kind: 'yoshi-colors' }): Promise<YoshiColorsModel>
   loadResource(resource: EditableResource): Promise<unknown>
   /** Per-sprite-type computed read-only properties (Properties panel) — `[]` for
    *  a sprite type with no provider. */

@@ -2603,16 +2603,6 @@ h3 { margin: 0; }
   color: var(--ink-3);
 }
 
-.se-worldmap__slot {
-  flex: 0 0 auto;
-  /* Wide enough for the longest slot labels ("1-Extra" / "1-Bonus") on one line. */
-  width: 56px;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-2);
-}
-
 .se-worldmap__name {
   flex: 1 1 auto;
   min-width: 0;
@@ -2689,6 +2679,140 @@ h3 { margin: 0; }
 
 .se-worldmap__cell--prog .se-props__select {
   max-width: 150px;
+}
+
+/* World view — column-aligned table (Level · Name · Plays · Unlocks · Yoshi), so
+   each level's fields line up in fixed columns instead of floating after the name. */
+.se-worldmap__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.se-worldmap__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-surface);
+  text-align: left;
+  padding: 3px 6px;
+  font-weight: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.se-worldmap__trow > td {
+  padding: 2px 6px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--line-faint);
+}
+.se-worldmap__trow.is-empty {
+  opacity: 0.6;
+}
+/* slot narrow + monospace; the three editor columns shrink to their content
+   (width:1% + nowrap), leaving the name column to fill the rest. */
+.se-worldmap__c-slot {
+  width: 56px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+.se-worldmap__c-plays,
+.se-worldmap__c-prog,
+.se-worldmap__c-yoshi {
+  width: 1%;
+  white-space: nowrap;
+}
+.se-worldmap__table .se-props__select {
+  max-width: 150px;
+}
+/* Slot / name are link-styled buttons that drill into the level detail. */
+.se-worldmap__cell-link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+}
+.se-worldmap__cell-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.se-worldmap__c-slot .se-worldmap__cell-link {
+  font-family: var(--font-mono);
+}
+.se-worldmap__name-link {
+  max-width: 220px;
+}
+
+/* Per-level Yoshi-color dropdown (World Map panel). The trigger shows the picked
+   color's palette row as a swatch strip; the fixed-positioned menu lists all 8. */
+.se-yoshi {
+  position: relative;
+  display: inline-flex;
+}
+.se-yoshi__btn,
+.se-yoshi__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+}
+.se-yoshi__caret {
+  color: var(--ink-3);
+  font-size: 8px;
+}
+.se-yoshi__strip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-faint);
+}
+.se-yoshi__sw {
+  width: 7px;
+  height: 12px;
+}
+.se-yoshi__name {
+  white-space: nowrap;
+}
+.se-yoshi__menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.se-yoshi__menu .se-yoshi__opt {
+  justify-content: flex-start;
+  min-width: 150px;
+}
+.se-yoshi__menu .se-yoshi__opt:hover {
+  border-color: var(--accent-soft);
+}
+.se-yoshi__menu .se-yoshi__opt.is-sel {
+  border-color: var(--accent);
+  color: var(--ink);
 }
 
 .se-worldmap__footer {
@@ -2776,26 +2900,6 @@ h3 { margin: 0; }
 .se-worldmap__world-name {
   font-size: 13px;
   font-weight: 600;
-}
-
-.se-worldmap__slot-link {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: none;
-  padding: 1px 2px;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  border-radius: 3px;
-  text-align: left;
-}
-
-.se-worldmap__slot-link:hover {
-  background: var(--bg-elevated);
 }
 
 .se-worldmap__detail-head {
@@ -4257,6 +4361,13 @@ h3 { margin: 0; }
 .se-import__pill--blocked {
   color: var(--ink-3);
 }
+/* Emptied: a benign non-error state (the hack removed the level). Muted neutral
+   like --blocked/--notimported — informational, not alarming — but its own pill
+   so its count is never conflated with genuinely-blocked import problems. */
+.se-import__pill--emptied {
+  color: var(--ink-3);
+  border-style: dashed;
+}
 
 /* Re-identified memory locations (the anchor table). */
 .se-import__anchors {
@@ -4458,6 +4569,11 @@ h3 { margin: 0; }
 .se-import__row.is-blocked {
   opacity: 0.55;
 }
+/* Emptied rows are inert (nothing to import) so dim like blocked, but they're a
+   normal cleanup — the "emptied" tag (not "blocked") tells them apart. */
+.se-import__row.is-emptied {
+  opacity: 0.55;
+}
 .se-import__rowid {
   color: var(--ink);
 }
@@ -4537,6 +4653,12 @@ h3 { margin: 0; }
 }
 .se-import__tag--blocked {
   color: var(--ink-3);
+}
+/* Emptied: benign cleanup, not an import failure. Muted neutral, dashed border
+   to distinguish it from a genuinely-blocked slot at a glance. */
+.se-import__tag--emptied {
+  color: var(--ink-3);
+  border-style: dashed;
 }
 .se-import__tag--warn {
   color: #e0a23a;
@@ -5190,6 +5312,12 @@ h3 { margin: 0; }
   font-size: 9px;
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
+}
+/* The on-disk filename shown after the friendly label in a "Changed graphics" row. */
+.se-graphics__item-file {
+  margin-left: 6px;
+  font-size: 9px;
+  color: var(--ink-3);
 }
 .se-graphics__item-reset {
   flex: 0 0 auto;

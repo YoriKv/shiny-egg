@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.8 - 2026-07-01
+
+- Fixed graphics import error due to lz2/lz16 mislabeling.
+- Added level -> yoshi color mapping editor and import to world map panel.
+- Other small improvements to import from rom UI.
+
 ## v0.5.7 - 2026-07-01
 
 - Automatic backups of open project taken every 10 minutes stored as zip files.

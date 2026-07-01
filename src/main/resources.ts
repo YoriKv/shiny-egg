@@ -96,12 +96,18 @@ import {
   serializeEntranceTable,
   loadLevelIdSymbols
 } from 'snes-framework/world-map'
+import {
+  parseYoshiColors,
+  serializeYoshiColors,
+  YOSHI_COLORS_FILE
+} from 'snes-framework/yoshi-colors'
 import type {
   EditableResource,
   MessagePtrTableModel,
   SaveResourceResult,
   StringTableModel,
-  WorldMapModel
+  WorldMapModel,
+  YoshiColorsModel
 } from 'snes-framework/types'
 import { buildOutputDir, frameworkWorkRoot, overlayRoot, writeFileAtomicSync } from './framework-paths'
 import {
@@ -1322,6 +1328,8 @@ export async function loadResource(resource: EditableResource): Promise<unknown>
       return loadAsmRegionResource(resource.id)
     case 'world-map':
       return loadWorldMapResource()
+    case 'yoshi-colors':
+      return loadYoshiColorsResource()
     default: {
       const _never: never = resource
       throw new Error(`Unknown resource: ${JSON.stringify(_never)}`)
@@ -1408,6 +1416,37 @@ export function levelRecordOverrides(): Map<number, number> {
   } catch {
     return new Map()
   }
+}
+
+// ── Per-level Yoshi-color table ────────────────────────────────────────────
+// `DATA_yoshi_level_colors` is a `db` byte table in a `;@editable` region of
+// Bank02.asm (one Yoshi color id per translevel slot). An edit is an asm edit →
+// overlay copy of Bank02.asm (build-tree path, build dirty on save via the
+// renderer's onSaved) — same shape as the world-map entrance editor above.
+// Fixed length, so no byte budget. Edited by the World Map panel.
+
+/** Load the Yoshi-color table (overlay-first) into its `colors[translevelId]` model. */
+export function loadYoshiColorsResource(): YoshiColorsModel {
+  const { contentText } = readOverlayFirst(YOSHI_COLORS_FILE)
+  return parseYoshiColors(contentText)
+}
+
+/** Splice the edited Yoshi-color ids into the active project's overlay copy of
+ *  Bank02.asm and write it back (atomic). Splices onto the OVERLAY-first content
+ *  so a sibling edit in the same file survives; only changed bytes are rewritten.
+ *  Renderer marks the build dirty on success (asm edits don't render live). */
+export async function saveYoshiColorsResource(model: unknown): Promise<SaveResourceResult> {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+
+  const { contentText } = readOverlayFirst(YOSHI_COLORS_FILE)
+  const result = serializeYoshiColors(contentText, model as YoshiColorsModel)
+  if (!result.ok) return { ok: false, error: result.error }
+
+  await saveOverlayFile(projectId, YOSHI_COLORS_FILE, result.text)
+  return { ok: true, files: [YOSHI_COLORS_FILE] }
 }
 
 /** Load an `;@editable` asm region (overlay-first content, base-derived budget)
@@ -1499,6 +1538,8 @@ export async function saveResource(
       return saveAsmRegionResource(resource.id, model)
     case 'world-map':
       return saveWorldMapResource(model)
+    case 'yoshi-colors':
+      return saveYoshiColorsResource(model)
     default: {
       const _never: never = resource
       return { ok: false, error: `Unknown resource: ${JSON.stringify(_never)}` }

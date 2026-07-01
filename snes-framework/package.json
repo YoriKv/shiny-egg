@@ -17,6 +17,7 @@
     "./levels-catalog": "./scripts/levels-catalog.ts",
     "./patches": "./scripts/patches/index.ts",
     "./serialize-level": "./scripts/serialize-level.ts",
+    "./yoshi-colors": "./scripts/yoshi-colors.ts",
     "./pool-map": "./scripts/pool-map.ts",
     "./level-budget": "./scripts/level-budget.ts",
     "./boundary-move": "./scripts/boundary-move.ts",

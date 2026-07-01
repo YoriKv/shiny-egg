@@ -113,7 +113,7 @@ export async function backupCurrentProjectIfChanged(): Promise<string | null> {
   state[id] = sig
   await writeState(state)
   // eslint-disable-next-line no-console
-  console.log(`[backup] ${id} → ${zipPath}`)
+  console.log(`[backup] ${id} -> ${zipPath}`)
   return zipPath
 }
 

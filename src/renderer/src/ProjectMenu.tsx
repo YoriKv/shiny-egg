@@ -74,16 +74,38 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
 
 
 
-  // Each open resets to the list view and refreshes the project list.
+  // Each open resets to the list view and refreshes the project list. If the
+  // active project's folder was renamed/removed externally while the app was
+  // running, it won't be in the list — recover here so the menu never operates
+  // on a dead id (which is what threw in `project:info` and hung the app).
   useEffect(() => {
     if (!open) return
     setView('list')
     setStatus(null)
-    void window.shinyEgg.projects.list().then(setProjects)
+    void window.shinyEgg.projects.list().then((list) => {
+      setProjects(list)
+      if (current && !list.some((p) => p.id === current.id)) void recoverMissingProject()
+    })
+    // Intentionally keyed on `open` only — this runs on each menu open, not on
+    // every `current`/`recoverMissingProject` identity change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   async function refreshList(): Promise<void> {
     setProjects(await window.shinyEgg.projects.list())
+  }
+
+  // The active project's folder was renamed/removed on disk while the app was
+  // running, so its id is now dead. Re-resolve a valid current project (the
+  // renamed folder, another surviving project, or a fresh default) and switch
+  // to it so nothing further fires against the missing id.
+  async function recoverMissingProject(): Promise<void> {
+    const lostName = current?.name ?? 'The project'
+    const next = await window.shinyEgg.projects.ensureCurrent()
+    onChange(next, true)
+    await refreshList()
+    setView('list')
+    setStatus(`“${lostName}” is no longer on disk — switched to “${next.name}”.`)
   }
 
   // Run `action` now, or hold it behind the unsaved-changes modal when dirty.

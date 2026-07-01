@@ -2,7 +2,7 @@
 If this is your first time using Shiny Egg, make sure to read [[First Time Setup]] before you continue.
 ## How Shiny Egg Works
 
-**Important!** Shiny Egg does not work the way most ROM hacking tools do. It does not edit a ROM file in place. Instead, it keeps changes you make as **overlays** that it stores separately for each project. Then, when you want to test/build/export the project, it combines your overlay files with the base ROM's files and compiles them together using `asar.exe` **from source**. Under the hood, Shiny Egg uses a modified version of github.com/Yoshifanatic1/SNES-ROM-Framework and https://github.com/Yoshifanatic1/Yoshi-s-Island-Disassembly.
+**Important!** Shiny Egg does not work the way most ROM hacking tools do. It does not edit a ROM file in place. Instead, it keeps changes you make as **overlays** that it stores separately for each project. Then, when you want to test/build/export the project, it combines your overlay files with the base ROM's files and compiles them together using `asar.exe` **from source**. Under the hood, Shiny Egg uses a modified version of https://github.com/Yoshifanatic1/SNES-ROM-Framework and https://github.com/Yoshifanatic1/Yoshi-s-Island-Disassembly.
 
 This means that all of the game's assets, level data, and ASMs are editable and kept separate. You can see all of the files you've changed in the overlays folder of your project. This makes it much less likely that you'll accidentally write over your changes or corrupt your ROM. It also has a number of benefits, including more control over ROM layout and ASM patches that have access to symbols that don't break when things shift around.
 
@@ -49,11 +49,13 @@ The toolbar is split up into 5 sections.
 Always available.
 * **Click + Drag** to Pan
 * **Mouse Wheel** to zoom in/out
-* **Mouse 4 / Alt + Left** to jump back to a previous level or warp (works like browser history)
-* **Mouse 5 / Alt + Right** to jump forward after a jump back (works like browser history)
 * **Ctrl + C/X/V/D** to Copy / Cut / Paste / Duplicate
 * **Ctrl + Z / Ctrl + Shift + Z** to Undo / Redo
-* **Double Click and Exit** to jump to its destination
+* **Double Click an Exit** to jump to its destination
+* **Mouse 4 / Alt + Left** to jump back to a previous level or warp (works like browser history)
+* **Mouse 5 / Alt + Right** to jump forward after a jump back (works like browser history)
+* **Arrow Keys** to move an object/sprite
+* **Shift + Arrow Keys** to resize an object/sprite
 
 From left to right on the toolbar.
 
@@ -67,11 +69,15 @@ From left to right on the toolbar.
 
 **Set Test Level Spawn (Middle Click / T)** - Place a test level spawn position. When **Test Level** is clicked, the editor will use BizHawk's Lua interface to load the current level and spawn Yoshi at the specified position, overriding the default level spawn. Middle Click on the spawn point to remove it.
 
+![[guide-toolbar.png]]
+
 ### 2 - Level Canvas Colors
 
 **BG Color** - The color of the flat color background visible when out of bounds and when the background gradient visual is turned off.
 
 **Grid Color** - The color and alpha of the grid lines draw on top of the level canvas.
+
+![[guide-toolbar.png]]
 
 ### 3 - Show/Hide Layers
 
@@ -88,6 +94,8 @@ Bottom Row - From left to right. Show/hide outlines. Enables and disables intera
 * Show/Hide Exits
 * Show/Hide Collision Visuals - A color overlay showing actual collision shapes and some collision metadata.
 * Show Screen Grid / Show Tile Grid / Hide Grid
+
+![[guide-toolbar.png]]
 
 ### 4 - Navigation and Bizhawk Emulator Controls
 
@@ -113,6 +121,8 @@ Once located, the Launch and Test Level buttons appear.
 - EGGS - Spawn with this many eggs.
 - KEYS - Spawn with this many keys.
 - Max 6 items.
+
+![[guide-toolbar.png]]
 
 ### 5 - Panel Buttons
 

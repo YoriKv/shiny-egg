@@ -29,6 +29,7 @@ const CATEGORY_DEFS: Record<string, { label: string; imported: boolean }> = {
   'gfx-tables': { label: 'Graphics-selection tables (tileset / spriteset files)', imported: false },
   'gfx-ptrs': { label: 'Graphics pointer tables (followed, not copied)', imported: true },
   gradient: { label: 'Backdrop gradient colors', imported: true },
+  'yoshi-colors': { label: 'Yoshi level colors', imported: true },
   'screen-tilemap': { label: 'Title-screen tilemaps (logo / island)', imported: true },
   'cutscene-text': { label: 'Cutscene text (intro / ending)', imported: true },
   map16: { label: 'Map16 page tables', imported: false },
@@ -100,6 +101,7 @@ function buildIntervals(levelExtents: Array<[number, number]>): Interval[] {
   const lz16Ptrs = sym.pc('DATA_lz16_compressed_gfx_ptrs');
   const islandPc = sym.pc('DATA_5F9800');
   const logoPc = sym.pc('DATA_title_screen_logo_tilemap');
+  const yoshiPc = sym.pc('DATA_yoshi_level_colors');
   out.push(
     { start: 0x7fb0, end: 0x8000, key: 'rom-header', priority: 2 },
     { start: idxPc, end: ptrsPc, key: 'world-map', priority: 2 },
@@ -121,6 +123,8 @@ function buildIntervals(levelExtents: Array<[number, number]>): Interval[] {
     { start: logoPc, end: logoPc + 448 * 2, key: 'screen-tilemap', priority: 2 },
     // Backdrop gradient tables (16 × 24 BGR-15 words, DATA_5FD64C…) — imported.
     { start: 0x1fd64c, end: 0x1fd94c, key: 'gradient', priority: 2 },
+    // Per-level Yoshi-color LUT (DATA_yoshi_level_colors, 72 bytes) — imported.
+    { start: yoshiPc, end: yoshiPc + 72, key: 'yoshi-colors', priority: 2 },
     // Raw-CHR graphics banks $52–$56 (animation tiles, world-map icons, sprite /
     // dynamic-body gfx, world-map char base) — imported via the raw-CHR path.
     { start: 0x120000, end: 0x170000, key: 'graphics-raw', priority: 1 },

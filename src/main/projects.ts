@@ -58,11 +58,19 @@ function readProjectFile(id: string): ProjectSummary | null {
   if (!existsSync(p)) return null
   try {
     const parsed = JSON.parse(readFileSync(p, 'utf8')) as Partial<ProjectSummary>
-    if (!parsed.id) return null
+    if (!parsed || typeof parsed !== 'object') return null
     const createdAt = parsed.createdAt ?? new Date().toISOString()
+    // The FOLDER NAME (`id`) is authoritative for identity + display — NOT the
+    // stored `id`/`name`. Every path helper (projectRoot, overlayRoot, build
+    // dirs…) resolves against the folder, so a project.json `id` that has
+    // drifted from its folder — as happens when the folder is renamed OUTSIDE
+    // the app — would make every path point at a folder that no longer exists
+    // (the "new-shiny-01 not found" hang). create/rename keep folder==id==name
+    // in sync; this read-time reconciliation heals an out-of-app rename and
+    // writeProjectFile persists the corrected id on the next save.
     return {
-      id: parsed.id,
-      name: parsed.name ?? parsed.id,
+      id,
+      name: id,
       createdAt,
       modifiedAt: parsed.modifiedAt ?? createdAt,
       ...(parsed.romVersion ? { romVersion: parsed.romVersion } : {}),
@@ -278,7 +286,8 @@ export function backupProject(id: string): ProjectSummary {
   return backup
 }
 
-/** The current valid project, creating the default one if none exists. */
+/** The current valid project, recovering when the pointer is stale and
+ *  creating a default only when no projects remain. */
 export function ensureCurrentProject(): ProjectSummary {
   const id = getCurrentProjectId()
   if (id) {
@@ -290,6 +299,20 @@ export function ensureCurrentProject(): ProjectSummary {
       if (gfxLiveEdits().size === 0) restoreGfxLiveCache(id)
       return pf
     }
+  }
+  // The pointer is unset or points at a folder that was renamed/removed
+  // externally. Prefer re-pointing at the most-recent surviving project (an
+  // external rename resurfaces here as that renamed folder) before creating a
+  // fresh default — mirrors deleteProject's recovery. Only mint a new default
+  // when nothing remains, so a stray `new-shiny-NN` isn't spawned on every
+  // stale-pointer recovery.
+  const remaining = listProjects()
+  if (remaining.length > 0) {
+    const next = remaining[0]
+    updateSettings({ lastProjectId: next.id })
+    clearGfxLiveCache() // drop the vanished project's live gfx edits…
+    restoreGfxLiveCache(next.id) // …and load the recovered project's, if any
+    return next
   }
   return createProject()
 }

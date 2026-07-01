@@ -209,6 +209,19 @@ DATA_588E8F:
 DATA_589574:
 	incbin "Graphics/GFX_589574.lz2"
 
+;-------------------------------------------------------------------------
+; Orphaned LZ16 graphics (gfx file IDs $2C-$2F) -- NOT LZ2, despite the .lz2
+; filenames and their slots in DATA_lz2_compressed_gfx_ptrs (Bank06). These
+; four blobs are LZ16-compressed (Lunar Compress FORMAT=15, 8 tile-rows ->
+; 4 KB / 128 4bpp tiles each); decoding them as LZ2 overruns past the blob
+; with no terminator. They are UNREFERENCED: no loader path ever resolves to
+; LZ2 file ID $2C-$2F -- the live $2C-$2F graphics are sprites, loaded via
+; DATA_lz16_compressed_gfx_ptrs from different addresses. Decoded content is a
+; 2-color diagonal diamond/lattice mesh (a stipple / translucency texture);
+; $2C/$2D and $2E/$2F are near-duplicate color-polarity pairs. Left in the
+; ROM but never decompressed by any code path. (Bytes are reproduced verbatim
+; for MD5-exactness; this note documents the orphan, it does not change data.)
+;-------------------------------------------------------------------------
 DATA_589AE6:
 	incbin "Graphics/GFX_589AE6.lz2"
 

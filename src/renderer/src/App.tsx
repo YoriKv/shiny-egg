@@ -46,6 +46,7 @@ import { gradientOffset } from './lib/gradient'
 import { TilesBody } from './panels/TilesPanel'
 import { StringsBody, useMessagePtrTableEditor, useStringsEditor } from './panels/StringsPanel'
 import { useWorldMapEditor } from './edit-session/useWorldMapEditor'
+import { useYoshiColorsEditor } from './edit-session/useYoshiColorsEditor'
 import { WorldMapBody } from './panels/WorldMapPanel'
 import { PickerBody } from './panels/PickerPanel'
 import { ExitsBody } from './panels/ExitsPanel'
@@ -964,6 +965,12 @@ export default function App(): JSX.Element {
   // the catalog (the baked levels.json mapping can't — the main-side recordId
   // overlay + this refresh are the only path; see levelRecordOverrides).
   const worldMapEditor = useWorldMapEditor(projectScope, markRomDirtyAndRefreshCatalog, docHistory)
+  // Per-level Yoshi-color table (DATA_yoshi_level_colors) — edited from the World
+  // Map panel alongside the entrance table. A plain asm edit (no catalog impact),
+  // so its save just marks the build dirty. Auto-registers with the EditSession
+  // (saveAll) via its doc key; listed in closeDocs('world-map') so closing the
+  // window prompts to save it too.
+  const yoshiColorsEditor = useYoshiColorsEditor(projectScope, markRomDirty, docHistory)
   // Per-line "jump" in the World Map panel: load a level (spawn / checkpoint
   // re-entry record) and focus the camera at the cell. Reuses the finder-jump
   // primitive (anchors the owning translevel, loads, focuses).
@@ -1007,9 +1014,9 @@ export default function App(): JSX.Element {
         : kind === 'strings'
           ? [levelNameStrings, messageStrings, messagePtrs, introStory, endingText]
           : kind === 'world-map'
-            ? [worldMapEditor]
+            ? [worldMapEditor, yoshiColorsEditor]
             : [],
-    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor]
+    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor, yoshiColorsEditor]
   )
   const requestCloseWindow = useCallback(
     (w: WindowDef): void => {
@@ -1643,7 +1650,12 @@ export default function App(): JSX.Element {
                   ]}
                 />
               ) : w.kind === 'world-map' ? (
-                <WorldMapBody editor={worldMapEditor} onJump={onWorldMapJump} />
+                <WorldMapBody
+                  editor={worldMapEditor}
+                  yoshi={yoshiColorsEditor}
+                  paletteDraft={paletteEditor.draftMap}
+                  onJump={onWorldMapJump}
+                />
               ) : w.kind === 'picker' ? (
                 <PickerBody
                   armed={placement}

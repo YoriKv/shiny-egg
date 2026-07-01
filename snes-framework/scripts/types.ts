@@ -21,7 +21,18 @@ export type RomVersion =
 export type EditableResource =
   | { kind: 'level'; recordId: number }
   | { kind: 'asm-region'; id: string }
-  | { kind: 'world-map' };
+  | { kind: 'world-map' }
+  | { kind: 'yoshi-colors' };
+
+/** The per-level Yoshi-color table (`DATA_yoshi_level_colors` in Bank02.asm):
+ *  one color id per translevel slot (index = world*12+level, the same slot space
+ *  the World Map panel is built on). The id selects a Yoshi palette row (via
+ *  `DATA_yoshi_palette_ptrs` → `DATA_master_palette_rom_blob`). Edited through the
+ *  `;@editable:yoshi-level-colors` region; see scripts/yoshi-colors.ts. */
+export interface YoshiColorsModel {
+  /** `colors[translevelId]` = Yoshi color id (0..7). Length `YOSHI_COLOR_SLOTS`. */
+  colors: number[];
+}
 
 /** Result of a generic resource save — `files` are the overlay-relative paths
  *  written (empty when nothing changed). */

@@ -674,7 +674,9 @@ export function GraphicsBody({
                                     </button>
                                 </li>
                             )}
-                            {edits.map((e) => (
+                            {edits.map((e) => {
+                                const fname = e.file.split('/').pop() ?? e.file
+                                return (
                                 <Fragment key={e.file}>
                                     <li className="se-graphics__item">
                                         <button
@@ -687,6 +689,10 @@ export function GraphicsBody({
                                         <span className="se-graphics__item-label" title={e.file}>
                                             {e.label}
                                             {e.kind === 'raw-chr' && <span className="se-graphics__tag">shared</span>}
+                                            {/* Show the on-disk filename alongside the friendly label (e.g.
+                                                "Gfx file 0x2F (LZ2)  GFX_58A2CD.lz2"), unless the label already
+                                                IS the filename (unknown-id blobs / by-name raw rows). */}
+                                            {!e.label.includes(fname) && <span className="se-graphics__item-file">{fname}</span>}
                                         </span>
                                         <span className="se-graphics__item-size" title={`${sizeLabel(e.bytes)} on disk`}>
                                             {e.change ? changeBadge(e.change) : sizeLabel(e.bytes)}
@@ -711,7 +717,8 @@ export function GraphicsBody({
                                         </li>
                                     )}
                                 </Fragment>
-                            ))}
+                                )
+                            })}
                         </ul>
                     )}
                 </div>

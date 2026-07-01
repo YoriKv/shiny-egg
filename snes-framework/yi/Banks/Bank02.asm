@@ -58,12 +58,17 @@ macro YIBank02Macros(StartBank, EndBank)
 ; Raidenthequick: DATA_yoshi_level_colors
 ;-------------------------------------------------------------------------
 DATA_028000:
+; ;@editable region: the editor's World Map panel writes each translevel slot's
+; Yoshi color here (byteOffset = translevel = world*12+level; value 0..7). Splice
+; is byte-preserving — see scripts/yoshi-colors.ts.
+;@editable:yoshi-level-colors begin
 DATA_yoshi_level_colors:
 	db $00,$01,$03,$02,$04,$05,$06,$07,$00,$00,$00,$00,$00,$01,$03,$02
 	db $04,$05,$06,$07,$00,$00,$00,$00,$00,$01,$03,$02,$04,$05,$06,$07
 	db $00,$00,$00,$00,$00,$01,$03,$02,$04,$05,$06,$07,$00,$00,$00,$00
 	db $00,$01,$03,$02,$04,$05,$06,$07,$00,$00,$00,$00,$00,$01,$03,$02
 	db $04,$05,$06,$00,$00,$00,$00,$00
+;@editable:yoshi-level-colors end
 
 ;---------------------------------------------------------------------------
 

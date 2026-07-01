@@ -13626,6 +13626,9 @@ DATA_lz2_compressed_gfx_ptrs:                                    ; 265 dl entrie
 	dl DATA_5888CD
 	dl DATA_588E8F
 	dl DATA_589574
+; file IDs $2C-$2F: DEAD/orphaned entries. No loader path resolves to LZ2 file
+; ID $2C-$2F, and these blobs are not valid LZ2 -- they are unreferenced LZ16
+; graphics (a diamond/lattice mesh). See DATA_589AE6 in Bank57.asm for detail.
 	dl DATA_589AE6
 	dl DATA_589D4F
 	dl DATA_589FC4
