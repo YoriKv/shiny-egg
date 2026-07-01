@@ -119,6 +119,7 @@ import { type SymbolMap } from 'snes-framework/symbol-map'
 import type { GfxFileEntry } from 'snes-framework/load-graphics'
 import type { RenderHeaderRequest } from '../shared/ipc-types'
 import { loadRomAndSymbols } from './render/rom-cache'
+import { resourcePaletteToBase, applyPaletteEdits } from './render/render-core'
 import { gfxLiveEdits } from './gfx-live-cache'
 import { saveGfxEdit, saveIslandTilemap, saveLogoTilemap, loadPaletteEdits, loadLogoTilemapEdits, loadIslandTilemapEdits, applyScreenPlacementOverlays, applyRawChrOverlays, readRawChrBase } from './resources'
 import { frameworkWorkRoot } from './framework-paths'
@@ -368,6 +369,20 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
     for (const ed of loadPaletteEdits()) w.set(ed.offset, ed.value) // base ⊕ existing edits
     _effectiveBlobWords = w
     return w
+  }
+  // The M1TE2 SCENE tracks (overworld / title island / storybook) diff the imported .M1's
+  // palette against the scene context's CGRAM (`diffM1tePalette`), which the context builders
+  // populate from the ROM. That baseline lacks the current palette draft, so an edit that RESETS
+  // a previously-changed color to its vanilla value reads as "no change" and the stale override
+  // survives (the diff-vs-base trap: changing to a non-base color always differs and imports, but
+  // reverting to base doesn't). Re-source the scene's master-blob-backed slots from the PRISTINE
+  // base blob then overlay the draft, so the diff runs against base ⊕ edits — exactly what the
+  // export (`romWithLiveOverlays`) showed, making the round-trip idempotent. This is the scene
+  // twin of the level path's `applyLivePreviewPalette` and the Aseprite `effectiveBlobWords`
+  // baseline above; the scene cgram + provenance are already populated, so no reload is needed.
+  const foldLivePaletteIntoScene = (cgram: Uint8Array, provenance: Int32Array): void => {
+    resourcePaletteToBase(cgram, provenance, frameworkWorkRoot())
+    applyPaletteEdits(cgram, provenance, loadPaletteEdits())
   }
   // Image-track (imageAseprite) palette write-back: diff each entry's embedded palette
   // (`.aseprite` only) against the current blob → the reconciler. Runs separately from the
@@ -679,6 +694,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
       if (gv === 'unchanged') { mapTerrainSkipped++; continue }
       try {
         const ctx = buildWorldMapTerrainContext(rom, symbols, ov.world, gfxLiveEdits())
+        foldLivePaletteIntoScene(ctx.scene.cgram, ctx.scene.provenance) // diff palette vs base ⊕ edits (see note)
         m1Manifest = ctx.scene.manifest
         reconciler.registerManifest(ctx.scene.manifest)
         const d = diffOverworldM1(ctx, readFileSync(join(dir, ov.file)))
@@ -995,6 +1011,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
         const bytes = readFileSync(join(dir, e.file))
         if (e.kind === 'island') {
           const ctx = buildTitleIslandContext(rom, symbols, gfxLiveEdits())
+          foldLivePaletteIntoScene(ctx.cgram, ctx.provenance) // diff palette vs base ⊕ edits (see note)
           const d = diffTitleIslandM1(ctx, bytes)
           let changed = false
           if (d.charEdits.length > 0) {
@@ -1011,6 +1028,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
           if (changed) islandImported++; else islandSkipped++
         } else {
           const ctx = buildStorybookSceneContext(rom, symbols, gfxLiveEdits())
+          foldLivePaletteIntoScene(ctx.cgram, ctx.provenance) // diff palette vs base ⊕ edits (see note)
           const d = diffStorybookSceneM1(ctx, bytes)
           let changed = false
           if (d.chrEdits.length > 0) {

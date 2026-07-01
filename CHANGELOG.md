@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.6 - 2026-06-30
+
+- New version of M1TE with a bunch more UX updates, fixes, and improvements.
+- Graphics export adjustments and bug fixes.
+
 ## v0.5.5 - 2026-06-30
 
 - Even more graphics export adjustments and bug fixes.

@@ -3,7 +3,8 @@
 //      file, each a valid 74000-byte v2 .M1.
 //   2. OVERWORLD: an unedited .M1 round-trips to ZERO edits; a 1-tile CHR edit → exactly
 //      that map-char file edit; a 1-word edit → exactly that tilemap word; a 1-color edit
-//      → exactly that CGRAM color.
+//      → exactly that CGRAM color; a color RESET-to-vanilla over a prior override → a revert
+//      edit back to base (the diff is relative to the context cgram = base ⊕ existing edits).
 //   3. ICONS: an unedited .M1 round-trips to zero edits; a per-level-icon pixel edit routes
 //      to a bank-$53 write; a marker/castle pixel edit routes to a $74/$75 char edit; the
 //      grid is laid out in level order (6 world-rows + the marker/castle row beneath).
@@ -113,6 +114,23 @@ assert(ov.bg1FileId === terrainLayerFileId(c, 0) && ov.bg2FileId === terrainLaye
   const d = diffOverworldM1(c, encodeM1te2(doc));
   assert(d.paletteEdits.length === 1 && d.paletteEdits[0]!.cgramIndex === 1,
     `a 1-color overworld edit → exactly that CGRAM color (got ${d.paletteEdits.length}, index ${d.paletteEdits[0]?.cgramIndex})`);
+}
+
+// RESET-TO-VANILLA over a prior override still round-trips. The diff is relative to the
+// CONTEXT's cgram, so the importer diffs against base ⊕ existing palette edits (gfx-png-import.ts
+// `foldLivePaletteIntoScene`), NOT the raw base cart. Here a saved override lives in the baseline
+// cgram while the .M1 holds that slot's ORIGINAL base color: the diff must emit a REVERT edit back
+// to base — otherwise the reset reads as "no change" and the stale override is stranded (the
+// diff-vs-base trap this whole path exists to avoid: a non-base color always differs and imports,
+// but reverting to base wouldn't). `ov.bytes` is the vanilla world-0 .M1, so its palette IS base.
+{
+  const cRev = buildWorldMapTerrainContext(rom, symbols, 0);
+  const baseColor = (cRev.scene.cgram[2]! | (cRev.scene.cgram[3]! << 8)) & 0x7fff; // index 1
+  cRev.scene.cgram[2] = cRev.scene.cgram[2]! ^ 0x10; // a prior saved edit folded into the baseline
+  const d = diffOverworldM1(cRev, ov.bytes);
+  assert(d.paletteEdits.length === 1 && d.paletteEdits[0]!.cgramIndex === 1 && d.paletteEdits[0]!.bgr15 === baseColor,
+    `reset-to-vanilla over a prior override → a revert edit back to base (got ${d.paletteEdits.length}, index ` +
+    `${d.paletteEdits[0]?.cgramIndex}, color 0x${d.paletteEdits[0]?.bgr15.toString(16)} want 0x${baseColor.toString(16)})`);
 }
 
 // A different world has different content (sanity: not a constant), and round-trips clean.
