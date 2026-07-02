@@ -172,7 +172,7 @@ family" in §10.4 for the standard reading recipe).
 ### 0.8 Cross-references
 
 For the chip-side counterpart of these conventions (how the GSU-2 chip
-processes bytes, dual-issue, ALT prefix state), see `docs/mchip.md` §7.
+processes bytes, dual-issue, ALT prefix state), see `docs/mchip.md` §5.
 
 For Bank `$00` firmware that sets up the engine (boot, NMI/IRQ, palette
 loaders, DMA queues, SPC upload), see `docs/enginecore.md`.
@@ -470,7 +470,11 @@ states.
 
 ```
 1. JSL spr_state_main (per-sprite Main)
-2. AND $7040,x with $FFF3 (clear "draw normally" bits) -- sprite hides
+2. AND $7040,x with $FFF3 -- clears bits $000C, the GSU off-screen-cull
+   despawn-threshold index (NOT "draw" bits; the OAM renderer dispatches on
+   bits 0-1). Clearing them exempts the tongued sprite from the cull so it
+   isn't despawned while carried -- its in-mouth look is drawn by Yoshi's
+   player code, not this slot
 3. Run swallow-progress code: mouth-bulge animation,
    watermelon-flavour detection (CMP against !Define_YI_NorSpr009/0EC/
    0ED/080/081/019/007/005 -- fire/lava/bubble/melon/iceberg melon types),

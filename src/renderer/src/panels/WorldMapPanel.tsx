@@ -37,6 +37,16 @@ import { hex0x } from '../lib/hex'
  *  framework module. */
 const YOSHI_COLOR_NAMES = ['Green', 'Light Blue', 'Yellow', 'Red', 'Pink', 'Cyan', 'Purple', 'Brown'] as const
 
+/** Translevel slots whose Yoshi is engine-forced green rather than read from
+ *  DATA_yoshi_level_colors — the two engine-booted intro scenes:
+ *    0x0A — the gm38 intro cutscene (record 0x38);
+ *    0x0B — "Welcome To Yoshi's Island", the hardcoded pre-1-1 boot slot (record 0x39).
+ *  Neither is entered from the world map, so neither runs Bank17 CODE_17E729 (the
+ *  only site that loads CurrentYoshiColor from the table). Both boot paths STZ the
+ *  color (Bank17:3181 / 4601) → always green. A table edit at these slots is a
+ *  no-op, so the panel shows a disabled indicator here instead of a picker. */
+const ENGINE_FORCED_YOSHI_SLOTS = new Set([0x0a, 0x0b])
+
 /** A horizontal strip of color swatches (one Yoshi palette row). */
 function SwatchStrip({ colors }: { colors: string[] }): JSX.Element {
   return (
@@ -618,14 +628,22 @@ export function WorldMapBody({
                       />
                     </td>
                     <td className="se-worldmap__c-yoshi">
-                      {yoshiRows ? (
+                      {!yoshiRows ? (
+                        <span className="se-meta-xs">…</span>
+                      ) : ENGINE_FORCED_YOSHI_SLOTS.has(s.translevelId) ? (
+                        <span
+                          className="se-yoshi__forced"
+                          title="Engine-booted scene — Yoshi is forced green at boot (Bank17 zeroes the color) and never reads DATA_yoshi_level_colors, so this can't be set here."
+                        >
+                          <SwatchStrip colors={yoshiRows[0] ?? []} />
+                          <span className="se-yoshi__name">Green (locked)</span>
+                        </span>
+                      ) : (
                         <YoshiColorField
                           value={yoshi.colorFor(s.translevelId) ?? 0}
                           rows={yoshiRows}
                           onChange={(id) => yoshi.setColor(s.translevelId, id)}
                         />
-                      ) : (
-                        <span className="se-meta-xs">…</span>
                       )}
                     </td>
                   </tr>

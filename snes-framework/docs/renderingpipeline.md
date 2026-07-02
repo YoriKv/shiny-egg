@@ -326,17 +326,30 @@ DMA-copy the mirror; check the source for the actual decision).
 
 ### 4.4 HDMA-driven COLDATA stream
 
-Two HDMA channels (1 and 2) are typically armed at level-load by
-`hdma_and_gradient_init` (`$01:D5B3`) to stream a 256-entry
-gradient table to `$2132` (COLDATA) per scanline. This is what
-creates the per-scanline sky gradient (top-of-screen tint changes
-smoothly down the screen). The gradient table is:
+Two HDMA channels (1 and 2) are armed at **level-load** by
+`hdma_and_gradient_init` (`$01:D5B3`) to stream a per-scanline
+gradient table to `$2132` (COLDATA). This is what creates the
+sky gradient (tint changes down the screen). The table is computed
+once at load (not per-frame — its callers are all the level-load
+path) and holds ~368 per-scanline entries (23 keyframe segments ×
+16 interpolation sub-steps; see §4.5). The gradient table is:
 
 1. **Computed by the SuperFX** in `FXCODE_0890E7`, which writes the
-   256-entry table to `$70:5800`.
-2. **Copied to WRAM** at `$7F:56DE` by a DMA queued in the same init.
-3. **Streamed to `$2132` per scanline** by HDMA channels 1+2 (split
-   for the high/low halves of the screen).
+   per-scanline color table to `$70:5800`.
+2. **Copied to WRAM** at `$7F:56DE` (`$0522` bytes) by a DMA queued
+   in the same init.
+3. **Streamed to `$2132` per scanline** by HDMA channels 1+2 — the
+   split is **by color plane, not by screen region**: channel 1
+   carries the blue component (1 byte/line, source
+   `!RAM_YI_Level_BGGradientBlueTable` `$7F:56DE`), channel 2 carries
+   the green+red components (2 bytes/line, source
+   `!RAM_YI_Level_BGGradientGreenRedTable` `$7F:5894`). Each channel
+   covers the full screen; its two `$E9`-count HDMA entries (105+105
+   lines) exist only because one HDMA repeat-count maxes at 127 lines.
+   Together they deposit three independent COLDATA bytes per scanline.
+
+See §4.5 for what the table contains and why the on-screen result is
+visibly banded.
 
 The full HDMA channel allocation is documented in `bossengine.md`
 §4.1 — that table applies to normal levels too, since
@@ -344,17 +357,112 @@ The full HDMA channel allocation is documented in `bossengine.md`
 
 | Channel | Destination | Drives |
 |---|---|---|
-| 1 | `$2132` COLDATA | BG3 gradient (top half) |
-| 2 | `$2132` COLDATA | BG3 gradient (bottom half) |
-| 3 | `$210F` BG3HOFS | wavy/sun BG3 horizontal mod |
-| 4 | `$2110` BG3VOFS | wavy/sun BG3 vertical mod |
+| 1 | `$2132` COLDATA | BG3 gradient **blue plane** (1 byte/scanline, full screen) |
+| 2 | `$2132` COLDATA | BG3 gradient **green+red planes** (2 bytes/scanline, full screen) |
+| 3 | `$2111` BG3HOFS | wavy/sun BG3 horizontal mod |
+| 4 | `$2112` BG3VOFS | wavy/sun BG3 vertical mod |
 | 5 | `$2126` WH0 | window-mask effects (fog, etc.) |
 | 6 | reserved | boss-only |
-| 7 | `$210F` BG3HOFS | sun/mist additional mod |
+| 7 | `$2111` BG3HOFS | sun/mist additional mod |
 
 `!RAM_YI_Global_HDMAEnable` (the `$420C` mirror) gates which
 channels actually fire — set per-scene by `init_scene_regs`
 (zero) + the post-init level-load chain (re-arm bits per level).
+
+### 4.5 The sky gradient: keyframes, interpolation, and why it's banded
+
+The COLDATA stream of §4.4 isn't a single linear ramp — it's a
+**piecewise-linear curve built from 24 keyframe colors**, and its
+on-screen appearance is **visibly striped** (horizontal bands) as a
+direct consequence of the SNES's 5-bit color depth.
+
+**Source data — 24 BGR15 keyframes per preset.** The level header's
+`BackgroundColor` byte selects the gradient. If it is `>= $10`, the
+index `BackgroundColor - $10` picks one of 16 rows in
+`DATA_bg_gradient_ptrs` (`$01:D573`); each points to a **48-byte
+keyframe table** (24 × BGR15 words) at `$5F:D64C + idx*$30`
+(`DATA_5FD64C`, `DATA_5FD67C`, …). The keyframes are ordered
+**bottom-of-screen → top**. (`BackgroundColor < $10` leaves the
+gradient HDMA channels disabled — `hdma_and_gradient_init` keeps
+`X = 0`, so those levels have no SuperFX sky gradient at all.)
+
+**Generation — `FXCODE_0890E7` (`$08:90E7`, SuperFX).** Per
+`hdma_and_gradient_init` (`$01:D5B3`), the keyframe pointer is handed
+to the GSU, which writes a ~368-entry per-scanline table to
+`$70:5800`; `CODE_dma_wram_gen_purpose` then DMAs `$0522` bytes to
+`$7F:56DE`. The generator is a fixed-point **linear interpolator**:
+
+- It walks the 24 keyframes as **23 segments**, and subdivides each
+  segment into **16 sub-steps** (`FMULT` with fraction `$00,$10,…,$F0`):
+  `component = base + trunc(delta * k/16)`, `k = 0..15`.
+- Each of R/G/B is masked to **5 bits** (`AND $1F`) and the lerp result
+  is **integer-truncated** (no rounding, no dither).
+- Each output byte is tagged with its COLDATA plane-select bit:
+  `OR $20` = red, `OR $40` = green, `OR $80` = blue — so a single
+  `$2132` write sets exactly one plane. The blue bytes go to one WRAM
+  stream (channel 1), the interleaved green/red bytes to another
+  (channel 2).
+
+**Why it's striped.** COLDATA carries only **5 bits per channel = 32
+intensity levels**, but the table spans ~210 visible scanlines. Within
+a segment whose component changes by Δ across its 16 sub-steps, only
+~Δ distinct values can appear, each held for ~`16/Δ` consecutive
+scanlines. Because the per-segment Δ is small (e.g. preset 0's blue
+runs from 2 up to 7 across the whole screen), each integer step
+persists for several scanlines — producing the **horizontal bands**.
+Band height tracks the local slope (`≈ 16/Δ`), so flatter parts of the
+curve band more coarsely. It is ordinary color-depth quantization: a
+CRT's composite blur softened it on hardware; sharp emulator/upscaler
+output makes the bands crisp. The keyframe curve being piecewise (24
+control points) — not a straight ramp — is what lets the sky bow
+through several hues while still banding.
+
+**The curve, end to end.** The data maps to on-screen scanlines like this:
+
+1. The preset resolves from `BackgroundColor - $10` → keyframe table at
+   `$5F:D64C + idx*$30`: 24 BGR15 words, ordered bottom→top.
+2. Each of the 23 adjacent keyframe pairs expands into 16 colors by
+   integer-lerping each 5-bit channel (`v_k = base + (delta * k) >> 4`,
+   truncated), yielding the ~368 per-scanline BGR15 colors.
+3. For 8-bit display each 5-bit channel is widened `v << 3`; there is no
+   rounding or anti-aliasing, so the step-2 truncation *is* the stripe
+   structure.
+4. The table is bottom→top, so screen-top maps to keyframe[23] and
+   screen-bottom to keyframe[0]. Because the gradient is the color-math
+   fixed color, its visible contribution still depends on CGADSUB/CGWSEL
+   selecting a backdrop/BG add-blend (see §4.1–§4.3).
+
+**The gradient scrolls vertically with the camera** (it is not pinned to
+the screen). Each frame `CODE_04FD28` recomputes the two HDMA indirect
+**source pointers** from camera Y: `gradBluePtr = $56DE + (cameraY >> 3)`
+and `gradGreenRedPtr = $5894 + (cameraY >> 3) * 2`, then
+`irq_normal_level_mode` loads them into the channel-1/2 indirect tables.
+Advancing the read-start deeper into the per-scanline buffer shifts the
+whole gradient — so the sky parallax-scrolls at **1/8 the camera-Y rate**
+(the gentlest layer: BG3 ≈ 1×, BG2 ≈ ½, gradient ≈ ⅛). Full parallax model +
+trace confirmation: `bg23rendering.md §5`.
+
+The blue and green/red WRAM streams are labelled
+`!RAM_YI_Level_BGGradientBlueTable` (`$7F:56DE`) and
+`!RAM_YI_Level_BGGradientGreenRedTable` (`$7F:5894`) — reading those
+two buffers from a live trace reproduces the exact per-scanline colors
+without re-deriving the math.
+
+**Runtime-confirmed** (`trace-harness/scenarios/bg23-render`, slots `$00`
+and `$02`). The plane split is verifiable two ways at runtime:
+
+- **Live HDMA registers:** ch1 `$4310` reads `DMAP=$40` (indirect, 1
+  byte/line) with `BBAD=$32` (→ `$2132`); ch2 `$4320` reads `DMAP=$42`
+  (indirect, **2** bytes/line) with `BBAD=$32`. Both target COLDATA; ch1's
+  indirect source sits in the blue buffer, ch2's in the green/red buffer.
+- **Plane-tag bits in the buffers:** every one of the 210 visible bytes in
+  `$7F:56DE` is `$80`-tagged (blue); in `$7F:5894`, even bytes are all
+  `$40`-tagged (green) and odd bytes all `$20`-tagged (red). The banding
+  shows up directly as run-lengths in the intensity nibble — e.g. slot `$00`
+  blue runs `13×77, 14×8, 15×8, 16×8, …` (each 5-bit step held ~8 scanlines
+  = one band; the leading 77-line run is the flat top above the ramp), while
+  green is nearly flat. The capture's `gradient_wram.bin` + `regs.txt` hold
+  these; a tag/run-length pass over the two buffers reproduces the numbers.
 
 ---
 
@@ -382,9 +490,10 @@ parallax**. Those layers are pure tile-engine rendering — the
 ### 5.2 What the GSU DOES do for BG3 + color-math effects
 
 - **BG3 gradient generation** — `FXCODE_0890E7` generates the
-  256-entry COLDATA gradient table per frame; HDMA streams it to
-  `$2132` per scanline. **Without the GSU running, the sky has no
-  gradient.**
+  per-scanline COLDATA gradient table **at level-load** (~368 entries
+  interpolated from 24 keyframes; see §4.5); HDMA then streams it to
+  `$2132` per scanline every frame. **Without the GSU having run, the
+  sky has no gradient.**
 - **Hookbill fog cinematic** — driven by the boss-sprite state
   machine (`CODE_018025+` in Bank01: `hookbill_init_fog` →
   `_fog_left` → `_fog_stay` → `_fog_fade`), which runs a per-line

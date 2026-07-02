@@ -192,7 +192,7 @@
 ; 16 consecutive IDs all dispatch to the SAME handler CODE_128A00, which does SBC #$0008 from
 ; $15 then JSL CODE_12AB55 for the per-cell stamp -- but CODE_12AB55 is a bare RTL, so it stamps
 ; nothing. There is no per-ID differentiation in V1.0: every slot reads identically as a stubbed
-; no-op (trace stamps 0 cells). The names are flattened to _Null accordingly -- any colour/shape/
+; no-op (trace stamps 0 cells). The names are flattened to _Null accordingly -- any color/shape/
 ; size scheme would be unsupported speculation (no basis in code, GoldenEgg, or community data).
 ;-----------------------------------------------------------------------------------------------
 !Define_YI_ExtObj20_Null = $20	; Init Bank12:1749 (CODE_extobj_handler_null); per-cell Bank12:CODE_12AB55 (bare RTL) | No-op stub (stamps nothing in V1.0).

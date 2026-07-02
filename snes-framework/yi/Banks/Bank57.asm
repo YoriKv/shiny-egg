@@ -38,7 +38,7 @@
 ;#                                                           the bit-15-flagged "second" compression format
 ;#                                                           (Lunar Compress LC_LZ16)
 ;#   $5F:9380        Title-screen tilemap                  -- DATA_5F9380 (uncompressed `dw` block; already annotated)
-;#   $5F:DA80        Hookbill the Koopa shell palette      -- DATA_5FDA80 (15-colour BGR-15 palette; already annotated)
+;#   $5F:DA80        Hookbill the Koopa shell palette      -- DATA_5FDA80 (15-color BGR-15 palette; already annotated)
 ;#   $5F:DA9E..      more uncompressed palette / mode-7    -- many small `dw` blocks (palettes, fade ramps, anim frames)
 ;#                   support tables                           interleaved through the rest of bank $5F
 ;#   $5F:FCE4+       garbage data (V1.1) or freespace pad (V1.0)
@@ -1684,13 +1684,13 @@ DATA_5F9C00:								; Note: Title screen island tilemap (world 6 variant).
 ; SMWC tweaks: the palette ROM blob below is the target of ~26 SMWC "tweak"
 ; hex-edits. The PC offset cited on SMWC (e.g. "$3FA064") maps directly to
 ; (this blob start + ($3FA064 - $3FA000) = +$64 bytes). Notable clusters:
-;   $3FA064 / $3FA0D8-$3FA0E6  Yoshi colour fixups (Pink, Brown -> map vs game)
+;   $3FA064 / $3FA0D8-$3FA0E6  Yoshi color fixups (Pink, Brown -> map vs game)
 ;   $3FC876 / $3FC894 / $3FC8B2  World Map hud palette (Worlds 1-3, BGR-15 LE)
-;   $3FDAF8 .. $3FDD24            Dynamic-palette HUD colours for Worlds 4-6
+;   $3FDAF8 .. $3FDD24            Dynamic-palette HUD colors for Worlds 4-6
 ;                                 across each currently-visited overworld (W1-W6)
 ;   $3FED72                       (single tweak; ending/credits palette region)
 ; Words are BGR-15 little-endian; "written backwards" in SMWC means low byte first.
-; DO NOT bulk-edit -- each tweak is a targeted 2-byte palette colour swap; use
+; DO NOT bulk-edit -- each tweak is a targeted 2-byte palette color swap; use
 ; the SMWC entry to pick the exact word.
 ;-----------------------------------------------------------------------------
 ;@editable:palette-blob begin
@@ -2711,7 +2711,7 @@ DATA_5FD488:
 	dw $77DF,$1845
 
 ;@editable:bg-gradients begin
-DATA_5FD64C:								; Note: BG "back area" colour-gradient table, entry 0 (header byte $10 variant). 24 word BGR-15 entries, ordered bottom-of-sublevel to top, interpolated with 15 scanlines between each colour. First entry of the DATA_bg_gradient_ptrs table at DATA_bg_gradient_ptrs; subsequent entries (DATA_5FD67C, $5FD6AC, ...) are sibling gradient palettes.
+DATA_5FD64C:								; Note: BG "back area" color-gradient table, entry 0 (header byte $10 variant). 24 word BGR-15 entries, ordered bottom-of-sublevel to top, interpolated with 15 scanlines between each color. First entry of the DATA_bg_gradient_ptrs table at DATA_bg_gradient_ptrs; subsequent entries (DATA_5FD67C, $5FD6AC, ...) are sibling gradient palettes.
 	dw $0822,$0822,$0822,$0822,$0822,$0822,$0C43,$0C64
 	dw $1085,$14C7,$14E8,$1909,$192A,$1D4B,$1D4B,$192A
 	dw $1909,$14E8,$14C7,$1085,$0C64,$0C43,$0822,$0822

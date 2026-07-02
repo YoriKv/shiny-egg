@@ -27,7 +27,7 @@
 
 ;-----------------------------------------------------------------------------
 ; HDMA tables, written every frame and DMA'd to the corresponding PPU
-; scroll/window/colour registers ($7E:5040-$7E:5D97).
+; scroll/window/color registers ($7E:5040-$7E:5D97).
 ;-----------------------------------------------------------------------------
 
 !RAM_YI_Global_HDMA_BG3VScrollTable = $7E5040			; 420 bytes; $2112 (BG2 $2110 when OPT)
@@ -76,7 +76,7 @@
 !RAM_YI_TitleScreen_IslandDecorationGFXBuffer = $7F56DE
 
 ;-----------------------------------------------------------------------------
-; Background-gradient colour tables ($7F:56DE-$7F:5BFF). Cover the entire
+; Background-gradient color tables ($7F:56DE-$7F:5BFF). Cover the entire
 ; sublevel top-to-bottom, every 8th X-pixel row. Written into HDMA indirect
 ; tables 5/6 each frame; the buffer at $7F:56DE overlaps with the
 ; TitleScreen scratch buffer above (different consumers at different times).

@@ -3642,10 +3642,13 @@ DATA_039AC0:
 
 ;-------------------------------------------------------------------------
 ; CODE_spr_state_tongued: state $08 handler -- sprite is stuck on Yoshi's tongue.
-; Runs the per-sprite Main first (to keep its animation alive), then masks
-; off bits $000C of the slot's render-control word $7040,x (the "draw
-; normally" bits) so the sprite is hidden -- the in-mouth render is drawn
-; by Yoshi's player code instead.  After that, runs swallow-progress code
+; Runs the per-sprite Main first (to keep its animation alive), then clears
+; bits $000C of the slot's render-control word $7040,x. Those bits are the GSU
+; DESPAWN-THRESHOLD-INDEX (the off-screen cull at FXCODE_098925 `AND #12`), NOT
+; a "draw" flag -- the OAM renderer dispatches on bits 0-1 (FXCODE_098AC2 `AND
+; #3`). Clearing them exempts the tongued sprite from the cull so it isn't
+; despawned while Yoshi carries it around (its in-mouth appearance is rendered
+; by Yoshi's player code).  After that, runs swallow-progress code
 ; (mouth-bulge animation, watermelon-flavour detection at the BNE chain
 ; below, transformation to FlashingEgg/RedEgg/etc on swallow).
 ; Raidenthequick: CODE_spr_state_tongued

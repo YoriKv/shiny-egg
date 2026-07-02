@@ -401,21 +401,24 @@ the HDMA register file at `$4310..$437F`:
 
 | Channel | Destination register                        | Purpose                                       |
 |---|---|---|
-| 1   | `!REGISTER_FixedColorData` (`$2132`)           | BG3 gradient color (top-of-screen tint)       |
-| 2   | `!REGISTER_FixedColorData` (`$2132`)           | BG3 gradient color (continuation)             |
-| 3   | `!REGISTER_BG3HorizScrollOffset` (`$210F`)     | Wavy/sun BG3 horizontal scroll mod            |
-| 4   | `!REGISTER_BG3VertScrollOffset` (`$2110`)      | Wavy/sun BG3 vertical scroll mod (or BG2)     |
+| 1   | `!REGISTER_FixedColorData` (`$2132`)           | BG3 gradient **blue** plane (1 byte/line, full screen)  |
+| 2   | `!REGISTER_FixedColorData` (`$2132`)           | BG3 gradient **green+red** planes (2 bytes/line, full screen) |
+| 3   | `!REGISTER_BG3HorizScrollOffset` (`$2111`)     | Wavy/sun BG3 horizontal scroll mod            |
+| 4   | `!REGISTER_BG3VertScrollOffset` (`$2112`)      | Wavy/sun BG3 vertical scroll mod (BG2 `$2110` in offset-per-tile mode) |
 | 5   | `!REGISTER_Window1LeftPositionDesignation`     | Window-mask effects (fog, etc.)               |
 | 6   | (channel 6 init data unused in most levels)    | Reserved for boss-only effects                |
-| 7   | `!REGISTER_BG3HorizScrollOffset` ($210F)       | BG3 horizontal mod (sun, mist)                |
+| 7   | `!REGISTER_BG3HorizScrollOffset` (`$2111`)     | BG3 horizontal mod (sun, mist)                |
 
 After the writes, `!RAM_YI_Global_HDMAEnable` (`$420C` mirror, WRAM
 `$0D40` or similar) gets the channel bits set per level.
 
 For BG3 gradient: the SuperFX routine `FXCODE_0890E7` runs first and
-generates a 256-entry gradient table at `$70:5800`, then a DMA copies
-it to WRAM `$7F:56DE` where HDMA channels 1+2 stream it to `$2132`
-per scanline.
+generates the per-scanline gradient table (~368 entries, interpolated
+from 24 BGR15 keyframes) at `$70:5800`, then a DMA copies it to WRAM
+`$7F:56DE` where HDMA channels 1+2 stream it to `$2132` per scanline.
+The channel split is by **color plane** (1=blue, 2=green+red), not by
+screen region. See `renderingpipeline.md` §4.5 for the keyframe format
+and why the result is visibly banded.
 
 ### 4.2 Hookbill-specific HDMA: fog cinematic
 

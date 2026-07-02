@@ -117,7 +117,7 @@ Once located, the Launch and Test Level buttons appear.
 
 **Launch** - Build the `.sfc` ROM file (if there are changes) and launch it in BizHawk.
 
-**Test Level** - Build the `.sfc` ROM file (if there are changes) and launch it in BizHawk. Then, suing the Lua interface, load the currently open level and optionally teleport Yoshi to where the test level spawn is set.
+**Test Level** - Build the `.sfc` ROM file (if there are changes) and launch it in BizHawk. Then, using the Lua interface, load the currently open level and optionally teleport Yoshi to where the test level spawn is set.
 - EGGS - Spawn with this many eggs.
 - KEYS - Spawn with this many keys.
 - Max 6 items.

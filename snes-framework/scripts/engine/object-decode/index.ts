@@ -22,6 +22,18 @@
 // "horizontal pipe" ($3D5A/$6700 on screen 0x7C) is a Bank03 terrain-morph
 // helper (CODE_03CBD7, main_stairs family), NOT std object $79. Rule this out
 // before suspecting handler logic when chasing a buffer diff vs a live dump.
+//
+// ── Import-specifier rule (Node --experimental-strip-types) ──────────────────
+// Every relative import in this module tree MUST carry the literal `.ts`
+// extension (`./state.ts`, never `./state.js`). Node's strip-types loader
+// resolves the exact specifier: a `.js` specifier throws ERR_MODULE_NOT_FOUND at
+// runtime, which takes this whole re-export hub — and thus the editor's decode
+// path, i.e. a blank render — down. `tsc` does NOT catch it (it resolves
+// `.js`→sibling `.ts`, so a wrong specifier type-checks green). So `npx tsc
+// --noEmit` passing is NOT sufficient verification here: also run a real
+// `import()` probe (count registered handlers against a known-unused id — NOT
+// 0x00, which is a live handler). Grep guard, must return nothing:
+//   grep -rn "from '\.\.*/.*\.js'" snes-framework/scripts/engine/
 
 export { DecodeState } from './state.ts';
 export type {

@@ -1,9 +1,10 @@
-# YI BG2 / BG3 rendering — reimplementation guide
+# YI BG2 / BG3 rendering reference
 
-A from-scratch build guide for **Layer 2 (BG2)** and **Layer 3 (BG3)** in Yoshi's
-Island: every input each level supplies, the per-LevelMode PPU configuration, the
-parallax scroll math, and the HDMA / SuperFX effects that modulate the layers per
-scanline. The goal is enough to re-render BG2/BG3 for any level without the cart.
+How **Layer 2 (BG2)** and **Layer 3 (BG3)** are rendered in Yoshi's Island: every
+input each level supplies, the per-LevelMode PPU configuration, the parallax scroll
+math, and the HDMA / SuperFX effects that modulate the layers per scanline. It
+follows the complete path from level header to composited scanline, so it accounts
+for exactly how any level's BG2/BG3 ends up on screen.
 
 This is the **per-level + algorithmic** companion to `renderingpipeline.md` (the
 architecture overview). Where the two overlap, this doc is authoritative for BG2/BG3
@@ -120,8 +121,7 @@ size. Almost every LevelMode is **BG Mode 1** (BGMODE low nibble `$9`): BG1/BG2
 - LevelMode `$09` → **BG Mode 7** (BGMODE `$07`): BG1 8bpp (Mode-7), BG2/BG3 off.
 - LevelMode `$0A` → **BG Mode 0** (BGMODE `$00`): **ALL backgrounds 2bpp** — so
   BG1 is 2bpp here, the lone level (`$6B`) where BG1 is not 4bpp. Decoding it as
-  4bpp scrambles every tile. (Engine side: derive bpp from BGMODE via
-  `scene-regs.ts` `bgLayerBpp`, never hardcode.)
+  4bpp scrambles every tile.
 
 ---
 
@@ -166,11 +166,14 @@ hands off the multiply to the **SuperFX** (`FXCODE_0993B3`).
 | `DATA_04FBAE` → R9 | BG2 Y | … | | | | | | |
 | `DATA_04FBEE` → R10 | BG3 X | | | | | | | `$0133`=1.2× |
 | `DATA_04FC2E` → R11 | BG3 Y | | | | | | | |
-| `DATA_04FC6E` → R12 | aux X (secondary BG3 / effect) | | | | | | | `$0166` |
-| `DATA_04FCAE` → R13 | aux Y | | | | | | | |
+| `DATA_04FC6E` → R12 | BG4 X (Layer4) | | | | | | | `$0166` |
+| `DATA_04FCAE` → R13 | BG4 Y (Layer4) | | | | | | | |
 
-(Layer↔register mapping inferred from the output stores in §5.2; R8/R9 → BG2 X/Y,
-R10/R11 → BG3 X/Y, R12/R13 → an auxiliary pair used by special tilesets.)
+(Layer↔register mapping confirmed from the output stores in §5.2 **and the trace in
+§5.4**: R8/R9 → Layer2 = BG2 X/Y, R10/R11 → Layer3 = BG3 X/Y, R12/R13 → Layer4 X/Y.
+Layer4 is computed every in-level frame but BG4 isn't shown in Mode 1 levels; its
+position is consumed by the cutscene/credits renderer — `irq_story_cutscene_credits`,
+Bank00 `$00:C87A+` — so in normal levels R12/R13 are effectively a spare pair.)
 
 The first 22 `BGScrollSetting` rows of each table (full values in
 `tmp/bg23/rate-tables.txt`):
@@ -181,25 +184,48 @@ R8/FB6E  (BG2 Xrate): 0040 0080 0100 0080 0080 0080 0080 0080 0040 00c0 0080 00c
 R9/FBAE  (BG2 Yrate): 0040 ffff ffff 0040 0040 0040 0040 0040 ffff 0060 0040 ffff 0000 ffff
 R10/FBEE (BG3 Xrate): 0020 0040 0100 0100 0000 0040 0133 0080 0040 0040 0020 0000 0040 0000
 R11/FC2E (BG3 Yrate): 0020 ffff ffff ffff 0000 0040 0133 0040 ffff 0020 0020 0000 0020 0000
-R12/FC6E (aux Xrate): 0100 0100 0100 0100 0100 0100 0166 0000 0100 0100 0100 0000 0000 0100
-R13/FCAE (aux Yrate): 0100 0100 0100 0100 0100 0100 0000 0000 0100 0100 0100 0000 0000 0100
+R12/FC6E (BG4 Xrate): 0100 0100 0100 0100 0100 0100 0166 0000 0100 0100 0100 0000 0000 0100
+R13/FCAE (BG4 Yrate): 0100 0100 0100 0100 0100 0100 0000 0000 0100 0100 0100 0000 0000 0100
 ```
 
 ### 5.2 The multiply (FXCODE_0993B3, SuperFX)
 
 `CODE_04FE43` loads the 6 rate values into GSU R8–R13 (with tileset overrides: if
 BG1Tileset==`$03`, R10←0; if BG3Tileset==`$1C`, R11 special; etc.), then calls
-`FXCODE_0993B3`. The GSU routine, per component:
+`FXCODE_0993B3`. The X and Y axes use the **same 8.8 multiply but different anchors**:
 
 ```
-LayerScroll = (cameraComponent * rate) >> 8        ; LMULT, 8.8 fractional
+; X axis — pure scaled multiply (camera X is 0 at the level's left edge, no offset):
+LayerN_X = (cameraX * rateX) >> 8                  ; LMULT, 8.8 fractional
+
+; Y axis — multiply of the camera's distance ABOVE the level floor, subtracted
+; from a per-layer screen anchor, then clamped:
+LayerN_Y = anchorN - (($070C - cameraY) * rateY) >> 8
+;   anchor:  BG2 = $0326   |   BG3 = $0126   |   BG4 = $0126
+;   slope d(LayerY)/d(camY) = +rateY  (same as the rate; only the intercept differs)
+; …with two special cases on rateY:
+;   rateY = $0000  -> Layer Y is left fixed (locked)
+;   rateY = $FFFF  -> Layer Y = cameraY verbatim (1:1 lock to camera, the `MOVE R0,R5`)
 ```
 
 It reads camera-X (`$70:0094`) into R1, multiplies by R8 (`LMULT`), accumulates the
-high/low halves, and stores to `$6096` (→ Layer2XPos); repeats with R10 → Layer3X,
-etc. Outputs land at `$6096`=Layer2X, `$609E`=Layer2Y, `$6098`=Layer3X,
-`$60A0`=Layer3Y (Bank04 copies these to the DP mirrors `$3D/$3F`=BG2 X/Y,
-`$41/$43`=BG3 X/Y).
+high/low halves, and stores to `$6096` (→ Layer2XPos); repeats with R10 → Layer3X and
+R12 → Layer4X. Outputs land at `$6096`=Layer2X, `$609E`=Layer2Y, `$6098`=Layer3X,
+`$60A0`=Layer3Y, `$609A`=Layer4X, `$60A2`=Layer4Y (Bank04 copies these to the DP
+mirrors `$3D/$3F`=BG2 X/Y, `$41/$43`=BG3 X/Y, `$45/$47`=BG4 X/Y). The X formula has no
+additive term — the `$1E0C/$1E0E` operands are just the camera's own sub-pixel
+fraction, so `LayerN_X` is a clean `cameraX × rate`.
+
+**The level floor `$070C` is a hardcoded constant, NOT a per-level runtime value.**
+It is an immediate inside `FXCODE_0993B3` (`IWT R0, #$070C`) and is also re-seeded as a
+constant by the camera-init `CODE_04DC28` (`LDA #$070C`), which runs at *every* level
+load (callers `CODE_01B05A…B118`). YI uses one global vertical coordinate space whose
+**floor is at the same world-Y for every level** — `$070C` is the camera's Y-max (the
+camera never scrolls below it; the per-level variation is the *ceiling*, set by level
+height). The parallax math therefore takes only the constant `$070C` and `cameraY` as
+inputs — it **never** derives a floor from the level/object data. (The collision
+"ground" from the object/Map16 data is a different quantity; the parallax never reads
+it.)
 
 **Tileset special-cases** (Bank04 `$04FE43+`): BG3Tileset `$1A` adds a per-frame
 moving offset (`$7974>>2 + $0C90`) to Layer3X — a self-scrolling BG3 (water/clouds);
@@ -215,9 +241,53 @@ the PPU write-twice scroll registers: Layer2 X/Y → `$210F/$2110` (BG2HOFS/VOFS
 Layer3 X/Y → `$2111/$2112` (BG3HOFS/VOFS), each as a Lo-then-Hi byte pair.
 `irq_normal_level_mode` re-writes them again at V=`$DC` for the level area.
 
-**Reimplementation:** `BG2HOFS = (camX * R8rate[bgScroll]) >> 8`, etc. — a single
-fractional multiply per layer/axis. `$0100`=lock-to-camera, smaller=slower parallax,
-`$0000`=fixed, `$FFFF`=scroll opposite the camera, `>$0100`=foreground-faster.
+**The resulting positions:** `BG2HOFS = (camX * R8rate[bgScroll]) >> 8` for X; the Y
+axis uses the baseline form `BG2VOFS = $0326 - (($070C - camY) * R9rate) >> 8` (§5.2).
+Per rate value: `$0100`=lock-to-camera (1:1), smaller=slower/more-distant parallax,
+`$0000`=fixed (Y) / static (X), `$FFFF`=lock Y to camera 1:1, `>$0100`=foreground-faster
+(scrolls more than BG1, e.g. `$0133`=1.2×, `$0166`=1.4×).
+
+### 5.4 Trace confirmation + gradient vertical-scroll coupling
+
+The model above is verified by `trace-harness/scenarios/bg-parallax`, which loads a
+level, sweeps the player position (so the camera eases through a range), and samples
+camera + Layer2/3/4 X/Y every frame. An offline least-squares fit of each layer's
+position against the camera recovers its slope and compares it to the rate table:
+
+- **slot `$00` (bgScroll `$06`):** measured BG2/BG3/BG4 **X** ratios 0.500 / 1.199 /
+  1.398 vs table `$0080`/`$0133`/`$0166`; **Y** ratios 0.25 / 1.20 / 0.00 vs
+  `$0040`/`$0133`/`$0000` — all match. BG2 Y intercepts confirm the `$0326 - ($070C -
+  camY)·rate` anchor (e.g. camY `$06DC` → BG2 Y `$031A`).
+- **slot `$1B` (bgScroll `$03`):** X ratios 0.5 / 1.0 / 1.0 vs `$0080`/`$0100`/`$0100`
+  — a *different* mode giving *different* ratios, both matching → the tables are
+  genuinely indexed by `BGScrollSetting`.
+- **Floor probe:** holding the player far below the level pins the camera at exactly
+  `cameraY = $070C`, where the parallax term goes to zero and the layers land on their
+  anchors (`BG2 Y = $0326`, `BG3 Y = $0126`) — confirming `$070C` is the camera Y-max
+  (the universal floor) and that the anchors are the layer positions at the floor.
+  Across 50+ captured levels the maximum spawn cameraY is `$070C`; ground-start levels
+  spawn there, elevated/vertical-level spawns sit above it (smaller cameraY).
+
+**Gradient vertical scroll.** The same dispatcher (`CODE_04FD28`) also scrolls the sky
+gradient (§6.1 / `renderingpipeline.md §4.5`) with the camera, by recomputing the two
+HDMA indirect **source pointers** from camera Y each frame:
+
+```
+gradBluePtr   ($0D0B) = $56DE + (cameraY >> 3)        ; blue table base + camY/8
+gradGreenRed  ($0D09) = $5894 + (cameraY >> 3) * 2    ; green/red base + (camY/8)*2
+```
+
+So the gradient scrolls vertically at **1/8 the camera-Y rate** — advancing the HDMA
+read start deeper into the per-scanline buffer shifts the whole gradient up as the
+camera descends. `irq_normal_level_mode` loads these pointers into the channel-1/2
+indirect tables at V=`$DC`. (When `$0D0D` is set — the **sun-effect flag**, set by
+`CODE_setup_bg3_sun_hdma` Bank01 — an alternate path uses `Layer3Y - $29` **directly,
+with no `>>3` shift**, so the gradient locks 1:1 to the BG3 layer rather than scrolling
+at camY/8. Sun levels only — `$12` / `$2D`.) The bg-parallax capture confirms both
+pointer formulas on 91/91 sampled frames.
+
+So the gradient is not a static backdrop — its vertical offset is `cameraY / 8`, the
+gentlest parallax in the scene (BG3 ≈ 1×, BG2 ≈ ½, gradient ≈ ⅛).
 
 ---
 
@@ -229,10 +299,14 @@ by `!RAM_YI_Global_HDMAEnable` (`$0D40` mirror of `$420C`). Channel allocation
 
 | Ch | Dest | Effect |
 |---|---|---|
-| 1,2 | `$2132` COLDATA | **Sky gradient** (split top/bottom) — §6.1 |
-| 3,4 | `$210F/$2110` BG3 HOFS/VOFS | **BG3 scroll modulation** (wavy water, sun) — §6.2 |
+| 1,2 | `$2132` COLDATA | **Sky gradient** (split by color plane: 1=blue, 2=green+red) — §6.1 |
+| 3,4 | `$2111/$2112` BG3 HOFS/VOFS | **BG3 scroll modulation** (wavy water, sun) — §6.2 |
 | 5 | `$2126` WH0 | Window-mask left edge (fog cutout, spotlight) — §6.3 |
-| 7 | `$210F` BG3HOFS | additional sun/mist mod |
+| 7 | `$2111` BG3HOFS | additional sun/mist mod |
+
+(`$2111/$2112` are BG3 HOFS/VOFS; in the offset-per-tile BG3 mode — LevelMode `$03`,
+§6.4 — these channels retarget to BG2 `$210F/$2110` instead, per the WRAM-buffer "OPT"
+note at `!RAM_YI_Global_HDMA_BG3VScrollTable`.)
 
 Of the 56 slot-bootable levels swept, **5 arm HDMA** (`HDMAen=$EB/$EC`): `$02 $12 $19
 $2D $34`. The rest render BG2/BG3 with **plain scroll only** (no HDMA).
@@ -245,17 +319,33 @@ $2D $34`. The rest render BG2/BG3 with **plain scroll only** (no HDMA).
   (`!RAM_YI_Level_BGGradientBlueTable` + R/G counterparts, keyed by BackgroundColor),
   sets up GSU R0/R1, and kicks **`FXCODE_0890E7`**. That GSU routine reads the
   keyframe colors from ROM (`ROMB`/`GETB` at `ROMBR:R14`), decomposes each into 5-bit
-  R/G/B (`AND $1F` + shifts), and **interpolates a 256-entry per-scanline gradient**
-  into `$70:5800` (one fixed-color BGR triple per scanline).
+  R/G/B (`AND $1F` + shifts), and **interpolates the per-scanline gradient** (24
+  keyframes → 23 segments × 16 sub-steps = 368 entries, each plane-tagged `OR $20/$40/$80`)
+  into `$70:5800` (one fixed-color BGR triple per scanline). It then writes a **70-entry
+  flat block of the final (top) keyframe** (`IWT R12, #$0046`) to the **start** of the
+  buffer — so the full per-scanline buffer is **438 entries** (= the `$1B6` blue-stream
+  stride below). The HDMA streams top→bottom, so those 70 entries are the **flat sky band
+  above the ramp**: at the level ceiling (camY small) the screen-top shows the pad, not
+  the gradient's first interpolated entry.
 - **Transfer:** a DMA copies `$70:5800` → `$7F:56DE` (WRAM); HDMA channels 1+2 then
-  stream `$7F:56DE` → `$2132` (COLDATA) per scanline, split for the top/bottom halves.
+  stream COLDATA → `$2132` per scanline. The two channels split the gradient **by color
+  plane** — channel 1 = blue (1 byte/line, from `$7F:56DE`), channel 2 = green+red
+  (2 bytes/line, from `$7F:5894`) — **not** by top/bottom screen halves. See
+  `renderingpipeline.md` §4.5.
 - **Application:** color math (CGADSUB selecting backdrop/layers, CGWSEL fixed-color)
   blends the per-scanline fixed color → the smooth sky gradient. **Without the GSU +
   HDMA, the sky is a flat color.**
 - The `gradient.bin` capture per level holds `$70:5800` (256 B GSU output) + `$7F:56DE`
-  (256 B WRAM copy). NOTE: `$70:5800` carries ~40 leftover nonzero bytes even when the
-  gradient is unused — the **`HDMAEnable` channel-1 bit** is the authoritative "gradient
-  on screen" signal, not the table's nonzero count.
+  (256 B WRAM copy); `gradient_wram.bin` holds the full contiguous WRAM region
+  `$7F:56DE..$5C00` ($522 B) — blue stream (ch1 src) at offset 0, green/red stream
+  (ch2 src) at offset `$1B6` (= 438, the blue stream's length). The blue stream's first
+  **70 bytes are a constant run** (the top-color pad above), then the 368-entry
+  interpolated ramp — verified in the `lvl00`/`lvl02` captures. `regs.txt` now also dumps the live HDMA ch1/ch2 registers
+  (DMAP `$40`/`$42`, BBAD `$32`), which together with the buffer plane-tags confirm the
+  by-plane split (`renderingpipeline.md` §4.5).
+  NOTE: `$70:5800` is GSU RAM and is **clobbered after level-load** (the gradient is
+  generated once at load, not per-frame), so its settle-time nonzero count is unreliable;
+  the persistent per-scanline data lives in the `$7F` WRAM streams that HDMA reads.
 
 ### 6.2 BG3 scroll-modulation (wavy water, sun)
 
@@ -296,6 +386,8 @@ fog phase) — see `bossengine.md §2.2 / §4.2`.
 > (a generic byte-copy the fog raster *uses*), not a dedicated "fog renderer." The fog
 > is the Bank01 Hookbill state machine + its per-line raster.
 
+---
+
 ### 6.7 BG3 screen-designation HDMA — the per-scanline main/sub z-split (water line)
 
 A **subset of BG3 tilesets** run a per-scanline HDMA that rewrites **TM *and* TS**
@@ -320,18 +412,6 @@ z-order that the per-tile priority bit alone cannot express.
   playable catalog only two levels arm it, both tileset `$20`: **1-3 "The Cave Of Chomp
   Rock"** (`0x02`) and **3-8 "Naval Piranha's Castle"** (`0x19`). Every other BG3 tileset
   has action `$00`/`$FF` (no main-screen split) — BG3 is a pure deep-parallax background.
-- **Static-render handling:** the editor can't run the per-scanline HDMA, but the
-  pre-rendered BG3 tilemap is **per-tileset**, so the water line is a fixed tilemap row.
-  On these levels the renderer splits BG3 into **three** z-planes (instead of the usual
-  deep/front two), keyed on the per-tileset water-line row (tileset `$20` → row 28):
-    - **deep** — priority-0 (clouds): behind BG2.
-    - **mid** — priority-1, rows `< 28` (water/reflection band): IN FRONT of BG2, BEHIND
-      BG1. This is the subscreen band; in the editor it's the `bg3Mid` plane drawn between
-      BG2 and BG1.
-    - **front** — priority-1, rows `>= 28` (foreground bank): in front of BG1.
-  See `bg-layers-compose.ts` `BG3_FOREGROUND_MIN_ROW` + `nonEmpty` (empty planes collapse
-  to `null` so they cost no UI resources), and `render-bg-layers.ts` `foregroundMinRow` /
-  the `'low'`/`'mid'`/`'high'` priority filter.
 
 ---
 
@@ -379,18 +459,25 @@ both covered by other representatives, so no behavior is missing.
 
 ---
 
-## 9. Reimplementation checklist
+## 9. What determines a level's BG2/BG3 appearance
 
-- [ ] Decode the 5 header fields per level (§1).
-- [ ] Load the BG2/BG3 tilemap + char gfx + palette into the VRAM regions of §2.
-- [ ] Apply the LevelMode's in-level register config (§3) — TM/TS/BGMODE/SC/NBA/
-      CGWSEL/CGADSUB (use the in-level, post-IRQ values, not the scene-table preset).
-- [ ] Each frame: `BG2/BG3 scroll = (camera * rate[BGScrollSetting]) >> 8` (§5), with
-      the tileset special-cases.
-- [ ] If BackgroundColor ≥ `$10`: build the 256-entry COLDATA gradient (§6.1) and apply
-      it via color math per scanline.
-- [ ] Handle the effect modes: offset-per-tile (`$03`), Mode-7 (`$09`); BG3 scroll-mod
-      (water/sun) and window-mask (fog) where the HDMA channels are armed.
+Every factor that shapes how BG2/BG3 look for a given level, consolidated:
+
+- The **5 header fields** (§1) select the tileset/palette, LevelMode, BackgroundColor,
+  and BGScrollSetting.
+- `load_level_gfx` places the BG2/BG3 tilemap + char gfx + palette into the VRAM
+  regions of §2.
+- The LevelMode fixes the register config (§3). What renders the level area is the
+  **in-level, post-IRQ** values (TM/TS/BGMODE/SC/NBA/CGWSEL/CGADSUB), not the
+  scene-table preset — `irq_normal_level_mode` rewrites them each frame (§4).
+- Each frame the layers scroll: BG X = `(camera * rate[BGScrollSetting]) >> 8`; BG Y =
+  `$0326 - (($070C - camY) * rate) >> 8` (§5), subject to the tileset special-cases,
+  while the sky gradient scrolls vertically at `camY/8` (§5.4).
+- When BackgroundColor ≥ `$10`, a per-scanline COLDATA gradient interpolated from 24
+  keyframes (§6.1) is applied via color math per scanline; below `$10` the backdrop is
+  a flat color.
+- The effect modes apply where their HDMA channels are armed: offset-per-tile (`$03`),
+  Mode-7 (`$09`), BG3 scroll-mod (water/sun), and window-mask (fog).
 
 ## 10. Cross-references
 

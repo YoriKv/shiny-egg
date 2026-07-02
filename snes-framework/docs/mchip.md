@@ -42,9 +42,8 @@ the GSU is more important than the community usually claims:
 
 2. **It owns the LZ16-style decompressor.** Compressed graphics in YI use two
    formats:
-   - `.lz2` files -> `LC_LZ2` (Lunar Compress **FORMAT=1**; see §6.2 for
-     the three-way byte-exact validation). Decoded by the SuperFX routine
-     at `$08:A980` (`lz2_decompress`).
+   - `.lz2` files -> `LC_LZ2` (Lunar Compress **FORMAT=1**). Decoded by the
+     SuperFX routine at `$08:A980` (`lz2_decompress`).
    - `.lz16` files -> `LC_LZ16` (Lunar Compress FORMAT=15). Decoded by the
      SuperFX routine at `$0A:8000` (a CMODE-bit-reader).
 
@@ -57,12 +56,10 @@ the GSU is more important than the community usually claims:
    `R_*_ZOOM` family of rasterisers lives here, plus the boss-specific
    Mode-7 setups (Hookbill, giant Baby Bowser, etc.).
 
-**Implication for porting work:** any LZ16 port (whether to JS, TS, Python,
-or another language) must follow the SuperFX routine at `$0A:8000` directly.
-Third-party LZ16 implementations derived from GoldenEgg's C# bit-reader
-diverge from Lunar Compress's output on the very first byte. The
-authoritative source is the SuperFX routine, not 65816 code or any C#
-port. Cross-check against `lc200/decomp.exe` (FORMAT=15) as ground truth.
+The SuperFX routine at `$0A:8000` is the authoritative definition of the
+LZ16 format -- the bit-level format spec exists only in the GSU code, not in
+any 65816 routine. Third-party LZ16 bit-readers derived from GoldenEgg's C#
+code diverge from Lunar Compress's output on the very first byte.
 
 ---
 
@@ -191,12 +188,8 @@ are LC_LZ2; 187 tile-graphics files are LC_LZ16. Tile-graphics files
 were apparently assigned to whichever format compressed that asset
 better. See `docs/enginecore.md` §6.
 
-**`CODE_08A980` (LZ2 decompressor, cart calls it "lz1")** is verified
-end-to-end by the three-way validation suite — see
-`scripts/{generate-lz2-{testdata,port,mesen},compare-lz2}.ts` and
-`trace-harness/scenarios/lz2-extract/`. 261/265 entries byte-match
-across `lc200/decomp.exe FORMAT=1`, the TS port at
-`scripts/lz2-decoder.ts`, and the cart's live runtime. Structurally:
+**`CODE_08A980`** is the LZ2 decompressor (cart calls it "lz1").
+Structurally:
 same
 constants (R5=$03FF, R6=$1F, R7=$00E0, R8=$FF), same 4-way dispatch on the
 top 3 bits of each control byte. INPUTS:
@@ -218,9 +211,8 @@ INPUTS:
 The whole bank-`$0A` head is a nested LSR/ROL/BCS bit reader with
 `LINK #4` chains to a shared GETB refill. The output destination isn't
 a parameter — it's wherever the GSU's PLOT context is configured to
-deposit pixels (typically the active CHR slot in VRAM). Any port of
-this format must match this routine exactly; the bit-level format spec
-exists only in the GSU code.
+deposit pixels (typically the active CHR slot in VRAM). The bit-level
+format spec exists only in the GSU code.
 
 The two routines should NOT be confused as "version 1 vs version 16
 of one algorithm" — they're two independent compression schemes with
@@ -363,14 +355,14 @@ Byte 2 -- slope sub-index (only when SK bit set in byte 0)
   $00..$1F  → slope_panels_table[idx * 128], 32 static slope profiles
             (128 B / panel = 16 in-tile pixel rows x 8 B / row)
   $20..$7F  → unallocated (never populated)
-  $80..$81  → "RAM-supplied" runtime slope (moving / boss slopes) — written into
-            the LIVE RAM collision table at play time, never the static ROM table
+  $80..$81  → "RAM-supplied" runtime slope (moving / boss slopes) -- written
+            into the LIVE RAM collision table at play time, never the static
+            ROM table
 ```
 
-The shipped static table only ever uses `$00..$1F` (verified: all 48 SK pages
-fall in that range). A static-side decoder / renderer therefore never sees
-`$20..$81` — those arms are forward-looking guards, relevant only to a
-malformed or hand-edited entry.
+The shipped static table only ever uses `$00..$1F` (all 48 SK pages fall in
+that range); the `$20..$81` arms are forward-looking guards a static slope
+profile never reaches.
 
 **Note on tag `$14` (DK "pipe") -- the pipe-mouth marker, with TWO
 consumers.** Only one Map16 page carries this tag: page `$7D` (also flagged
@@ -866,113 +858,17 @@ bridge files.
 
 ---
 
-## 5. Porting the GSU LZ16 decompressor
-
-The GSU implements two decompressors (see §3.2). Porting them out of GSU
-asm to a host language (TypeScript, Python, C, etc.) is needed if you want
-to preview compressed graphics without running the cart on real hardware
-or an emulator.
-
-- **LZ2 (`CODE_08A980`)** ports cleanly. The dispatch byte + 4-way path
-  structure maps to a straightforward state machine. Validated implementations
-  exist in multiple host languages, all matching `lc200/decomp.exe FORMAT=0`
-  output byte-for-byte.
-- **LZ16 (`CODE_0A8000`)** is the harder one. Existing ports derived from
-  GoldenEgg's C# bit-reader (`GE/Decompress.cs`) are broken: output diverges
-  from `lc200/decomp.exe FORMAT=15` starting at byte 1. GoldenEgg's decoder
-  has its own pre-existing bug for this format, so any port that uses it as
-  the reference will inherit the bug.
-
-**Recommended port path for LZ16:**
-1. Read `CODE_0A8000` and its called-back helpers (`CODE_0A805B`,
-   `CODE_0A8063`, ..., `CODE_0A81B3`) in full. The whole inner state
-   machine fits in ~440 lines of SuperFX asm.
-2. Port the state machine literally, preserving the CMODE pre-shifted-byte
-   assumption and the LINK-based call/return structure.
-3. Validate against `lc200/decomp.exe` for every `.lz16` file produced by
-   the framework's asset extraction step.
-
-The SuperFX routine is the only authoritative source for this format.
-GoldenEgg has it wrong; the `yoshisisland-disassembly` repo doesn't name
-it; there is no published bit-level format spec.
-
----
-
-## 6. Recommended porting paths (per route)
-
-For anyone wanting to extract SuperFX behaviour to a different language:
-
-### 6.1 Trig tables -- TRIVIAL
-
-The four COS/SIN/LCOS/LSIN tables are pure data. Read the byte arrays at
-`$08:AB98` / `$08:AC18` / `$08:AE18` / `$08:AE58` directly from the cart
-(or from `Graphics/SuperFX/DATA_*.bin` if you have the framework's
-extracted output). They're already in standard 8-bit and 16-bit two's-
-complement encoding.
-
-### 6.2 LZ2 decompressor (cart calls it "lz1") -- SIMPLE
-
-Port `CODE_08A980` as a straight state machine. The dispatch byte's top 3
-bits (after AND R7=$E0) select one of 4 paths. Each path reads a length
-operand (5 or 10 bits) and either copies literal bytes or back-references.
-Validate output against `lc200/decomp.exe FORMAT=0` byte-for-byte.
-
-### 6.3 LZ16 decompressor -- MEDIUM
-
-Port `CODE_0A8000` as a bit-by-bit state machine. The CMODE prefix at
-entry means every branch decision is one bit of a prefetched control byte
-(not a flag check). LINK / LSR / ROL / BCS chains build the bit reader.
-~440 lines of SuperFX => ~250 lines of TS / Python.
-
-### 6.4 Player physics -- HARD
-
-The player-physics routines read player state from SuperFX RAM via `LM`/`SM`
-absolute-address ops. Those addresses are mirrored to 65816 RAM (specifically
-to the `!RAM_YI_*` zero-page block) via the SuperFX "shared RAM" mode.
-Porting requires:
-1. Map every player-state RAM address (jump flag, angle, X/Y speed, water
-   level, etc.) to its 65816 RAM equivalent (a table in
-   `yi/Memory/SRAM_Player.asm` would need building).
-2. Port the LCOS-indexed velocity math (the inner loop is small: ~20 SuperFX
-   ops, mostly MULT / SEX / HIB / SWAP for fixed-point).
-3. Port the BG-collision probe, which indexes a per-surface offset table to
-   decide where to sample the level grid.
-4. Port the surface-state machine that transitions Yoshi through
-   walk/run/swim/jump/slip/ride states.
-
-Probably 1-2 weeks of work for a faithful port. Worth it only if you need
-an emulator-free physics preview or a save-state-driven test runner.
-
-### 6.5 BG collision -- HARD (depends on physics)
-
-The BG-collision routine reads from the Map16 tile grid at `$7F:8000`
-(the live foreground tilemap; see `docs/leveldataengine.md` §3.5 and
-`docs/enginecore.md` §11.4). The probe positions come from per-surface
-offset tables (4-6 byte offsets in (x, y) pairs). Algorithm is "sample
-these 4 cells, decode their Map16 IDs through the per-tileset-tagged
-behaviour bit, return composite result".
-
-### 6.6 Rotation / zoom rasterisers -- EXTREMELY HARD
-
-These are tightly hand-coded for the GSU's specific instruction
-characteristics (LMULT in 1 cycle, SCMR-based addressing, etc.). Porting
-to a non-GSU target essentially means writing a software rasteriser from
-scratch using the trig tables as your interpolation source. Not
-recommended unless you need cycle-accurate boss rendering.
-
----
-
-## 7. Common GSU asm idioms
+## 5. Common GSU asm idioms
 
 A grab-bag of GSU encoding tricks that recur across the YI SuperFX banks
 and are easy to misread the first time you encounter them. The
-meta-rule (§7.7) is the most important one: the asar mnemonic is what
+meta-rule (§5.7) is the most important one: the asar mnemonic is what
 the bytes spell when read left-to-right as one instruction, but the
 GSU's prefetch + prefix state can route those same bytes to different
 "virtual" interpretations at runtime. When the two disagree, trust the
 bytes + Mesen's interpretation, not the disassembly.
 
-### 7.1 BRA target+$N : dual-issue (jump-into-mid-instruction)
+### 5.1 BRA target+$N : dual-issue (jump-into-mid-instruction)
 
 The GSU has a one-byte program-read prefetch buffer (Mesen
 `Gsu.cpp:300-305` `ReadOpCode`). Each `ReadOpCode` returns the *prior*
@@ -1013,11 +909,11 @@ The encoder uses this to:
 - Skip an opcode byte at the target but reuse its operand position
   to supply an immediate.
 - Coerce STW→STB by injecting an ALT1 prefix via the partner slot
-  (see §7.5 for the related `db $XX` escape hatch).
+  (see §5.5 for the related `db $XX` escape hatch).
 - Inject a "virtual" instruction that doesn't appear in the source
   order at the destination.
 
-### 7.2 `WITH Rs ; TO Rd` = `MOVE Rd, Rs`
+### 5.2 `WITH Rs ; TO Rd` = `MOVE Rd, Rs`
 
 asar disassembles these as two separate prefix instructions, but at
 runtime they are one logical "register copy". Mesen's `TO()` handler
@@ -1071,7 +967,7 @@ right. Whether a given prefix line acts as a one-shot move vs.
 configures the next arithmetic depends entirely on what opcode
 follows.
 
-### 7.3 `LINK #N ; IWT R15, #helper : GETB` refill idiom
+### 5.3 `LINK #N ; IWT R15, #helper : GETB` refill idiom
 
 Used 476 times across `Bank08-0B` (mostly Bank0A/0B). The pattern is
 a structured tail-call into a stream-refill helper:
@@ -1107,7 +1003,7 @@ The pattern is general: any GSU routine that consumes a byte stream
 at `FXCODE_09E92F`, the per-tile data walkers) uses some variant of
 LINK + IWT R15 + GETB for fetch-and-call.
 
-### 7.4 `MOVE R13, R15` + `LOOP` — setting the loop back-edge
+### 5.4 `MOVE R13, R15` + `LOOP` — setting the loop back-edge
 
 R13 is the LOOP target register. `LOOP` (`Gsu.Instructions.cpp:167-179`)
 decrements R12, and on non-zero result writes R13 into R15 — i.e.,
@@ -1130,7 +1026,7 @@ CODE_0A80EC:
     LOOP : PLOT                ; / decrements R12, branches back to R13 if non-zero
 ```
 
-Important: `MOVE R13, R15` itself is a `WITH R15 ; TO R13` pair (§7.2),
+Important: `MOVE R13, R15` itself is a `WITH R15 ; TO R13` pair (§5.2),
 and the dual-issue `LOOP : PLOT` runs PLOT in parallel with the
 LOOP's decrement-and-branch. So this whole 4-instruction sequence is
 "128 iterations of [LDB; COLOR; PLOT]" expressed in 4 source lines.
@@ -1139,7 +1035,7 @@ GSU loops without an explicit `MOVE R13, R15` use a previously-set
 R13 (e.g. from a CACHE-prep block). When debugging a loop that
 "doesn't loop", check what last wrote R13.
 
-### 7.5 `db $XX` — manual dual-issue partner (escape hatch)
+### 5.5 `db $XX` — manual dual-issue partner (escape hatch)
 
 When the encoder wants a specific byte in the dual-issue partner
 position and no asar mnemonic fits cleanly, the partner can be
@@ -1160,8 +1056,8 @@ as a clean mnemonic — `db $AC` is the encoder's way of saying "I
 want the byte 0xAC sitting in the partner slot; the next-opcode
 dispatch will route it correctly."
 
-Compare against the `BRA target+$N : IBT R12, #$14` example in §7.1
-— same trick, but in §7.1 asar found a mnemonic that *happens* to
+Compare against the `BRA target+$N : IBT R12, #$14` example in §5.1
+— same trick, but in §5.1 asar found a mnemonic that *happens* to
 have $AC as its opcode byte, so it spells out `IBT R12, #$14` (and
 the $14 is dead). The `db $AC` form is what you use when the
 following bytes aren't a clean IBT-style "opcode + immediate" pair.
@@ -1171,7 +1067,7 @@ Other instances: `Bank0A.asm:4160`, `Bank0B.asm:5160` — both
 under ALT2, so the prefix state at the jump target matters for
 decoding what the partner actually does.
 
-### 7.6 CMODE prologue setup
+### 5.6 CMODE prologue setup
 
 `CMODE` (`Gsu.Instructions.cpp:592-606`) reads its source register
 (default R0) low byte and configures the plot pipeline flags:
@@ -1217,7 +1113,7 @@ byte; `CMODE` (with ALT1) sets the plot flags. Both share opcode
 `COLOR` or `CMODE` depends on whether an ALT1 prefix is in scope
 at that PC.
 
-### 7.7 Asar mnemonic vs runtime semantics — the meta-rule
+### 5.7 Asar mnemonic vs runtime semantics — the meta-rule
 
 The big one: **asar disassembles the bytes as if they were read
 sequentially in source order as one instruction. The GSU at runtime
@@ -1236,19 +1132,19 @@ correct bytes. The "trick" is at the GSU's hardware level (the
 prefetch + dual-issue pipeline interaction with ALT prefixes), not
 at the source or compile layer.
 
-Therefore: when a routine includes patterns like §7.1 / §7.5 / the
+Therefore: when a routine includes patterns like §5.1 / §5.5 / the
 LZ-prev variants, do not try to "clean them up" in your head. They
 are deliberate. Trust the bytes and Mesen's runtime model; treat
 asar's mnemonic as a linear-disassembly hint.
 
 Concrete failure modes when reading asar output as gospel:
 
-- A `BRA target+$N : IBT R12, #$14` (§7.1) shows the `#$14` as the
+- A `BRA target+$N : IBT R12, #$14` (§5.1) shows the `#$14` as the
   IBT's immediate — but at runtime the IBT runs *after* the BRA, so
   its operand byte is read from wherever R15 points after the
   branch. The $14 you see in the asar output is dead code in
   source-order land.
-- `TO R6` (§7.2) doesn't write to R6 by itself. It sets a prefix.
+- `TO R6` (§5.2) doesn't write to R6 by itself. It sets a prefix.
   Whether R6 actually gets written depends on the *next* opcode.
 - `LDW (R1)` (`docs/lz16-model.md` §4.4) can read 1 byte at runtime
   if an ALT1 prefix is active when it dispatches — even though the
@@ -1284,7 +1180,7 @@ misleading, bytes + Mesen authoritative".
 
 ---
 
-## 8. Open questions
+## 6. Open questions
 
 1. **Exact addresses for the player-physics family.** PARTIALLY
    RESOLVED -- the BG-collision chain is fully pinned:
@@ -1331,7 +1227,7 @@ misleading, bytes + Mesen authoritative".
 
 ---
 
-## 9. Cross-references
+## 7. Cross-references
 
 - `docs/leveldataengine.md` -- parallel reference for the Bank10/12/13
   level-data engine (same documentation pattern, different subsystem).

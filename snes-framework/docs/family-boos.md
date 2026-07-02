@@ -860,7 +860,7 @@ The four mask blits (`08E800`, `08E8CA`, `08E93B`, `08EB9D`) and the
 two angle/LOS pairs (`0991D5/0991DB`, `09907C`) are the family's
 "signature" SuperFX use. Most other enemies render via map16 + OAM
 copy; ghosts uniquely need SuperFX to layer their translucency on top
-of the BG. See `docs/mchip.md §6` for the underlying SuperFX
+of the BG. See `docs/mchip.md §1` for the underlying SuperFX
 architecture.
 
 ### 4.2 EXRAM slot fields
@@ -1014,7 +1014,7 @@ Reading all ten sprite bodies together, a few cross-cutting facts:
   the "ghost-spawned-from-cloud" speculation context (no cloud
   spawns a true Boo in YI, but the FXCODE is shared with cloud water-
   probe usage).
-- `docs/mchip.md §6` -- SuperFX architecture; explains the FXCODE
+- `docs/mchip.md §4` -- the 65816<->SuperFX bridge; explains the FXCODE
   call convention used throughout this family.
 - `yi/Banks/Bank04.asm:6940-8200` -- BiggerBoo ($016) Init/Main +
   8-state machine.

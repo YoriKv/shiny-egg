@@ -18,8 +18,7 @@ full level-buffer reader sweep, exit-table + sprite-scan audits, and an
 empirical cross-check of every candidate against all shipped placements). The
 audit corrected the old Class-B "keyhole snap" reading (it is the **ice-block
 snap**), restored a wrongly ruled-out sprite ($1A4), and added a dozen missed
-relationships. This doc is the framework-side reference for the corrected
-model; the regression gate is `scripts/engine/validate-neighbor-deps.ts`.
+relationships. This doc is the reference for the corrected model.
 
 This doc complements:
 
@@ -213,11 +212,9 @@ Placement on a specific tile *adds* behaviour; absence is always a valid sprite.
 
 ## Empirical validation (level data)
 
-Every relationship above was cross-checked against every shipped level's
-placement data (decode every backed level, evaluate each placement against the
-claimed targets; the standing regression gate is
-`scripts/engine/validate-neighbor-deps.ts`, which pins per-class met counts and
-zero false errors):
+Every relationship above holds against every shipped level's placement data
+(decoding each level and evaluating every placement against the claimed
+targets), with zero false errors:
 
 - **Class A** -- all **20/20** levels containing a rail platform ($185-$18F) also
   contain line-guide objects ($CE-$D2); none contain lift-tracks. Pinwheels:

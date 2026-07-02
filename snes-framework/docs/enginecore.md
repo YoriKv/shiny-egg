@@ -563,16 +563,19 @@ Each scene palette-table entry is 4 bytes / 2 words, bit-packed:
 Byte 0 : R[7:0]     -- low byte of ROM offset
 Byte 1 : R[15:8]    -- high byte (sign bit = dynamic-slot flag)
 Byte 2 : d[7:0]     -- CGRAM word destination (x 2 for byte address)
-Byte 3 : ssssLLLL   -- high nibble s = words per loop (0-15)
-                       low nibble L = number of loops
+Byte 3 : ssssLLLL   -- high nibble s = number of CGRAM rows to fill (0-15)
+                       low nibble  L = colors (words) per row
 ```
 
 `R` is signed: positive = direct offset from `$3F:A000`; negative = strip
 the sign bit, use the remaining value as an index into the dynamic-slot
 table at `$7E:0010` (runtime palette swaps -- Yoshi color, animated palette
-cycling, mood swaps). Per loop, `s` words are copied from ROM to CGRAM;
-source advances continuously, destination advances by `$20` per loop --
-one entry can scatter related sub-palettes across non-contiguous CGRAM rows.
+cycling, mood swaps). Per row, `L` words are copied from ROM to CGRAM;
+source advances continuously, destination advances by `$20` (one full
+16-color palette row) per row -- one entry can scatter related sub-palettes
+across non-contiguous CGRAM rows. (§5.2 restates this; the nibble roles match
+the interpreter at `CODE_00BA7A`.) The per-screen breakdown of which program
+each scene runs and which CGRAM rows it lands on is in `docs/scene-palettes.md`.
 
 This section covers the runtime code that turns level-header palette IDs
 into CGRAM writes.
@@ -698,11 +701,9 @@ SuperFX (see `docs/mchip.md` §3.2):
   - **150 tilemap files** (`Tilemaps/*.lz2`) — arrays of 16-bit Map16
     indices that get DMA'd to VRAM tilemap regions.
 
-  Verified 2026-05-26 by a three-way byte-exact sweep across
-  `lc200/decomp.exe FORMAT=1`, the TS port at `scripts/lz2-decoder.ts`,
-  and the cart's runtime in Mesen — the GETB/SWAP/OR sequence in the
-  GSU asm builds backref offsets big-endian, which is LC_LZ2 semantics
-  (LC_LZ1 / FORMAT=0 uses little-endian and does NOT match).
+  The GETB/SWAP/OR sequence in the GSU asm builds backref offsets
+  big-endian, which is LC_LZ2 semantics (LC_LZ1 / FORMAT=0 uses
+  little-endian and does NOT match).
 - **LZ16** files (Lunar Compress FORMAT=15) — decompressor at SuperFX
   `$0A:8000` (`FXCODE_0A8000`). **Hardcoded for 4bpp tile graphics.**
   The decompressor has palette/CGRAM-aware setup folded in and streams

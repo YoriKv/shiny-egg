@@ -9898,7 +9898,7 @@ CODE_00DF1F:
 ;                          else JSL CODE_02A4B5 (boss-arena change).
 ;   $0018 = CODE_00E068 -- "$008F = 6" CODE_change_map16.
 ;   $001A = CODE_player_death_lava -- player_death + bounce (fall-out-of-level).
-;   $001C = CODE_00E126 -- Mystery-sprite contact (Yoshi colour-change /
+;   $001C = CODE_00E126 -- Mystery-sprite contact (Yoshi color-change /
 ;                          Baby Mario pickup, dispatched by sprite ID).
 ;-------------------------------------------------------------------------
 DATA_00DF28:

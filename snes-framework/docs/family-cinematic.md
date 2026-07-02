@@ -977,7 +977,7 @@ dedicated gamemode handler -- they piggy-back on regular gameplay:
   registers and a sweep-volume against the player's collision box.
   The exact semantics of $603C/$603E/$6036/$6038/$603A as
   sweep-volume parameters need to be cross-referenced with
-  `docs/mchip.md` §5 (SuperFX intersection algorithms). Likely a
+  `docs/mchip.md` §3.6 (SuperFX sprite collision). Likely a
   4-corner-vs-AABB test with the block's sprite as the test source
   and Yoshi's collision box as the static volume.
 

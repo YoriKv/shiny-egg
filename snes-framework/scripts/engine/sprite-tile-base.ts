@@ -413,13 +413,16 @@ export function spriteTileBaseBytes(
  * loops over: `count = (OAMByteCount & $F8) >> 3`, where OAMByteCount is the high
  * byte of `DATA_sprite_render_control_table[spriteId]`. That word seeds the slot's `$7040` render-control
  * word at spawn (Bank03:3646): HIGH byte = OAMByteCount (what we read); LOW byte =
- * the sprite's initial render-control flags — bits `$000C` are the "draw normally"
- * bits, but those are RUNTIME-managed (re-derived on reactivation via `AND #$000C`
- * at `$03:9D96`, cleared while the sprite is held on Yoshi's tongue,
- * `CODE_spr_state_tongued` `$03:9AC8`), NOT a static draw gate — verified: rendered
- * sprites carry `$00`/`$04`/`$08` there with no correlation to whether the sprite
- * draws (e.g. Wild Piranha 0x66 = `$00` yet renders). So the low byte is irrelevant
- * to a static frame-0 render. Count validated byte-exact vs 5 BizHawk traces.
+ * the sprite's initial render-control flags — bits `$000C` are the GSU off-screen-cull
+ * despawn-threshold index (the cull at `FXCODE_098925` does `AND #12`; the OAM renderer
+ * dispatches on bits 0-1 via `FXCODE_098AC2` `AND #3`), NOT "draw" bits and NOT a static
+ * draw gate. They are RUNTIME-managed (re-derived on reactivation via `AND #$000C`
+ * at `$03:9D96`, cleared while the sprite is held on Yoshi's tongue —
+ * `CODE_spr_state_tongued` `$03:9AC8` — to exempt it from the cull while carried), and
+ * verified irrelevant to drawing: rendered sprites carry `$00`/`$04`/`$08` there with no
+ * correlation to whether the sprite draws (e.g. Wild Piranha 0x66 = `$00` yet renders).
+ * So the low byte is irrelevant to a static frame-0 render. Count validated byte-exact
+ * vs 5 BizHawk traces.
  * Pure-static, sprite-ID-indexed.
  */
 export function spriteFrame0RecordCount(rom: Uint8Array, symbols: SymbolMap, spriteId: number): number {

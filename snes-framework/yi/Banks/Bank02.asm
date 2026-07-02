@@ -8776,7 +8776,7 @@ DATA_02CF6E:
 
 ;-------------------------------------------------------------------------
 ; Giant Shyguy red (sprite ID $043) and green (sprite ID $044).  Mini-boss
-; enemies that swallow Yoshi when stomped.  Shared Init for both colours.
+; enemies that swallow Yoshi when stomped.  Shared Init for both colors.
 ;
 ; NOTE: the two template labels below carry a historical mis-numbering --
 ; their suffixes read "_042_" / "_043_" but the actual DATA_sprite_inits
@@ -9014,7 +9014,7 @@ CODE_02D0D9:
 
 ;---------------------------------------------------------------------------
 
-; Sluggy palette gradient tables.  Each row is the BGR-15 colour ramp used while
+; Sluggy palette gradient tables.  Each row is the BGR-15 color ramp used while
 ; Sluggy "wakes up" (Kamek-shrink cinematic flickers between these two ramps).
 DATA_02D109:
 	dw $3898,$3898,$28A3,$18A7,$08AA,$F8AC,$E8AD,$D8B0
@@ -9889,7 +9889,7 @@ CODE_sluggy_draw_body_at_scale:
 ;       $76,x = $0100  (body-scale to feed GSU)
 ;       $75E0,x = 0    (Y-velocity)
 ;       Kick FXCODE_0A8F57 with DATA_02D129 (alt palette ramp) so the
-;       body re-flips its colour gradient.
+;       body re-flips its color gradient.
 ; Phase B (cooldown == 0 -- per-frame roll):
 ;   - Decrement $78,x by 8 (or 4 when above ramp threshold).  Floor at 0.
 ;   - On non-zero roll, scale $76,x = $78 / 16 and render via FXCODE_0A90FF.
@@ -10895,7 +10895,7 @@ CODE_02DF52:
 ;-------------------------------------------------------------------------
 ; Boss-explosion (sprite $013): the white flash + popping sounds played when
 ; a boss reaches 0 HP.  Init just plays SoundID $74 and seeds a 2048-tick
-; despawn counter; Main cycles flash colours (DATA_02DF68) every few frames
+; despawn counter; Main cycles flash colors (DATA_02DF68) every few frames
 ; following the duration table DATA_02DF70.
 ; see also: ys_enmy5.asm.
 ;-------------------------------------------------------------------------
@@ -11561,7 +11561,7 @@ DATA_02E490:
 ;     watch for "Yoshi eats the plant" trigger via $7019D6 == $10.
 ;   - $105A = 0                      -- "setup committed" gate (0,1,2 -> intro).
 ;   - Copies a 30-byte palette gradient from $702E8C into mirror $E0
-;     (15 BGR-15 colours) for body shading.
+;     (15 BGR-15 colors) for body shading.
 ;
 ; Bud spawn-list chain ($1076 / $1078):
 ;   These two WRAM globals hold the slot indices of the two active buds.
@@ -13703,7 +13703,7 @@ DATA_naval_pir_debris_radii:
 ; around the boss body during defeat.  Iterates $1084 from 0 to $0015,
 ; each tick spawning either:
 ;   - First entry (CODE_02F2C1 path): AmbSpr $1E6 (the "boss-defeat
-;     splash flash" -- a coloured ring sprite at boss head + offset).
+;     splash flash" -- a colored ring sprite at boss head + offset).
 ;   - Per-iteration debris: AmbSpr $222 (small debris chunks at the
 ;     radius from DATA_naval_pir_debris_radii) via CODE_naval_pir_spawn_debris_chunk.  Plays BreakDirt sfx.
 ; When $1084 reaches $15, arm $7A96 = $40, INC $76,x to state $25.
@@ -13837,7 +13837,7 @@ DATA_naval_pir_defeat_palette_rows:
 ; CODE_naval_pir_commit_defeat_palette: blit a 14-byte palette row
 ; from DATA_5FE48A..DATA_5FE532 (selected by $1080) into CGRAM mirror at
 ; $7021C4.  Used during state $23 defeat_pulse to ramp the palette through
-; the "boss-defeat colour wash" phases.
+; the "boss-defeat color wash" phases.
 ;-------------------------------------------------------------------------
 CODE_02F357:
 CODE_naval_pir_commit_defeat_palette:

@@ -70,10 +70,16 @@ async function main(): Promise<void> {
   const symPath = path.join(workRoot, 'build', `${stem}.sym`);
   const superfxSymPath = path.join(workRoot, 'build', `${stem}-superfx.sym`);
 
-  // the build always emits both .sym files alongside the .sfc; this
-  // block is only here for the first-run case where the user hasn't built
-  // yet. The build phase rewrites both .sym files every time, so codegraph's
-  // MD5-keyed cache invalidates automatically when the asm/labels change.
+  // the build always emits both .sym files alongside the .sfc; this block only
+  // covers the first-run case (no build yet) — it triggers on a MISSING .sym,
+  // NEVER a STALE one. Trap: an asm edit/rename that isn't followed by a build
+  // leaves the PRIOR build's .sym in place, so xref/closure silently resolve the
+  // OLD label names (grep the .sym still matches the old name — proving nothing).
+  // The codegraph call-graph + memory-access cache (build/<stem>.graph.json) is
+  // MD5-keyed off the combined .sym and re-derives automatically — but ONLY a full
+  // ROM build regenerates the .sym, so nothing downstream notices a rename until a
+  // rebuild. After migrating an asm rename, run a build (or delete build/*.sym to
+  // force this block) before trusting xref/closure output.
   if (!fs.existsSync(symPath) || !fs.existsSync(superfxSymPath)) {
     const missing = !fs.existsSync(symPath) ? symPath : superfxSymPath;
     console.error(`▶ no .sym at ${missing}; running a build to emit symbols`);

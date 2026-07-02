@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.9 - 2026-07-01
+
+- Doc cleanup and some fixes.
+
 ## v0.5.8 - 2026-07-01
 
 - Fixed graphics import error due to lz2/lz16 mislabeling.

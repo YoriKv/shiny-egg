@@ -811,11 +811,15 @@ CODE_1087C4:
 	RTS
 
 ;-------------------------------------------------------------------------
-; CODE_gm44_unknown -- Game mode $44: unknown (raid: CODE_gm44_unknown).
-; Lightweight palette-fade variant similar to gm42; nudges the live palette
-; mirror toward $8000 (white) then advances to next gamemode.
+; CODE_gm44_unknown -- Game mode $44: boot hardware-check halt (raid: gm44_unknown).
+; Reached from gm$00 via the $43 fade when $213F bit 4 (PPU2 NTSC/PAL flag;
+; 1=PAL/50Hz) is set -- i.e. an NTSC cart booted on a PAL console. Each frame
+; ramps live palette mirror entries $01/$03/$06/$07 toward $8000 (wrapping to
+; $0000). Does NOT INC the gamemode and does NOT re-check: a permanent halt,
+; only power-off/reset escapes. Never seen on the intended NTSC hardware.
 ;-------------------------------------------------------------------------
 CODE_gm44_unknown:
+CODE_gm44_pal_halt:	; corrected-behavior alias: PAL-console hardware-check halt (raid's "unknown" is this)
 CODE_1088FB:
 	REP.b #$20
 	LDA.l YI_Global_PaletteMirror[$01].LowByte
@@ -833,12 +837,19 @@ CODE_10890A:
 	RTL
 
 ;-------------------------------------------------------------------------
-; CODE_gm01_ninpresents_load -- Game mode $01: NintendoPresents_Load.
-; Pulls the next character record from the text stream and triggers the
-; SuperFX plot for that character. Advances gamemode when stream-end byte
-; ($FF) is hit.
+; CODE_gm01_ninpresents_load -- Game mode $01: boot peripheral/controller check.
+; Runs for exactly ONE frame (verified via the boot-modes trace). JSR
+; CODE_108987 manually serial-reads both joypads ($4016/$4017 -> $00..$03),
+; then sanity-checks them: a floating/disconnected pad reads $FF, and
+; impossible D-pad states ($01 / $0F = multiple opposing directions) are
+; rejected. On pass it plays the coin SFX and INCs to $02. On fail it sets
+; gamemode $41 -> $42 (the "PLEASE TURN OFF THE POWER" controller-error
+; screen). Despite the "ninpresents" label it does NOT plot text -- the
+; "(c) 1995 Nintendo presents" splash gfx is loaded in gm$00 and held during
+; gm$03 (the 128-frame $011A display timer).
 ;-------------------------------------------------------------------------
 CODE_gm01_ninpresents_load:
+CODE_gm01_boot_controller_check:	; corrected-behavior alias: gm$01 is the boot controller check, not a text-stream load
 CODE_10891E:
 	JSR.w CODE_108987
 	LDA.b $00
@@ -978,9 +989,11 @@ CODE_108A6D:
 
 ;-------------------------------------------------------------------------
 ; CODE_gm42_controller_error -- Game mode $42: ControllerErrorScreen.
-; "PLEASE TURN OFF THE POWER" red-text screen shown when the controller
-; checksum/handshake fails. Fades palette to white then halts (gamemode
-; never advances; only a hard reset escapes).
+; "PLEASE TURN OFF THE POWER" red-text screen shown when the manual controller
+; handshake (CODE_108987) / D-pad sanity check fails. Each frame ramps palette
+; entries $01/$03/$06/$07 toward white AND re-runs the controller check; on a
+; now-valid controller it does STZ CurrentGameMode (soft-reboot to gm$00),
+; otherwise it loops. Recovers -- it is NOT a hard halt.
 ;-------------------------------------------------------------------------
 CODE_gm42_controller_error:
 CODE_108A9A:
