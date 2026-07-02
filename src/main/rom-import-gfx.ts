@@ -4,9 +4,14 @@
 //   - lz2 sheets self-terminate, so their decompressed size is discovered by
 //     decoding — every lz2 blob is covered (BG1/BG3 tilesets, screen/title sheets,
 //     BG tilemaps).
-//   - lz16 sheets need their decompressed size up front; it comes from the
-//     level-gfx size registry (`gfxSizeRegistry`, a walk of every level's gfx
-//     manifest). lz16 sheets no level loads aren't sized, so aren't diffed.
+//   - lz16 sheets need their decompressed size up front. Level-loaded ones are
+//     sized by the level-gfx size registry (`gfxSizeRegistry`, a walk of every
+//     level's gfx manifest); the 55 of 187 no level loads (storybook / intro /
+//     ending-era sheets) are sized by probing the base extract's blob byte
+//     length (`diffUnsizedLz16Gfx` → `probeLz16RowCount` — rowCount is a
+//     property of the decoded size, so the base-derived count is valid for the
+//     foreign stream too). Row counts for all 187 are pinned against the
+//     ycompress size table in scripts/import/gfx-lz16.test.ts.
 // A sheet that changed but can't be safely imported (resized, or its stream won't
 // decode) is counted as `skipped`, never silently dropped. Resolves the gfx
 // pointer tables at fixed addresses, so a hack that relocated the blobs (but kept
@@ -16,6 +21,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import * as path from 'node:path'
 import { snesToPC, type SymbolMap } from 'snes-framework/symbol-map'
 import { lz2 } from 'snes-framework/decompress'
+import { diffUnsizedLz16Gfx } from 'snes-framework/import'
 import { parseGfxPtrTable, GFX_ARENA } from 'snes-framework/gfx-reinsert'
 import { decodeGfxFile } from './gfx-import-utils'
 import { gfxSizeRegistry } from './resources'
@@ -144,9 +150,11 @@ export function diffForeignGfx(foreign: Uint8Array, base: Uint8Array, symbols: S
     }
   }
 
-  // ── lz16: registry-sized blobs only (decompressed size from the level walk) ──
+  // ── lz16: registry-sized blobs (decompressed size from the level walk) ──
+  const sizedLz16 = new Set<number>()
   for (const { format, fileId, sizeBytes, rowCount, bpp } of gfxSizeRegistry().values()) {
     if (format !== 'lz16') continue
+    sizedLz16.add(fileId)
     try {
       const baseTiles = decodeGfxFile(base, symbols, 'lz16', fileId, sizeBytes, rowCount)
       const foreignTiles = decodeGfxFile(foreign, symbols, 'lz16', fileId, sizeBytes, rowCount)
@@ -156,6 +164,19 @@ export function diffForeignGfx(foreign: Uint8Array, base: Uint8Array, symbols: S
     } catch {
       skipped++ // foreign stream wouldn't decode at the base size (resized/relocated)
     }
+  }
+
+  // ── lz16 the level walk can't size (55 storybook/intro/ending-era sheets):
+  // row counts probed from the base extract's blobs (diffUnsizedLz16Gfx). All
+  // 187 lz16 files are 4bpp structurally (512 B/row), matching the registry rule.
+  try {
+    const extra = diffUnsizedLz16Gfx(foreign, base, symbols, frameworkWorkRoot(), sizedLz16)
+    for (const it of extra.changed) {
+      changed.push({ format: 'lz16', fileId: it.fileId, tiles: it.tiles, rowCount: it.rowCount, bpp: 4 })
+    }
+    skipped += extra.skipped
+  } catch {
+    // extract assets missing → the registry-sized coverage stands alone
   }
 
   return { changed, skipped }

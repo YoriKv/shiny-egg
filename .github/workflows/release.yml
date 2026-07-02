@@ -1,10 +1,12 @@
 name: Release
 
-# Push a version tag (e.g. `v0.1.0`) to build the app for Windows + Linux and
-# publish a GitHub Release with the artifacts:
-#   - shiny-egg-<version>-setup.exe       (Windows NSIS installer)
-#   - shiny-egg-<version>-win.zip         (zipped portable app = win-unpacked contents)
-#   - shiny-egg-<version>-linux.AppImage  (portable Linux app)
+# Push a version tag (e.g. `v0.1.0`) to build the app for Windows, Linux + macOS
+# and publish a GitHub Release with the artifacts:
+#   - shiny-egg-<version>-setup.exe           (Windows NSIS installer)
+#   - shiny-egg-<version>-win.zip             (zipped portable app = win-unpacked contents)
+#   - shiny-egg-<version>-linux.AppImage      (portable Linux app)
+#   - shiny-egg-<version>-mac-universal.dmg   (macOS disk image, arm64 + x64)
+#   - shiny-egg-<version>-mac-universal.zip   (zipped macOS .app, arm64 + x64)
 # The release body is the matching `## v<version>` section of CHANGELOG.md
 # (auto-generated commit notes are appended after it; if the section is
 # missing, the release falls back to the auto notes alone).
@@ -39,6 +41,11 @@ jobs:
             script: build:linux
             artifacts: |
               dist/*-linux.AppImage
+          - os: macos-latest
+            script: build:mac
+            artifacts: |
+              dist/*-mac-universal.dmg
+              dist/*-mac-universal.zip
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -105,6 +112,8 @@ jobs:
             artifacts/**/*-setup.exe
             artifacts/**/*-win.zip
             artifacts/**/*-linux.AppImage
+            artifacts/**/*-mac-universal.dmg
+            artifacts/**/*-mac-universal.zip
           fail_on_unmatched_files: true
           generate_release_notes: true
 

@@ -12,7 +12,7 @@
 // See per-file doc for the reference asm + DLL provenance.
 
 export { lz2 } from './lz2.ts';
-export { lz16 } from './lz16.ts';
+export { lz16, probeLz16RowCount } from './lz16.ts';
 export { encodeLz2 } from './lz2-encode.ts';
 export { encodeLz16 } from './lz16-encode.ts';
 export type { DecompResult } from './types.ts';

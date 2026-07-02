@@ -17,6 +17,8 @@ export {
   type ImportAnchors,
   type ResolveAnchorsResult
 } from './anchors.ts';
+export { diffUnsizedLz16Gfx } from './gfx-lz16.ts';
+export type { UnsizedLz16Item, UnsizedLz16Result } from './gfx-lz16.ts';
 export { readForeignStreams } from './foreign-cart.ts';
 export type { ForeignStreams, ForeignRecordStreams } from './foreign-cart.ts';
 export { mergeForeignIndexWords, readForeignWorldMap } from './foreign-world-map.ts';

@@ -5,3 +5,4 @@ export * from './screen-scene.ts';
 export * from './screen-world-map-icons.ts';
 export * from './screen-title-island.ts';
 export * from './screen-title-scenery.ts';
+export * from './screen-bonus.ts';

@@ -1,5 +1,6 @@
 // M1TE2 ".M1" session export/import for the TILEMAP-based system screens — the title floating
-// island (Mode-7) and the storybook first scene. Same idea as the world map (world-map-m1te2.ts):
+// island (Mode-7), the storybook first scene, and the six bonus-game screens (gm$2A,
+// screen-bonus.ts). Same idea as the world map (world-map-m1te2.ts):
 // bundle a screen's tilemap + CHR + palette into one .M1 editable in M1TE, re-derive everything
 // from the cart on import so the .M1 alone is the source of truth. The non-tilemap screens (boot
 // CHR crop, GSU scenery atlas, the f88 char sheet) have no meaningful tilemap, so they stay
@@ -27,7 +28,8 @@ import {
   buildTitleIslandContext, unpackCpcTile, packCpcTile, ISLAND_CPC_TILE_BYTES,
   type TitleIslandContext, type IslandTileEdit, type IslandPlacementEdit
 } from './screen-title-island.ts';
-import { chrWindow, sameBytes, diffM1tePalette, type M1tePaletteEdit } from './m1te2-util.ts';
+import { chrWindow, sameBytes, fileForVramByteBpp, diffM1tePalette, type M1tePaletteEdit } from './m1te2-util.ts';
+import { buildBonusSceneContext, BONUS_GAME_COUNT, type BonusSceneContext } from './screen-bonus.ts';
 import { decode4bppTile, encode4bppTile } from './tile.ts';
 import { u16le } from './rom-read.ts';
 import { type SymbolMap } from './symbol-map.ts';
@@ -132,19 +134,149 @@ export function diffTitleIslandM1(ctx: TitleIslandContext, m1Bytes: Uint8Array):
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BONUS-GAME SCREENS (gm$2A) — Mode-1 static scenes, split across TWO .M1 shapes
+// because `tileSize` is one global header field per .M1 and the scene mixes modes:
+//   • per-game .M1 (×6, tileSize 8): BG1 + BG2 tilemaps (32×64, 8×8 tiles, shared
+//     4bpp char base $E000) in slots 0/1.
+//   • backdrop .M1 (×1, tileSize 16): the BG3 tilemap $95 (32×32, 16×16 tiles,
+//     2bpp char $4000) in slot 2 — SHARED by all six games, so it exports once
+//     (an edit here shows in every bonus game) and M1TE renders the real 2×2
+//     char blocks (same as the level BG2/BG3 region .M1s).
+// All three tilemaps are ordinary LZ2 blobs, so placement round-trips like the
+// overworld terrain. See screen-bonus.ts for the trace.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BONUS_BG12_ROWS = 64; // BG1/BG2 SC size 2 = 32×64 cells
+const BONUS_BG3_ROWS = 32;
+const BONUS_COLS = 32;
+
+const readBonusMap = (vram: Uint8Array, tmAddr: number, rows: number): Uint16Array => {
+  const m = EMPTY_MAP();
+  for (let r = 0; r < rows; r++) for (let c = 0; c < BONUS_COLS; c++) {
+    m[r * MAP_STRIDE + c] = u16le(vram, (tmAddr + (r * BONUS_COLS + c) * 2) & 0xffff);
+  }
+  return m;
+};
+
+/** One game's BG1+BG2 (8×8 tiles; the 16×16 BG3 backdrop is its own .M1). */
+export function buildBonusM1(ctx: BonusSceneContext): Uint8Array {
+  const { vram, regs } = ctx;
+  return encodeM1te2({
+    mapWidth: BONUS_COLS, mapHeight: BONUS_BG12_ROWS, tileSize: 8, palette: ctx.cgram.slice(0, 256),
+    maps: [readBonusMap(vram, regs.bg1TilemapAddr, BONUS_BG12_ROWS), readBonusMap(vram, regs.bg2TilemapAddr, BONUS_BG12_ROWS), EMPTY_MAP()],
+    chr4bpp: chrWindow(vram, regs.bg1CharAddr, TILE4),
+    chr2bpp: new Uint8Array(0)
+  });
+}
+
+/** The SHARED BG3 backdrop ($95) as its own 16×16-tile .M1 (slot 2 + the 2bpp
+ *  char window). Built from any game's context (the backdrop is game-invariant;
+ *  the palette shown is that game's). */
+export function buildBonusBackdropM1(ctx: BonusSceneContext): Uint8Array {
+  const { vram, regs } = ctx;
+  return encodeM1te2({
+    mapWidth: BONUS_COLS, mapHeight: BONUS_BG3_ROWS, tileSize: 16, palette: ctx.cgram.slice(0, 256),
+    maps: [EMPTY_MAP(), EMPTY_MAP(), readBonusMap(vram, regs.bg3TilemapAddr, BONUS_BG3_ROWS)],
+    chr4bpp: new Uint8Array(0),
+    chr2bpp: chrWindow(vram, regs.bg3CharAddr, TILE2)
+  });
+}
+
+/** A tilemap WORD edit from a bonus `.M1` (→ splice into the LZ2 tilemap file). */
+export interface BonusWordEdit { fileId: number; fileOffset: number; word: number }
+
+export interface BonusM1Diff {
+  chrEdits: ScreenChrEdit[];
+  wordEdits: BonusWordEdit[];
+  paletteEdits: ScreenPaletteEdit[];
+  /** CHR tiles / tilemap cells changed but not backed by a scene file (runtime-
+   *  written regions like the score digits) — dropped, surfaced as a warning. */
+  skippedTiles: number;
+}
+
+/** Shared diff core: CHR windows + tilemap slots vs the scene, each gated to the
+ *  backing file (the decompressed blob lands 1:1 in its VRAM region, so
+ *  fileOffset = distance from the file's dest). */
+function diffBonusParts(
+  ctx: BonusSceneContext,
+  doc: ReturnType<typeof parseM1te2>,
+  chrParts: { chr: Uint8Array; charAddr: number; tileBytes: 16 | 32 }[],
+  slotParts: { slot: 0 | 1 | 2; tmAddr: number; rows: number; fileId: number }[]
+): BonusM1Diff {
+  const { vram, manifest } = ctx;
+  const chrEdits: ScreenChrEdit[] = [];
+  let skippedTiles = 0;
+  for (const p of chrParts) {
+    for (let t = 0; t < 1024; t++) {
+      const vramByte = (p.charAddr + t * p.tileBytes) & 0xffff;
+      if (sameBytes(p.chr, t * p.tileBytes, vram, vramByte, p.tileBytes)) continue;
+      const f = fileForVramByteBpp(manifest, vramByte, p.tileBytes);
+      if (!f) { skippedTiles++; continue; }
+      chrEdits.push({ format: f.format, fileId: f.fileId, fileTile: f.fileTile, bytes: p.chr.slice(t * p.tileBytes, (t + 1) * p.tileBytes) });
+    }
+  }
+  const wordEdits: BonusWordEdit[] = [];
+  for (const s of slotParts) {
+    const file = manifest.find((f) => f.format === 'lz2' && f.fileId === s.fileId);
+    for (let r = 0; r < s.rows; r++) for (let c = 0; c < BONUS_COLS; c++) {
+      const byteOff = (s.tmAddr + (r * BONUS_COLS + c) * 2) & 0xffff;
+      const docWord = doc.maps[s.slot]![r * MAP_STRIDE + c]! & 0xffff;
+      if (docWord === u16le(vram, byteOff)) continue;
+      if (!file || byteOff < file.vramByteOffset || byteOff + 1 >= file.vramByteOffset + file.sizeBytes) { skippedTiles++; continue; }
+      wordEdits.push({ fileId: s.fileId, fileOffset: byteOff - file.vramByteOffset, word: docWord });
+    }
+  }
+  return { chrEdits, wordEdits, paletteEdits: diffM1tePalette(doc.palette, ctx.cgram), skippedTiles };
+}
+
+/** Diff an edited per-game bonus `.M1` → 4bpp CHR edits (per owning scene file) +
+ *  BG1/BG2 tilemap word edits (per-game files). */
+export function diffBonusM1(ctx: BonusSceneContext, m1Bytes: Uint8Array): BonusM1Diff {
+  const doc = parseM1te2(m1Bytes);
+  return diffBonusParts(
+    ctx, doc,
+    [{ chr: doc.chr4bpp, charAddr: ctx.regs.bg1CharAddr, tileBytes: TILE4 }],
+    [
+      { slot: 0, tmAddr: ctx.regs.bg1TilemapAddr, rows: BONUS_BG12_ROWS, fileId: ctx.bg1TmFileId },
+      { slot: 1, tmAddr: ctx.regs.bg2TilemapAddr, rows: BONUS_BG12_ROWS, fileId: ctx.bg2TmFileId }
+    ]
+  );
+}
+
+/** Diff the edited shared backdrop `.M1` → 2bpp CHR edits + BG3 ($95) word edits. */
+export function diffBonusBackdropM1(ctx: BonusSceneContext, m1Bytes: Uint8Array): BonusM1Diff {
+  const doc = parseM1te2(m1Bytes);
+  return diffBonusParts(
+    ctx, doc,
+    [{ chr: doc.chr2bpp, charAddr: ctx.regs.bg3CharAddr, tileBytes: TILE2 }],
+    [{ slot: 2, tmAddr: ctx.regs.bg3TilemapAddr, rows: BONUS_BG3_ROWS, fileId: ctx.bg3TmFileId }]
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** One exported system-screen `.M1`, shaped for the manifest + the export driver. */
 export interface ScreenM1File {
   file: string;
-  kind: 'island' | 'storybook-scene';
+  kind: 'island' | 'storybook-scene' | 'bonus-game' | 'bonus-backdrop';
+  /** bonus-game only: the game index 0-5 (re-derives the scene on import). */
+  game?: number;
   bytes: Uint8Array;
 }
 
 /** Build the tilemap-based system screens as `.M1` sessions: the title island
- *  (`screens/title/`) and the storybook first scene (`screens/storybook/`). */
+ *  (`screens/title/`), the storybook first scene (`screens/storybook/`), the six
+ *  bonus-game screens + their shared BG3 backdrop (`screens/bonus/`). */
 export function exportScreenM1(rom: Uint8Array, symbols: SymbolMap): ScreenM1File[] {
   return [
     { file: 'screens/title/island.M1', kind: 'island', bytes: buildTitleIslandM1(buildTitleIslandContext(rom, symbols)) },
-    { file: 'screens/storybook/scene.M1', kind: 'storybook-scene', bytes: buildStorybookSceneM1(buildStorybookSceneContext(rom, symbols)) }
+    { file: 'screens/storybook/scene.M1', kind: 'storybook-scene', bytes: buildStorybookSceneM1(buildStorybookSceneContext(rom, symbols)) },
+    ...Array.from({ length: BONUS_GAME_COUNT }, (_, g): ScreenM1File => ({
+      file: `screens/bonus/bonus-game-${g}.M1`,
+      kind: 'bonus-game',
+      game: g,
+      bytes: buildBonusM1(buildBonusSceneContext(rom, symbols, g))
+    })),
+    { file: 'screens/bonus/backdrop.M1', kind: 'bonus-backdrop', bytes: buildBonusBackdropM1(buildBonusSceneContext(rom, symbols, 0)) }
   ];
 }

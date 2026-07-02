@@ -27,6 +27,7 @@
     "./aseprite": "./scripts/engine/aseprite.ts",
     "./gfx-aseprite": "./scripts/engine/gfx-aseprite.ts",
     "./gfx-png": "./scripts/engine/gfx-png.ts",
+    "./gfx-yychr": "./scripts/engine/gfx-yychr.ts",
     "./decompress": "./scripts/engine/decompress/index.ts",
     "./strings": "./scripts/strings.ts",
     "./markers": "./scripts/asm/markers.ts",

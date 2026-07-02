@@ -211,13 +211,17 @@ export interface MapM1Manifest {
 }
 
 /** One system-screen M1TE2 `.M1` (the tilemap-based screens: title island, storybook first
- *  scene). `kind` dispatches the import to the right slice-back: island → $B1 + DATA_5F9800;
- *  storybook-scene → f27 (pixels-only). The import re-derives the scene from the cart, so the
- *  entry is just the path + kind. (The title logo is excluded — Mode-0 BG2 renders with the
- *  wrong palette base in M1TE; edit it via PNG/Aseprite.) */
+ *  scene, and the six bonus-game screens). `kind` dispatches the import to the right
+ *  slice-back: island → $B1 + DATA_5F9800; storybook-scene → f27 (pixels-only);
+ *  bonus-game → the per-game BG1/BG2 + shared BG3 ($95) tilemap files + the scene char
+ *  files (`game` re-derives the scene). The import re-derives everything from the cart, so
+ *  the entry is just path + kind (+ game). (The title logo is excluded — Mode-0 BG2 renders
+ *  with the wrong palette base in M1TE; edit it via PNG/Aseprite.) */
 export interface ScreenM1ManifestEntry {
   file: string
-  kind: 'island' | 'storybook-scene'
+  kind: 'island' | 'storybook-scene' | 'bonus-game' | 'bonus-backdrop'
+  /** bonus-game only: game index 0-5. */
+  game?: number
 }
 
 /** One 1bpp Bank09 sheet PNG (the message font / message-box pictures) — a raw
@@ -242,4 +246,39 @@ export interface GlyphManifestEntry {
   width: number
   height: number
   sharedWith: number[]
+}
+
+/** One YY-CHR raw-CHR sheet (gfx-yychr-io.ts): the exported file IS the decompressed
+ *  blob (zero-padded to a YY-CHR bank), so import = truncate the pad + diff bytes —
+ *  no pixel decode. `kind` routes the write-back: `chr` = a compressed lz2/lz16 blob
+ *  (whole-file recordWholeBlob → saveGfxEdit), `raw` = an uncompressed `.bin`
+ *  (changed byte-runs → saveRawChrEdit), `chunky` = a GSU bitmap bank exported
+ *  through the bijective chunky↔planar transform (planarToChunky on import, then
+ *  the same byte-run write-back as `raw`), `1bpp` = a font/picture `.bin` exported
+ *  RE-TILED into 8×8-tile order (inverse: tiles → `cols`-wide sheet bitmap →
+ *  `glyphW`×`glyphH` records, then the `raw` write-back). The `.pal`/`.col`
+ *  sidecars next to the sheet are DISPLAY AIDS only — never imported. */
+export interface YychrManifestEntry {
+  file: string
+  description: string
+  kind: 'chr' | 'raw' | 'chunky' | '1bpp'
+  /** chr only. */
+  format?: 'lz2' | 'lz16'
+  /** chr only. */
+  fileId?: number
+  /** raw/chunky only: `assets/yi`-relative `.bin` the edits write back to. */
+  binFile?: string
+  /** Native depth (display metadata; the bytes round-trip regardless). */
+  bpp: 1 | 2 | 4 | 8
+  /** True blob length — the export pads beyond it, the import truncates back. */
+  sizeBytes: number
+  /** lz16 tile-rows (`sizeBytes / 512`); undefined otherwise. */
+  rowCount?: number
+  /** Diff/record stride for `chr` entries (32/16/64 for 4/2/8 bpp). */
+  tileBytes: number
+  /** 1bpp only: the native record geometry (glyph size + sheet columns; `cols` 1 =
+   *  a flat `glyphW`-px-wide bitmap) the re-tiled export inverts through. */
+  glyphW?: number
+  glyphH?: number
+  cols?: number
 }

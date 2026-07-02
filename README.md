@@ -24,20 +24,42 @@ the changelog for the latest updates.
 ## Requirements
 
 - A legally-owned Yoshi's Island ROM - **USA V1.0**.
-- Windows (x64) or Linux (x64, AppImage).
+- Windows (x64), Linux (x64, AppImage), or macOS (universal - Apple Silicon + Intel).
 - [BizHawk](https://tasvideos.org/BizHawk) (EmuHawk) for testing levels in-game
-  - on Linux, BizHawk's `EmuHawk.sh` launcher.
+  - on Linux/macOS, BizHawk's `EmuHawk.sh` launcher.
 
 ## Getting started
 
-1. Download the latest build for your OS - the Windows installer (`.exe`) or the
-   Linux `.AppImage` - from the [Releases](../../releases) page and run it.
+1. Download the latest build for your OS - the Windows installer (`.exe`), the
+   Linux `.AppImage`, or the macOS `.dmg` - from the [Releases](../../releases)
+   page and run it.
 2. On first launch, use the reference cart menu in the top right corner to
    point the editor at an unedited Yoshi's Island USA 1.0 ROM to extract the base
    assets. You will only have to do this once.
 3. Pick a level to start editing.
 
 A full **Getting Started** guide is available on the **[wiki](../../wiki)**.
+
+### macOS: opening the unsigned build
+
+The macOS build is not signed with an Apple Developer ID, so Gatekeeper
+quarantines it on download - you'll see *"Shiny Egg is damaged and can't be
+opened"* or *"cannot be opened because the developer cannot be verified"*. This
+is expected.
+
+**Drag the app to Applications, then clear the quarantine flag from Terminal:**
+
+```
+xattr -dr com.apple.quarantine "/Applications/Shiny Egg.app"
+```
+
+The `-r` (recursive) flag matters: the editor builds ROMs by running a bundled
+`asar` assembler *inside* the app, and that nested tool is quarantined too. The
+command above clears the whole bundle in one shot. (Right-click -> Open works to
+launch the window, but can leave the bundled assembler blocked, so the first ROM
+build then fails - use the command instead.)
+
+You only need to do this once per install.
 
 ## Thank You
 
@@ -91,9 +113,9 @@ work this tool couldn't exist. So thank you to these folks and many more.
   copy of the binary.
 - This editor also bundles **M1TE**, our fork of **M1TE2** (© 2020 Doug Fraker /
   nesdoug) — a SNES tile/map editor — for editing exported `.M1` graphics
-  sessions. It's a Windows .NET executable, shipped on both the Windows and Linux
-  builds: run it natively on Windows, or via [Wine](https://www.winehq.org/) on
-  Linux. M1TE2 is licensed under the MIT license; its license text ships with the
+  sessions. It's a Windows .NET executable, shipped on the Windows, Linux, and
+  macOS builds: run it natively on Windows, or via [Wine](https://www.winehq.org/)
+  on Linux/macOS. M1TE2 is licensed under the MIT license; its license text ships with the
   install under `resources/snes-framework/m1te-licenses/`, and the upstream
   source is at https://github.com/nesdoug/M1TE2. It runs separately from the
   editor.

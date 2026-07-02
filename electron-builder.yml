@@ -23,9 +23,10 @@ extraResources:
   # The on-disk inputs asar needs at runtime, plus the engine docs as bundled
   # reference material. The framework's TS is bundled into the Electron main
   # process; node config, extracted assets, build outputs, and reference carts
-  # do not ship. The asar binary itself is platform-specific (asar.exe vs asar)
-  # and ships per-OS under win:/linux: below; its LGPL-3.0 license text ships on
-  # both platforms (asar is invoked as a separate executable, not linked).
+  # do not ship. The asar binary itself is platform-specific (asar.exe / asar /
+  # asar-macos) and ships per-OS under win:/linux:/mac: below; its LGPL-3.0
+  # license text ships on every platform (asar is invoked as a separate
+  # executable, not linked).
   - from: snes-framework/asar-licenses
     to: snes-framework/asar-licenses
     filter:
@@ -103,3 +104,27 @@ linux:
     - target: AppImage
       arch:
         - x64
+mac:
+  # Universal (arm64 + x86_64) dmg + zip — one artifact runs on both Apple
+  # Silicon and Intel Macs. The bundled asar (asar-macos) is itself a committed
+  # universal Mach-O, so the ROM builder works on either arch.
+  category: public.app-category.developer-tools
+  icon: resources/icon.png # electron-builder needs a >=512px source to synth the .icns
+  # Unsigned: no Apple Developer ID. electron-builder ad-hoc signs the merged
+  # universal app so it runs after the user clears the download quarantine
+  # (right-click -> Open, or `xattr -dr com.apple.quarantine <app>` — documented
+  # in the README). identity:null makes "don't sign" explicit so CI doesn't fail
+  # hunting the keychain for a cert.
+  identity: null
+  artifactName: ${name}-${version}-mac-${arch}.${ext} # arch = "universal"
+  # macOS-native assembler (committed prebuilt, like asar.exe / asar).
+  extraResources:
+    - from: snes-framework/asar-macos
+      to: snes-framework/asar-macos
+  target:
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal

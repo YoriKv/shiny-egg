@@ -296,3 +296,24 @@ export function lz16(
 
   return { srcEnd: s, destEnd: destOff + outSize };
 }
+
+/** Probe the row count of an lz16 stream whose exact compressed byte length is
+ *  known (an extracted blob — the cart pointer table defines the range): decode
+ *  consumption is strictly monotonic in `rowCount`, so at most one row count
+ *  consumes the stream exactly. Returns null when none fits (not lz16 data).
+ *  Shared by the YY-CHR whole-cart export and the ROM importer's unsized-lz16
+ *  sweep; expected values for all 187 cart blobs are pinned against the
+ *  ycompress size table in `scripts/import/gfx-lz16.test.ts`. */
+export function probeLz16RowCount(blob: Uint8Array, maxRows = 64): number | null {
+  for (let r = 1; r <= maxRows; r++) {
+    try {
+      const out = new Uint8Array(r * 512);
+      const res = lz16(blob, 0, out, 0, r);
+      if (res.srcEnd === blob.length) return r;
+      if (res.srcEnd > blob.length) return null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}

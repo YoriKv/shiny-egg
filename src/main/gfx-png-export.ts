@@ -38,6 +38,7 @@ import { exportSpriteGlyphs } from 'snes-framework/sprite-glyph'
 import { decodeFontSheet, FONT_SHEETS } from 'snes-framework/msg-font'
 import { imageAseprite } from 'snes-framework/gfx-aseprite'
 import { encodePng } from 'snes-framework/png'
+import { collectYychrExport, yychrReadme } from './gfx-yychr-io'
 import type { RenderHeaderRequest, ExportGfxOptions, GfxExportTrack } from '../shared/ipc-types'
 import { loadRomAndSymbols } from './render/rom-cache'
 import { fileChecksum } from './gfx-import-conflict'
@@ -70,7 +71,8 @@ import {
   type TitleIslandManifestEntry,
   type TitleSceneryManifestEntry,
   type StorybookSceneManifestEntry,
-  type FontSheetManifestEntry
+  type FontSheetManifestEntry,
+  type YychrManifestEntry
 } from './gfx-manifest'
 
 const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -94,6 +96,7 @@ export function gfxTrackFolder(opts: ExportGfxOptions): { folder: string; strip:
   if (t === 'systemscreens') return { folder: 'screens', strip: 'screens/' }
   if (t === 'metasprites') return { folder: 'metasprites', strip: '' }
   if (t === 'fonts') return { folder: 'fonts', strip: 'fonts/' }
+  if (t === 'yychr') return { folder: 'yychr', strip: 'yychr/' }
   return null
 }
 
@@ -437,6 +440,18 @@ export function exportGfxPngsToDir(
     }
   }
 
+  // YY-CHR raw-CHR sheets (the whole-cart "yychr" track) — every CHR blob as the raw
+  // bytes YY-CHR edits in place, + .pal/.col display sidecars + its own README (the
+  // format-pick table). Level-INDEPENDENT: the collector walks the cart's distinct
+  // tileset combos itself. See gfx-yychr-io.ts.
+  const yychrManifest: YychrManifestEntry[] = []
+  if (want('yychr')) {
+    const coll = collectYychrExport(rom, symbols)
+    for (const a of coll.artifacts) emit(rebase(a.file), a.bytes)
+    for (const m of coll.manifest) yychrManifest.push({ ...m, file: rebase(m.file) })
+    writeArtifact(outDir, 'README.txt', new TextEncoder().encode(yychrReadme(coll.notes)))
+  }
+
   // System-screen M1TE2 ".M1" sessions — when the Boot/Story/Title track is exported in M1TE2
   // format, the tilemap-based screens (title island + storybook first scene) export as `.M1`
   // instead of the PNG/Aseprite outputs above (all skipped via wantSystemPng). The non-tilemap
@@ -448,7 +463,7 @@ export function exportGfxPngsToDir(
     for (const s of exportScreenM1(rom, symbols)) {
       const file = rebase(s.file)
       emit(file, s.bytes)
-      screenM1Manifest.push({ file, kind: s.kind })
+      screenM1Manifest.push({ file, kind: s.kind, game: s.game })
     }
   }
 
@@ -470,7 +485,8 @@ export function exportGfxPngsToDir(
         titleIsland: titleIslandManifest,
         titleScenery: titleSceneryManifest,
         storybookScene: storybookSceneManifest,
-        fonts: fontManifest.length > 0 ? fontManifest : null
+        fonts: fontManifest.length > 0 ? fontManifest : null,
+        yychr: yychrManifest.length > 0 ? yychrManifest : null
       },
       null,
       2
@@ -487,7 +503,8 @@ export function exportGfxPngsToDir(
       (storybookSceneManifest ? 1 : 0) +
       fontManifest.length +
       (mapM1Manifest ? mapM1Manifest.overworlds.length + (mapM1Manifest.icons ? 1 : 0) : 0) +
-      screenM1Manifest.length
+      screenM1Manifest.length +
+      yychrManifest.length
   }
 }
 
@@ -532,6 +549,10 @@ function readmeText(): string {
     '    The 1bpp message font glyphs + message-box pictures, as a 2-color image (index 0',
     '    = off, index 1 = on). Paint white/opaque pixels to turn them on, erase',
     '    (transparent) or paint black to turn them off.',
+    '',
+    'YY-CHR (all sheets)       Pixels, edited in YY-CHR.',
+    '    Every graphics sheet in the game as raw SNES tile data YY-CHR opens directly',
+    '    (the file extension picks the format). See the README inside the yychr folder.',
     '',
     'Re-import this folder to apply your edits.',
     ''

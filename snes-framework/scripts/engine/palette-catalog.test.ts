@@ -13,7 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { buildPaletteCatalog } from './palette-catalog.ts';
 import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
-import { parseWlaSymbolMap } from './symbol-map.ts';
+import { parseWlaSymbolMap, snesToPC } from './symbol-map.ts';
 import { u16le } from './rom-read.ts';
 import type { PaletteCatalogGroup } from '../types.ts';
 
@@ -61,7 +61,8 @@ console.log(`Loaded ${symbols.size} symbols; catalog has ${catalog.catalog.lengt
 // ── Test 1: structural — the expected pointer-table groups + entry counts ────
 {
   const expect: Record<string, number> = {
-    backdrop: 1, bg1: 32, 'bg1-dark': 32, bg2: 64, bg3: 64, sprite: 16, yoshi: 8
+    backdrop: 1, bg1: 32, 'bg1-dark': 32, bg2: 64, bg3: 64, sprite: 16, yoshi: 8,
+    'mode-0a': 1, anim: 18
   };
   for (const [id, n] of Object.entries(expect)) {
     const g = group(id);
@@ -69,7 +70,7 @@ console.log(`Loaded ${symbols.size} symbols; catalog has ${catalog.catalog.lengt
     if (g) assert(g.entries.length === n, `group '${id}' has ${n} entries (got ${g.entries.length})`);
   }
   const backdrop = group('backdrop')?.entries[0];
-  assert(backdrop?.swatches.length === 256, `backdrop entry has 256 swatches (got ${backdrop?.swatches.length})`);
+  assert(backdrop?.swatches.length === 16, `backdrop entry has 16 swatches (got ${backdrop?.swatches.length})`);
 }
 
 // ── Test 2: per-table offset + color correctness vs the live cart load ──────
@@ -119,7 +120,7 @@ verifyTable('yoshi', 'yoshiColor', 15);
   const entry = group('backdrop')?.entries[0];
   if (entry) {
     let ok = true;
-    for (const b of [0, 1, 7, 64, 200, 255]) {
+    for (const b of [0, 1, 7, 15]) {
       const header = emptyHeader();
       header.bgColor = b;
       const live = liveOffsets(header);
@@ -153,6 +154,61 @@ verifyTable('yoshi', 'yoshiColor', 15);
   }
 }
 
+// ── Test 4b: mode-$0A cinema block matches the live mode-$0A palette load ────
+{
+  const g = group('mode-0a');
+  assert(!!g, `mode-0a group present`);
+  const entry = g?.entries[0];
+  if (entry) {
+    assert(entry.swatches.length === 120, `mode-0a block is 120 swatches / 8 rows × 15 (got ${entry.swatches.length})`);
+    assert(entry.cols === 15, `mode-0a block lays out 15 per row (got ${entry.cols})`);
+    const header = emptyHeader();
+    header.levelMode = 0x0a;
+    const live = liveOffsets(header);
+    let ok = true;
+    for (const sw of entry.swatches) if (live.get(sw.offset) !== sw.base) { ok = false; break; }
+    assert(ok, `mode-0a: every swatch offset+color matches the live mode-$0A load`);
+    // The universal rows the in-level program also loads must NOT be duplicated
+    // here — only the cinema-exclusive literal block.
+    const inLevelLive = liveOffsets(emptyHeader());
+    const dup = entry.swatches.some((sw) => inLevelLive.has(sw.offset));
+    assert(!dup, `mode-0a: no overlap with in-level-program offsets`);
+  }
+}
+
+// ── Test 4c: palette-animation sources ───────────────────────────────────────
+// Every hand-derived (frames × wordsPerRow) geometry must agree with the cart's
+// actual row packing: each source block is a CONTIGUOUS blob run (the Bank01
+// pointer tables' row stride equals the handler's copy width for every mode),
+// so each entry's swatches must be consecutive words. A wrong wordsPerRow or a
+// shifted table breaks contiguity and fails here.
+{
+  const g = group('anim');
+  assert(!!g, `anim group present`);
+  if (g) {
+    assert(g.entries.length === 18, `18 animation source blocks (got ${g.entries.length})`);
+    for (const e of g.entries) {
+      let contiguous = true;
+      const first = e.swatches[0]!.offset;
+      for (let i = 0; i < e.swatches.length; i++) {
+        const sw = e.swatches[i]!;
+        if (sw.offset !== first + i * 2 || sw.offset < 0 || sw.offset >= 0x6000) { contiguous = false; break; }
+        if (sw.base !== baseWord(sw.offset)) { contiguous = false; break; }
+      }
+      assert(contiguous, `anim '${e.label}': contiguous in-blob run with matching base colors`);
+    }
+    // Ping-pong tables (mode 0x0D) dedup 8 table entries → 4 frames × 3.
+    const evens = g.entries.find((e) => e.label.includes('0x0D') && e.label.includes('even'));
+    assert(evens?.swatches.length === 12, `anim 0x0D even: 12 swatches after ping-pong dedup (got ${evens?.swatches.length})`);
+    // Anchor: mode 0x01's first frame is the first pointer in the Bank01 table.
+    const m01 = g.entries.find((e) => e.label === 'Mode 0x01');
+    const t = u16le(rom, symbols.pc('DATA_01C47F'));
+    const expected = snesToPC(0x5f0000 | t) - blobPC;
+    assert(m01?.swatches[0]?.offset === expected, `anim 0x01 first frame == DATA_01C47F[0] (${expected.toString(16)})`);
+    assert(m01?.swatches.length === 104, `anim 0x01: 8 frames × 13 (got ${m01?.swatches.length})`);
+  }
+}
+
 // ── Test 5: scenes build and carry editable, blob-backed swatches ────────────
 {
   // Full-CGRAM scene snapshots only — the curated World-panels group (1 swatch
@@ -172,6 +228,39 @@ verifyTable('yoshi', 'yoshiColor', 15);
   }
   assert(sceneEntries >= 4, `built several scenes (got ${sceneEntries})`);
   assert(editable > 0, `scenes expose editable (blob-backed) swatches (got ${editable})`);
+}
+
+// ── Test 5b: retry screen + bonus-game scenes ────────────────────────────────
+{
+  const layoutPC = symbols.pc('DATA_scene_palette_layout');
+  // Retry screen (program $4A): one literal entry → CGRAM 225.. from the
+  // program's own source word; everything else stays black (offset -1).
+  const screens = catalog.scenes.find((g) => g.id === 'scene-screens');
+  const retry = screens?.entries.find((e) => e.label === 'Retry screen');
+  assert(!!retry, `Retry screen scene present`);
+  if (retry) {
+    const src = u16le(rom, layoutPC + 0x4a);
+    assert(retry.swatches[225]?.offset === src, `retry: CGRAM 225 sourced from program-$4A word (+0x${src.toString(16)})`);
+    assert(retry.swatches[255]?.offset === src + 60 - 2, `retry: CGRAM 255 is the block's last word`);
+    assert(retry.swatches[0]?.offset === -1 && retry.swatches[0]?.base === 0, `retry: backdrop stays black (display-only)`);
+  }
+  // Bonus games (program $94): 6 full-CGRAM entries; per game, CGRAM 0 comes
+  // from the program's backdrop literal and CGRAM 1 from the game's slot-0 row.
+  const bonus = catalog.scenes.find((g) => g.id === 'scene-bonus');
+  assert(!!bonus, `Bonus games scene group present`);
+  if (bonus) {
+    assert(bonus.entries.length === 6, `6 bonus-game entries (got ${bonus.entries.length})`);
+    const backdrop = u16le(rom, layoutPC + 0x94);
+    const t0 = symbols.pc('DATA_109A88');
+    const t2 = symbols.pc('DATA_109AA0');
+    for (let g = 0; g < 6; g++) {
+      const e = bonus.entries[g]!;
+      assert(e.swatches.length === 256, `bonus ${g + 1}: full 256-entry CGRAM`);
+      assert(e.swatches[0]?.offset === backdrop, `bonus ${g + 1}: backdrop from program literal`);
+      assert(e.swatches[1]?.offset === u16le(rom, t0 + g * 2), `bonus ${g + 1}: CGRAM 1 from DATA_109A88[${g}]`);
+      assert(e.swatches[49]?.offset === u16le(rom, t2 + g * 2), `bonus ${g + 1}: CGRAM 49 from DATA_109AA0[${g}] (item-card row)`);
+    }
+  }
 }
 
 // ── Test 6: the World-map panels group (per-world panel color + sync copies) ─

@@ -60,6 +60,8 @@ import type {
   LocateBizhawkResult,
   LocateAsepriteResult,
   AsepriteInfo,
+  LocateYychrResult,
+  YychrExportFile,
   ObjectInfluenceRequest,
   ObjectInstance,
   OverlayDriftReport,
@@ -226,6 +228,8 @@ export type {
   LocateBizhawkResult,
   LocateAsepriteResult,
   AsepriteInfo,
+  LocateYychrResult,
+  YychrExportFile,
   PaintCorner,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -618,6 +622,18 @@ export interface EditorAPI {
   /** The `.M1` session files in an export folder (each with its BG layer), for the
    *  clickable "open in M1TE" list under each folder. */
   listM1Files: (dir: string) => Promise<M1ExportFile[]>
+  /** The saved YY-CHR executable path, or null when not located (settings-only —
+   *  YY-CHR is portable, no standard install dir). */
+  getYychrExe: () => Promise<string | null>
+  /** Pick the YY-CHR executable and persist it to settings. */
+  locateYychr: () => Promise<LocateYychrResult>
+  /** Open an exported raw CHR sheet (`dir/file`) in YY-CHR (the extension
+   *  auto-selects the format). Windows-native or via Wine. Returns false if
+   *  YY-CHR isn't located or the file is missing (or the launch fails). */
+  openInYychr: (dir: string, file: string) => Promise<boolean>
+  /** The YY-CHR sheets in an export folder (manifest-driven), for the clickable
+   *  "open in YY-CHR" list under each tracked folder. */
+  listYychrFiles: (dir: string) => Promise<YychrExportFile[]>
   /** Folders this project has exported region(s) to (most-recent first) — the
    *  Region tab lists them with per-folder import / remove. */
   listRegionExports: () => Promise<string[]>

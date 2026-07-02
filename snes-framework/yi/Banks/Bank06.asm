@@ -13541,8 +13541,24 @@ DATA_06F8BB:
 	dw $1ACD,$10CD
 
 ;---------------------------------------------------------------------------
+; Non-compressed graphics file directory. 21 `dl` entries, one per raw
+; (uncompressed) graphics file in banks $52-$56, back-to-back from $52:0000;
+; the last file ($56:FC00) runs to $57:3C00 where the LZ2 blobs begin.
+; Contiguous with the two compressed-pointer tables that follow
+; (DATA_lz2_compressed_gfx_ptrs, DATA_lz16_compressed_gfx_ptrs) -- together
+; one 473-entry directory of every graphics file in the $52-$5F region.
+; NO runtime readers (codegraph: zero callers / literal reads -- the game
+; addresses these banks directly); this is a build-time asset directory left
+; in the cart. External graphics tools (FuSoYa's ycompress) enumerate it to
+; extract the raw files and rewrite it on reinsert, so keep it intact.
+; Directory contents (verified byte-exact against the V1.0 cart): 3 entries
+; for bank $52, then $53:0000/$53:8000/$53:C000, $54:0000/$54:8000,
+; $55:0000/$55:8000, $56:0000/$56:6000, eight entries tiling $56:8000-$56:FC00,
+; and $56:FC00 (which runs to the LZ2 region at $57:3C00).
+;---------------------------------------------------------------------------
 
 UNK_06F91F:
+DATA_noncompressed_gfx_ptrs:             ; 21 dl entries; raw gfx file directory (see header above)
 	dl $520000
 	dl $528000
 	dl $52C000

@@ -73,7 +73,8 @@ import {
   SCENERY_BIN_FILE,
   buildStorybookSceneContext,
   renderStorybookScene,
-  diffStorybookSceneTiles
+  diffStorybookSceneTiles,
+  buildBonusSceneContext
 } from 'snes-framework/screen-gfx'
 import {
   buildLevelIconContext,
@@ -97,6 +98,8 @@ import {
 import {
   diffTitleIslandM1,
   diffStorybookSceneM1,
+  diffBonusM1,
+  diffBonusBackdropM1,
   type ScreenPaletteEdit
 } from 'snes-framework/screen-m1te2'
 import {
@@ -139,8 +142,10 @@ import {
   type TitleIslandManifestEntry,
   type TitleSceneryManifestEntry,
   type StorybookSceneManifestEntry,
-  type FontSheetManifestEntry
+  type FontSheetManifestEntry,
+  type YychrManifestEntry
 } from './gfx-manifest'
+import { importYychrEntries } from './gfx-yychr-io'
 
 const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
 
@@ -258,6 +263,11 @@ export interface ImportGfxResult {
   sceneImported: number
   sceneSkipped: number
   sceneMissing: number
+  /** Bonus-game screen `.M1` edits (gm$2A) — CHR via the reconciler; BG1/BG2 +
+   *  shared-BG3 tilemap words merged across games → saveGfxEdit. */
+  bonusImported: number
+  bonusSkipped: number
+  bonusMissing: number
   /** Dynamic-sprite glyph edits routed to the raw glyph `.bin` (via saveRawChrEdit). */
   glyphImported: number
   glyphSkipped: number
@@ -269,6 +279,13 @@ export interface ImportGfxResult {
   fontImported: number
   fontSkipped: number
   fontMissing: number
+  /** YY-CHR raw sheets (gfx-yychr-io.ts) — compressed CHR via saveGfxEdit, raw `.bin`
+   *  byte-runs via saveRawChrEdit. `yychrPadEdited` = sheets where the user painted
+   *  into the bank padding past the true end (those bytes are dropped, warned). */
+  yychrImported: number
+  yychrSkipped: number
+  yychrMissing: number
+  yychrPadEdited: number
   /** Screen-palette color edits written back to the master palette blob (Bank57 overlay)
    *  across all screen `.aseprite` tracks — the color analog of the tile-layout imports. */
   paletteImported: number
@@ -303,7 +320,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
   if (!existsSync(manifestPath)) {
     throw new Error(`No ${MANIFEST} in the selected folder — pick a folder you exported to.`)
   }
-  const { checksums, entries, metasprites, glyphs, mapIcons, levelIcons, mapTerrain, mapGround, mapM1, screenM1, titleLogo, titleIsland, titleScenery, storybookScene, fonts } = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+  const { checksums, entries, metasprites, glyphs, mapIcons, levelIcons, mapTerrain, mapGround, mapM1, screenM1, titleLogo, titleIsland, titleScenery, storybookScene, fonts, yychr } = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
     checksums?: GfxManifestChecksums
     entries: GfxManifestEntry[]
     metasprites?: { header: RenderHeaderRequest; sprites: MetaspriteManifestEntry[] }
@@ -319,6 +336,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
     titleScenery?: TitleSceneryManifestEntry
     storybookScene?: StorybookSceneManifestEntry
     fonts?: FontSheetManifestEntry[] | null
+    yychr?: YychrManifestEntry[] | null
   }
   const { rom: builtRom, symbols } = loadRomAndSymbols()
   // Title-screen PLACEMENT baseline (logo/island): apply the existing tilemap overlays to a COPY
@@ -998,18 +1016,68 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
   // into the existing island/scene tallies. (The title logo is excluded from the .M1 set — it
   // renders with the wrong palette base in M1TE; edit it via PNG/Aseprite.) The engine
   // re-derives the scene from the cart (screen-m1te2.ts).
+  let bonusImported = 0, bonusSkipped = 0, bonusMissing = 0
   if (screenM1 && screenM1.length > 0) {
     // Map an .M1's CGRAM-index palette edits → the master blob via the scene's provenance.
     const accumScreenM1Palette = (edits: ScreenPaletteEdit[], provenance: Int32Array, source: string): void => {
       for (const pe of edits) { const off = provenance[pe.cgramIndex] ?? -1; if (off >= 0) { reconciler.paletteWord(off, pe.bgr15, source); paletteImported++ } }
     }
+    // Bonus-game tilemap WORD edits accumulate ACROSS the six .M1 files before saving:
+    // the BG3 tilemap ($95) is shared by every game, so per-file saves would clobber
+    // each other; a per-word merge keeps the last edit and saves each file once.
+    const bonusWords = new Map<number, Map<number, number>>() // fileId → fileOffset → word
+    const bonusTmSize = new Map<number, number>() // fileId → sizeBytes (for the base decode)
     for (const e of screenM1) {
       const gv = gate(e.file)
-      if (gv === 'missing') { if (e.kind === 'island') islandMissing++; else sceneMissing++; continue }
-      if (gv === 'unchanged') { if (e.kind === 'island') islandSkipped++; else sceneSkipped++; continue }
+      if (gv === 'missing') { if (e.kind === 'island') islandMissing++; else if (e.kind.startsWith('bonus')) bonusMissing++; else sceneMissing++; continue }
+      if (gv === 'unchanged') { if (e.kind === 'island') islandSkipped++; else if (e.kind.startsWith('bonus')) bonusSkipped++; else sceneSkipped++; continue }
       try {
         const bytes = readFileSync(join(dir, e.file))
-        if (e.kind === 'island') {
+        if (e.kind === 'bonus-backdrop') {
+          // The shared BG3 backdrop ($95) — one file for all six games (game 0's
+          // palette colors it). Word edits join the same merged-save map.
+          const ctx = buildBonusSceneContext(rom, symbols, 0, { gfxOverride: gfxLiveEdits() })
+          foldLivePaletteIntoScene(ctx.cgram, ctx.provenance)
+          const d = diffBonusBackdropM1(ctx, bytes)
+          let changed = false
+          if (d.chrEdits.length > 0) {
+            reconciler.registerManifest(ctx.manifest)
+            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, ce.bytes.length, e.file, 'Bonus-game backdrop char')
+            changed = true
+          }
+          for (const w of d.wordEdits) {
+            const m = bonusWords.get(w.fileId) ?? bonusWords.set(w.fileId, new Map()).get(w.fileId)!
+            m.set(w.fileOffset, w.word)
+            changed = true
+          }
+          const f95 = ctx.manifest.find((mf) => mf.format === 'lz2' && mf.fileId === ctx.bg3TmFileId)
+          if (f95) bonusTmSize.set(ctx.bg3TmFileId, f95.sizeBytes)
+          if (d.skippedTiles > 0) errors.push(`${e.file}: ${d.skippedTiles} edited tile(s)/cell(s) in runtime-drawn regions were ignored.`)
+          accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
+          if (changed) bonusImported++; else bonusSkipped++
+        } else if (e.kind === 'bonus-game' && e.game !== undefined) {
+          const ctx = buildBonusSceneContext(rom, symbols, e.game, { gfxOverride: gfxLiveEdits() })
+          foldLivePaletteIntoScene(ctx.cgram, ctx.provenance) // diff palette vs base ⊕ edits (see note)
+          const d = diffBonusM1(ctx, bytes)
+          let changed = false
+          if (d.chrEdits.length > 0) {
+            reconciler.registerManifest(ctx.manifest)
+            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, ce.bytes.length, e.file, 'Bonus-game screen char')
+            changed = true
+          }
+          for (const w of d.wordEdits) {
+            const m = bonusWords.get(w.fileId) ?? bonusWords.set(w.fileId, new Map()).get(w.fileId)!
+            m.set(w.fileOffset, w.word)
+            changed = true
+          }
+          for (const fid of [ctx.bg1TmFileId, ctx.bg2TmFileId, ctx.bg3TmFileId]) {
+            const f = ctx.manifest.find((mf) => mf.format === 'lz2' && mf.fileId === fid)
+            if (f) bonusTmSize.set(fid, f.sizeBytes)
+          }
+          if (d.skippedTiles > 0) errors.push(`${e.file}: ${d.skippedTiles} edited tile(s)/cell(s) in runtime-drawn regions were ignored.`)
+          accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
+          if (changed) bonusImported++; else bonusSkipped++
+        } else if (e.kind === 'island') {
           const ctx = buildTitleIslandContext(rom, symbols, gfxLiveEdits())
           foldLivePaletteIntoScene(ctx.cgram, ctx.provenance) // diff palette vs base ⊕ edits (see note)
           const d = diffTitleIslandM1(ctx, bytes)
@@ -1043,6 +1111,20 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
         errors.push(`${e.file}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
+    // Save the merged bonus tilemap word edits — ONE saveGfxEdit per file. The BG3
+    // tilemap ($95) is shared by all six games, so the per-word merge above is what
+    // keeps two edited game screens from clobbering each other's $95 save.
+    for (const [fileId, words] of bonusWords) {
+      if (words.size === 0) continue
+      const sizeBytes = bonusTmSize.get(fileId)
+      if (sizeBytes === undefined) { errors.push(`bonus tilemap 0x${fileId.toString(16)}: size unknown — placement edits skipped.`); continue }
+      const buf = (liveTiles('lz2', fileId) ?? decodeGfxFile(rom, symbols, 'lz2', fileId, sizeBytes)).slice()
+      let written = 0
+      for (const [off, word] of words) if (off >= 0 && off + 1 < buf.length) { buf[off] = word & 0xff; buf[off + 1] = (word >> 8) & 0xff; written++ }
+      if (written === 0) continue
+      const r = saveGfxEdit('lz2', fileId, buf, undefined, { kind: 'tilemap', unitBytes: 2, role: 'Bonus-game screen tilemap' })
+      if (!r.ok) errors.push(`bonus tilemap 0x${fileId.toString(16)}: ${r.error}`)
+    }
   }
 
   // Dynamic-sprite glyph edits → the raw glyph .bin (via saveRawChrEdit). Only
@@ -1069,6 +1151,16 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
     glyphShared = affected.size
   }
 
+  // YY-CHR raw sheets — the whole-cart yychr track's section. No pixel decode: the
+  // file IS the (bank-padded) decompressed blob; gfx-yychr-io truncates + byte-diffs
+  // and records into the same reconciler (checksum-gated like every other track).
+  let yychrImported = 0, yychrSkipped = 0, yychrMissing = 0, yychrPadEdited = 0
+  if (yychr && yychr.length > 0) {
+    const c = importYychrEntries(dir, yychr, gate, reconciler, rom, symbols)
+    yychrImported = c.imported; yychrSkipped = c.skipped; yychrMissing = c.missing; yychrPadEdited = c.padEdited
+    errors.push(...c.errors)
+  }
+
   // The actual writes (CHR re-encode, palette merge, raw-CHR, conflict resolution) happen in
   // reconciler.apply() — called ONCE by graphics-folder-io after BOTH importers have recorded.
   return {
@@ -1081,8 +1173,10 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
     islandImported, islandSkipped, islandMissing, islandSharedCells, islandNewTiles,
     sceneryImported, scenerySkipped, sceneryMissing,
     sceneImported, sceneSkipped, sceneMissing,
+    bonusImported, bonusSkipped, bonusMissing,
     glyphImported, glyphSkipped, glyphMissing, glyphShared,
     fontImported, fontSkipped, fontMissing,
+    yychrImported, yychrSkipped, yychrMissing, yychrPadEdited,
     paletteImported,
     errors
   }

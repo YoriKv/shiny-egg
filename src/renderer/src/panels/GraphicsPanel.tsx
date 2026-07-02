@@ -1,5 +1,5 @@
 import {Fragment, useCallback, useEffect, useRef, useState, type JSX} from 'react'
-import type {AsepriteInfo, BgRegionLayer, BgRegionRect, BgRegionFormat, GfxExportTrack, GfxEditChange, GfxEditEntry, GfxFileRole, LevelData, M1ExportFile} from '../../../preload/api'
+import type {AsepriteInfo, BgRegionLayer, BgRegionRect, BgRegionFormat, GfxExportTrack, GfxEditChange, GfxEditEntry, GfxFileRole, LevelData, M1ExportFile, YychrExportFile} from '../../../preload/api'
 import {DiscardChangesModal} from '../DiscardChangesModal'
 import {headerFromLevel} from './TilesPanel'
 import {getSprite} from '../data/obj-metadata'
@@ -49,7 +49,7 @@ const AUTO_OPEN_KEY = 'shinyEgg.autoOpenExports.v1'
  *  track); BG1/2/3 are the positioned-region export. Aseprite is available for the BG
  *  regions, the two screen tracks (the title logo + island assemble as real tilemaps,
  *  the maps as layered tilemaps), and metasprites. */
-type ExportTarget = 'worldmap' | 'systemscreens' | 'fonts' | 'metasprites' | 'bg1' | 'bg2' | 'bg3'
+type ExportTarget = 'worldmap' | 'systemscreens' | 'fonts' | 'metasprites' | 'yychr' | 'bg1' | 'bg2' | 'bg3'
 // `metasprites` is intentionally omitted from the dropdown for now (export removed from
 // the UI). The implementation is kept — engine `sprite-metasprite.ts`, the
 // `tracks:['metasprites']` exportGfxPngs path, and the import auto-detect all still work;
@@ -60,7 +60,8 @@ const TARGETS: { value: ExportTarget; label: string }[] = [
     {value: 'bg3', label: 'BG3'},
     {value: 'worldmap', label: 'World Map'},
     {value: 'systemscreens', label: 'Boot/Story/Title Screens'},
-    {value: 'fonts', label: 'Message Font / Pictures'}
+    {value: 'fonts', label: 'Message Font / Pictures'},
+    {value: 'yychr', label: 'YY-CHR (all tile sheets)'}
 ]
 const isRegionTarget = (t: ExportTarget): boolean => t === 'bg1' || t === 'bg2' || t === 'bg3'
 const regionLayerOf = (t: ExportTarget): BgRegionLayer => (t === 'bg1' ? 1 : t === 'bg2' ? 2 : 3)
@@ -68,8 +69,9 @@ const regionLayerOf = (t: ExportTarget): BgRegionLayer => (t === 'bg1' ? 1 : t =
 // export with no level loaded (unlike the BG regions + metasprites, which need the level).
 const isScreenTarget = (t: ExportTarget): boolean => t === 'worldmap' || t === 'systemscreens'
 // Cart-static targets that need NO level loaded (the screen tracks + the Bank09 1bpp
-// message font / pictures, which are raw global graphics).
-const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'fonts'
+// message font / pictures, which are raw global graphics + the whole-cart YY-CHR
+// export, which walks the cart's tileset combos itself).
+const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'fonts' || t === 'yychr'
 // Targets whose Aseprite output goes through the gfx-png export (the screen tracks =
 // assembled tilemaps + single-image icons/scenery; metasprites = single-image-with-palette
 // projects; fonts = the 1bpp message font / pictures as a single-image 2-color project —
@@ -77,7 +79,7 @@ const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t 
 // regions use the separate exportBgRegion path.
 const isAsepriteGfxTarget = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'metasprites' || t === 'fonts'
 const gfxTracksOf = (t: ExportTarget): GfxExportTrack[] =>
-    t === 'metasprites' ? ['metasprites'] : t === 'worldmap' ? ['worldmap'] : t === 'fonts' ? ['fonts'] : ['systemscreens']
+    t === 'metasprites' ? ['metasprites'] : t === 'worldmap' ? ['worldmap'] : t === 'fonts' ? ['fonts'] : t === 'yychr' ? ['yychr'] : ['systemscreens']
 
 interface Props {
     /** The level currently loaded in the canvas — its palette colors the export. */
@@ -147,6 +149,11 @@ export function GraphicsBody({
     // and gating the tilemap-export option below).
     const [asepriteInfo, setAsepriteInfo] = useState<AsepriteInfo | null>(null)
     const [asepriteError, setAsepriteError] = useState<string | null>(null)
+    // Located YY-CHR (settings-only — portable app) + the per-folder exported sheets
+    // (the "Open in YY-CHR…" select under each tracked folder).
+    const [yychrExe, setYychrExe] = useState<string | null>(null)
+    const [yychrError, setYychrError] = useState<string | null>(null)
+    const [yychrFiles, setYychrFiles] = useState<Record<string, YychrExportFile[]>>({})
     const asepritePath = asepriteInfo?.path ?? null
     // The located Aseprite is POSITIVELY too old for tilemap `.aseprite` files (needs
     // 1.3+). Only fires on a parsed pre-1.3 version — not-located or an unknown version
@@ -211,20 +218,27 @@ export function GraphicsBody({
         try {
             const dirs = await window.shinyEgg.editor.listRegionExports()
             setFolders(dirs)
-            // Each folder's exported .M1 sessions (clickable to open in M1TE) — fetched in parallel.
+            // Each folder's exported .M1 sessions (clickable to open in M1TE) + YY-CHR
+            // sheets (the per-folder open select) — fetched in parallel.
             const entries = await Promise.all(
                 dirs.map(async (dir) => [dir, await window.shinyEgg.editor.listM1Files(dir)] as const)
             )
             setM1Files(Object.fromEntries(entries))
+            const yEntries = await Promise.all(
+                dirs.map(async (dir) => [dir, await window.shinyEgg.editor.listYychrFiles(dir)] as const)
+            )
+            setYychrFiles(Object.fromEntries(yEntries))
         } catch {
             setFolders([])
             setM1Files({})
+            setYychrFiles({})
         }
     }, [])
 
-    // Aseprite is a global setting (project-independent) — probe once on mount.
+    // Aseprite + YY-CHR are global settings (project-independent) — probe once on mount.
     useEffect(() => {
         window.shinyEgg.editor.getAsepriteExe().then(setAsepriteInfo).catch(() => setAsepriteInfo(null))
+        window.shinyEgg.editor.getYychrExe().then(setYychrExe).catch(() => setYychrExe(null))
     }, [])
 
     // The exported-folders + changed-graphics lists are per-project. Re-fetch when the
@@ -266,6 +280,22 @@ export function GraphicsBody({
         // Re-probe the newly-picked exe (version → tilemap gate), not just the path.
         if (r.ok && r.path) setAsepriteInfo(await window.shinyEgg.editor.getAsepriteExe())
         else if (r.error) setAsepriteError(r.error)
+    }
+
+    const onLocateYychr = async (): Promise<string | null> => {
+        setYychrError(null)
+        const r = await window.shinyEgg.editor.locateYychr()
+        if (r.ok && r.path) { setYychrExe(r.path); return r.path }
+        if (r.error) setYychrError(r.error)
+        return null
+    }
+
+    // Open one exported sheet in YY-CHR; locate the exe first if it isn't yet.
+    const onOpenYychr = async (dir: string, file: string): Promise<void> => {
+        if (!yychrExe && !(await onLocateYychr())) return
+        if (!(await window.shinyEgg.editor.openInYychr(dir, file))) {
+            setYychrError('Couldn’t open YY-CHR — re-locate the executable?')
+        }
     }
 
     const onExport = async (): Promise<void> => {
@@ -318,7 +348,7 @@ export function GraphicsBody({
         setBusy(false)
         if ('canceled' in r) return
         if (r.ok) {
-            const unit = gfxFmt === 'png' ? 'PNG' : 'file'
+            const unit = target === 'yychr' ? 'tile sheet' : gfxFmt === 'png' ? 'PNG' : 'file'
             setPanelLog({ dir: '', lines: [`Extracted ${r.count} ${unit}${r.count === 1 ? '' : 's'} to ${folderName(r.dir)}`], errors: [], warnings: [] })
             await refreshFolders()
         } else setPanelLog({ dir: '', lines: [], errors: [`Extract failed: ${r.error}`], warnings: [] })
@@ -433,6 +463,26 @@ export function GraphicsBody({
                 )}
                 {asepriteError && <span className="se-graphics__log-error">⚠ {asepriteError}</span>}
             </div>
+            <div className="se-graphics__aseprite">
+                {yychrExe ? (
+                    <span
+                        className="se-graphics__aseprite-status"
+                        title={`${yychrExe}\n(click to change)`}
+                        onClick={() => void onLocateYychr()}
+                    >
+                        YY-CHR: <code>{yychrExe.split(/[\\/]/).slice(-2).join('/')}</code>
+                    </span>
+                ) : (
+                    <button
+                        className="se-banks__act"
+                        onClick={() => void onLocateYychr()}
+                        title="Pick the YY-CHR executable, for opening exported tile sheets"
+                    >
+                        Locate YY-CHR…
+                    </button>
+                )}
+                {yychrError && <span className="se-graphics__log-error">⚠ {yychrError}</span>}
+            </div>
 
             {/* The "Map16 Blocks" tab bar is removed for now (see the top-of-file note) — with
                 only one tab left it served no purpose, so the panel renders the Export / Import
@@ -445,8 +495,10 @@ export function GraphicsBody({
                     Pick <strong>what</strong> to extract below; <code>BG1 area</code> extracts the
                     rectangle you select on the canvas, the other <code>BG</code> layers the whole
                     tilemap, <code>World Map</code> the overworld map graphics,{' '}
-                    <code>Boot/Story/Title Screens</code> the boot / title / storybook graphics, and{' '}
-                    <code>Message Font / Pictures</code> the message font + message-box pictures.
+                    <code>Boot/Story/Title Screens</code> the boot / title / storybook graphics,{' '}
+                    <code>Message Font / Pictures</code> the message font + message-box pictures, and{' '}
+                    <code>YY-CHR</code> every tile sheet in the game as raw files YY-CHR edits
+                    directly (with palette sidecars — see the folder’s README).
                     The <code>BG</code> layers and the <code>World Map</code> can also extract an{' '}
                     <code>M1TE2</code> session (each BG layer as one <code>.M1</code>;
                     the World Map as one <code>.M1</code> per world + a combined icons file). Import auto-detects everything in the folder.
@@ -484,7 +536,7 @@ export function GraphicsBody({
                     </div>
                 )}
 
-                <div className="se-graphics__row">
+                {target !== 'yychr' && <div className="se-graphics__row">
                     <label
                         className="se-graphics__radio"
                         title={
@@ -493,7 +545,7 @@ export function GraphicsBody({
                                 : target === 'worldmap'
                                     ? 'Extract the overworld (one .M1 per world) + a combined icons .M1 (all level icons + marker/castle) for M1TE'
                                     : target === 'systemscreens'
-                                        ? 'Extract the tilemap-based screens (title island, storybook scene) as one .M1 each for M1TE'
+                                        ? 'Extract the tilemap-based screens (title island, storybook scene, the six bonus games) as one .M1 each for M1TE'
                                         : 'Extract an M1TE2 .M1 session (tilemap + CHR + palette) — one file for the whole BG layer (BG1 area = pixel + palette only)'
                         }
                     >
@@ -534,7 +586,7 @@ export function GraphicsBody({
                         />
                         PNG
                     </label>
-                </div>
+                </div>}
                 {tilemapTooOld && (
                     <p className="se-graphics__log-error" title={asepritePath ?? undefined}>
                         ⚠ Aseprite {asepriteInfo?.version} can’t open tilemap extracts (tilemaps were added in 1.3).
@@ -631,6 +683,24 @@ export function GraphicsBody({
                                                 </li>
                                             ))}
                                         </ul>
+                                    )}
+                                    {(yychrFiles[dir]?.length ?? 0) > 0 && (
+                                        <div className="se-graphics__m1-item">
+                                            {/* One folder can hold hundreds of sheets — a select keeps the
+                                                list compact (native scroll + type-to-find). Value stays ''
+                                                so the same sheet can be re-opened. */}
+                                            <select
+                                                className="se-input se-graphics__select"
+                                                value=""
+                                                onChange={(e) => { if (e.target.value) void onOpenYychr(dir, e.target.value) }}
+                                                title={yychrExe ? 'Open a tile sheet in YY-CHR' : 'Pick a sheet — you’ll be asked to locate YY-CHR first'}
+                                            >
+                                                <option value="">Open in YY-CHR… ({yychrFiles[dir]!.length} sheets)</option>
+                                                {yychrFiles[dir]!.map((f) => (
+                                                    <option key={f.file} value={f.file} title={f.label}>{f.file}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     )}
                                 </li>
                             ))}

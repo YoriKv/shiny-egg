@@ -63,6 +63,10 @@ export interface Settings {
   /** Absolute path to the Aseprite executable, saved via the Graphics panel's
    *  "Locate Aseprite" button (for opening exported `.aseprite` projects). */
   asepritePath?: string
+  /** Absolute path to the YY-CHR executable, saved via the Graphics panel's
+   *  "Locate YY-CHR" button (for opening exported raw CHR sheets). Settings-only —
+   *  YY-CHR is portable, so there's no standard install location to probe. */
+  yychrPath?: string
   /** Canvas background color (the area behind/around the level), as a `#rrggbb`
    *  hex. App-wide, set via the toolbar swatch; absent ⇒ the renderer default. */
   canvasBackgroundColor?: string
@@ -84,6 +88,21 @@ export interface LocateAsepriteResult {
   ok: boolean
   path?: string
   error?: string
+}
+
+/** Result of the `yychr:locate` file picker (same contract as the Aseprite one). */
+export interface LocateYychrResult {
+  ok: boolean
+  path?: string
+  error?: string
+}
+
+/** An exported YY-CHR sheet in a tracked export folder (path relative to the
+ *  folder), for the panel's clickable "open in YY-CHR" list — the yychr twin of
+ *  {@link M1ExportFile}. `label` is the manifest's description. */
+export interface YychrExportFile {
+  file: string
+  label: string
 }
 
 /** The located Aseprite, with the version probed from `<exe> --version`. The
@@ -788,7 +807,7 @@ export interface Map16BlockPreview {
  *  icons + terrain / ground; `systemscreens` covers the boot / title / storybook
  *  char sheets + the title logo / island / scenery + storybook scene. (`worldmap` +
  *  `systemscreens` are the two halves of what used to be a single `screens` track.) */
-export type GfxExportTrack = 'metasprites' | 'worldmap' | 'systemscreens' | 'fonts'
+export type GfxExportTrack = 'metasprites' | 'worldmap' | 'systemscreens' | 'fonts' | 'yychr'
 
 export interface ExportGfxOptions {
   /** Limit the export to these tracks. */

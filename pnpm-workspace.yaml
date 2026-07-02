@@ -8,14 +8,21 @@ onlyBuiltDependencies:
   - electron
   - electron-winstaller
   - esbuild
-# Fetch native binaries for BOTH the Windows runtime (Electron, app) and Linux
-# (WSL), so Vitest's rolldown binding resolves when tests run under WSL. Install
-# still happens from Windows (corepack pnpm) to keep the win32 binaries primary.
+# Fetch native binaries for every target: the Windows runtime (Electron, app),
+# Linux (WSL + the linux release runner, so Vitest's rolldown binding resolves),
+# and macOS (the release runner — pnpm does NOT auto-add the host arch when this
+# list is set, so darwin/arm64 must be explicit or `pnpm install --frozen-lockfile`
+# on macos-latest skips the darwin esbuild/rollup binaries electron-vite build
+# needs). arm64 is here for Apple Silicon. Install still happens from Windows
+# (corepack pnpm) to keep the win32 binaries primary. (This only changes which
+# optional deps materialize; the lockfile already resolves all arches.)
 supportedArchitectures:
   os:
     - win32
     - linux
+    - darwin
   cpu:
     - x64
+    - arm64
   libc:
     - glibc

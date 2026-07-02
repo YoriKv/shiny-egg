@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.10 - 2026-07-02
+
+- Ycompress style graphics export and YYCHR integration for those exported files.
+- More color palette editing options.
+- MacOS support, experimental.
+
 ## v0.5.9 - 2026-07-01
 
 - Doc cleanup and some fixes.

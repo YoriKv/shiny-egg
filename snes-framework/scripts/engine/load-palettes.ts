@@ -24,7 +24,7 @@
 //
 // Hardcoded (cart-static, same across versions):
 //
-//   palette blob (DATA_master_palette_rom_blob)     PC $1FA000  — 8 KB BGR-15 colors
+//   palette blob (DATA_master_palette_rom_blob)     PC $1FA000  — 24 KB BGR-15 colors ($5F:A000-$5F:FFFF)
 //   (= same byte via standard LoROM SNES $3F:A000 and via the SuperFX-mapped
 //    SNES $5F:A000 = PC $1FA000)
 //

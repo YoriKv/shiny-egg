@@ -1,15 +1,25 @@
-// Wrapper around the asar assembler (asar.exe on Windows, asar on Linux/macOS).
-// Surfaces non-zero exits as exceptions.
+// Wrapper around the asar assembler (asar.exe on Windows, asar on Linux,
+// asar-macos on macOS). Surfaces non-zero exits as exceptions.
 
 import { spawnSync } from 'node:child_process';
 import { chmodSync } from 'node:fs';
 import type { RomVersion } from './rom-versions.ts';
 
-// Platform binary name. We ship both upstream builds (snes-framework/asar.exe +
-// snes-framework/asar, LGPL) and pick by platform — there is no WSL interop on a
-// real Linux box / CI runner, so a .exe simply can't execute there.
+// Platform binary name. asar is a native executable, so each OS needs its own
+// build — a Windows PE, a Linux ELF, and a macOS Mach-O can't run on each
+// other's platform (no WSL interop on a real Linux box / CI runner). We ship one
+// committed prebuilt binary per platform (all LGPL): asar.exe, asar, and
+// asar-macos (a universal arm64+x86_64 Mach-O, since upstream ships no mac
+// build). electron-builder bundles the matching one per OS (extraResources).
 export function asarBinName(): string {
-  return process.platform === 'win32' ? 'asar.exe' : 'asar';
+  switch (process.platform) {
+    case 'win32':
+      return 'asar.exe';
+    case 'darwin':
+      return 'asar-macos';
+    default:
+      return 'asar';
+  }
 }
 
 export interface RunAsarOptions {

@@ -688,16 +688,30 @@ const SCREEN_FILE_ROLES: Record<number, string> = {
   0x7e: 'World map ground tilemap (BG3)' // the BG1/BG2 terrain tilemaps are per-world ($7C/$7D-class), resolved at export
 }
 
-/** Cart-structural index `format/fileId` → the role(s) it's loaded as — built once
- *  by walking every distinct level tileset-combo's gfx manifest (the dpSlot fixes
- *  the layer). Static for the cart, so cache for the session. */
-let gfxRoleCache: Map<string, Set<string>> | null = null
-function gfxRoleIndex(): Map<string, Set<string>> {
-  if (gfxRoleCache) return gfxRoleCache
-  const map = new Map<string, Set<string>>()
-  const add = (key: string, role: string): void => { (map.get(key) ?? map.set(key, new Set()).get(key)!).add(role) }
+/** One distinct scene (tileset-combo) header from the cart's level records — the
+ *  shared walk behind gfxRoleIndex / gfxSizeRegistry / the YY-CHR whole-cart export
+ *  (gfx-yychr-io.ts). Distinctness is keyed on the TILESETS (+ mode): two levels
+ *  sharing them collapse to the FIRST record's palettes ("first-seen owning level" —
+ *  palette context is a display aid, so first-seen is fine). Empty without an extract. */
+export interface SceneComboHeader {
+  bg1Tileset: number
+  bg2Tileset: number
+  bg3Tileset: number
+  spriteTileset: number
+  bgColor: number
+  bg1Palette: number
+  bg2Palette: number
+  bg3Palette: number
+  spritePalette: number
+  yoshiColor: number
+  isWorld6: boolean
+  levelMode: number
+  animationTileset: number
+  animationPalette: number
+}
+export function distinctSceneHeaders(): SceneComboHeader[] {
+  const out: SceneComboHeader[] = []
   try {
-    const { rom, symbols } = loadRomAndSymbols()
     const workRoot = frameworkWorkRoot()
     const lvlMap = loadLevelMapPublic(workRoot)
     const seen = new Set<string>()
@@ -709,11 +723,28 @@ function gfxRoleIndex(): Map<string, Set<string>> {
       const combo = `${h[1]},${h[3]},${h[5]},${h[7]},${h[9]}` // bg1/bg2/bg3/sprite tileset + mode
       if (seen.has(combo)) continue
       seen.add(combo)
-      const header = {
+      out.push({
         bg1Tileset: h[1] ?? 0, bg2Tileset: h[3] ?? 0, bg3Tileset: h[5] ?? 0, spriteTileset: h[7] ?? 0,
         bgColor: h[0] ?? 0, bg1Palette: h[2] ?? 0, bg2Palette: h[4] ?? 0, bg3Palette: h[6] ?? 0,
-        spritePalette: h[8] ?? 0, yoshiColor: 0, isWorld6: isWorld6Record(lvlMap, rec), levelMode: h[9] ?? 0
-      }
+        spritePalette: h[8] ?? 0, yoshiColor: 0, isWorld6: isWorld6Record(lvlMap, rec), levelMode: h[9] ?? 0,
+        animationTileset: h[10] ?? 0, animationPalette: h[11] ?? 0
+      })
+    }
+  } catch { /* no extract → empty */ }
+  return out
+}
+
+/** Cart-structural index `format/fileId` → the role(s) it's loaded as — built once
+ *  by walking every distinct level tileset-combo's gfx manifest (the dpSlot fixes
+ *  the layer). Static for the cart, so cache for the session. */
+let gfxRoleCache: Map<string, Set<string>> | null = null
+function gfxRoleIndex(): Map<string, Set<string>> {
+  if (gfxRoleCache) return gfxRoleCache
+  const map = new Map<string, Set<string>>()
+  const add = (key: string, role: string): void => { (map.get(key) ?? map.set(key, new Set()).get(key)!).add(role) }
+  try {
+    const { rom, symbols } = loadRomAndSymbols()
+    for (const header of distinctSceneHeaders()) {
       const manifest: GfxFileEntry[] = []
       try { loadLevelGfx(rom, symbols, header as never, new Uint8Array(0x10000), manifest) } catch { continue }
       for (const e of manifest) {
@@ -743,22 +774,7 @@ export function gfxSizeRegistry(): Map<string, GfxSizeEntry> {
   const map = new Map<string, GfxSizeEntry>()
   try {
     const { rom, symbols } = loadRomAndSymbols()
-    const workRoot = frameworkWorkRoot()
-    const lvlMap = loadLevelMapPublic(workRoot)
-    const seen = new Set<string>()
-    for (let rec = 0; rec <= 0xdb; rec++) {
-      let base: ReturnType<typeof loadLevel>
-      try { base = loadLevel({ workRoot, levelRecordId: rec }) } catch { continue }
-      if (base.empty || base.special || base.header.length < 15) continue
-      const h = base.header
-      const combo = `${h[1]},${h[3]},${h[5]},${h[7]},${h[9]}` // bg1/bg2/bg3/sprite tileset + mode
-      if (seen.has(combo)) continue
-      seen.add(combo)
-      const header = {
-        bg1Tileset: h[1] ?? 0, bg2Tileset: h[3] ?? 0, bg3Tileset: h[5] ?? 0, spriteTileset: h[7] ?? 0,
-        bgColor: h[0] ?? 0, bg1Palette: h[2] ?? 0, bg2Palette: h[4] ?? 0, bg3Palette: h[6] ?? 0,
-        spritePalette: h[8] ?? 0, yoshiColor: 0, isWorld6: isWorld6Record(lvlMap, rec), levelMode: h[9] ?? 0
-      }
+    for (const header of distinctSceneHeaders()) {
       const manifest: GfxFileEntry[] = []
       try { loadLevelGfx(rom, symbols, header as never, new Uint8Array(0x10000), manifest) } catch { continue }
       for (const e of manifest) {

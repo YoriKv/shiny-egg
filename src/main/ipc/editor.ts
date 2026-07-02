@@ -21,6 +21,8 @@ import { importGraphicsFolder } from '../graphics-folder-io'
 import { addRegionExportFolder, listRegionExportFolders, removeRegionExportFolder } from '../region-exports'
 import { asepriteInfo, openInAseprite } from '../aseprite-app'
 import { openInM1te } from '../m1te-app'
+import { resolveYychrExe, openInYychr } from '../yychr-app'
+import { listYychrFiles } from '../gfx-yychr-io'
 import { updateSettings } from '../settings'
 import { basename, join } from 'node:path'
 import { loadMap16Block, saveMap16Block, resetMap16Block, listMap16BlockEdits } from '../map16-edits'
@@ -74,6 +76,8 @@ import type {
   GfxFileRole,
   ImportGraphicsResult,
   LocateAsepriteResult,
+  LocateYychrResult,
+  YychrExportFile,
   AsepriteInfo,
   Map16BlockPreview,
   Map16SubTileEdit,
@@ -282,6 +286,27 @@ export function registerEditorIpc(): void {
   })
   // Open a single exported file (image) in Aseprite (the "Auto-Open Exports" toggle).
   ipcMain.handle('aseprite:open', async (_event, dir: string, file: string): Promise<boolean> => openInAseprite(join(dir, file)))
+  // "Locate YY-CHR" (Graphics panel): the saved exe (settings-only — YY-CHR is
+  // portable, no install dir to probe), a picker that persists it, and a per-sheet
+  // launcher (`yychr.exe <file>` — the extension auto-selects the format).
+  ipcMain.handle('yychr:getExe', async (): Promise<string | null> => resolveYychrExe())
+  ipcMain.handle('yychr:locate', async (): Promise<LocateYychrResult> => {
+    const win = BrowserWindow.getFocusedWindow()
+    const opts: Electron.OpenDialogOptions = { title: 'Locate YY-CHR', properties: ['openFile'] }
+    if (process.platform === 'win32') opts.filters = [{ name: 'YY-CHR', extensions: ['exe'] }]
+    const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false }
+    const p = picked.filePaths[0]!
+    if (!/yy.?chr/i.test(basename(p))) {
+      return { ok: false, error: `Select the YY-CHR executable (got ${basename(p)}).` }
+    }
+    updateSettings({ yychrPath: p })
+    return { ok: true, path: p }
+  })
+  ipcMain.handle('yychr:open', async (_event, dir: string, file: string): Promise<boolean> => openInYychr(join(dir, file)))
+  // The YY-CHR sheets in an export folder (manifest-driven), for the panel's
+  // clickable "open in YY-CHR" list under each tracked folder.
+  ipcMain.handle('editor:listYychrFiles', async (_event, dir: string): Promise<YychrExportFile[]> => listYychrFiles(dir))
   // Open an exported .M1 session in the bundled M1TE editor, straight to its BG layer
   // (the "Auto-Open Exports" toggle for the M1TE2 export). Windows-native or via Wine.
   ipcMain.handle('m1te:open', async (_event, dir: string, file: string, bg?: 1 | 2 | 3): Promise<boolean> => openInM1te(join(dir, file), bg))

@@ -21,10 +21,12 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   push(r.mapTerrainImported, 'overworld map')
   push(r.glyphImported, 'glyph')
   push(r.fontImported, 'font/picture sheet')
+  push(r.yychrImported, 'YY-CHR sheet')
   if (r.logoImported > 0) log.push('title logo changed')
   if (r.islandImported > 0) log.push(`title island changed${r.islandNewTiles > 0 ? ` (${r.islandNewTiles} new tile${r.islandNewTiles === 1 ? '' : 's'})` : ''}`)
   if (r.sceneryImported > 0) log.push('title scenery changed')
   if (r.sceneImported > 0) log.push('storybook scene changed')
+  push(r.bonusImported, 'bonus-game screen')
   push(r.paletteImported, 'screen palette color')
   if (r.skipped > 0 || r.imported > 0) log.push(`${r.skipped} unchanged`)
 
@@ -34,6 +36,7 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   // They're advisories, not failures — keep them out of `errors` so they render
   // amber (warning), not red. See the renderer's two log channels in GraphicsPanel.
   const warnings: string[] = []
+  if (r.yychrPadEdited > 0) warnings.push(`${r.yychrPadEdited} YY-CHR sheet${r.yychrPadEdited === 1 ? '' : 's'} had edits past the sheet's end (bank padding) — those pixels were ignored.`)
   if (r.spritePropagated > 0) warnings.push(`${r.spritePropagated} other sprite${r.spritePropagated === 1 ? '' : 's'} share edited tiles and also changed.`)
   if (r.glyphShared > 0) warnings.push(`${r.glyphShared} other sprite${r.glyphShared === 1 ? '' : 's'} share an edited glyph.`)
   if (r.islandSharedCells > 0) warnings.push(`Island tiles are shared — your edit also changed ${r.islandSharedCells} other island cell${r.islandSharedCells === 1 ? '' : 's'}.`)
@@ -41,7 +44,7 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   if (r.paletteImported > 0) warnings.push('Screen-palette color edits write to the shared master palette blob — a color also used by another screen or level changes there too.')
 
   const changed = r.imported + r.spriteImported + r.iconImported +
-    r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.sceneImported + r.glyphImported + r.fontImported + r.paletteImported
+    r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.sceneImported + r.bonusImported + r.glyphImported + r.fontImported + r.yychrImported + r.paletteImported
   return { log, errors, warnings, changed, paletteChanged: r.paletteImported }
 }
 

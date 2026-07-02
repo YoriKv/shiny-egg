@@ -30,8 +30,8 @@ export function frameworkWorkRoot(): string {
 }
 
 // Platform-correct asar binary in the work root (asar.exe on Windows, asar on
-// Linux/macOS). Only the matching binary is shipped per platform (see
-// electron-builder.yml's per-platform extraResources).
+// Linux, asar-macos on macOS). Only the matching binary is shipped per platform
+// (see electron-builder.yml's per-platform extraResources).
 export function asarBinPath(): string {
   return join(frameworkWorkRoot(), asarBinName())
 }

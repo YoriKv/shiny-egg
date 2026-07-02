@@ -75,7 +75,7 @@ const UNIVERSAL_ANIM_PALETTE_ROW: Record<number, number> = {
 const animSlotPaletteRow = (vramByteOffset: number, bg1Row: number): number =>
   UNIVERSAL_ANIM_PALETTE_ROW[vramByteOffset] ?? bg1Row;
 
-interface RenderHeader extends GfxHeader, PaletteHeader {
+export interface RenderHeader extends GfxHeader, PaletteHeader {
   animationTileset?: number;
   levelMode?: number;
   /** header[11] animation-palette mode — flags BG3 palette-cycle levels. */
@@ -763,4 +763,91 @@ export function exportLevelGfxPngs(
     });
   }
   return out;
+}
+
+/** One level-loaded gfx file's classification + palette context, WITHOUT a rendered
+ *  PNG — the YY-CHR export (gfx-yychr.ts) writes raw CHR bytes, so it needs only
+ *  what colors/organizes them. Same walk + inference as {@link exportLevelGfxPngs}
+ *  (dedup by format/fileId, dpSlot-fixed layer, BG2/BG3 per-tile rows). */
+export interface LevelGfxFileInfo {
+  fileId: number;
+  format: 'lz2' | 'lz16';
+  bpp: 2 | 4;
+  role: GfxRole;
+  sizeBytes: number;
+  rowCount?: number;
+  /** The single CGRAM row a paletteless preview shows this file in (sprites:
+   *  8 + spritePaletteRow). Ignored when `perTile` is present. */
+  paletteRow: number;
+  isSprite: boolean;
+  /** BG2/BG3: per-tile sub-palette rows (tileSub indexes subPalettesRgb — 16 RGB
+   *  colors per sub for 4bpp BG2, 4 for 2bpp BG3, sub 0 = the layer's primary). */
+  perTile?: { tileSub: number[]; subPalettesRgb: number[][] };
+}
+
+/** Collect every chunk-list gfx file `header`'s scene loads, with the palette
+ *  context the YY-CHR export's `.pal`/`.col` sidecars need. `cgram` is the level's
+ *  512-byte CGRAM (BGR-15 LE) for the flat-row files. */
+export function collectLevelGfxInfo(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  header: RenderHeader,
+  opts: { spritePaletteRow?: number; gfxOverride?: ReadonlyMap<string, Uint8Array> } = {}
+): { entries: LevelGfxFileInfo[]; cgram: Uint8Array } {
+  const spritePaletteRow = Math.max(0, Math.min(7, opts.spritePaletteRow ?? 0));
+  const vram = new Uint8Array(0x10000);
+  const cgram = new Uint8Array(512);
+  const gfxManifest: GfxFileEntry[] = [];
+  loadLevelGfx(rom, symbols, header, vram, gfxManifest, opts.gfxOverride);
+  loadLevelPalettes(rom, symbols, header, cgram);
+  const regs = loadSceneRegs(rom, symbols, header.levelMode ?? 0);
+  const bgRows = bgPaletteBaseRows(rom, symbols, header.levelMode ?? 0);
+
+  const out: LevelGfxFileInfo[] = [];
+  const seen = new Set<string>();
+  let bg3Ctx: PerTilePaletteCtx | null = null;
+  let bg2Ctx: PerTilePaletteCtx | null = null;
+  for (const entry of gfxManifest) {
+    const key = `${entry.format}/${entry.fileId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const params = inferRenderParams(entry, regs.bg3CharAddr, bgRows);
+    const isSprite = params.layer === 'Sprite';
+    const rowCount = entry.format === 'lz16' ? entry.sizeBytes / 512 : undefined;
+
+    const perTileCtx =
+      params.layer === 'BG3'
+        ? (bg3Ctx ??= computePerTilePalette(rom, symbols, header, cgram, {
+            name: 'BG3', bpp: 2, baseRows: [bgRows.bg3, bgRows.bg3 + 1, bgRows.bg3 + 2, bgRows.bg3 + 3]
+          }))
+        : params.layer === 'BG2'
+          ? (bg2Ctx ??= computePerTilePalette(rom, symbols, header, cgram, {
+              name: 'BG2', bpp: 4, baseRows: [bgRows.bg2, bgRows.bg2 + 1]
+            }))
+          : null;
+    let perTile: LevelGfxFileInfo['perTile'];
+    if (perTileCtx) {
+      const tileCount = Math.ceil(entry.sizeBytes / perTileCtx.tileBytes);
+      const tileSub: number[] = [];
+      for (let t = 0; t < tileCount; t++) {
+        const vramByte = (entry.vramByteOffset + t * perTileCtx.tileBytes) & 0xffff;
+        tileSub.push(perTileCtx.subByVramByte.get(vramByte) ?? 0);
+      }
+      perTile = { tileSub, subPalettesRgb: perTileCtx.subPalettesRgb };
+    }
+
+    out.push({
+      fileId: entry.fileId,
+      format: entry.format,
+      bpp: params.bpp,
+      role: classifyGfxRole(entry, params.layer),
+      sizeBytes: entry.sizeBytes,
+      rowCount,
+      paletteRow: isSprite ? 8 + spritePaletteRow : params.paletteRow,
+      isSprite,
+      perTile
+    });
+  }
+  return { entries: out, cgram };
 }

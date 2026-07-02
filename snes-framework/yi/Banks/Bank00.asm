@@ -5292,6 +5292,20 @@ CODE_00B582:
 	PLY
 	RTS
 
+;-------------------------------------------------------------------------
+; Mode-7 special path of CODE_decompress_lc_lz2: every LZ2 file ID >= $B1
+; lands here (CMP #$B1 / BCS above). Routes through DATA_00B601 by ID:
+;   $B9/$BA -> entry 0 (mode7_cpc_unpack_chars)          Raphael chars 0-127
+;   $BB/$BC -> entry 1 (mode7_cpc_unpack_chars_palrows)  Raphael chars 128-255
+;   $BD     -> entry 2 (mode7_dma_tilemap)               Raphael 64x64 tilemap
+;   else    -> entry 3 (mode7_cpc_unpack_chars)          e.g. $B1 title island
+; Handlers transform the staged decode ($70:5800) into $7E:7BBE (except the
+; tilemap, DMA'd straight from staging), set $00 = VMAIN value + $02 = DMA
+; params to pick the Mode-7 VRAM byte lane ($2119 high = chars, $2118 low =
+; tilemap), and the doubled length pushed here returns via PLY as DMA size.
+; The five $B9-$BD files + DATA_5FE3EA..E46A palette rows compose Raphael's
+; moon arena (level-mode 9; CODE_load_levelmode_09_settings seeds the IDs).
+;-------------------------------------------------------------------------
 CODE_00B5A7:
 	LDX.w #$0000
 	CMP.b #$B9
@@ -5351,6 +5365,7 @@ DATA_00B601:
 	dw CODE_00B609
 
 CODE_00B609:
+mode7_cpc_unpack_chars:                  ; CPC nibble unpack (2 px/byte, LOW nibble first) -> $7E:7BBE; VMAIN $80 + DMA $1900 ($2119 high lane = Mode-7 chars)
 	LDX.w #$0000
 	LDY.w #$0000
 CODE_00B60F:
@@ -5377,18 +5392,21 @@ CODE_00B60F:
 	RTS
 
 DATA_00B637:
+mode7_raphael_char_palrows_bb:           ; 64 per-char palette-row offsets ($00-$40 = CGRAM rows 0-4) ORed into file $BB's unpacked pixels (chars 128-191)
 	db $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$10,$10,$10,$10,$10,$10
 	db $10,$20,$20,$20,$20,$20,$20,$30,$30,$30,$30,$30,$30,$30,$30,$30
 	db $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
 	db $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
 
 DATA_00B677:
+mode7_raphael_char_palrows_bc:           ; 64 per-char palette-row offsets for file $BC (chars 192-255)
 	db $30,$30,$30,$30,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40
 	db $40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40
 	db $40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40
 	db $40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40,$40
 
 CODE_00B6B7:
+mode7_cpc_unpack_chars_palrows:          ; CPC unpack + OR per-char palette-row offset (32 packed bytes = 1 char) from DATA_00B637 ($BB) / DATA_00B677 ($BC); same char-lane DMA as mode7_cpc_unpack_chars
 	LDA.w #DATA_00B637>>16
 	STA.b $04
 	LDX.w #DATA_00B637
@@ -5434,6 +5452,7 @@ CODE_00B6FC:
 	RTS
 
 CODE_00B70B:
+mode7_dma_tilemap:                       ; NO unpack -- the decoded bytes ARE the Mode-7 tilemap (one byte per cell = char index). VMAIN $00 + DMA $1800 ($2118 low lane); 64 cells per row, dest += $80 words per row, 64 rows = the left half of the 128-wide map ($BD, Raphael)
 	PHB
 	PHK
 	PLB

@@ -5155,6 +5155,11 @@ h3 { margin: 0; }
   margin-bottom: 6px;
 }
 
+/* Stacked locate rows (Aseprite row + the YY-CHR row under it) sit tight. */
+.se-graphics__aseprite + .se-graphics__aseprite {
+  margin-top: -4px;
+}
+
 .se-graphics__aseprite-status {
   font-size: 10px;
   color: var(--ink-2);
