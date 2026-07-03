@@ -19,7 +19,7 @@ import {
 import { asarBinPath, frameworkWorkRoot } from '../framework-paths'
 import { getCurrentProjectId } from '../projects'
 import { buildProject } from '../build-tree'
-import { getBizHawk } from '../bizhawk'
+import { anyEmulatorRunning, stopAllEmulators } from '../emulator/registry'
 import { checkActivePoolBudgets, poolViolationMessage } from '../resources'
 import type { CartIdentification, FrameworkExtractArgs } from '../../shared/ipc-types'
 
@@ -113,12 +113,12 @@ export function registerFrameworkIpc(): void {
       const result = projectId
         ? buildProject({ id: projectId, onProgress })
         : buildRom({ workRoot: frameworkWorkRoot(), asarBin: asarBinPath(), onProgress })
-      // Build produced a new ROM. If BizHawk is already running it's holding the
-      // OLD ROM in memory (no auto-reload). Stop it so the next manual Launch
+      // Build produced a new ROM. If an emulator is already running it's holding
+      // the OLD ROM in memory (no auto-reload). Stop it so the next manual Launch
       // picks up the new file.
-      if (getBizHawk().isRunning()) {
-        win?.webContents.send('framework:progress', 'Stopping BizHawk to release old ROM…')
-        getBizHawk().stop()
+      if (anyEmulatorRunning()) {
+        win?.webContents.send('framework:progress', 'Stopping emulator to release old ROM…')
+        stopAllEmulators()
       }
       return result
     }

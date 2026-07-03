@@ -56,10 +56,18 @@ export interface Settings {
   /** Folder id (under userData/projects) of the project the editor reopens
    *  on launch. Written whenever the user creates or switches projects. */
   lastProjectId?: string
+  /** Which emulator Launch / Test Level drives. Absent ⇒ `'bizhawk'` (the
+   *  original default). Set when the user locates an emulator or switches via
+   *  the toolbar's right-click menu. */
+  emulator?: EmulatorKind
   /** Absolute path to BizHawk's `EmuHawk.exe`, saved via the "Locate BizHawk"
    *  button. Until this is set (or, in dev, the `../bizhawk/EmuHawk.exe`
    *  fallback exists) the toolbar shows Locate instead of Launch / Test Level. */
   bizhawkPath?: string
+  /** Absolute path to the Mesen executable (`Mesen.exe` / `Mesen` / the
+   *  `Mesen.app` bundle on macOS), saved via the "Locate Mesen" button. The
+   *  Mesen twin of {@link bizhawkPath}. */
+  mesenPath?: string
   /** Absolute path to the Aseprite executable, saved via the Graphics panel's
    *  "Locate Aseprite" button (for opening exported `.aseprite` projects). */
   asepritePath?: string
@@ -97,12 +105,85 @@ export interface LocateYychrResult {
   error?: string
 }
 
-/** An exported YY-CHR sheet in a tracked export folder (path relative to the
- *  folder), for the panel's clickable "open in YY-CHR" list — the yychr twin of
- *  {@link M1ExportFile}. `label` is the manifest's description. */
-export interface YychrExportFile {
+// ── The per-project YY-CHR export (the Graphics panel's YY-CHR tab) ──────────
+// Unlike the dialog-picked extract folders, the whole-cart yychr track exports to
+// ONE fixed folder inside the active project (`<projectRoot>/yychr/`), and the tab
+// browses it: per-sheet details + on-disk thumbnail + change status + per-file
+// import. Backend: src/main/gfx-yychr-project.ts.
+
+/** A sheet's change status vs its stored manifest checksum: `changed` = edited in
+ *  YY-CHR since the last export OR import (the import write-back advances the
+ *  stored hash); `missing` = deleted on disk (re-export restores it). */
+export type YychrFileStatus = 'unchanged' | 'changed' | 'missing'
+
+/** One exported sheet in the project's yychr folder (manifest row + live status). */
+export interface YychrProjectFile {
+  /** Folder-relative path (e.g. `bg2/f10.2bpp.gb`). */
   file: string
-  label: string
+  /** Top-level category folder (`bg1-tileset`, `sprites`, `gsu`, …) — the tab's grouping. */
+  category: string
+  /** The manifest's human-readable description. */
+  description: string
+  kind: 'chr' | 'raw' | 'chunky' | '1bpp'
+  /** chr only: the compressed blob's codec. */
+  format?: 'lz2' | 'lz16'
+  /** Native depth (display metadata). */
+  bpp: 1 | 2 | 4 | 8
+  /** True blob length (the on-disk file is bank-padded beyond it). */
+  sizeBytes: number
+  /** Whole 8×8 tiles in the sheet (display metadata). */
+  tileCount: number
+  status: YychrFileStatus
+  /** sha256 of the CURRENT on-disk bytes (null when missing) — the renderer's
+   *  thumbnail cache key, so a focus refresh re-fetches only re-edited sheets. */
+  hash: string | null
+}
+
+/** The YY-CHR tab's whole view: `exported` false ⇒ no export in this project yet
+ *  (empty state). `changedCount` = files with unimported YY-CHR edits (drives the
+ *  Import-all badge + the re-export overwrite confirm). */
+export interface YychrProjectState {
+  exported: boolean
+  dir: string
+  changedCount: number
+  files: YychrProjectFile[]
+}
+
+/** Result of exporting the yychr track into the project folder. */
+export type YychrProjectExportResult = { ok: true; count: number; dir: string } | { ok: false; error: string }
+
+/** What happened to one requested sheet during a project-folder import: `imported` =
+ *  edits recorded + applied; `no-op` = bytes equal base ⊕ live (nothing left to
+ *  import — its status still clears); `unchanged`/`missing` = gate-skipped; `error` =
+ *  read/decode/malformed-entry failure (status stays changed). */
+export interface YychrImportFileOutcome {
+  file: string
+  outcome: 'imported' | 'no-op' | 'unchanged' | 'missing' | 'error'
+  error?: string
+}
+
+/** Result of a project-folder yychr import (one file or all). `log`/`errors`/
+ *  `warnings` are display lines in the Graphics panel's log shape. */
+export type YychrProjectImportResult =
+  | { ok: true; dir: string; imported: number; outcomes: YychrImportFileOutcome[]; log: string[]; errors: string[]; warnings: string[] }
+  | { ok: false; error: string }
+
+/** A sheet thumbnail rendered from its ON-DISK bytes (`renderedTiles` <
+ *  `totalTiles` when the preview cap truncated a big sheet). RGBA, blit-ready. */
+export interface YychrThumbnail {
+  rgba: Uint8Array
+  width: number
+  height: number
+  renderedTiles: number
+  totalTiles: number
+}
+
+/** One row of a batch thumbnail fetch (`editor:yychrThumbnails` — the tab fetches
+ *  in chunks, one IPC round trip per chunk instead of one per sheet). `thumb`
+ *  null = no preview (missing file, or the Mode-7 tilemap — not pixel art). */
+export interface YychrThumbnailEntry {
+  file: string
+  thumb: YychrThumbnail | null
 }
 
 /** The located Aseprite, with the version probed from `<exe> --version`. The
@@ -126,10 +207,32 @@ export interface AsepriteInfo {
   supportsTilemap: boolean
 }
 
-/** Result of the `bizhawk:locate` file picker. `ok` + `path` on success;
- *  `ok:false` with no `error` = the user cancelled; `ok:false` + `error` = the
- *  pick was rejected (e.g. not EmuHawk.exe). */
-export interface LocateBizhawkResult {
+// ── Emulator selection (BizHawk / Mesen) ─────────────────────────────────────
+
+/** Which emulator backend Launch / Test Level drives. Both speak the same
+ *  render-harness TCP protocol; they differ only in host binary + launch. */
+export type EmulatorKind = 'bizhawk' | 'mesen'
+
+/** One emulator's located status for the toolbar. `exe` is the resolved path
+ *  (saved location, or a dev fallback), null when not located. */
+export interface EmulatorLocation {
+  kind: EmulatorKind
+  exe: string | null
+  located: boolean
+}
+
+/** The toolbar's single source of truth for the emulator switcher: which
+ *  backend is selected, plus each backend's located status (so it can show two
+ *  side-by-side Locate buttons until the selected one is located). */
+export interface EmulatorState {
+  selected: EmulatorKind
+  bizhawk: EmulatorLocation
+  mesen: EmulatorLocation
+}
+
+/** Result of the `emulator:locate` file picker (same contract as the old
+ *  per-emulator locate results). */
+export interface LocateEmulatorResult {
   ok: boolean
   path?: string
   error?: string

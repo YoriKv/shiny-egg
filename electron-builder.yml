@@ -69,6 +69,10 @@ extraResources:
     to: bizhawk-harness
     filter:
       - '**/*'
+  - from: mesen-harness
+    to: mesen-harness
+    filter:
+      - '**/*'
 win:
   executableName: shiny-egg
   # Default name for win targets; nsis overrides below. The `zip` target packs

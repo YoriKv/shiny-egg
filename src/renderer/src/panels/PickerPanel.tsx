@@ -17,7 +17,7 @@
 // "spawn-only" (obj-metadata `spawnedOnly`, runtime-spawned children).
 
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { createPortal } from 'react-dom'
+import { HoverPreview } from '../lib/hover-preview'
 import { usePickerThumbnails } from '../hooks/usePickerThumbnails'
 import { useWindowedList } from '../hooks/useWindowedList'
 import {
@@ -162,65 +162,11 @@ function Thumb({ img }: { img: RenderImage | undefined }): JSX.Element {
 }
 
 // ── Hover preview ────────────────────────────────────────────────────────────
-// A magnified copy of the hovered row's thumbnail, pinned along the Place
-// panel's LEFT edge (vertically tracking the hovered row). Reuses the same
+// A magnified copy of the hovered row's thumbnail (the shared lib/hover-preview
+// popout — also used by the Graphics panel's YY-CHR browser). Reuses the same
 // full-res RenderImage the row already holds (the row Thumb just CSS-scales it
-// DOWN into a 26×22 letterbox), integer-zoomed UP here for a crisp look.
-// Portaled to <body> so it escapes the list's `overflow` clip and the floating-
-// window z-stack; `pointer-events:none` so it never intercepts the click that
-// arms the entry.
+// DOWN into a 26×22 letterbox), integer-zoomed UP for a crisp look.
 const PREVIEW_FIT = 144 // target box (px) the bitmap is integer-zoomed to fill
-const PREVIEW_GAP = 8 // cursor-to-popup gap (px)
-const PREVIEW_CHROME = 10 // border (1) + padding (4), both sides — matches the CSS
-
-/** Largest integer zoom that fits the bitmap inside the PREVIEW_FIT box (≥1× so
- *  bitmaps already larger than the box still show, just un-zoomed). */
-function previewScale(img: RenderImage): number {
-  return Math.max(1, Math.min(8, Math.floor(PREVIEW_FIT / Math.max(img.width, img.height))))
-}
-
-function HoverPreview({
-  img,
-  y,
-  panel
-}: {
-  img: RenderImage
-  y: number
-  /** The Place panel's viewport rect (the `.se-window` frame), measured at hover
-   *  time so it tracks drag/resize. Null only if the frame can't be found. */
-  panel: DOMRect | null
-}): JSX.Element {
-  const ref = useRef<HTMLCanvasElement>(null)
-  useEffect(() => {
-    const canvas = ref.current
-    if (!canvas) return
-    canvas.width = img.width
-    canvas.height = img.height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.putImageData(new ImageData(new Uint8ClampedArray(img.rgba), img.width, img.height), 0, 0)
-  }, [img])
-
-  const scale = previewScale(img)
-  const w = img.width * scale + PREVIEW_CHROME
-  const h = img.height * scale + PREVIEW_CHROME
-  // Pinned to the panel's LEFT edge: the popup's right edge sits PREVIEW_GAP px
-  // outside it. Flips to the panel's right edge if there's no room on the left,
-  // then clamps fully on-screen. Vertically centred on the cursor's row.
-  const panelLeft = panel?.left ?? 0
-  const panelRight = panel?.right ?? window.innerWidth
-  let left = panelLeft - PREVIEW_GAP - w
-  if (left < 4) left = panelRight + PREVIEW_GAP
-  left = Math.max(4, Math.min(left, window.innerWidth - w - 4))
-  const top = Math.max(4, Math.min(y - h / 2, window.innerHeight - h - 4))
-
-  return createPortal(
-    <div className="se-picker__preview" style={{ left, top }}>
-      <canvas ref={ref} style={{ width: img.width * scale, height: img.height * scale }} />
-    </div>,
-    document.body
-  )
-}
 
 function sameItem(a: PlacementItem, b: PlacementItem): boolean {
   if (a.kind !== b.kind) return false
@@ -591,6 +537,7 @@ export function PickerBody({
           img={preview.img}
           y={preview.y}
           panel={rootRef.current?.closest('.se-window')?.getBoundingClientRect() ?? null}
+          fit={PREVIEW_FIT}
         />
       )}
     </div>

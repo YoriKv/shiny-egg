@@ -1,6 +1,8 @@
-import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
 import type {
   BgRegionRect,
+  EmulatorKind,
+  EmulatorState,
   ExtractFreshness,
   ExtractionState,
   FindInstanceKind,
@@ -32,6 +34,7 @@ import { PanelGroupMenu } from './PanelGroupMenu'
 import { ProjectMenu } from './ProjectMenu'
 import { useEditDocument, useEditSession } from './edit-session/EditSession'
 import type { DocHistory } from './edit-session/useOverlayDocument'
+import { ContextMenu } from './ContextMenu'
 import { DiscardChangesModal } from './DiscardChangesModal'
 import { OverlayUpgradeModal } from './OverlayUpgradeModal'
 import { FloatingWindow } from './FloatingWindow'
@@ -319,7 +322,8 @@ export default function App(): JSX.Element {
     closeWindow,
     openWindow,
     commitWindowPos,
-    commitWindowSize
+    commitWindowSize,
+    resetWindow
   } = useFloatingWindows()
   const [layers, setLayers] = useState<LayerVisibility>(layersStore.load)
   // Level state lives in App so the Save button (toolbar) can read
@@ -1036,6 +1040,21 @@ export default function App(): JSX.Element {
     },
     [windows, openWindow, requestCloseWindow]
   )
+  // Right-click on any panel-toggle button (inline or inside a panel-group
+  // dropdown) → a "Reset Size & Position" menu for that panel's floating window
+  // (the window's own title bar offers the same via FloatingWindow's
+  // onResetLayout). Works whether the window is open or closed — a closed
+  // panel's reset persists for its next open.
+  const [panelMenu, setPanelMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const onPanelContextMenu = useCallback(
+    (e: ReactMouseEvent, kind: PanelKind): void => {
+      const id = windows.find((w) => w.kind === kind)?.id
+      if (!id) return
+      e.preventDefault()
+      setPanelMenu({ x: e.clientX, y: e.clientY, id })
+    },
+    [windows]
+  )
   // Build the PanelGroupMenu entries for a set of window kinds — current open
   // state + a bound toggle for each, in PANEL_TOGGLES order.
   const groupPanels = useCallback(
@@ -1045,9 +1064,10 @@ export default function App(): JSX.Element {
         label: p.label,
         title: p.title,
         open: windows.find((w) => w.kind === p.kind)?.open ?? false,
-        onToggle: () => togglePanel(p.kind)
+        onToggle: () => togglePanel(p.kind),
+        onContextMenu: (e: ReactMouseEvent<HTMLButtonElement>) => onPanelContextMenu(e, p.kind)
       })),
-    [windows, togglePanel]
+    [windows, togglePanel, onPanelContextMenu]
   )
   const onCloseSave = useCallback(async (): Promise<void> => {
     if (!pendingClose) return
@@ -1074,31 +1094,41 @@ export default function App(): JSX.Element {
   }, [pendingClose, closeDocs, closeWindow])
   const onCloseCancel = useCallback(() => setPendingClose(null), [])
 
-  // Resolved EmuHawk.exe path, or null until BizHawk is located. Drives the
-  // toolbar's Launch / Test Level vs "Locate BizHawk" choice. In dev the main
-  // process resolves a `../bizhawk/EmuHawk.exe` fallback, so this is usually
-  // non-null without any action.
-  const [bizhawkExe, setBizhawkExe] = useState<string | null>(null)
-  // Re-query the resolved path. The main process forgets a saved location that's
-  // gone or won't launch (bizhawk.ts), so re-checking after a failed launch (or
-  // at boot) flips the toolbar back to "Locate BizHawk" once the path is stale.
-  const refreshBizhawkExe = useCallback(() => {
-    void window.shinyEgg.bizhawk.getExe().then(setBizhawkExe)
+  // Selected emulator + each backend's located status. Null until the first
+  // getState() resolves. Drives the toolbar's Launch / Test Level vs the two
+  // Locate buttons. In dev the main process resolves `../bizhawk`/`../mesen`
+  // fallbacks, so the selected one is usually located without any action.
+  const [emulatorState, setEmulatorState] = useState<EmulatorState | null>(null)
+  // Re-query selection + located status. The main process forgets a saved
+  // location that's gone or won't launch (bizhawk.ts / mesen.ts), so re-checking
+  // after a failed launch (or at boot) flips the toolbar back to Locate once a
+  // path is stale.
+  const refreshEmulatorState = useCallback(() => {
+    void window.shinyEgg.emulator.getState().then(setEmulatorState)
   }, [])
   useEffect(() => {
-    refreshBizhawkExe()
-  }, [refreshBizhawkExe])
-  // "Locate BizHawk": pick EmuHawk.exe (persisted main-side) and flip the toolbar
-  // to Launch / Test Level. Surfaces a rejected pick (wrong file) to the log.
-  const onLocateBizhawk = useCallback(async () => {
-    try {
-      const r = await window.shinyEgg.bizhawk.locate()
-      if (r.ok && r.path) setBizhawkExe(r.path)
-      else if (r.error) appendLog(`Locate BizHawk: ${r.error}`)
-    } catch (err) {
-      appendLog(`Locate BizHawk: ${(err as Error).message}`)
-    }
-  }, [appendLog])
+    refreshEmulatorState()
+  }, [refreshEmulatorState])
+  // Locate a backend (BizHawk / Mesen): pick its executable (persisted main-side,
+  // which also selects that backend) and flip the toolbar to Launch / Test Level.
+  // Surfaces a rejected pick (wrong file) to the log.
+  const onLocateEmulator = useCallback(
+    async (kind: EmulatorKind) => {
+      const name = kind === 'mesen' ? 'Mesen' : 'BizHawk'
+      try {
+        const r = await window.shinyEgg.emulator.locate(kind)
+        if (r.ok) refreshEmulatorState()
+        else if (r.error) appendLog(`Locate ${name}: ${r.error}`)
+      } catch (err) {
+        appendLog(`Locate ${name}: ${(err as Error).message}`)
+      }
+    },
+    [appendLog, refreshEmulatorState]
+  )
+  // Switch the selected backend (the toolbar's right-click menu).
+  const onSelectEmulator = useCallback((kind: EmulatorKind) => {
+    void window.shinyEgg.emulator.setKind(kind).then(setEmulatorState)
+  }, [])
 
   // Launch / Test Level orchestration (save → build → boot EmuHawk, with the
   // catalog / sub-room warp-chain / orphan-room boot paths + the Set-Spawn
@@ -1116,7 +1146,7 @@ export default function App(): JSX.Element {
     testSpawn,
     testInventory,
     appendLog,
-    refreshBizhawkExe
+    refreshEmulatorState
   })
 
   // Subscribe App to catalog mutations so a post-extract refresh propagates
@@ -1516,8 +1546,9 @@ export default function App(): JSX.Element {
             <BizHawkMenu
               selectedLevelRecordId={selectedLevelRecordId}
               busy={emuBusy}
-              located={bizhawkExe !== null}
-              onLocate={onLocateBizhawk}
+              emulatorState={emulatorState}
+              onLocate={onLocateEmulator}
+              onSelectKind={onSelectEmulator}
               onLaunch={handleLaunch}
               onTestLevel={handleTestLevel}
               testInventory={testInventory}
@@ -1535,6 +1566,7 @@ export default function App(): JSX.Element {
                   type="button"
                   className={`se-tool se-tool--reopen${open ? ' is-open' : ''}`}
                   onClick={() => togglePanel(p.kind)}
+                  onContextMenu={(e) => onPanelContextMenu(e, p.kind)}
                   title={open ? `Close ${p.title}` : `Open ${p.title}`}
                 >
                   {p.label}
@@ -1619,6 +1651,8 @@ export default function App(): JSX.Element {
               onClose={() => requestCloseWindow(w)}
               onPositionCommit={(pos) => commitWindowPos(w.id, pos)}
               onSizeCommit={(size) => commitWindowSize(w.id, size)}
+              resetRev={w.resetRev}
+              onResetLayout={() => resetWindow(w.id)}
               help={panelHelp(w.kind)}
             >
               {w.kind === 'tiles' ? (
@@ -1784,6 +1818,14 @@ export default function App(): JSX.Element {
               </div>
             </div>
           </div>
+        )}
+        {panelMenu && (
+          <ContextMenu
+            x={panelMenu.x}
+            y={panelMenu.y}
+            items={[{ label: 'Reset Size & Position', onClick: () => resetWindow(panelMenu.id) }]}
+            onClose={() => setPanelMenu(null)}
+          />
         )}
         <DiscardChangesModal
           open={pendingClose !== null}

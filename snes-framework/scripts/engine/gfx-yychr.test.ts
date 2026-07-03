@@ -21,7 +21,8 @@ import {
   yychrPalName,
   yychrColName,
   yychrAdfName,
-  buildIdentityAdf
+  buildIdentityAdf,
+  renderYychrSheetRgba
 } from './gfx-yychr.ts';
 
 let failures = 0;
@@ -188,6 +189,72 @@ console.log('\n=== identity .adf (the Col-mode null-ADF crash guard) ===');
   assert(adf[0] === 'l'.charCodeAt(0), 'name at offset 0');
   assert(adf[31] === 0, 'name byte 31 clear ($FF there = blank-char-$FF mode)');
   assert(Array.from({ length: 256 }, (_, i) => adf[32 + i] === i).every(Boolean), 'pattern is the identity remap (display no-op)');
+}
+
+console.log('\n=== renderYychrSheetRgba (thumbnail rasterizer) ===');
+{
+  // Pixel (x, 0)'s RGBA offset in a row-0 check.
+  const px = (r: ReturnType<typeof renderYychrSheetRgba>, x: number): number[] =>
+    Array.from(r.rgba.subarray(x * 4, x * 4 + 4));
+
+  // 4bpp planar + .pal: pixel (0,0) idx 5 (planes 0+2), everything else idx 0.
+  const sheet4 = new Uint8Array(8192);
+  sheet4[0] = 0x80; // plane 0, row 0, bit 7
+  sheet4[16] = 0x80; // plane 2, row 0, bit 7
+  const pal = new Uint8Array(512);
+  pal[10] = 0x1f; // slot 5 = pure red (R bits 0-4)
+  const r4 = renderYychrSheetRgba(sheet4, { bpp: 4, sizeBytes: 8192 }, pal);
+  assert(r4.width === 128 && r4.height === 128, '4bpp bank renders 128×128 (16 tiles wide)');
+  assert(r4.totalTiles === 256 && r4.renderedTiles === 256, 'one 4bpp bank = 256 tiles');
+  assert(px(r4, 0).join() === '255,0,0,255', '4bpp pixel (0,0) idx 5 → .pal slot 5 (red, expand-scaled)');
+  assert(px(r4, 1).join() === '0,0,0,255', 'idx 0 → .pal slot 0, rendered OPAQUE (as YY-CHR does)');
+
+  // maxTiles cap: geometry shrinks, totalTiles still reports the full sheet.
+  const capped = renderYychrSheetRgba(sheet4, { bpp: 4, sizeBytes: 8192, maxTiles: 16 }, pal);
+  assert(capped.renderedTiles === 16 && capped.totalTiles === 256, 'maxTiles caps renderedTiles only');
+  assert(capped.width === 128 && capped.height === 8, '16 tiles at 16 wide = one 8-px band');
+
+  // A file truncated on disk renders its whole tiles instead of throwing.
+  const short = renderYychrSheetRgba(new Uint8Array(32), { bpp: 4, sizeBytes: 64 });
+  assert(short.renderedTiles === 1 && short.totalTiles === 2, 'truncated file clamps to whole on-disk tiles');
+
+  // 2bpp + .col: pixel (0,0) idx 3, col group 1 → .pal slot 1*4 + 3 = 7.
+  const sheet2 = new Uint8Array(4096);
+  sheet2[0] = 0x80;
+  sheet2[1] = 0x80;
+  const pal2 = new Uint8Array(512);
+  pal2[14] = 0xe0; // slot 7 = pure green (G bits 5-9)
+  pal2[15] = 0x03;
+  const col = buildColSidecar([1], 2, 4096);
+  const r2 = renderYychrSheetRgba(sheet2, { bpp: 2, sizeBytes: 4096 }, pal2, col);
+  assert(px(r2, 0).join() === '0,255,0,255', '2bpp idx 3 + col group 1 → slot 7 (ColorNum 4 stride)');
+
+  // CPC (4BPP GBA): byte 0x21 → pixel 0 = LOW nibble (1), pixel 1 = high (2).
+  const cpc = new Uint8Array(8192);
+  cpc[0] = 0x21;
+  const palCpc = new Uint8Array(512);
+  palCpc[2] = 0x1f; // slot 1 = red
+  palCpc[4] = 0xe0; // slot 2 = green
+  palCpc[5] = 0x03;
+  const rc = renderYychrSheetRgba(cpc, { bpp: 4, cpc: true, sizeBytes: 8192 }, palCpc);
+  assert(px(rc, 0).join() === '255,0,0,255', 'CPC pixel 0 = LOW nibble');
+  assert(px(rc, 1).join() === '0,255,0,255', 'CPC pixel 1 = high nibble');
+
+  // 1bpp, no .pal: bit 7 = leftmost pixel; black/white ramp.
+  const one = new Uint8Array(2048);
+  one[0] = 0x80;
+  const r1 = renderYychrSheetRgba(one, { bpp: 1, sizeBytes: 2048 });
+  assert(px(r1, 0).join() === '255,255,255,255', '1bpp set bit → white');
+  assert(px(r1, 1).join() === '0,0,0,255', '1bpp clear bit → black');
+
+  // No .pal on a 4bpp sheet → grayscale ramp (idx 15 = white).
+  const gray = new Uint8Array(8192);
+  gray[0] = 0x80;
+  gray[1] = 0x80;
+  gray[16] = 0x80;
+  gray[17] = 0x80; // idx 15 at (0,0)
+  const rg = renderYychrSheetRgba(gray, { bpp: 4, sizeBytes: 8192 });
+  assert(px(rg, 0).join() === '255,255,255,255', 'no .pal: idx 15 → white on the grayscale ramp');
 }
 
 if (failures > 0) {

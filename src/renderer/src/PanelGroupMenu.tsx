@@ -1,4 +1,4 @@
-import { type JSX } from 'react'
+import { type JSX, type MouseEvent as ReactMouseEvent } from 'react'
 import { useDropdown } from './hooks/useDropdown'
 
 export interface PanelEntry {
@@ -11,6 +11,8 @@ export interface PanelEntry {
   open: boolean
   /** Toggle the panel open/closed (App binds the open/close-with-dirty-guard). */
   onToggle: () => void
+  /** Right-click on the row — App binds the "Reset Size & Position" menu. */
+  onContextMenu?: (e: ReactMouseEvent<HTMLButtonElement>) => void
 }
 
 export interface PanelGroupMenuProps {
@@ -56,6 +58,7 @@ export function PanelGroupMenu({ label, panels }: PanelGroupMenuProps): JSX.Elem
               type="button"
               className={`se-menuitem se-panelgroup__item${p.open ? ' is-open' : ''}`}
               onClick={p.onToggle}
+              onContextMenu={p.onContextMenu}
               title={p.open ? `Close ${p.title}` : `Open ${p.title}`}
             >
               <span>{p.label}</span>

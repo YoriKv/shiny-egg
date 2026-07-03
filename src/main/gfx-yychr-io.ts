@@ -32,7 +32,7 @@
 // orphaned lz16-in-lz2-slot blobs ($2C-$2F) export view-only
 // (ORPHANED_LZ16_IN_LZ2_SLOTS).
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SymbolMap } from 'snes-framework/symbol-map'
 import { lz2, lz16, probeLz16RowCount } from 'snes-framework/decompress'
@@ -63,6 +63,7 @@ import { gfxLiveEdits } from './gfx-live-cache'
 import { liveTiles, decodeGfxFile } from './gfx-import-utils'
 import type { GfxImportReconciler } from './gfx-import-reconcile'
 import type { YychrManifestEntry } from './gfx-manifest'
+import type { YychrImportFileOutcome } from '../shared/ipc-types'
 import { distinctSceneHeaders, fontSheetBinFiles, readRawChrOverlayFirst } from './resources'
 import { frameworkWorkRoot } from './framework-paths'
 
@@ -554,29 +555,6 @@ export function yychrReadme(notes: string[]): string {
   ].join('\n')
 }
 
-/** The YY-CHR sheets in an export folder, for the panel's clickable "open in
- *  YY-CHR" list under each tracked folder — the yychr twin of listM1Files. Reads
- *  the folder's (and its immediate subfolders') gfx-manifest yychr sections, so the
- *  list is manifest-driven, not an extension scan. Paths are `dir`-relative. */
-export function listYychrFiles(dir: string): { file: string; label: string }[] {
-  const out: { file: string; label: string }[] = []
-  const scan = (sub: string): void => {
-    const manifestPath = join(dir, sub, 'gfx-manifest.json')
-    if (!existsSync(manifestPath)) return
-    try {
-      const { yychr } = JSON.parse(readFileSync(manifestPath, 'utf8')) as { yychr?: YychrManifestEntry[] | null }
-      for (const e of yychr ?? []) out.push({ file: sub ? join(sub, e.file) : e.file, label: e.description })
-    } catch { /* unreadable manifest → skip */ }
-  }
-  scan('')
-  try {
-    for (const name of readdirSync(dir, { withFileTypes: true })) {
-      if (name.isDirectory()) scan(name.name)
-    }
-  } catch { /* unreadable dir → whatever scan('') found */ }
-  return out.sort((a, b) => a.file.localeCompare(b.file))
-}
-
 /** Invert a re-tiled 1bpp sheet back to its NATIVE record layout (glyph records
  *  or the flat bitmap) — the inverse of the export's `bitmap1bppToTiles` (∘
  *  `glyphs1bppToBitmap`). `sizeBytes` bounds the native length (drops any
@@ -597,6 +575,9 @@ export interface YychrImportCounts {
   /** Files where nonzero bytes sat past the sheet's true end (painted padding — dropped). */
   padEdited: number
   errors: string[]
+  /** Per-entry outcome, in manifest order — the YY-CHR tab's per-file feedback and
+   *  the checksum write-back set (`imported`/`no-op` advance the stored hash). */
+  outcomes: YychrImportFileOutcome[]
 }
 
 /**
@@ -613,12 +594,12 @@ export function importYychrEntries(
   rom: Uint8Array,
   symbols: SymbolMap
 ): YychrImportCounts {
-  const counts: YychrImportCounts = { imported: 0, skipped: 0, missing: 0, padEdited: 0, errors: [] }
+  const counts: YychrImportCounts = { imported: 0, skipped: 0, missing: 0, padEdited: 0, errors: [], outcomes: [] }
   const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
   for (const e of entries) {
     const gv = gate(e.file)
-    if (gv === 'missing') { counts.missing++; continue }
-    if (gv === 'unchanged') { counts.skipped++; continue }
+    if (gv === 'missing') { counts.missing++; counts.outcomes.push({ file: e.file, outcome: 'missing' }); continue }
+    if (gv === 'unchanged') { counts.skipped++; counts.outcomes.push({ file: e.file, outcome: 'unchanged' }); continue }
     try {
       const raw = new Uint8Array(readFileSync(join(dir, e.file)))
       if (raw.length < e.sizeBytes) throw new Error(`file is ${raw.length} bytes, expected ≥ ${e.sizeBytes} (was it truncated?)`)
@@ -626,7 +607,9 @@ export function importYychrEntries(
       if (padEdited) counts.padEdited++
       if (e.kind === 'chr' && e.format !== undefined && e.fileId !== undefined) {
         const base = liveTiles(e.format, e.fileId) ?? decodeGfxFile(rom, symbols, e.format, e.fileId, e.sizeBytes, e.rowCount)
-        if (eq(bytes, base)) { counts.skipped++; continue } // unchanged → no overlay
+        // Bytes equal base ⊕ live → no overlay; a 'no-op' outcome (not 'unchanged')
+        // so the checksum write-back still clears the file's changed status.
+        if (eq(bytes, base)) { counts.skipped++; counts.outcomes.push({ file: e.file, outcome: 'no-op' }); continue }
         reconciler.registerManifest([{ format: e.format, fileId: e.fileId, sizeBytes: e.sizeBytes }])
         // Whole-file authoritative, INCLUDING a partial tail tile (recordWholeBlob
         // floors to whole tiles; a blob whose size isn't a tile multiple would
@@ -641,6 +624,7 @@ export function importYychrEntries(
           reconciler.chrTile(e.format, e.fileId, whole, bytes.slice(whole * e.tileBytes), e.tileBytes, e.file, role)
         }
         counts.imported++
+        counts.outcomes.push({ file: e.file, outcome: 'imported' })
       } else if ((e.kind === 'raw' || e.kind === 'chunky' || e.kind === '1bpp') && e.binFile) {
         // Diff against overlay-first (base ⊕ existing raw edits — what the export
         // showed), recording only NEW changed runs so a re-import can't revert edits
@@ -664,13 +648,16 @@ export function importYychrEntries(
             changed = true
           }
         }
-        if (changed) counts.imported++
-        else counts.skipped++
+        if (changed) { counts.imported++; counts.outcomes.push({ file: e.file, outcome: 'imported' }) }
+        else { counts.skipped++; counts.outcomes.push({ file: e.file, outcome: 'no-op' }) }
       } else {
         counts.errors.push(`${e.file}: malformed yychr manifest entry.`)
+        counts.outcomes.push({ file: e.file, outcome: 'error', error: 'malformed yychr manifest entry' })
       }
     } catch (err) {
-      counts.errors.push(`${e.file}: ${err instanceof Error ? err.message : String(err)}`)
+      const msg = err instanceof Error ? err.message : String(err)
+      counts.errors.push(`${e.file}: ${msg}`)
+      counts.outcomes.push({ file: e.file, outcome: 'error', error: msg })
     }
   }
   return counts

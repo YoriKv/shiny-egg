@@ -3,6 +3,8 @@
 // (gfx-png-import.ts) READS them back — they're the on-disk format both agree on,
 // so they live here, owned by neither direction.
 
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { type PerTilePalette } from 'snes-framework/render-gfx-files'
 import { type TileRegion } from 'snes-framework/screen-gfx'
 
@@ -281,4 +283,50 @@ export interface YychrManifestEntry {
   glyphW?: number
   glyphH?: number
   cols?: number
+}
+
+/** A folder's gfx-manifest.json narrowed to its yychr view: the sheet rows + the
+ *  checksum map their change-status gate reads. `readYychrManifest` returns it only
+ *  when the manifest actually carries yychr rows. */
+export interface YychrManifestFile {
+  checksums?: GfxManifestChecksums
+  yychr: YychrManifestEntry[]
+}
+
+/** Read `<dir>/gfx-manifest.json`'s yychr section, or null when the manifest is
+ *  missing/unparsable or carries no yychr rows (a PNG-track-only folder). */
+export function readYychrManifest(dir: string): YychrManifestFile | null {
+  try {
+    const parsed = JSON.parse(readFileSync(join(dir, MANIFEST), 'utf8')) as {
+      checksums?: GfxManifestChecksums
+      yychr?: YychrManifestEntry[] | null
+    }
+    if (!Array.isArray(parsed.yychr) || parsed.yychr.length === 0) return null
+    return { checksums: parsed.checksums, yychr: parsed.yychr }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Merge `updates` (artifact path → sha256) into `<dir>/gfx-manifest.json`'s
+ * `checksums` map, preserving every other key. The import write-back: after a
+ * successful yychr import the file's stored checksum advances to its current
+ * on-disk hash, so "changed" means "changed since export OR last import" instead
+ * of sticking forever. Atomic tmp+rename; returns false when the manifest can't
+ * be read or written (caller surfaces a warning, statuses just stay 'changed').
+ */
+export function updateManifestChecksums(dir: string, updates: Record<string, string>): boolean {
+  if (Object.keys(updates).length === 0) return true
+  const path = join(dir, MANIFEST)
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { checksums?: GfxManifestChecksums } & Record<string, unknown>
+    parsed.checksums = { ...(parsed.checksums ?? {}), ...updates }
+    const tmp = `${path}.tmp`
+    writeFileSync(tmp, JSON.stringify(parsed, null, 2))
+    renameSync(tmp, path)
+    return true
+  } catch {
+    return false
+  }
 }

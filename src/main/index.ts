@@ -6,10 +6,10 @@ import { join } from 'node:path'
 import icon from '../../resources/icon.png?asset'
 import { ensureFrameworkWorkRoot } from './framework-paths'
 import { backupOnQuit, startAutoBackup, stopAutoBackup } from './backup'
-import { getBizHawk } from './bizhawk'
+import { stopAllEmulators } from './emulator/registry'
 import { registerFrameworkIpc } from './ipc/framework'
 import { registerEditorIpc } from './ipc/editor'
-import { registerBizHawkIpc } from './ipc/bizhawk'
+import { registerEmulatorIpc } from './ipc/emulator'
 import { registerLevelsIpc } from './ipc/levels'
 import { registerRenderIpc } from './ipc/render'
 import { registerSettingsIpc } from './ipc/settings'
@@ -93,7 +93,7 @@ function createWindow(): void {
 
 registerFrameworkIpc()
 registerEditorIpc()
-registerBizHawkIpc()
+registerEmulatorIpc()
 registerLevelsIpc()
 registerRenderIpc()
 registerSettingsIpc()
@@ -114,8 +114,8 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  // Tear down BizHawk before quitting so we don't leak an EmuHawk process.
-  getBizHawk().stop()
+  // Tear down the emulator(s) before quitting so we don't leak a child process.
+  stopAllEmulators()
   if (process.platform !== 'darwin') app.quit()
 })
 
@@ -126,7 +126,7 @@ app.on('window-all-closed', () => {
 let quitBackupDone = false
 app.on('before-quit', (event) => {
   stopAutoBackup()
-  getBizHawk().stop()
+  stopAllEmulators()
   if (quitBackupDone) return
   event.preventDefault()
   void backupOnQuit().finally(() => {

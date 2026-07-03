@@ -53,6 +53,38 @@ export function devBizhawkPath(): string | null {
   return existsSync(p) ? p : null
 }
 
+// Platform name of the Mesen executable, for the locate dialog + dev fallback:
+// `Mesen.exe` on Windows, `Mesen` on Linux, the `Mesen.app` bundle on macOS.
+// Mesen itself is not bundled. (On macOS the user picks the `.app`; we spawn its
+// inner Mach-O via mesenLaunchBinary.)
+export function mesenExeName(): string {
+  if (process.platform === 'win32') return 'Mesen.exe'
+  if (process.platform === 'darwin') return 'Mesen.app'
+  return 'Mesen'
+}
+
+// The actually-spawnable binary for a located Mesen. On macOS a `.app` is a
+// directory bundle — spawn its inner Mach-O (`Contents/MacOS/Mesen`). Elsewhere
+// (and for an already-inner path) the picked path is the binary. Used at locate
+// time (we persist the resolved binary) and by the dev fallback, so the rest of
+// the app treats `mesenPath` as a normal executable path, exactly like
+// `bizhawkPath`.
+export function mesenLaunchBinary(pickedPath: string): string {
+  if (pickedPath.endsWith('.app')) return join(pickedPath, 'Contents', 'MacOS', 'Mesen')
+  return pickedPath
+}
+
+// Dev-only convenience: Mesen sitting as a sibling of the project root
+// (`<projectRoot>/../mesen/<Mesen exe>`). Mirror of devBizhawkPath. Returns the
+// spawnable binary (inner Mach-O on macOS), null in packaged builds or when
+// absent.
+export function devMesenPath(): string | null {
+  if (app.isPackaged) return null
+  const p = join(frameworkSourceRoot(), '..', '..', 'mesen', mesenExeName())
+  if (!existsSync(p)) return null
+  return mesenLaunchBinary(p)
+}
+
 // ── Per-project storage ───────────────────────────────────────────────────
 // User edits live in their own project folder under userData, separate from
 // the pristine base (frameworkWorkRoot).

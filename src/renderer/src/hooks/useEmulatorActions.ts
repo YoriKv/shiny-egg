@@ -36,10 +36,10 @@ export interface EmulatorActionsParams {
   /** Items to seed into Yoshi's egg trail on Test Level boot (toolbar dropdown). */
   testInventory: TestInventory
   appendLog: (line: string) => void
-  /** Re-query the located EmuHawk.exe path. Called after a failed launch: the
-   *  main process forgets a saved-but-unlaunchable path, so this flips the
-   *  toolbar back to "Locate BizHawk" for re-pointing. */
-  refreshBizhawkExe: () => void
+  /** Re-query the emulator selection + located status. Called after a failed
+   *  launch: the main process forgets a saved-but-unlaunchable path, so this
+   *  flips the toolbar back to Locate for re-pointing. */
+  refreshEmulatorState: () => void
 }
 
 export interface EmulatorActionsApi {
@@ -68,7 +68,7 @@ export function useEmulatorActions({
   testSpawn,
   testInventory,
   appendLog,
-  refreshBizhawkExe
+  refreshEmulatorState
 }: EmulatorActionsParams): EmulatorActionsApi {
   const [emuBusy, setEmuBusy] = useState<boolean>(false)
   const emuBusyRef = useRef<boolean>(false)
@@ -136,12 +136,12 @@ export function useEmulatorActions({
         return
       }
       if (!(await saveAndBuildIfNeeded(append, 'Test Level'))) return
-      append('Test Level: ensuring EmuHawk…')
+      append('Test Level: ensuring emulator…')
       try {
         await window.shinyEgg.bizhawk.launch()
       } catch (err) {
         append(`Test Level: launch failed — ${(err as Error).message}`)
-        refreshBizhawkExe()
+        refreshEmulatorState()
         return
       }
       // Three paths into the cart:
@@ -268,7 +268,7 @@ export function useEmulatorActions({
       blockers,
       testSpawn,
       testInventory,
-      refreshBizhawkExe
+      refreshEmulatorState
     ]
   )
 
@@ -283,10 +283,10 @@ export function useEmulatorActions({
         await window.shinyEgg.bizhawk.launch()
       } catch (err) {
         append(`Launch: failed — ${(err as Error).message}`)
-        refreshBizhawkExe()
+        refreshEmulatorState()
       }
     },
-    [saveAndBuildIfNeeded, refreshBizhawkExe]
+    [saveAndBuildIfNeeded, refreshEmulatorState]
   )
 
   // Emulator-action wrappers shared by the toolbar buttons (BizHawkMenu) and the

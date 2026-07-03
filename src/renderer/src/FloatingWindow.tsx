@@ -7,6 +7,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode
 } from 'react'
+import { createPortal } from 'react-dom'
+import { ContextMenu } from './ContextMenu'
 import { HelpDialog } from './HelpDialog'
 
 export interface FloatingWindowSize {
@@ -30,6 +32,13 @@ export interface FloatingWindowProps {
   onPositionCommit?: (pos: { x: number; y: number }) => void
   /** Fires once at the end of a resize with the window's final size. */
   onSizeCommit?: (size: FloatingWindowSize) => void
+  /** Bumped when the owner resets this window's layout: re-syncs the local
+   *  drag/resize state to the (just-reset) initialPos/width/initialHeight
+   *  WITHOUT remounting — a remount would drop the panel body's state. */
+  resetRev?: number
+  /** When set, right-clicking the title bar offers "Reset Size & Position"
+   *  (the owner restores the defaults, then bumps `resetRev`). */
+  onResetLayout?: () => void
   /** Optional help content. When set, a (?) button appears next to the title
    *  and opens a panel-specific HelpDialog. */
   help?: ReactNode
@@ -49,11 +58,15 @@ export function FloatingWindow({
   onClose,
   onPositionCommit,
   onSizeCommit,
+  resetRev,
+  onResetLayout,
   help,
   children
 }: FloatingWindowProps): JSX.Element {
   const [pos, setPos] = useState(initialPos)
   const [helpOpen, setHelpOpen] = useState(false)
+  // The title bar's right-click menu ("Reset Size & Position"), at cursor coords.
+  const [barMenu, setBarMenu] = useState<{ x: number; y: number } | null>(null)
   // `size === null` means "auto-height" (body content drives the height,
   // pre-resize state). Once the user drags the corner we commit to an
   // explicit pixel size and stop auto-sizing.
@@ -69,6 +82,17 @@ export function FloatingWindow({
   posRef.current = pos
   const sizeRef = useRef<FloatingWindowSize | null>(size)
   sizeRef.current = size
+
+  // "Reset Size & Position": the owner has already restored the default
+  // initialPos/width/initialHeight; a bumped resetRev re-syncs the local
+  // drag/resize state to them (deliberately NOT keyed on the props themselves —
+  // they also change on every ordinary drag/resize commit).
+  useEffect(() => {
+    if (resetRev === undefined) return
+    setPos(initialPos)
+    setSize(initialHeight != null ? { width, height: initialHeight } : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetRev])
 
   // --- drag --------------------------------------------------------------
   useEffect(() => {
@@ -114,6 +138,7 @@ export function FloatingWindow({
 
   const beginDrag = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return // right-click = the bar's context menu, not a drag
       if ((e.target as HTMLElement).closest('.se-window__close, .se-window__help')) return
       onFocus()
       const windowEl = e.currentTarget.parentElement as HTMLDivElement
@@ -160,7 +185,15 @@ export function FloatingWindow({
         style={{ left: pos.x, top: pos.y, width: cssWidth, height: cssHeight, zIndex }}
         onMouseDown={onFocus}
       >
-        <div className="se-window__bar" onMouseDown={beginDrag}>
+        <div
+          className="se-window__bar"
+          onMouseDown={beginDrag}
+          onContextMenu={(e) => {
+            if (!onResetLayout) return
+            e.preventDefault()
+            setBarMenu({ x: e.clientX, y: e.clientY })
+          }}
+        >
           <div className="se-window__titlegroup">
             <span className="se-window__title">{title}</span>
             {help != null && (
@@ -215,6 +248,19 @@ export function FloatingWindow({
           {help}
         </HelpDialog>
       )}
+      {barMenu != null &&
+        onResetLayout != null &&
+        // Portaled to <body>: a fixed menu inside the window would be trapped in
+        // its stacking context, so another (higher-z) window could overlay it.
+        createPortal(
+          <ContextMenu
+            x={barMenu.x}
+            y={barMenu.y}
+            items={[{ label: 'Reset Size & Position', onClick: onResetLayout }]}
+            onClose={() => setBarMenu(null)}
+          />,
+          document.body
+        )}
     </>
   )
 }

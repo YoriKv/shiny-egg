@@ -20,11 +20,16 @@ import type {
   FrameworkExtractArgs,
   LevelRenderRequest,
   LevelTileUsage,
-  LocateBizhawkResult,
+  EmulatorState,
+  EmulatorKind,
+  LocateEmulatorResult,
   LocateAsepriteResult,
   AsepriteInfo,
   LocateYychrResult,
-  YychrExportFile,
+  YychrProjectState,
+  YychrProjectExportResult,
+  YychrProjectImportResult,
+  YychrThumbnailEntry,
   ObjectInfluenceRequest,
   ObjectInstance,
   PaletteCatalog,
@@ -399,7 +404,11 @@ const api = {
     getYychrExe: (): Promise<string | null> => ipcRenderer.invoke('yychr:getExe'),
     locateYychr: (): Promise<LocateYychrResult> => ipcRenderer.invoke('yychr:locate'),
     openInYychr: (dir: string, file: string): Promise<boolean> => ipcRenderer.invoke('yychr:open', dir, file),
-    listYychrFiles: (dir: string): Promise<YychrExportFile[]> => ipcRenderer.invoke('editor:listYychrFiles', dir),
+    yychrProjectState: (): Promise<YychrProjectState> => ipcRenderer.invoke('editor:yychrProjectState'),
+    yychrExportProject: (): Promise<YychrProjectExportResult> => ipcRenderer.invoke('editor:yychrExportProject'),
+    yychrImportProject: (files: string[] | null): Promise<YychrProjectImportResult> =>
+      ipcRenderer.invoke('editor:yychrImportProject', files),
+    yychrThumbnails: (files: string[]): Promise<YychrThumbnailEntry[]> => ipcRenderer.invoke('editor:yychrThumbnails', files),
     listRegionExports: (): Promise<string[]> => ipcRenderer.invoke('editor:listRegionExports'),
     removeRegionExport: (dir: string): Promise<string[]> => ipcRenderer.invoke('editor:removeRegionExport', dir),
     openRegionFolder: (dir: string): Promise<void> => ipcRenderer.invoke('editor:openRegionFolder', dir),
@@ -475,9 +484,15 @@ const api = {
     ): Promise<CaptureAtResult> =>
       ipcRenderer.invoke('bizhawk:captureAt', x, y),
     launch: (): Promise<void> => ipcRenderer.invoke('bizhawk:launch'),
-    stop: (): Promise<void> => ipcRenderer.invoke('bizhawk:stop'),
-    getExe: (): Promise<string | null> => ipcRenderer.invoke('bizhawk:getExe'),
-    locate: (): Promise<LocateBizhawkResult> => ipcRenderer.invoke('bizhawk:locate')
+    stop: (): Promise<void> => ipcRenderer.invoke('bizhawk:stop')
+  },
+
+  emulator: {
+    getState: (): Promise<EmulatorState> => ipcRenderer.invoke('emulator:getState'),
+    setKind: (kind: EmulatorKind): Promise<EmulatorState> =>
+      ipcRenderer.invoke('emulator:setKind', kind),
+    locate: (kind: EmulatorKind): Promise<LocateEmulatorResult> =>
+      ipcRenderer.invoke('emulator:locate', kind)
   },
 
   debug: {

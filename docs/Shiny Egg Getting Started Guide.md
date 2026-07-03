@@ -67,7 +67,7 @@ From left to right on the toolbar.
 
 **Refresh RNG (R)** - Roll a new RNG seed to help visualize alternate RNG tile visuals.
 
-**Set Test Level Spawn (Middle Click / T)** - Place a test level spawn position. When **Test Level** is clicked, the editor will use BizHawk's Lua interface to load the current level and spawn Yoshi at the specified position, overriding the default level spawn. Middle Click on the spawn point to remove it.
+**Set Test Level Spawn (Middle Click / T)** - Place a test level spawn position. When **Test Level** is clicked, the editor will use the emulator's Lua interface to load the current level and spawn Yoshi at the specified position, overriding the default level spawn. Middle Click on the spawn point to remove it.
 
 ![[guide-toolbar.png]]
 
@@ -97,7 +97,7 @@ Bottom Row - From left to right. Show/hide outlines. Enables and disables intera
 
 ![[guide-toolbar.png]]
 
-### 4 - Navigation and Bizhawk Emulator Controls
+### 4 - Navigation and Emulator Controls
 
 **Navigation Back / Forward**. Same as mouse 4/5 and alt + left/right.
 
@@ -107,17 +107,17 @@ Bottom Row - From left to right. Show/hide outlines. Enables and disables intera
 
 **Reset** level data back to original ROM data.
 
-**Locate BizHawk**. To use the emulator test features, download and install BizHawk ( https://tasvideos.org/Bizhawk ). Once installed, use **Locate BizHawk** to point the editor at where it's installed.
+**Locate BizHawk / Locate Mesen**. To use the emulator test features, download and install BizHawk ( https://tasvideos.org/Bizhawk ) or Mesen ( https://www.mesen.ca/ ). Once installed, use **Locate BizHawk** or **Locate Mesen** to point the editor at where it's installed.
 
 ![[guide-05.png]]
 
-Once located, the Launch and Test Level buttons appear.
+Once located, the Launch and Test Level buttons appear. Right click on these buttons to change to a different emulator or re-select your current emulator's exe if it was moved.
 
 ![[guide-06.png]]
 
-**Launch** - Build the `.sfc` ROM file (if there are changes) and launch it in BizHawk.
+**Launch** - Build the `.sfc` ROM file (if there are changes) and launch it in the emulator.
 
-**Test Level** - Build the `.sfc` ROM file (if there are changes) and launch it in BizHawk. Then, using the Lua interface, load the currently open level and optionally teleport Yoshi to where the test level spawn is set.
+**Test Level** - Build the `.sfc` ROM file (if there are changes) and launch it in the emulator. Then, using the Lua interface, load the currently open level and optionally teleport Yoshi to where the test level spawn is set.
 - EGGS - Spawn with this many eggs.
 - KEYS - Spawn with this many keys.
 - Max 6 items.

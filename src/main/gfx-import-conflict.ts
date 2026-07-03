@@ -4,7 +4,7 @@
 // The Electron-coupled writer (saveGfxEdit etc.) lives in gfx-import-reconcile.ts, which USES
 // these. See research/graphics-editing/ for the standardized export/import model.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 
@@ -14,18 +14,71 @@ export function fileChecksum(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
+/** {@link fileChangeState}'s result: the gate verdict + the current on-disk hash
+ *  (null when missing) — the hash doubles as a content key for preview caches. */
+export interface FileChangeState {
+  status: 'missing' | 'unchanged' | 'changed'
+  hash: string | null
+}
+
 /**
- * The checksum gate. `relFile` is the artifact's manifest-relative path; `stored` is its
- * export-time checksum (from `gfx-manifest.json`'s `checksums` map or a sidecar field).
+ * The checksum gate, with the computed hash exposed. `relFile` is the artifact's
+ * manifest-relative path; `stored` is its export-time checksum (from
+ * `gfx-manifest.json`'s `checksums` map or a sidecar field).
  *   - `'missing'`   — the file isn't on disk (caller bumps its own `missing` tally).
  *   - `'unchanged'` — bytes still match `stored` ⇒ skip (don't decode/record).
  *   - `'changed'`   — bytes differ, OR `stored` is absent (old export ⇒ import as before).
  */
-export function changedSinceExport(dir: string, relFile: string, stored: string | undefined): 'missing' | 'unchanged' | 'changed' {
+export function fileChangeState(dir: string, relFile: string, stored: string | undefined): FileChangeState {
   const p = join(dir, relFile)
-  if (!existsSync(p)) return 'missing'
-  if (!stored) return 'changed' // backward-compat: a pre-checksum export always imports
-  return fileChecksum(readFileSync(p)) === stored ? 'unchanged' : 'changed'
+  if (!existsSync(p)) return { status: 'missing', hash: null }
+  const hash = fileChecksum(readFileSync(p))
+  return { status: !stored || hash !== stored ? 'changed' : 'unchanged', hash }
+}
+
+/** The checksum gate as a bare verdict (see {@link fileChangeState}). */
+export function changedSinceExport(dir: string, relFile: string, stored: string | undefined): 'missing' | 'unchanged' | 'changed' {
+  return fileChangeState(dir, relFile, stored).status
+}
+
+/**
+ * A stat-validated {@link fileChangeState}: re-hashes a file only when its
+ * (mtimeMs, size) changed since the last look, so a STATUS SWEEP over a whole
+ * export folder (the YY-CHR tab's on-focus refresh, ~110 files) costs one stat
+ * per file instead of one read+sha256. For VIEW paths only — an actual import
+ * decision should keep the exact byte-reading gate (`changedSinceExport`), whose
+ * cost is subsumed by the import's own file read anyway. A same-mtime-same-size
+ * byte change is invisible to the cache, which no real editor save produces.
+ */
+export class FileHashCache {
+  private map = new Map<string, { mtimeMs: number; size: number; hash: string }>()
+  /** Full read+sha256 computations performed (cache misses) — for tests/telemetry. */
+  recomputes = 0
+
+  state(dir: string, relFile: string, stored: string | undefined): FileChangeState {
+    const p = join(dir, relFile)
+    let mtimeMs: number, size: number
+    try {
+      ;({ mtimeMs, size } = statSync(p))
+    } catch {
+      this.map.delete(p)
+      return { status: 'missing', hash: null }
+    }
+    const cached = this.map.get(p)
+    let hash: string
+    if (cached && cached.mtimeMs === mtimeMs && cached.size === size) {
+      hash = cached.hash
+    } else {
+      hash = fileChecksum(readFileSync(p))
+      this.recomputes++
+      this.map.set(p, { mtimeMs, size, hash })
+    }
+    return { status: !stored || hash !== stored ? 'changed' : 'unchanged', hash }
+  }
+
+  clear(): void {
+    this.map.clear()
+  }
 }
 
 /** A resolved datum: the agreed value (the FIRST source's, when all agree). */

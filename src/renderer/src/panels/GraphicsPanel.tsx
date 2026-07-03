@@ -1,14 +1,17 @@
 import {Fragment, useCallback, useEffect, useRef, useState, type JSX} from 'react'
-import type {AsepriteInfo, BgRegionLayer, BgRegionRect, BgRegionFormat, GfxExportTrack, GfxEditChange, GfxEditEntry, GfxFileRole, LevelData, M1ExportFile, YychrExportFile} from '../../../preload/api'
+import type {AsepriteInfo, BgRegionLayer, BgRegionRect, BgRegionFormat, GfxExportTrack, GfxEditChange, GfxEditEntry, GfxFileRole, LevelData, M1ExportFile} from '../../../preload/api'
 import {DiscardChangesModal} from '../DiscardChangesModal'
 import {headerFromLevel} from './TilesPanel'
 import {getSprite} from '../data/obj-metadata'
+import {persistedState} from '../lib/persisted-state'
+import {YychrTab} from './YychrTab'
 // The "Map16 Blocks" tab is removed from the UI for now: its structural edits (reassigning a
 // block's quadrant tiles / palette / flip) don't live-preview on the canvas — only a rebuild
 // shows them — and BG1 *pixel* edits already preview via the BG1-area editor. The implementation
 // is kept intact — `panels/Map16Panel.tsx` (`Map16Body`), the `editor.*Map16Block` IPC, and
-// `src/main/map16-edits.ts` all still work. To re-expose it, restore this import plus the tab
-// bar + the `tab === 'map16'` branch + the `tab` state below:
+// `src/main/map16-edits.ts` all still work. To re-expose it, restore this import and add a
+// 'map16' member to `PanelTab` + a third `se-tab` button + render branch (the panel has a
+// tab strip again — Extract / Import and YY-CHR):
 // import {Map16Body} from './Map16Panel'
 
 /** Sprite id → friendly name for every sprite num (0..0x1FF) — NAMES the exported
@@ -44,12 +47,17 @@ const folderName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop()
 /** Versioned localStorage key for the "Auto-Open Exports" preference (default on). */
 const AUTO_OPEN_KEY = 'shinyEgg.autoOpenExports.v1'
 
+/** The panel's tabs: the extract/import body, and the per-project YY-CHR sheet
+ *  browser (YychrTab.tsx). Active tab persisted per the localStorage convention. */
+type PanelTab = 'extract' | 'yychr'
+const TAB_STORE = persistedState<{ tab: PanelTab }>('shinyEgg.graphicsPanel.v1', {tab: 'extract'})
+
 /** What the export dropdown writes. `worldmap`/`systemscreens`/`metasprites` are
  *  gfx-export tracks (worldmap + systemscreens are the two halves of the old `screens`
  *  track); BG1/2/3 are the positioned-region export. Aseprite is available for the BG
  *  regions, the two screen tracks (the title logo + island assemble as real tilemaps,
  *  the maps as layered tilemaps), and metasprites. */
-type ExportTarget = 'worldmap' | 'systemscreens' | 'fonts' | 'metasprites' | 'yychr' | 'bg1' | 'bg2' | 'bg3'
+type ExportTarget = 'worldmap' | 'systemscreens' | 'fonts' | 'metasprites' | 'bg1' | 'bg2' | 'bg3'
 // `metasprites` is intentionally omitted from the dropdown for now (export removed from
 // the UI). The implementation is kept — engine `sprite-metasprite.ts`, the
 // `tracks:['metasprites']` exportGfxPngs path, and the import auto-detect all still work;
@@ -60,18 +68,19 @@ const TARGETS: { value: ExportTarget; label: string }[] = [
     {value: 'bg3', label: 'BG3'},
     {value: 'worldmap', label: 'World Map'},
     {value: 'systemscreens', label: 'Boot/Story/Title Screens'},
-    {value: 'fonts', label: 'Message Font / Pictures'},
-    {value: 'yychr', label: 'YY-CHR (all tile sheets)'}
+    {value: 'fonts', label: 'Message Font / Pictures'}
 ]
+// (The whole-cart YY-CHR export moved off this dropdown to the panel's YY-CHR tab —
+// it now targets the project's fixed yychr folder; see YychrTab.tsx. Legacy
+// dialog-exported yychr folders still import via the generic folder import below.)
 const isRegionTarget = (t: ExportTarget): boolean => t === 'bg1' || t === 'bg2' || t === 'bg3'
 const regionLayerOf = (t: ExportTarget): BgRegionLayer => (t === 'bg1' ? 1 : t === 'bg2' ? 2 : 3)
 // The two screen tracks (world map + boot/story/title) — cart-static graphics, so they
 // export with no level loaded (unlike the BG regions + metasprites, which need the level).
 const isScreenTarget = (t: ExportTarget): boolean => t === 'worldmap' || t === 'systemscreens'
 // Cart-static targets that need NO level loaded (the screen tracks + the Bank09 1bpp
-// message font / pictures, which are raw global graphics + the whole-cart YY-CHR
-// export, which walks the cart's tileset combos itself).
-const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'fonts' || t === 'yychr'
+// message font / pictures, which are raw global graphics).
+const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'fonts'
 // Targets whose Aseprite output goes through the gfx-png export (the screen tracks =
 // assembled tilemaps + single-image icons/scenery; metasprites = single-image-with-palette
 // projects; fonts = the 1bpp message font / pictures as a single-image 2-color project —
@@ -79,7 +88,7 @@ const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t 
 // regions use the separate exportBgRegion path.
 const isAsepriteGfxTarget = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'metasprites' || t === 'fonts'
 const gfxTracksOf = (t: ExportTarget): GfxExportTrack[] =>
-    t === 'metasprites' ? ['metasprites'] : t === 'worldmap' ? ['worldmap'] : t === 'fonts' ? ['fonts'] : t === 'yychr' ? ['yychr'] : ['systemscreens']
+    t === 'metasprites' ? ['metasprites'] : t === 'worldmap' ? ['worldmap'] : t === 'fonts' ? ['fonts'] : ['systemscreens']
 
 interface Props {
     /** The level currently loaded in the canvas — its palette colors the export. */
@@ -128,8 +137,14 @@ export function GraphicsBody({
     const [pendingReset, setPendingReset] = useState<GfxEditEntry | 'all' | 'palette' | null>(null)
     const [resetBusy, setResetBusy] = useState(false)
     const [resetError, setResetError] = useState<string | null>(null)
-    // (Removed: `const [tab, setTab] = useState<'gfx' | 'map16'>('gfx')` — the Map16 tab is
-    // gone for now, so the panel renders only the Export / Import body. See the top-of-file note.)
+    // Active panel tab: 'extract' = the export/import body, 'yychr' = the
+    // per-project YY-CHR browser. (A restored Map16 tab would slot back in here —
+    // see the top-of-file note.)
+    const [tab, setTab] = useState<PanelTab>(() => TAB_STORE.load().tab)
+    const pickTab = (t: PanelTab): void => {
+        setTab(t)
+        TAB_STORE.save({tab: t})
+    }
     // What the export dropdown targets, + the output format (PNG vs Aseprite — applies
     // to the BG regions and the screens; ignored by other tracks). Format defaults to
     // Aseprite once a tilemap-capable Aseprite is located (see the effect below); starts
@@ -149,11 +164,10 @@ export function GraphicsBody({
     // and gating the tilemap-export option below).
     const [asepriteInfo, setAsepriteInfo] = useState<AsepriteInfo | null>(null)
     const [asepriteError, setAsepriteError] = useState<string | null>(null)
-    // Located YY-CHR (settings-only — portable app) + the per-folder exported sheets
-    // (the "Open in YY-CHR…" select under each tracked folder).
+    // Located YY-CHR (settings-only — portable app), for the YY-CHR tab's
+    // per-sheet Open buttons.
     const [yychrExe, setYychrExe] = useState<string | null>(null)
     const [yychrError, setYychrError] = useState<string | null>(null)
-    const [yychrFiles, setYychrFiles] = useState<Record<string, YychrExportFile[]>>({})
     const asepritePath = asepriteInfo?.path ?? null
     // The located Aseprite is POSITIVELY too old for tilemap `.aseprite` files (needs
     // 1.3+). Only fires on a parsed pre-1.3 version — not-located or an unknown version
@@ -218,20 +232,16 @@ export function GraphicsBody({
         try {
             const dirs = await window.shinyEgg.editor.listRegionExports()
             setFolders(dirs)
-            // Each folder's exported .M1 sessions (clickable to open in M1TE) + YY-CHR
-            // sheets (the per-folder open select) — fetched in parallel.
+            // Each folder's exported .M1 sessions (clickable to open in M1TE),
+            // fetched in parallel. (YY-CHR sheets live in the YY-CHR tab's fixed
+            // project folder now — no per-folder yychr detection here.)
             const entries = await Promise.all(
                 dirs.map(async (dir) => [dir, await window.shinyEgg.editor.listM1Files(dir)] as const)
             )
             setM1Files(Object.fromEntries(entries))
-            const yEntries = await Promise.all(
-                dirs.map(async (dir) => [dir, await window.shinyEgg.editor.listYychrFiles(dir)] as const)
-            )
-            setYychrFiles(Object.fromEntries(yEntries))
         } catch {
             setFolders([])
             setM1Files({})
-            setYychrFiles({})
         }
     }, [])
 
@@ -348,7 +358,7 @@ export function GraphicsBody({
         setBusy(false)
         if ('canceled' in r) return
         if (r.ok) {
-            const unit = target === 'yychr' ? 'tile sheet' : gfxFmt === 'png' ? 'PNG' : 'file'
+            const unit = gfxFmt === 'png' ? 'PNG' : 'file'
             setPanelLog({ dir: '', lines: [`Extracted ${r.count} ${unit}${r.count === 1 ? '' : 's'} to ${folderName(r.dir)}`], errors: [], warnings: [] })
             await refreshFolders()
         } else setPanelLog({ dir: '', lines: [], errors: [`Extract failed: ${r.error}`], warnings: [] })
@@ -484,10 +494,33 @@ export function GraphicsBody({
                 {yychrError && <span className="se-graphics__log-error">⚠ {yychrError}</span>}
             </div>
 
-            {/* The "Map16 Blocks" tab bar is removed for now (see the top-of-file note) — with
-                only one tab left it served no purpose, so the panel renders the Export / Import
-                body directly. Restore the tab bar + the `tab === 'map16' ? <Map16Body/> : (…)`
-                wrapper + the `tab` state to bring the Map16 tab back. */}
+            {/* Two tabs: the extract/import body, and the per-project YY-CHR sheet
+                browser. (A restored Map16 tab — see the top-of-file note — would be a
+                third `se-tab` + branch here.) */}
+            <div className="se-tabs se-graphics__tabs">
+                <button
+                    className={`se-tab${tab === 'extract' ? ' is-active' : ''}`}
+                    onClick={() => pickTab('extract')}
+                >
+                    Extract / Import
+                </button>
+                <button
+                    className={`se-tab${tab === 'yychr' ? ' is-active' : ''}`}
+                    onClick={() => pickTab('yychr')}
+                >
+                    YY-CHR
+                </button>
+            </div>
+            {tab === 'yychr' ? (
+                // Remounted per project (key) so browser state never leaks across a switch.
+                <YychrTab
+                    key={projectScope ?? ''}
+                    yychrExe={yychrExe}
+                    onOpenYychr={onOpenYychr}
+                    onMutated={onMutated}
+                    onImported={refreshEdits}
+                />
+            ) : (
             <div className="se-graphics__region">
                 <p className="se-graphics__desc">
                     Extract the level’s graphics to a folder, edit them in any image editor (or
@@ -495,10 +528,8 @@ export function GraphicsBody({
                     Pick <strong>what</strong> to extract below; <code>BG1 area</code> extracts the
                     rectangle you select on the canvas, the other <code>BG</code> layers the whole
                     tilemap, <code>World Map</code> the overworld map graphics,{' '}
-                    <code>Boot/Story/Title Screens</code> the boot / title / storybook graphics,{' '}
-                    <code>Message Font / Pictures</code> the message font + message-box pictures, and{' '}
-                    <code>YY-CHR</code> every tile sheet in the game as raw files YY-CHR edits
-                    directly (with palette sidecars — see the folder’s README).
+                    <code>Boot/Story/Title Screens</code> the boot / title / storybook graphics, and{' '}
+                    <code>Message Font / Pictures</code> the message font + message-box pictures.
                     The <code>BG</code> layers and the <code>World Map</code> can also extract an{' '}
                     <code>M1TE2</code> session (each BG layer as one <code>.M1</code>;
                     the World Map as one <code>.M1</code> per world + a combined icons file). Import auto-detects everything in the folder.
@@ -536,7 +567,7 @@ export function GraphicsBody({
                     </div>
                 )}
 
-                {target !== 'yychr' && <div className="se-graphics__row">
+                <div className="se-graphics__row">
                     <label
                         className="se-graphics__radio"
                         title={
@@ -586,7 +617,7 @@ export function GraphicsBody({
                         />
                         PNG
                     </label>
-                </div>}
+                </div>
                 {tilemapTooOld && (
                     <p className="se-graphics__log-error" title={asepritePath ?? undefined}>
                         ⚠ Aseprite {asepriteInfo?.version} can’t open tilemap extracts (tilemaps were added in 1.3).
@@ -683,24 +714,6 @@ export function GraphicsBody({
                                                 </li>
                                             ))}
                                         </ul>
-                                    )}
-                                    {(yychrFiles[dir]?.length ?? 0) > 0 && (
-                                        <div className="se-graphics__m1-item">
-                                            {/* One folder can hold hundreds of sheets — a select keeps the
-                                                list compact (native scroll + type-to-find). Value stays ''
-                                                so the same sheet can be re-opened. */}
-                                            <select
-                                                className="se-input se-graphics__select"
-                                                value=""
-                                                onChange={(e) => { if (e.target.value) void onOpenYychr(dir, e.target.value) }}
-                                                title={yychrExe ? 'Open a tile sheet in YY-CHR' : 'Pick a sheet — you’ll be asked to locate YY-CHR first'}
-                                            >
-                                                <option value="">Open in YY-CHR… ({yychrFiles[dir]!.length} sheets)</option>
-                                                {yychrFiles[dir]!.map((f) => (
-                                                    <option key={f.file} value={f.file} title={f.label}>{f.file}</option>
-                                                ))}
-                                            </select>
-                                        </div>
                                     )}
                                 </li>
                             ))}
@@ -810,6 +823,7 @@ export function GraphicsBody({
                     }}
                 />
             </div>
+            )}
         </div>
     )
 }

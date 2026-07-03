@@ -26,6 +26,9 @@
 //    smaller than one bank (128×128 px view) get buffer-padded + a save prompt —
 //    both dodged by zero-padding every export to a whole number of banks.
 
+import { decode2bppTile, decode4bppTile } from './tile.ts';
+import { bgr15ToRgb } from './color.ts';
+
 /** Bytes per YY-CHR bank view (128×128 px at `bpp`): 2048/4096/8192/16384. */
 export function yychrBankBytes(bpp: 1 | 2 | 4 | 8): number {
   return (128 * 128 * bpp) / 8;
@@ -302,4 +305,95 @@ export function buildIdentityAdf(name = 'linear'): Uint8Array {
   for (let i = 0; i < Math.min(name.length, 30); i++) out[i] = name.charCodeAt(i) & 0x7f;
   for (let i = 0; i < 256; i++) out[32 + i] = i;
   return out;
+}
+
+// ── Sheet preview rasterizer (editor thumbnails) ─────────────────────────────
+
+/** One rendered sheet preview: RGBA pixels + how much of the sheet it covers
+ *  (`renderedTiles` < `totalTiles` when a `maxTiles` cap truncated it). */
+export interface YychrSheetRender {
+  rgba: Uint8Array;
+  width: number;
+  height: number;
+  renderedTiles: number;
+  totalTiles: number;
+}
+
+/**
+ * Rasterize an exported sheet's ON-DISK bytes to RGBA, as YY-CHR displays it —
+ * planar 2/4bpp (or CPC 2 px/byte for `.4bpp.gba` sheets, or re-tiled 1bpp),
+ * colored through the `.pal`/`.col` sidecars (displayed index = pixel +
+ * colByte × ColorNum — see the module header). The pixel source is the FILE, not
+ * the cart, so external YY-CHR edits preview before they're imported. Index 0
+ * renders opaque (as YY-CHR does). `maxTiles` caps the output for thumbnail
+ * payloads (`totalTiles` still reports the full sheet); a file shorter than
+ * `sizeBytes` (truncated on disk) renders only its whole tiles rather than
+ * throwing. No `.pal` → a grayscale ramp (the 1bpp fonts render black/white).
+ */
+export function renderYychrSheetRgba(
+  sheetBytes: Uint8Array,
+  opts: { bpp: 1 | 2 | 4; cpc?: boolean; sizeBytes: number; tilesWide?: number; maxTiles?: number },
+  palBytes?: Uint8Array | null,
+  colBytes?: Uint8Array | null
+): YychrSheetRender {
+  const tileBytes = opts.cpc ? 32 : opts.bpp === 4 ? 32 : opts.bpp === 2 ? 16 : 8;
+  const colors = opts.bpp === 2 ? 4 : opts.bpp === 1 ? 2 : 16;
+  const totalTiles = Math.ceil(opts.sizeBytes / tileBytes);
+  const renderedTiles = Math.min(totalTiles, opts.maxTiles ?? 256, Math.floor(sheetBytes.length / tileBytes));
+  const tilesWide = opts.tilesWide ?? 16;
+  const width = tilesWide * 8;
+  const height = Math.max(1, Math.ceil(renderedTiles / tilesWide)) * 8;
+  const rgba = new Uint8Array(width * height * 4);
+
+  // 256-slot RGB table from the .pal (R5G5B5 LE words, bit 15 masked); without a
+  // .pal, a per-group grayscale ramp so unpaletted sheets still read as art.
+  const palRgb: { r: number; g: number; b: number }[] = new Array(256);
+  for (let i = 0; i < 256; i++) {
+    if (palBytes && palBytes.length >= (i + 1) * 2) {
+      palRgb[i] = bgr15ToRgb((palBytes[i * 2]! | (palBytes[i * 2 + 1]! << 8)) & 0x7fff);
+    } else {
+      const v = Math.round(((i % colors) / (colors - 1)) * 255);
+      palRgb[i] = { r: v, g: v, b: v };
+    }
+  }
+
+  const idx = new Uint8Array(64);
+  for (let t = 0; t < renderedTiles; t++) {
+    const off = t * tileBytes;
+    if (opts.cpc) {
+      // CPC: 2 px/byte, LOW nibble first, 4 bytes per 8-px row (byte-identical to
+      // YY-CHR's "4BPP GBA" — see MODE7_FILES in gfx-yychr-io.ts).
+      for (let r = 0; r < 8; r++) {
+        for (let b = 0; b < 4; b++) {
+          const v = sheetBytes[off + r * 4 + b] ?? 0;
+          idx[r * 8 + b * 2] = v & 0xf;
+          idx[r * 8 + b * 2 + 1] = (v >> 4) & 0xf;
+        }
+      }
+    } else if (opts.bpp === 4) {
+      decode4bppTile(sheetBytes, off, false, false, idx, 0);
+    } else if (opts.bpp === 2) {
+      decode2bppTile(sheetBytes, off, false, false, idx, 0);
+    } else {
+      // 1bpp: 8 bytes/tile, bit 7 = leftmost pixel.
+      for (let r = 0; r < 8; r++) {
+        const v = sheetBytes[off + r] ?? 0;
+        for (let c = 0; c < 8; c++) idx[r * 8 + c] = (v >> (7 - c)) & 1;
+      }
+    }
+    // .col: the char at file offset B reads its group byte at B/16 + 256 (2/4bpp only).
+    const group = colBytes && opts.bpp !== 1 ? (colBytes[256 + off / 16] ?? 0) : 0;
+    const base = group * colors;
+    const tx = (t % tilesWide) * 8;
+    const ty = Math.floor(t / tilesWide) * 8;
+    for (let p = 0; p < 64; p++) {
+      const { r, g, b } = palRgb[(base + idx[p]!) & 0xff]!;
+      const d = ((ty + (p >> 3)) * width + tx + (p & 7)) * 4;
+      rgba[d] = r;
+      rgba[d + 1] = g;
+      rgba[d + 2] = b;
+      rgba[d + 3] = 0xff;
+    }
+  }
+  return { rgba, width, height, renderedTiles, totalTiles };
 }

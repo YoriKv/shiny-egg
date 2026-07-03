@@ -5,7 +5,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { copyFile } from 'node:fs/promises'
 import { projectRoot } from '../framework-paths'
 import { buildProject } from '../build-tree'
-import { getBizHawk } from '../bizhawk'
+import { anyEmulatorRunning, stopAllEmulators } from '../emulator/registry'
 import {
   backupProject,
   createProject,
@@ -115,8 +115,8 @@ export function registerProjectsIpc(): void {
     'project:export',
     async (event, id: string): Promise<ProjectExportResult> => {
       const win = BrowserWindow.fromWebContents(event.sender)
-      // Release any lock EmuHawk holds on the build output before rebuilding.
-      if (getBizHawk().isRunning()) getBizHawk().stop()
+      // Release any lock the emulator holds on the build output before rebuilding.
+      if (anyEmulatorRunning()) stopAllEmulators()
 
       let outputPath: string
       try {

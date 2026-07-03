@@ -25,8 +25,7 @@ the changelog for the latest updates.
 
 - A legally-owned Yoshi's Island ROM - **USA V1.0**.
 - Windows (x64), Linux (x64, AppImage), or macOS (universal - Apple Silicon + Intel).
-- [BizHawk](https://tasvideos.org/BizHawk) (EmuHawk) for testing levels in-game
-  - on Linux/macOS, BizHawk's `EmuHawk.sh` launcher.
+- [BizHawk](https://tasvideos.org/BizHawk) or [Mesen](https://www.mesen.ca/) for testing levels in-game
 
 ## Getting started
 
@@ -40,12 +39,10 @@ the changelog for the latest updates.
 
 A full **Getting Started** guide is available on the **[wiki](../../wiki)**.
 
-### macOS: opening the unsigned build
+### macOS
 
-The macOS build is not signed with an Apple Developer ID, so Gatekeeper
-quarantines it on download - you'll see *"Shiny Egg is damaged and can't be
-opened"* or *"cannot be opened because the developer cannot be verified"*. This
-is expected.
+The macOS build is not signed - you'll see *"Shiny Egg is damaged and can't be
+opened"* or *"cannot be opened because the developer cannot be verified"*.
 
 **Drag the app to Applications, then clear the quarantine flag from Terminal:**
 
@@ -53,11 +50,9 @@ is expected.
 xattr -dr com.apple.quarantine "/Applications/Shiny Egg.app"
 ```
 
-The `-r` (recursive) flag matters: the editor builds ROMs by running a bundled
-`asar` assembler *inside* the app, and that nested tool is quarantined too. The
-command above clears the whole bundle in one shot. (Right-click -> Open works to
-launch the window, but can leave the bundled assembler blocked, so the first ROM
-build then fails - use the command instead.)
+Make sure to include the `-r` (recursive) flag matters. The editor builds ROMs by
+running a bundled `asar` assembler *inside* the app, and that nested tool is
+quarantined too. The command above clears the whole bundle in one shot.
 
 You only need to do this once per install.
 

@@ -3178,7 +3178,9 @@ h3 { margin: 0; }
    <body> (so it escapes the list's overflow + the window z-stack) and floated
    left of the cursor. pointer-events:none so it never blocks the row click.
    Chrome (1px border + 4px padding, both sides) is mirrored by PREVIEW_CHROME. */
-.se-picker__preview {
+/* The shared hover popout (lib/hover-preview.tsx) — the Place panel's magnified
+   row thumbnail + the YY-CHR browser's zoomed sheet preview. */
+.se-hover-preview {
   position: fixed;
   z-index: 9000;
   pointer-events: none;
@@ -3188,7 +3190,7 @@ h3 { margin: 0; }
   border-radius: 4px;
   box-shadow: var(--shadow-pop);
 }
-.se-picker__preview canvas {
+.se-hover-preview canvas {
   display: block;
   image-rendering: pixelated;
 }
@@ -5354,6 +5356,128 @@ h3 { margin: 0; }
   opacity: 0.4;
   cursor: default;
 }
+
+/* The Graphics panel's tab strip (Extract / Import | YY-CHR). */
+.se-graphics__tabs {
+  margin-bottom: 2px;
+}
+
+/* ── YY-CHR tab (GraphicsPanel) — the per-project sheet browser. ─────────── */
+.se-yychr__head {
+  flex-wrap: wrap;
+}
+.se-yychr__folder-link {
+  flex: 0 0 auto;
+  font-size: 10px;
+}
+/* No scroll of its own — the window body (.se-window__body) is the single
+   scroller for the whole tab, so the browser just grows. */
+.se-yychr__browser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.se-yychr__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* The collapsible category header: caret + title (+ a changed-count badge while
+   collapsed, so pending edits aren't hidden by the collapse). */
+.se-yychr__cat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+.se-yychr__cat:hover .se-graphics__changes-title {
+  color: var(--ink);
+}
+.se-yychr__cat-caret {
+  flex: 0 0 10px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ink-2);
+}
+/* Sheet rows: thumbnail beside a two-line info column (description + actions,
+   then the filename/format/size details). Overrides the shared list's cap so
+   the one scrollbar stays the window body's. */
+.se-yychr__list {
+  max-height: none;
+  overflow-y: visible;
+}
+.se-yychr__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  /* ~110 rows with canvases in one scroll area: skip layout+paint offscreen
+     (`auto` remembers each row's real size once rendered, keeping scroll stable). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
+}
+.se-yychr__item:nth-child(odd) {
+  background: var(--bg-elevated);
+}
+.se-yychr__thumb {
+  display: block;
+  flex: 0 0 auto;
+  width: 48px;
+  image-rendering: pixelated;
+  border: 1px solid var(--line);
+  background: #000;
+}
+.se-yychr__thumb--none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  font-size: 8px;
+  color: var(--ink-3);
+  background: var(--bg-elevated);
+}
+.se-yychr__info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.se-yychr__toprow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.se-yychr__meta {
+  font-size: 9px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.se-yychr__status {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.se-yychr__status--changed {
+  color: var(--sev-warning, #d9a441);
+}
+.se-yychr__status--missing {
+  color: var(--danger, #e06c6c);
+}
+/* (The hover popout is the shared .se-hover-preview — see lib/hover-preview.tsx.) */
 
 /* ── Validation panel ─────────────────────────────────────────────────────── */
 .se-validation {

@@ -5,10 +5,10 @@
 //
 // Run: node src/main/gfx-import-conflict.test.ts
 
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileChecksum, changedSinceExport, ConflictTracker, bytesEq, numEq, countChangedUnits } from './gfx-import-conflict.ts'
+import { fileChecksum, changedSinceExport, fileChangeState, FileHashCache, ConflictTracker, bytesEq, numEq, countChangedUnits } from './gfx-import-conflict.ts'
 
 let failures = 0
 function assert(cond: boolean, msg: string): void {
@@ -34,6 +34,29 @@ try {
   // Edit the file on disk → its bytes no longer match the stored hash ⇒ changed.
   writeFileSync(join(dir, 'sheet.png'), Buffer.from(b))
   assert(changedSinceExport(dir, 'sheet.png', stored) === 'changed', 'edited-on-disk file ⇒ changed')
+  // fileChangeState: the same gate with the computed hash exposed (preview-cache key).
+  const st = fileChangeState(dir, 'sheet.png', stored)
+  assert(st.status === 'changed' && st.hash === fileChecksum(b), 'fileChangeState exposes the current on-disk hash')
+  assert(fileChangeState(dir, 'sheet.png', fileChecksum(b)).status === 'unchanged', 'fileChangeState agrees with the bare gate')
+  assert(fileChangeState(dir, 'missing.png', stored).hash === null, 'missing file ⇒ null hash')
+
+  // ── FileHashCache (the stat-validated status-sweep gate) ────────────────────
+  const cache = new FileHashCache()
+  const st1 = cache.state(dir, 'sheet.png', stored) // file currently holds `b`
+  assert(st1.status === 'changed' && st1.hash === fileChecksum(b), 'cache agrees with the exact gate')
+  assert(cache.recomputes === 1, 'first look hashes the file')
+  cache.state(dir, 'sheet.png', stored)
+  assert(cache.recomputes === 1, 'untouched file (same mtime+size) ⇒ no re-hash')
+  // A real save: different bytes AND a bumped mtime → re-hash.
+  writeFileSync(join(dir, 'sheet.png'), Buffer.from(a))
+  utimesSync(join(dir, 'sheet.png'), new Date(), new Date(Date.now() + 5000))
+  const st2 = cache.state(dir, 'sheet.png', stored)
+  assert(st2.status === 'unchanged' && st2.hash === stored, 'edited file re-hashed to the new bytes')
+  assert(cache.recomputes === 2, 'changed mtime ⇒ exactly one re-hash')
+  assert(cache.state(dir, 'gone.png', stored).status === 'missing', 'missing file ⇒ missing (entry dropped)')
+  cache.clear()
+  cache.state(dir, 'sheet.png', stored)
+  assert(cache.recomputes === 3, 'clear() forgets hashes')
 } finally {
   rmSync(dir, { recursive: true, force: true })
 }

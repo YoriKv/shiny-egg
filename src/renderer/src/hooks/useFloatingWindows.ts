@@ -18,6 +18,13 @@ export interface WindowDef {
   open: boolean
   /** Anchor for the default (no-persisted) start position — see WindowAnchor. */
   anchor: WindowAnchor
+  /** Extra pixels the default position sits BELOW the anchor-derived Y
+   *  (e.g. Properties hangs 36px under the top-right corner). */
+  anchorOffsetY?: number
+  /** Bumped by `resetWindow` so a MOUNTED FloatingWindow re-syncs its local
+   *  drag/resize state to the reset pos/size (children stay mounted — no
+   *  remount). Session-only; never persisted. */
+  resetRev?: number
   kind:
     | 'tiles'
     | 'props'
@@ -70,12 +77,14 @@ const INITIAL_WINDOWS: WindowDef[] = [
   {
     id: 'props',
     title: 'Properties',
-    // Anchored to the top-right corner (see `anchor` / `defaultPos`).
+    // Anchored to the top-right corner, dropped 36px below it (see `anchor` /
+    // `anchorOffsetY` / `defaultPos`).
     pos: { x: 24, y: 24 },
     width: 300,
     z: 2,
     open: true,
     anchor: 'top-right',
+    anchorOffsetY: 36,
     kind: 'props'
   },
   {
@@ -246,7 +255,7 @@ function persistWindows(windows: WindowDef[]): void {
 
 /** Margin from the stage edges for anchored (top-right / bottom-right) and
  *  clamped windows. */
-const EDGE_MARGIN = 24
+const EDGE_MARGIN = 12
 
 /** The auto-height Find panel renders at a near-constant height (counter +
  *  current line — no result list), so a fixed estimate is enough to anchor its
@@ -279,26 +288,28 @@ function stageBounds(): { width: number; height: number } {
 /**
  * Compute a window's default start position from the stage (the windows'
  * positioned ancestor) per its `anchor`: Properties hugs the top-right, Find
- * the bottom-right, everything else is horizontally centered a quarter of the
- * way down. Falls back to the template `pos` when there's no `window` (headless
- * test contexts). Only used when no persisted position exists for the window.
+ * the bottom-right, everything else is horizontally centered at the stage top
+ * (EDGE_MARGIN below the canvas's top edge). Falls back to the template `pos`
+ * when there's no `window` (headless test contexts). Used when no persisted
+ * position exists for the window, and by resetWindow.
  */
 function defaultPos(w: WindowDef): { x: number; y: number } {
   if (typeof window === 'undefined') return w.pos
   const { width: W, height: H } = stageBounds()
   const right = Math.max(EDGE_MARGIN, W - w.width - EDGE_MARGIN)
+  const dy = w.anchorOffsetY ?? 0 // per-window extra drop below the anchor
   switch (w.anchor) {
     case 'top-right':
-      return { x: right, y: EDGE_MARGIN }
+      return { x: right, y: EDGE_MARGIN + dy }
     case 'bottom-right': {
       const h = w.height ?? FINDER_HEIGHT_ESTIMATE
-      return { x: right, y: Math.max(EDGE_MARGIN, H - h - EDGE_MARGIN) }
+      return { x: right, y: Math.max(EDGE_MARGIN, H - h - EDGE_MARGIN) + dy }
     }
     case 'top-center':
     default:
       return {
         x: Math.max(EDGE_MARGIN, Math.round((W - w.width) / 2)),
-        y: Math.round(H / 4)
+        y: EDGE_MARGIN + dy
       }
   }
 }
@@ -351,6 +362,9 @@ export interface FloatingWindowsApi {
   openWindow: (kind: WindowDef['kind']) => void
   commitWindowPos: (id: string, pos: { x: number; y: number }) => void
   commitWindowSize: (id: string, size: { width: number; height: number }) => void
+  /** Restore a window's default position + size (the "Reset Size & Position"
+   *  context-menu action on panel buttons and window bars). */
+  resetWindow: (id: string) => void
 }
 
 /**
@@ -396,6 +410,29 @@ export function useFloatingWindows(): FloatingWindowsApi {
     []
   )
 
+  const resetWindow = useCallback((id: string) => {
+    setWindows((ws) =>
+      ws.map((w) => {
+        if (w.id !== id) return w
+        const t = INITIAL_WINDOWS.find((tw) => tw.id === id)
+        if (!t) return w
+        // Back to the template defaults: the anchor-derived start position
+        // (resolved against the CURRENT stage size) + the template width/height
+        // (height undefined = auto-size again). Open/z state is untouched;
+        // persistence follows via the windows effect, so a closed panel's reset
+        // sticks for its next open too. resetRev tells a mounted FloatingWindow
+        // to re-sync (see WindowDef.resetRev).
+        return {
+          ...w,
+          pos: defaultPos(t),
+          width: t.width,
+          height: t.height,
+          resetRev: (w.resetRev ?? 0) + 1
+        }
+      })
+    )
+  }, [])
+
   const openWindow = useCallback((kind: WindowDef['kind']) => {
     setWindows((ws) => {
       const nextZ = ws.reduce((m, w) => Math.max(m, w.z), 0) + 1
@@ -412,6 +449,7 @@ export function useFloatingWindows(): FloatingWindowsApi {
     closeWindow,
     openWindow,
     commitWindowPos,
-    commitWindowSize
+    commitWindowSize,
+    resetWindow
   }
 }

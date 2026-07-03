@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.11 - 2026-07-03
+
+- Dedicated YYCHR export panel with file browser, thumbnail previews, and in project storage.
+- Mesen added to emulator selection for MacOS.
+- Right click -> reset position added to panels.
+
 ## v0.5.10 - 2026-07-02
 
 - Ycompress style graphics export and YYCHR integration for those exported files.

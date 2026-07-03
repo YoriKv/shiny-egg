@@ -22,7 +22,7 @@ import { addRegionExportFolder, listRegionExportFolders, removeRegionExportFolde
 import { asepriteInfo, openInAseprite } from '../aseprite-app'
 import { openInM1te } from '../m1te-app'
 import { resolveYychrExe, openInYychr } from '../yychr-app'
-import { listYychrFiles } from '../gfx-yychr-io'
+import { buildYychrProjectState, exportYychrProject, importYychrProject, yychrProjectThumbnails } from '../gfx-yychr-project'
 import { updateSettings } from '../settings'
 import { basename, join } from 'node:path'
 import { loadMap16Block, saveMap16Block, resetMap16Block, listMap16BlockEdits } from '../map16-edits'
@@ -77,7 +77,10 @@ import type {
   ImportGraphicsResult,
   LocateAsepriteResult,
   LocateYychrResult,
-  YychrExportFile,
+  YychrProjectState,
+  YychrProjectExportResult,
+  YychrProjectImportResult,
+  YychrThumbnailEntry,
   AsepriteInfo,
   Map16BlockPreview,
   Map16SubTileEdit,
@@ -304,9 +307,14 @@ export function registerEditorIpc(): void {
     return { ok: true, path: p }
   })
   ipcMain.handle('yychr:open', async (_event, dir: string, file: string): Promise<boolean> => openInYychr(join(dir, file)))
-  // The YY-CHR sheets in an export folder (manifest-driven), for the panel's
-  // clickable "open in YY-CHR" list under each tracked folder.
-  ipcMain.handle('editor:listYychrFiles', async (_event, dir: string): Promise<YychrExportFile[]> => listYychrFiles(dir))
+  // The per-project YY-CHR pathway (the YY-CHR tab): browse state (manifest rows +
+  // change status), export into `<projectRoot>/yychr/` (fixed folder — no dialog,
+  // not in the extracted-folders list), per-file/all import with the checksum
+  // write-back, and on-disk sheet thumbnails. See gfx-yychr-project.ts.
+  ipcMain.handle('editor:yychrProjectState', async (): Promise<YychrProjectState> => buildYychrProjectState())
+  ipcMain.handle('editor:yychrExportProject', async (): Promise<YychrProjectExportResult> => exportYychrProject())
+  ipcMain.handle('editor:yychrImportProject', async (_event, files: string[] | null): Promise<YychrProjectImportResult> => importYychrProject(files))
+  ipcMain.handle('editor:yychrThumbnails', async (_event, files: string[]): Promise<YychrThumbnailEntry[]> => yychrProjectThumbnails(files))
   // Open an exported .M1 session in the bundled M1TE editor, straight to its BG layer
   // (the "Auto-Open Exports" toggle for the M1TE2 export). Windows-native or via Wine.
   ipcMain.handle('m1te:open', async (_event, dir: string, file: string, bg?: 1 | 2 | 3): Promise<boolean> => openInM1te(join(dir, file), bg))

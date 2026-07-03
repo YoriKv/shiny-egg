@@ -74,7 +74,7 @@ import type {
 } from '../../shared/ipc-types'
 import { fitHeightProfile, fitMetadata } from 'snes-framework/surface-fit'
 import type { LevelObject, PaletteEdit } from 'snes-framework/types'
-import { getBizHawk } from '../bizhawk'
+import { getEmulator } from '../emulator/registry'
 import { liveSceneProvenance, LIVE_WRAM_BASE, LIVE_WRAM_LEN } from '../render/palette-live'
 import { loadRomAndSymbols } from '../render/rom-cache'
 import { gfxLiveEdits, gfxLiveRevision } from '../gfx-live-cache'
@@ -255,13 +255,13 @@ export function registerRenderIpc(): void {
   // PER-SCREEN ONLY: every scene load repopulates CGRAM from the master palette
   // blob, which lives in read-only ROM (BizHawk can't write CARTROM — verified), so
   // there's no way to persist an edit across screens. Re-sync after switching
-  // screens. No-ops WITHOUT booting when EmuHawk isn't running. Registered here, not
-  // ipc/bizhawk.ts, because it needs the render-side palette plumbing
+  // screens. No-ops WITHOUT booting when the emulator isn't running. Registered here,
+  // not ipc/emulator.ts, because it needs the render-side palette plumbing
   // (loadRomAndSymbols + the palette interpreters).
   ipcMain.handle(
     'bizhawk:applyPaletteLive',
     async (_event, edits: PaletteEdit[], revertOffsets: number[]): Promise<PaletteLiveResult> => {
-      const bizhawk = getBizHawk()
+      const bizhawk = getEmulator()
       if (!bizhawk.isRunning()) return { applied: false }
       const { rom, symbols } = loadRomAndSymbols()
 

@@ -145,11 +145,16 @@ function writeArtifact(dir: string, file: string, bytes: Uint8Array): void {
 
 /** Export the current level's gfx files to `dir` (PNGs in category folders + manifest).
  *  `spriteNames` (sprite id → friendly name) only NAMES the metasprite PNGs; it
- *  does not limit the set (every loadable cel-rendered sprite is exported). */
+ *  does not limit the set (every loadable cel-rendered sprite is exported).
+ *  `io.skipRootReadme` suppresses the shared root README — for the per-project
+ *  yychr export, whose `dir` is the PROJECT root, not a user-picked extract folder
+ *  (gfx-yychr-project.ts). Main-side only, so it's not on the `ExportGfxOptions`
+ *  IPC type. */
 export function exportGfxPngsToDir(
   header: RenderHeaderRequest | null,
   dir: string,
-  opts: ExportGfxOptions = {}
+  opts: ExportGfxOptions = {},
+  io: { skipRootReadme?: boolean } = {}
 ): { count: number } {
   const { rom: builtRom, symbols } = loadRomAndSymbols()
   // Live baseline: the export must reflect the SAME unbuilt edits the import diffs against, or
@@ -494,7 +499,7 @@ export function exportGfxPngsToDir(
   )
   // One shared README at the picked-folder root (each export type's files live in its own
   // subfolder under it). Written generically so re-exporting a second type leaves it correct.
-  writeFileSync(join(dir, 'README.txt'), readmeText())
+  if (!io.skipRootReadme) writeFileSync(join(dir, 'README.txt'), readmeText())
   return {
     count:
       screens.length + metas.length + glyphs.length +
@@ -549,10 +554,6 @@ function readmeText(): string {
     '    The 1bpp message font glyphs + message-box pictures, as a 2-color image (index 0',
     '    = off, index 1 = on). Paint white/opaque pixels to turn them on, erase',
     '    (transparent) or paint black to turn them off.',
-    '',
-    'YY-CHR (all sheets)       Pixels, edited in YY-CHR.',
-    '    Every graphics sheet in the game as raw SNES tile data YY-CHR opens directly',
-    '    (the file extension picks the format). See the README inside the yychr folder.',
     '',
     'Re-import this folder to apply your edits.',
     ''

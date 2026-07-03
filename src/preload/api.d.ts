@@ -57,11 +57,16 @@ import type {
   FitTileset,
   FrameworkExtractArgs,
   LevelRenderRequest,
-  LocateBizhawkResult,
+  EmulatorState,
+  EmulatorKind,
+  LocateEmulatorResult,
   LocateAsepriteResult,
   AsepriteInfo,
   LocateYychrResult,
-  YychrExportFile,
+  YychrProjectState,
+  YychrProjectExportResult,
+  YychrProjectImportResult,
+  YychrThumbnailEntry,
   ObjectInfluenceRequest,
   ObjectInstance,
   OverlayDriftReport,
@@ -225,11 +230,21 @@ export type {
   InfluenceClass,
   LevelRenderRequest,
   LevelTileUsage,
-  LocateBizhawkResult,
+  EmulatorState,
+  EmulatorKind,
+  EmulatorLocation,
+  LocateEmulatorResult,
   LocateAsepriteResult,
   AsepriteInfo,
   LocateYychrResult,
-  YychrExportFile,
+  YychrFileStatus,
+  YychrProjectFile,
+  YychrProjectState,
+  YychrProjectExportResult,
+  YychrImportFileOutcome,
+  YychrProjectImportResult,
+  YychrThumbnail,
+  YychrThumbnailEntry,
   PaintCorner,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -420,15 +435,23 @@ export interface BizHawkAPI {
     x: number,
     y: number
   ) => Promise<CaptureAtResult>
-  /** Spawn EmuHawk if not running. Cold boot — no savestate. */
+  /** Spawn the selected emulator if not running. Cold boot — no savestate. */
   launch: () => Promise<void>
-  /** Force-stop the managed EmuHawk subprocess. */
+  /** Force-stop the managed emulator subprocess(es). */
   stop: () => Promise<void>
-  /** Resolved EmuHawk.exe path — the saved location, then the dev fallback
-   *  (`../bizhawk/EmuHawk.exe`), else null when BizHawk hasn't been located. */
-  getExe: () => Promise<string | null>
-  /** Open a file picker to choose EmuHawk.exe and persist it to settings. */
-  locate: () => Promise<LocateBizhawkResult>
+}
+
+/** Emulator selection + locate (BizHawk / Mesen). Which backend the `bizhawk.*`
+ *  control methods drive, plus the toolbar's located-status source of truth. */
+export interface EmulatorAPI {
+  /** Selected backend + each backend's located status (drives the toolbar's two
+   *  Locate buttons, then Launch / Test Level once the selected one is located). */
+  getState: () => Promise<EmulatorState>
+  /** Switch the selected backend (the right-click menu). Persisted. */
+  setKind: (kind: EmulatorKind) => Promise<EmulatorState>
+  /** Open a file picker to choose the given backend's executable, persist it, and
+   *  select that backend (locating one selects it). */
+  locate: (kind: EmulatorKind) => Promise<LocateEmulatorResult>
 }
 
 export interface RenderAPI {
@@ -631,9 +654,20 @@ export interface EditorAPI {
    *  auto-selects the format). Windows-native or via Wine. Returns false if
    *  YY-CHR isn't located or the file is missing (or the launch fails). */
   openInYychr: (dir: string, file: string) => Promise<boolean>
-  /** The YY-CHR sheets in an export folder (manifest-driven), for the clickable
-   *  "open in YY-CHR" list under each tracked folder. */
-  listYychrFiles: (dir: string) => Promise<YychrExportFile[]>
+  /** The YY-CHR tab's browse state: the project folder's manifest rows + per-sheet
+   *  change status (`exported: false` = no export in this project yet). */
+  yychrProjectState: () => Promise<YychrProjectState>
+  /** Export the whole-cart yychr track into the project's fixed `yychr/` folder
+   *  (no dialog; the folder is owned by the YY-CHR tab, not the extract list). */
+  yychrExportProject: () => Promise<YychrProjectExportResult>
+  /** Import edited sheets from the project folder — `files` = folder-relative paths
+   *  for a per-file import, null = everything. Advances imported sheets' stored
+   *  checksums so their changed status clears. */
+  yychrImportProject: (files: string[] | null) => Promise<YychrProjectImportResult>
+  /** Sheet thumbnails rendered from the ON-DISK bytes, one batch per IPC round
+   *  trip (a null thumb: missing file or the Mode-7 tilemap, which isn't pixel
+   *  art). The tab fetches in chunks and caches content-addressed. */
+  yychrThumbnails: (files: string[]) => Promise<YychrThumbnailEntry[]>
   /** Folders this project has exported region(s) to (most-recent first) — the
    *  Region tab lists them with per-folder import / remove. */
   listRegionExports: () => Promise<string[]>
@@ -730,6 +764,7 @@ export interface ShinyEggAPI {
   editor: EditorAPI
   render: RenderAPI
   bizhawk: BizHawkAPI
+  emulator: EmulatorAPI
   debug: DebugAPI
   patches: PatchesAPI
   importRom: ImportRomAPI

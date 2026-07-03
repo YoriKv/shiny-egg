@@ -1,6 +1,9 @@
 import { useState, type JSX } from 'react'
-import type { TestInventory } from '../../preload/api'
+import type { EmulatorKind, EmulatorState, TestInventory } from '../../preload/api'
 import { ContextMenu } from './ContextMenu'
+
+/** Display names for the two backends. */
+const EMULATOR_LABELS: Record<EmulatorKind, string> = { bizhawk: 'BizHawk', mesen: 'Mesen' }
 
 /** Egg-trail capacity: eggs + keys can't exceed this (the cart's between-level
  *  snapshot holds 6 items). Shared with App's persisted-state clamp. */
@@ -21,15 +24,18 @@ export interface BizHawkMenuProps {
   /** Emulator action in flight — disables both buttons. Owned by App so the
    *  Ctrl+R shortcut shares the same guard. */
   busy: boolean
-  /** Whether EmuHawk.exe is located (a saved path, or the dev `../bizhawk`
-   *  fallback). While false, the menu shows "Locate BizHawk" in place of the
-   *  Launch / Test Level buttons. */
-  located: boolean
-  /** Open the file picker to locate EmuHawk.exe. */
-  onLocate: () => void
-  /** Cold-boot EmuHawk (save → build → launch). App provides the log sink. */
+  /** Selected backend + each backend's located status. Null until the first
+   *  `emulator.getState()` resolves (then the menu renders nothing). While the
+   *  selected backend isn't located, the menu shows two side-by-side Locate
+   *  buttons (BizHawk + Mesen) in place of Launch / Test Level. */
+  emulatorState: EmulatorState | null
+  /** Open the file picker to locate the given backend (locating one selects it). */
+  onLocate: (kind: EmulatorKind) => void
+  /** Switch the selected backend (the right-click menu). */
+  onSelectKind: (kind: EmulatorKind) => void
+  /** Cold-boot the selected emulator (save → build → launch). App provides the log sink. */
   onLaunch: () => void
-  /** Save → build → ensure EmuHawk → load the selected level. */
+  /** Save → build → ensure the selected emulator → load the selected level. */
   onTestLevel: () => void
   /** Items Test Level seeds into Yoshi's egg trail (persisted in App). */
   testInventory: TestInventory
@@ -82,14 +88,15 @@ function InvStepper({
 }
 
 /**
- * Two toolbar buttons for EmuHawk control. Both flush pending edits into the
- * ROM first (save if dirty, rebuild if any change is unbuilt) so the emulator
- * always boots the latest changes:
+ * Toolbar buttons for emulator control (BizHawk or Mesen — whichever is
+ * selected). Launch / Test Level both flush pending edits into the ROM first
+ * (save if dirty, rebuild if any change is unbuilt) so the emulator always boots
+ * the latest changes:
  *
  * - **Launch**: cold boot — no savestate, no auto-pause, no level load. The
  *   user navigates the game themselves (world map, intro, …).
- * - **Test Level**: ensure EmuHawk is running, then load the selected
- *   translevel ID via the Lua harness. Also bound to Ctrl+R.
+ * - **Test Level**: ensure the selected emulator is running, then load the
+ *   selected translevel ID via the Lua harness. Also bound to Ctrl+R.
  *
  * The orchestration + busy state live in App (so the keyboard shortcut shares
  * them); these buttons just fire the provided callbacks.
@@ -99,43 +106,59 @@ function InvStepper({
  * capped at {@link MAX_TEST_INVENTORY_ITEMS} (a key occupies one egg slot), so
  * the `+` buttons disable once the trail is full.
  *
- * Until BizHawk is located (no saved path and no dev fallback), neither action
- * can run, so both buttons are replaced by a one-time **Locate BizHawk** step
- * that points the editor at EmuHawk.exe and persists it. Once located,
- * right-clicking the area opens a **Change BizHawk installation…** menu that
- * re-runs that same picker — the deliberate way to re-point BizHawk at a
- * different install (the automatic clear only fires when a launch fails).
+ * Until the **selected** backend is located, Launch / Test Level are replaced by
+ * two side-by-side **Locate BizHawk** / **Locate Mesen** buttons — locating one
+ * selects it (BizHawk is Windows/Linux; Mesen also runs on macOS). Once located,
+ * right-clicking the area opens a menu to **switch to the other emulator** or
+ * **change the selected install** (re-runs that picker — the deliberate way to
+ * re-point at a different install; the automatic clear only fires when a launch
+ * fails).
  */
 export function BizHawkMenu({
   selectedLevelRecordId,
   busy,
-  located,
+  emulatorState,
   onLocate,
+  onSelectKind,
   onLaunch,
   onTestLevel,
   testInventory,
   onTestInventoryChange
-}: BizHawkMenuProps): JSX.Element {
-  // Right-click menu (located state) to re-point BizHawk at a different install
-  // — the same picker as "Locate BizHawk", reachable without waiting for a
-  // launch to fail. Viewport coords; the fixed-position ContextMenu handles
-  // outside-click / Escape dismissal.
+}: BizHawkMenuProps): JSX.Element | null {
+  // Right-click menu (located state) to switch emulator or re-point the selected
+  // one — reachable without waiting for a launch to fail. Viewport coords; the
+  // fixed-position ContextMenu handles outside-click / Escape dismissal.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
-  if (!located) {
+  if (!emulatorState) return null
+  const selected = emulatorState.selected
+  const selectedLocated = emulatorState[selected].located
+
+  if (!selectedLocated) {
+    // Two side-by-side Locate buttons; locating one selects that backend.
     return (
       <div className="se-bizhawk">
         <button
           type="button"
           className="se-tool se-tool--bizhawk"
-          onClick={onLocate}
-          title="Find EmuHawk.exe so the editor can run BizHawk."
+          onClick={() => onLocate('bizhawk')}
+          title="Find EmuHawk.exe so the editor can run BizHawk (Windows / Linux)."
         >
           Locate BizHawk
+        </button>
+        <button
+          type="button"
+          className="se-tool se-tool--bizhawk"
+          onClick={() => onLocate('mesen')}
+          title="Find Mesen so the editor can run it (Windows / Linux / macOS)."
+        >
+          Locate Mesen
         </button>
       </div>
     )
   }
+  const other: EmulatorKind = selected === 'bizhawk' ? 'mesen' : 'bizhawk'
+  const label = EMULATOR_LABELS[selected]
   const canAdd = testInventory.eggs + testInventory.keys < MAX_TEST_INVENTORY_ITEMS
   return (
     <div
@@ -150,7 +173,7 @@ export function BizHawkMenu({
         className="se-tool se-tool--bizhawk"
         onClick={onLaunch}
         disabled={busy}
-        title="Save (if dirty) → Build (if needed) → Launch Emulator.  (Right-click to change BizHawk install)"
+        title={`Save (if dirty) → Build (if needed) → Launch ${label}.  (Right-click to switch emulator / change install)`}
       >
         Launch
       </button>
@@ -159,7 +182,7 @@ export function BizHawkMenu({
         className="se-tool se-tool--bizhawk"
         onClick={onTestLevel}
         disabled={busy || selectedLevelRecordId === null}
-        title="Save (if dirty) → Build (if needed) → Launch Emulator → Load the current level.  (Ctrl+R)"
+        title={`Save (if dirty) → Build (if needed) → Launch ${label} → Load the current level.  (Ctrl+R)`}
       >
         Test Level
       </button>
@@ -194,7 +217,10 @@ export function BizHawkMenu({
         <ContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}
-          items={[{ label: 'Change BizHawk installation…', onClick: onLocate }]}
+          items={[
+            { label: `Use ${EMULATOR_LABELS[other]}`, onClick: () => onSelectKind(other) },
+            { label: `Change ${label} installation…`, onClick: () => onLocate(selected) }
+          ]}
           onClose={() => setCtxMenu(null)}
         />
       )}
