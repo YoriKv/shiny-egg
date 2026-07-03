@@ -20,8 +20,12 @@ export interface LevelKeyboardShortcutsParams {
   selection: Selection[]
   primarySelection: Selection | null
   setSelection: (sel: Selection[]) => void
+  /** The armed picker entity (place mode when non-null). Shift+Arrow resizes its
+   *  object preview here instead of nudging/resizing a selected entity. */
+  placement: PlacementItem | null
   setPlacement: Dispatch<SetStateAction<PlacementItem | null>>
-  /** Drop out of the Place tool back to Select (so the toolbar de-highlights). */
+  /** Exit place mode (disarm the item) — the toolbar de-highlights + the ghost
+   *  clears off the back of `placement`. */
   cancelPlacement: () => void
   globalUndo: () => void
   globalRedo: () => void
@@ -36,7 +40,7 @@ export interface LevelKeyboardShortcutsParams {
 
 export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void {
   const {
-    levelState, dispatchLevel, selection, primarySelection, setSelection, setPlacement, cancelPlacement, globalUndo, globalRedo, propTable, clipboardRef, cameraRef, viewportRef
+    levelState, dispatchLevel, selection, primarySelection, setSelection, placement, setPlacement, cancelPlacement, globalUndo, globalRedo, propTable, clipboardRef, cameraRef, viewportRef
   } = p
   // Read the current level WITHOUT re-binding the listener on every edit
   // (levelState changes each commit). Handlers read levelStateRef.current; the
@@ -44,6 +48,10 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
   // changes re-create the listener.
   const levelStateRef = useRef(levelState)
   levelStateRef.current = levelState
+  // The armed placement, read through a ref so the resize keypress (which mutates
+  // `placement` each press) doesn't re-bind the whole key listener.
+  const placementRef = useRef(placement)
+  placementRef.current = placement
   useEffect(() => {
     // Deep-copy the selected objects/sprites into the clipboard (raw bytes too,
     // so a later edit/delete can't mutate what was copied).
@@ -155,6 +163,36 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
         setSelection([])
         setPlacement(null)
         cancelPlacement()
+        return
+      }
+
+      // Place mode (an entity armed in the picker): Shift+Arrow resizes the OBJECT
+      // preview (←/→ = width, ↑/↓ = height; →/↓ grow, ←/↑ shrink), gated ONLY by the
+      // object's encodable axes (`sizeMode`) — the only real per-object limit
+      // (`negWAllowed`/`negHAllowed` are informational only, unenforced elsewhere).
+      // The extent is left UNCLAMPED and may go negative (an anchor-relative
+      // "grow back" extent), exactly like the placed-object resize + drag handles;
+      // App.onPlaceAt's clampObjectResize bounds it (sign-preserving) at the drop.
+      // Sprites/exits have no size, so it's a no-op. Claims Shift+Arrow entirely in
+      // place mode so it never leaks to a lingering selection's resize.
+      if (placementRef.current && e.shiftKey && e.key.startsWith('Arrow')) {
+        e.preventDefault()
+        const item = placementRef.current
+        if (item.kind === 'object') {
+          const sm = objectSizeMode(item.num, item.exnum, propTable)
+          const horiz = e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+          const vert = e.key === 'ArrowUp' || e.key === 'ArrowDown'
+          setPlacement((prev) => {
+            if (!prev || prev.kind !== 'object') return prev
+            if (horiz && (sm === 'w' || sm === 'wh')) {
+              return { ...prev, w: prev.w + (e.key === 'ArrowRight' ? 1 : -1) }
+            }
+            if (vert && (sm === 'h' || sm === 'wh')) {
+              return { ...prev, h: prev.h + (e.key === 'ArrowDown' ? 1 : -1) }
+            }
+            return prev
+          })
+        }
         return
       }
 

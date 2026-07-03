@@ -10,6 +10,7 @@ import { editorDataRoot, overlayRoot } from '../framework-paths'
 import { levelNameOverrides, levelRecordOverrides } from '../resources'
 import { getCurrentProjectId, getProjectNewSlots, getProjectRemovedLevels } from '../projects'
 import type { LevelsCatalog } from 'snes-framework/types'
+import { LEVEL_RECORD_COUNT } from 'snes-framework/extract'
 
 export function registerLevelsIpc(): void {
   ipcMain.handle('levels:catalog', async (): Promise<LevelsCatalog | null> => {
@@ -93,6 +94,9 @@ export function registerLevelsIpc(): void {
           }
         }
       }
+      // Surface the pointer-table size so renderer inputs (the world-map
+      // entrance record-id field) can cap to the last real record dynamically.
+      cat.recordCount = LEVEL_RECORD_COUNT
       return cat
     } catch {
       return null

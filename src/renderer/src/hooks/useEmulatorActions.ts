@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { RefObject } from 'react'
 import type { TestInventory } from '../../../preload/api'
 import { gates, type Blocker } from '../lib/level-blockers'
@@ -40,6 +40,10 @@ export interface EmulatorActionsParams {
    *  launch: the main process forgets a saved-but-unlaunchable path, so this
    *  flips the toolbar back to Locate for re-pointing. */
   refreshEmulatorState: () => void
+  /** Shared synchronous save/build gate, owned by App. Save (Ctrl+S) and the
+   *  emulator chains all set it while running so a manual Save can't overlap a
+   *  Test Level/Launch save (both funnel into the same overlay write). */
+  busyRef: RefObject<boolean>
 }
 
 export interface EmulatorActionsApi {
@@ -68,10 +72,10 @@ export function useEmulatorActions({
   testSpawn,
   testInventory,
   appendLog,
-  refreshEmulatorState
+  refreshEmulatorState,
+  busyRef
 }: EmulatorActionsParams): EmulatorActionsApi {
   const [emuBusy, setEmuBusy] = useState<boolean>(false)
-  const emuBusyRef = useRef<boolean>(false)
 
   // Flush pending edits into the ROM: save EVERY dirty document (level + palette
   // + strings + …) — each marks the build dirty — then rebuild if any save has
@@ -290,21 +294,22 @@ export function useEmulatorActions({
   )
 
   // Emulator-action wrappers shared by the toolbar buttons (BizHawkMenu) and the
-  // Ctrl+R shortcut. `emuBusyRef` is a synchronous re-entry guard so a rapid
-  // shortcut + click can't launch two builds at once.
+  // Ctrl+R shortcut. The shared `busyRef` is a synchronous re-entry guard so a
+  // rapid shortcut + click can't launch two builds at once — AND so a manual Save
+  // (which sets the same ref) can't overlap a Test Level/Launch save.
   const runEmuAction = useCallback(
     async (action: (append: (line: string) => void) => Promise<void>) => {
-      if (emuBusyRef.current) return
-      emuBusyRef.current = true
+      if (busyRef.current) return
+      busyRef.current = true
       setEmuBusy(true)
       try {
         await action(appendLog)
       } finally {
-        emuBusyRef.current = false
+        busyRef.current = false
         setEmuBusy(false)
       }
     },
-    [appendLog]
+    [appendLog, busyRef]
   )
   const handleLaunch = useCallback(() => void runEmuAction(onLaunch), [runEmuAction, onLaunch])
   const handleTestLevel = useCallback(() => {

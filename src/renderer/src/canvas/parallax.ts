@@ -150,3 +150,37 @@ export function cameraOrigin(view: View, size: { w: number; h: number }): { x: n
   const cy = (size.h / 2 - view.panY) / view.zoom
   return { x: Math.round(cx - CAMERA_W / 2), y: Math.round(cy - CAMERA_H / 2) }
 }
+
+/**
+ * Clamp a view's pan so the Camera Preview camera can't be panned past the level
+ * edges — the pan-lock counterpart to clampCamera (which only clamps the drawn box,
+ * letting the level keep scrolling under a stuck box). Returns panX/panY clamped so
+ * the 256×224 camera stays inside [0, levelW-256] × [0, levelH-224]; an axis already
+ * in bounds is returned unchanged. `levelW/levelH` are the fixed editor grid extent
+ * (LEVEL_PX_W × LEVEL_PX_H), same as the box clamp.
+ *
+ * Clamp in PAN space, NOT by correcting the rounded cameraOrigin: invert the
+ * (unrounded) camera→pan relation to get the pan range that keeps the camera in the
+ * level, then clamp panX/panY to it with a plain 1D clamp. From cameraOrigin,
+ * camera.x = (size.w/2 - panX)/zoom - CAMERA_W/2 — falling in panX — so:
+ *   camera.x = 0            ⇒ panX = panXMax (camera at the LEFT edge)
+ *   camera.x = levelW-256   ⇒ panX = panXMin (camera at the RIGHT edge)
+ * Deriving the correction from the rounded origin instead makes the held pan wobble
+ * ±1px frame-to-frame (origin steady, pan not) as consecutive drag targets round
+ * across the .5 boundary — a visible jitter of the level under the box.
+ */
+export function clampPanToCamera(
+  view: View,
+  size: { w: number; h: number },
+  levelW: number,
+  levelH: number
+): { panX: number; panY: number } {
+  const panXMax = size.w / 2 - (view.zoom * CAMERA_W) / 2
+  const panXMin = size.w / 2 - view.zoom * (levelW - CAMERA_W / 2)
+  const panYMax = size.h / 2 - (view.zoom * CAMERA_H) / 2
+  const panYMin = size.h / 2 - view.zoom * (levelH - CAMERA_H / 2)
+  return {
+    panX: Math.max(panXMin, Math.min(view.panX, panXMax)),
+    panY: Math.max(panYMin, Math.min(view.panY, panYMax))
+  }
+}

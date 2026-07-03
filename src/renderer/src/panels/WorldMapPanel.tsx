@@ -25,10 +25,10 @@ import type {
   WorldMapMidwayEntrance,
   WorldMapModel
 } from '../../../preload/api'
-import { getAllLevels, getLevel, useLevelsCatalog } from '../data/levels'
+import { getAllLevels, getLevel, getLevelByTranslevel, getRecordCount, useLevelsCatalog } from '../data/levels'
 import { useSubLevelBFS } from '../hooks/useSubLevelBFS'
 import { ENTRANCE_TYPES } from '../data/property-schema'
-import { EnumField, LevelPicker, LevelRefField, NumberField } from './field-widgets'
+import { EnumField, LevelPicker, NumberField } from './field-widgets'
 import { bgr15ToHex } from '../lib/bgr15'
 import { hex0x } from '../lib/hex'
 
@@ -232,6 +232,17 @@ function recordName(recordId: number): string {
   return getLevel(recordId)?.name ?? `record ${hex0x(recordId, 2)}`
 }
 
+/** A world-map slot's display name, resolved by TRANSLEVEL slot — the name is a
+ *  slot property (Bank51 name string keyed by map slot), so it stays correct
+ *  while the slot's "Plays" record is being edited. Resolving via the record id
+ *  instead (getLevel(e.levelDataId)) mis-resolves to the record's HOME slot's
+ *  name until save re-aligns the record→translevel overlay. Falls back to the
+ *  played record's raw id — never another slot's name — when the slot has no
+ *  catalog name. */
+function slotName(translevelId: number, playedRecord: number): string {
+  return getLevelByTranslevel(translevelId)?.name ?? `record ${hex0x(playedRecord, 2)}`
+}
+
 /** Every slot of one world, from the FIXED shape — independent of the levels
  *  catalog, so worlds whose levels were all removed still list and edit. Pure
  *  padding slots (no live wiring, no base wiring, not the bonus tile) are
@@ -244,7 +255,7 @@ function buildWorldSlots(model: WorldMapModel, world: number, ctx: SlotCtx): Slo
     const idx = entranceIndexFor(model, t)
     const e = idx === undefined ? undefined : ctx.byIndex.get(idx)
     if (e) {
-      out.push({ translevelId: t, slot, kind: 'live', name: recordName(e.levelDataId), e, pages: midwayPagesFor(model, t, ctx) })
+      out.push({ translevelId: t, slot, kind: 'live', name: slotName(t, e.levelDataId), e, pages: midwayPagesFor(model, t, ctx) })
       continue
     }
     if (pos === 9) {
@@ -540,7 +551,7 @@ export function WorldMapBody({
               <tr>
                 <th className="se-worldmap__th-slot">Level</th>
                 <th className="se-worldmap__th-name">Name</th>
-                <th title="The data record this tile plays — remap it to a different level's data.">
+                <th title="The data record (hex id) this tile plays — enter any record id, including a sub-room, to make it the entrance. The Name column shows what it resolves to.">
                   Plays
                 </th>
                 <th title="Progression target — the map slot the Yoshi token advances to (unlocks) after clearing this one.">
@@ -614,8 +625,15 @@ export function WorldMapBody({
                       </button>
                     </td>
                     <td className="se-worldmap__c-plays">
-                      <LevelRefField
+                      {/* Raw record-id (byte +0 of the entrance record) — any
+                          record, incl. a sub-room, can be the entrance. The Name
+                          column resolves it live via recordName. */}
+                      <span className="se-meta se-props__hexprefix">0x</span>
+                      <NumberField
                         value={e.levelDataId}
+                        min={0}
+                        max={getRecordCount() - 1}
+                        hex
                         onCommit={(v) => editor.setEntranceField(e.index, { levelDataId: v })}
                       />
                     </td>

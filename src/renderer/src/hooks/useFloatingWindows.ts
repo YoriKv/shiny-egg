@@ -5,7 +5,7 @@ import { persistedState } from '../lib/persisted-state'
  *  exists — resolved against the stage in `defaultPos`. A persisted position
  *  (saved the first time the window is shown) always wins, so this only governs
  *  a window's very first appearance on a fresh layout. */
-export type WindowAnchor = 'top-right' | 'bottom-right' | 'top-center'
+export type WindowAnchor = 'top-right' | 'bottom-right' | 'top-center' | 'top-left'
 
 export interface WindowDef {
   id: string
@@ -47,6 +47,13 @@ export interface WindowDef {
 // headless/no-`window` contexts. Every panel except Properties and Find opens
 // at least 600px wide (a shared minimum for legibility); heights are tuned to
 // content. The user resizes from there.
+
+/** The top-left minimap overlay's expanded height in px: Minimap.tsx renders a
+ *  220-wide box → 110px canvas for the fixed 256×128 level grid, plus an 18px
+ *  bar and a 1px border top+bottom (see `.se-minimap` in App.css). The Place
+ *  panel anchors just below this so the two top-left overlays never overlap. */
+const MINIMAP_EXPANDED_HEIGHT = 18 + 110 + 2
+
 const INITIAL_WINDOWS: WindowDef[] = [
   {
     id: 'tiles',
@@ -129,12 +136,17 @@ const INITIAL_WINDOWS: WindowDef[] = [
   {
     id: 'picker',
     title: 'Place',
-    pos: { x: 620, y: 600 },
-    width: 600,
-    height: 420,
+    // Anchored to the top-left corner (like the minimap), dropped below the
+    // minimap's expanded height + a 12px gap so the two never overlap. `pos` is
+    // just the headless fallback (12px = EDGE_MARGIN, defined below); defaultPos
+    // derives the real start position.
+    pos: { x: 12, y: 12 + MINIMAP_EXPANDED_HEIGHT + 12 },
+    width: 300,
+    height: 580,
     z: 4,
     open: false,
-    anchor: 'top-center',
+    anchor: 'top-left',
+    anchorOffsetY: MINIMAP_EXPANDED_HEIGHT + 12,
     kind: 'picker'
   },
   {
@@ -299,6 +311,10 @@ function defaultPos(w: WindowDef): { x: number; y: number } {
   const right = Math.max(EDGE_MARGIN, W - w.width - EDGE_MARGIN)
   const dy = w.anchorOffsetY ?? 0 // per-window extra drop below the anchor
   switch (w.anchor) {
+    case 'top-left':
+      // Hugs the top-left corner (x = EDGE_MARGIN), dropped by `anchorOffsetY`
+      // (the Place panel uses this to clear the top-left minimap overlay).
+      return { x: EDGE_MARGIN, y: EDGE_MARGIN + dy }
     case 'top-right':
       return { x: right, y: EDGE_MARGIN + dy }
     case 'bottom-right': {

@@ -9,7 +9,7 @@
 
 import { DecodeState } from './state.ts';
 import { stampCell, writeBuf16 } from './handlers/_shared.ts';
-import { resolveProvenanceCells } from './provenance.ts';
+import { resolveProvenanceCells, resolveObjectFootprints } from './provenance.ts';
 
 let failures = 0;
 function assert(cond: boolean, msg: string): void {
@@ -126,6 +126,42 @@ function armedState(): DecodeState {
   writeBuf16(s, NEIGH, 0x5678);
   assert(s.provenanceCells === null, 'provenanceCells stays null when no target armed');
   assert(resolveProvenanceCells(s).length === 0, 'resolve returns [] with no recording');
+}
+
+// ── Drawn-tiles footprints (editor hit-testing): EVERY writer of a cell is
+//    recorded — including one later overwritten — so a click there can cycle
+//    through both the visible and the buried object. ─────────────────────────
+{
+  const s = new DecodeState();
+  s.reset(new Uint8Array(0), []);
+  s.screenPageMap[0] = 1;
+  s.cellStampers = new Map();
+
+  s.currentObjectIndex = 5; s.zp1D = FOOT; stampCell(s, 0x1);        // obj 5 → FOOT
+  s.zp1D = FOOT; writeBuf16(s, NEIGH, 0x2);                          // obj 5 → NEIGH (touch-up)
+  s.currentObjectIndex = 8; s.zp1D = 800; writeBuf16(s, FOOT, 0x3);  // obj 8 OVERWRITES FOOT
+  s.currentObjectIndex = 3; s.zp1D = SELF; stampCell(s, 0x4);        // obj 3 → SELF
+
+  const fp = resolveObjectFootprints(s, 9);
+  const FOOT_CELL = 3 * 256 + 2;  // (2,3)
+  const NEIGH_CELL = 4 * 256 + 0; // (0,4)
+  const SELF_CELL = 12 * 256 + 2; // (2,12)
+  assert(fp.length === 9, `footprints dense over objectCount (got ${fp.length})`);
+  assert(fp[5]!.includes(FOOT_CELL) && fp[5]!.includes(NEIGH_CELL), 'obj 5 footprint = FOOT + NEIGH');
+  assert(fp[8]!.includes(FOOT_CELL), 'obj 8 (overwriter) also owns FOOT — buried writers ARE recorded');
+  assert(fp[3]!.includes(SELF_CELL), 'obj 3 footprint = SELF');
+  assert(fp[0]!.length === 0 && fp[1]!.length === 0, 'objects that stamp nothing get an empty footprint');
+}
+
+// ── Zero-cost path: footprint collector unarmed → all-empty, no throw ────────
+{
+  const s = new DecodeState();
+  s.reset(new Uint8Array(0), []);
+  s.currentObjectIndex = 0;
+  s.zp1D = FOOT;
+  stampCell(s, 0x1234);
+  assert(s.cellStampers === null, 'cellStampers stays null when the collector is unarmed');
+  assert(resolveObjectFootprints(s, 3).every((a) => a.length === 0), 'resolve returns all-empty with no recording');
 }
 
 if (failures === 0) console.log('✓ all assertions pass');

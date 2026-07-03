@@ -208,6 +208,11 @@ export interface LevelCatalogGroup {
 
 export interface LevelsCatalog {
   groups: LevelCatalogGroup[];
+  /** Count of level-data pointer-table records — valid record ids are
+   *  0 .. recordCount-1. Injected live by the `levels:catalog` IPC from
+   *  `LEVEL_RECORD_COUNT` (extract.ts), so it tracks a pointer-table extension
+   *  without a re-extract. Absent on catalogs read outside that handler. */
+  recordCount?: number;
 }
 
 export interface LevelData {

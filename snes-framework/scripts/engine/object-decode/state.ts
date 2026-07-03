@@ -194,6 +194,17 @@ export class DecodeState {
    *  decode renders. Allocated only when targets are armed. */
   provenanceCells: Map<number, { neighbor: boolean; buried: boolean; by: number }> | null = null;
 
+  /** Per-cell stamp attribution for drawn-tiles hit-testing (buffer byte-offset →
+   *  the SET of object stream indices that stamped a tile there). Independent of
+   *  `provenanceTargets` (the drag highlight): the recorder in `_shared.ts`
+   *  collects into this whenever it's non-null, capturing EVERY writer of a cell
+   *  (not just the visible/topmost one) so a click can cycle through overwritten
+   *  objects too. null = off — the normal decode path pays only a null check and
+   *  the buffer is untouched (render output byte-for-byte unchanged). Armed by the
+   *  `objectCells` IPC; resolved to per-object absolute-cell footprints by
+   *  `resolveObjectFootprints`. */
+  cellStampers: Map<number, Set<number>> | null = null;
+
   /** Read the populated template Map16 ID at a cart WRAM address (16-bit
    *  word). Bank13 ports use this for `CMP $1C92`-style shape-aware
    *  fallback checks. Pass slot constants from `./template-slots.ts`
@@ -235,5 +246,6 @@ export class DecodeState {
     this.currentObjectIndex = -1;
     this.provenanceTargets = null;
     this.provenanceCells = null;
+    this.cellStampers = null;
   }
 }

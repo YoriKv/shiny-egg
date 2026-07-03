@@ -296,6 +296,63 @@ h3 { margin: 0; }
   border-radius: 3px;
   transition: color 0.12s, background-color 0.12s;
 }
+/* Positioning context so a tool button can anchor an overlay beneath it (the
+   Place tool's prompt toast). Hugs the 30px button, so the toolbar row is
+   unchanged for every other tool. */
+.se-tool-anchor {
+  position: relative;
+  display: inline-flex;
+}
+/* Place-tool prompt toast — a transient notice anchored directly under the Place
+   button, dropping over the top of the canvas. pointer-events:none so it never
+   blocks a click below; auto-dismisses via useTransientMessage (shared with the
+   Palette sync popup) or when an entry is armed. Up-caret points at the button. */
+.se-tool-toast {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  pointer-events: none;
+  width: max-content;
+  max-width: 240px;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--ink);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 7px 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  animation: se-tool-toast-pop 140ms ease-out;
+}
+.se-tool-toast::before,
+.se-tool-toast::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  border: 6px solid transparent;
+}
+.se-tool-toast::before {
+  border-bottom-color: var(--accent);
+  transform: translateX(-50%);
+}
+.se-tool-toast::after {
+  border-bottom-color: var(--bg-elevated);
+  transform: translate(-50%, 1.5px);
+}
+@keyframes se-tool-toast-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
 /* Hover — neutral elevated fill, shared by toolbar tools, tabs, page buttons,
    list rows, and menu items. Defined here (early, near the toolbar) so the
    accent "selected" states further down win when an element is both selected

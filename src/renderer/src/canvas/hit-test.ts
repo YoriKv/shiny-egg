@@ -10,12 +10,77 @@ import {
   CELL_PX,
   EXIT_MARKER_HALF_PX,
   INCOMING_HIT_HALF_PX,
+  LEVEL_CELLS_H,
+  LEVEL_CELLS_W,
   SPAWN_HIT_HALF_PX,
   exitCenterX,
   exitCenterY,
   objectVisualBox
 } from './geometry'
 import type { View } from './view'
+
+/** Per-object drawn-tile footprints (uid → set of absolute cell indices,
+ *  `y * LEVEL_CELLS_W + x`), from useObjectCells. When an object has an entry its
+ *  clickable region IS those cells — a click targets the tile you see and cycles
+ *  through objects whose tiles are buried at that cell. Objects absent from the
+ *  map (command objects / unported handlers, or a just-added object whose refetch
+ *  hasn't landed) fall back to their bounding box. */
+export type ObjectFootprints = Map<number, Set<number>> | null | undefined
+
+/** Absolute cell index (`y * LEVEL_CELLS_W + x`) for a world point, or -1 when
+ *  off the level grid (so a footprint object — cell-based — can't hit there). */
+function cellIndexAt(wx: number, wy: number): number {
+  const cx = Math.floor(wx / CELL_PX)
+  const cy = Math.floor(wy / CELL_PX)
+  if (cx < 0 || cx >= LEVEL_CELLS_W || cy < 0 || cy >= LEVEL_CELLS_H) return -1
+  return cy * LEVEL_CELLS_W + cx
+}
+
+/** True when a world point hits object `o` — its DRAWN TILES when a footprint is
+ *  known, else its bounding box (fallback for command / no-gfx objects and the
+ *  brief post-edit window before the footprint refetch resolves). `cell` is the
+ *  precomputed `cellIndexAt(wx, wy)` (shared across the object loop). */
+function objectHit(
+  o: LevelObject,
+  footprints: ObjectFootprints,
+  wx: number,
+  wy: number,
+  cell: number
+): boolean {
+  const fp = o.uid != null ? footprints?.get(o.uid) : undefined
+  if (fp) return cell >= 0 && fp.has(cell)
+  const b = objectVisualBox(o)
+  return wx >= b.x0 && wx < b.x0 + b.w && wy >= b.y0 && wy < b.y0 + b.h
+}
+
+/** Whether world point (wx, wy) falls on object `o`'s clickable region — the same
+ *  drawn-tiles-else-box predicate select/hover use, exposed so the drag-to-move
+ *  grab shares it (grab area == select area). Computes the cell internally. */
+export function objectHitAtPoint(
+  o: LevelObject,
+  footprints: ObjectFootprints,
+  wx: number,
+  wy: number
+): boolean {
+  return objectHit(o, footprints, wx, wy, cellIndexAt(wx, wy))
+}
+
+/** True when any of a footprint's cells overlaps a world-pixel rectangle (marquee
+ *  box-select against drawn tiles). O(footprint) — fine for a one-shot release. */
+function footprintInRect(
+  fp: Set<number>,
+  rx0: number,
+  ry0: number,
+  rx1: number,
+  ry1: number
+): boolean {
+  for (const cell of fp) {
+    const cx = (cell % LEVEL_CELLS_W) * CELL_PX
+    const cy = Math.floor(cell / LEVEL_CELLS_W) * CELL_PX
+    if (rectsOverlap(rx0, ry0, rx1, ry1, cx, cy, cx + CELL_PX, cy + CELL_PX)) return true
+  }
+  return false
+}
 
 /** Sprite click/hover bounds, keyed by sprite num — `SpriteLayerResult.bounds`
  *  collapsed into a lookup. Null/empty before the sprite layer resolves. */
@@ -129,6 +194,9 @@ export function hitTestAll(
   clientX: number,
   clientY: number,
   spriteBounds: SpriteBoundsMap,
+  /** Per-object drawn-tile footprints — objects hit on their tiles, not their box
+   *  (see ObjectFootprints). */
+  footprints: ObjectFootprints,
   /** Effective spawn cell — the world-map entrance-table DRAFT position when
    *  editing, so the moved marker stays clickable before save+reload. Defaults to
    *  `level.spawn` (the base, extract-time position) when omitted. */
@@ -191,15 +259,16 @@ export function hitTestAll(
     }
   }
 
-  // Objects drawn-last first, so the topmost in z-order takes precedence.
+  // Objects drawn-last first, so the topmost in z-order takes precedence. The hit
+  // region is each object's DRAWN TILES (footprints) — including cells later
+  // overwritten by a higher object, so the stack at a cell includes the buried
+  // objects and repeated clicks cycle down to them. Objects that stamp nothing
+  // (command / no-gfx) fall back to their bounding box (objectHit).
+  const cell = cellIndexAt(wx, wy)
   for (let i = level.objects.length - 1; i >= 0; i--) {
     const o = level.objects[i]
     if (!isLayerVisible(o, layers)) continue
-    // Hit-box mirrors draw's box (objectVisualBox): a size-0 axis renders as
-    // 1/4 tile. So a single-zero object (e.g. std_$e6, w=0/h=11) stays an easy
-    // sliver target; a fully-zero object is a small 1/4×1/4 box — zoom to grab.
-    const b = objectVisualBox(o)
-    if (wx >= b.x0 && wx < b.x0 + b.w && wy >= b.y0 && wy < b.y0 + b.h) {
+    if (objectHit(o, footprints, wx, wy, cell)) {
       hits.push({ kind: 'object', uid: o.uid! })
     }
   }
@@ -218,11 +287,12 @@ export function collectEraseHits(
   layers: LayerVisibility,
   incoming: IncomingExit[],
   spriteBounds: SpriteBoundsMap,
+  footprints: ObjectFootprints,
   rect: DOMRect,
   clientX: number,
   clientY: number
 ): { objUids: number[]; sprUids: number[] } {
-  const hits = hitTestAll(level, view, layers, incoming, rect, clientX, clientY, spriteBounds)
+  const hits = hitTestAll(level, view, layers, incoming, rect, clientX, clientY, spriteBounds, footprints)
   const objUids: number[] = []
   const sprUids: number[] = []
   for (const h of hits) {
@@ -248,7 +318,8 @@ export function hitTestRect(
   clientY0: number,
   clientX1: number,
   clientY1: number,
-  spriteBounds: SpriteBoundsMap
+  spriteBounds: SpriteBoundsMap,
+  footprints: ObjectFootprints
 ): Selection[] {
   if (!level || level.empty || level.special) return []
   const a = clientToWorld(rect, view, clientX0, clientY0)
@@ -266,12 +337,16 @@ export function hitTestRect(
       }
     }
   }
+  // Objects box-select on their DRAWN TILES (any footprint cell inside the box),
+  // falling back to the bounding box for objects that stamp nothing.
   for (const o of level.objects) {
     if (!isLayerVisible(o, layers)) continue
-    const b = objectVisualBox(o)
-    if (rectsOverlap(rx0, ry0, rx1, ry1, b.x0, b.y0, b.x0 + b.w, b.y0 + b.h)) {
-      hits.push({ kind: 'object', uid: o.uid! })
-    }
+    const fp = o.uid != null ? footprints?.get(o.uid) : undefined
+    const box = objectVisualBox(o)
+    const hit = fp
+      ? footprintInRect(fp, rx0, ry0, rx1, ry1)
+      : rectsOverlap(rx0, ry0, rx1, ry1, box.x0, box.y0, box.x0 + box.w, box.y0 + box.h)
+    if (hit) hits.push({ kind: 'object', uid: o.uid! })
   }
   return hits
 }
@@ -282,16 +357,17 @@ export function hitTestObject(
   layers: LayerVisibility,
   rect: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  footprints: ObjectFootprints
 ): LevelObject | null {
   if (!level || level.empty || level.special) return null
   const { wx, wy } = clientToWorld(rect, view, clientX, clientY)
+  // Hover on the DRAWN TILES (footprints), falling back to the box — see hitTestAll.
+  const cell = cellIndexAt(wx, wy)
   for (let i = level.objects.length - 1; i >= 0; i--) {
     const o = level.objects[i]
     if (!isLayerVisible(o, layers)) continue
-    // Box matches draw's objectVisualBox (size 0 → 1/4 tile) — see hitTestAll.
-    const b = objectVisualBox(o)
-    if (wx >= b.x0 && wx < b.x0 + b.w && wy >= b.y0 && wy < b.y0 + b.h) return o
+    if (objectHit(o, footprints, wx, wy, cell)) return o
   }
   return null
 }

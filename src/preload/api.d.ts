@@ -67,6 +67,7 @@ import type {
   YychrProjectExportResult,
   YychrProjectImportResult,
   YychrThumbnailEntry,
+  ObjectCellsResponse,
   ObjectInfluenceRequest,
   ObjectInstance,
   OverlayDriftReport,
@@ -508,6 +509,10 @@ export interface RenderAPI {
    *  decoded from `override` at its pending position. Drag-transient (no
    *  patching). Null for empty/special slots. */
   objectInfluence: (req: ObjectInfluenceRequest) => Promise<DecodedObjectInfluence | null>
+  /** Per-object drawn-tile footprints (which cells each object stamps, visible +
+   *  overwritten) for the editor's drawn-tiles hit-testing. Pass `override` so it
+   *  tracks live edits; cached main-side on the object-state token. */
+  objectCells: (req: LevelRenderRequest) => Promise<ObjectCellsResponse | null>
   /** Picker render-validity: per std/ext-object verdicts under this level's
    *  header (each candidate probe-decoded alone main-side, cached per
    *  gfx-header tuple) plus the level's 6 variable spriteset file ids for the

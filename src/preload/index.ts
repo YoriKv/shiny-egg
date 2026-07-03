@@ -30,6 +30,7 @@ import type {
   YychrProjectExportResult,
   YychrProjectImportResult,
   YychrThumbnailEntry,
+  ObjectCellsResponse,
   ObjectInfluenceRequest,
   ObjectInstance,
   PaletteCatalog,
@@ -223,6 +224,11 @@ const api = {
       req: ObjectInfluenceRequest
     ): Promise<DecodedObjectInfluence | null> =>
       ipcRenderer.invoke('render:objectInfluence', req),
+    /** Per-object drawn-tile footprints (cell index → objects) for the editor's
+     *  drawn-tiles hit-testing. Pass `override` so it tracks live edits; cached
+     *  main-side on the object-state token. */
+    objectCells: (req: LevelRenderRequest): Promise<ObjectCellsResponse | null> =>
+      ipcRenderer.invoke('render:objectCells', req),
     /** Picker render-validity: per std/ext-object verdicts under this level's
      *  header (each candidate probe-decoded alone, main-side, cached per
      *  gfx-header tuple) + the level's 6 variable spriteset file ids for the

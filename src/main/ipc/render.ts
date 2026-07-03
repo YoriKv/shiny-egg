@@ -23,7 +23,8 @@ import { encodePng } from 'snes-framework/png'
 import {
   decodeLevelFromLevelData,
   loadObjectPropertyTable,
-  resolveProvenanceCells
+  resolveProvenanceCells,
+  resolveObjectFootprints
 } from 'snes-framework/object-decode'
 import { composeBgLayers } from 'snes-framework/bg-layers-compose'
 import { readParallaxRates } from 'snes-framework/parallax-rates'
@@ -63,6 +64,7 @@ import type {
   FitTileset,
   LevelRenderRequest,
   LevelTileUsage,
+  ObjectCellsResponse,
   ObjectInfluenceRequest,
   PaletteCatalog,
   PaletteLiveResult,
@@ -695,6 +697,34 @@ export function registerRenderIpc(): void {
         mid: c.mid
       }))
       return { cells }
+    }
+  )
+
+  // Per-object drawn-tile footprints for the editor's drawn-tiles hit-testing:
+  // which cells each object actually stamps (visible AND overwritten), so a click
+  // targets the tile you see and cycles through objects buried under it. Cached on
+  // the object-state token (`decodeInputKey`) so pan/zoom/palette re-fetches reuse
+  // the result — only an object edit re-decodes. This runs its OWN decode (the
+  // shared decodeForRequest cache doesn't collect footprints); the seed doesn't
+  // affect which cells are stamped, so it's left at the default.
+  let objectCellsCache: { symbols: unknown; key: string; footprints: number[][] } | null = null
+  ipcMain.handle(
+    'render:objectCells',
+    async (_event, req: LevelRenderRequest): Promise<ObjectCellsResponse | null> => {
+      const ctx = loadLevelContext(req)
+      if (!ctx) return null
+      const { rom, symbols, level } = ctx
+      const key = decodeInputKey(level)
+      if (objectCellsCache && objectCellsCache.symbols === symbols && objectCellsCache.key === key) {
+        return { footprints: objectCellsCache.footprints }
+      }
+      const decoded = decodeLevelFromLevelData({
+        rom, symbols, workRoot: frameworkWorkRoot(), levelData: level, collectObjectCells: true
+      })
+      if (!decoded) return null
+      const footprints = resolveObjectFootprints(decoded.state, level.objects.length)
+      objectCellsCache = { symbols, key, footprints }
+      return { footprints }
     }
   )
 

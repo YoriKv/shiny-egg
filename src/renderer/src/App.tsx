@@ -20,6 +20,7 @@ import {
   isDirty,
   levelReducer
 } from './canvas/level-reducer'
+import { clampObjectResize } from './canvas/limits'
 import { objectSizeMode } from './data/object-record'
 import { useObjectPropertyTable } from './hooks/useObjectPropertyTable'
 import { useLevelKeyboardShortcuts } from './hooks/useLevelKeyboardShortcuts'
@@ -66,6 +67,7 @@ import { useLevelTileUsage } from './hooks/useLevelTileUsage'
 import { influenceBlockIds, useSelectedObjectInfluence } from './hooks/useSelectedObjectInfluence'
 import { useUnifiedHistory } from './hooks/useUnifiedHistory'
 import { useEmulatorActions } from './hooks/useEmulatorActions'
+import { useTransientMessage } from './hooks/useTransientMessage'
 import { useLevelNavigation } from './hooks/useLevelNavigation'
 import { getAllLevels, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
@@ -316,6 +318,14 @@ export default function App(): JSX.Element {
   // Entity armed in the Add-picker for click-to-place. `placing` (a derived
   // bool passed to Canvas) gates the canvas place gesture.
   const [placement, setPlacement] = useState<PlacementItem | null>(null)
+  // Place-tool prompt toast — shown in the Picker panel each time the Place tool
+  // is activated (fresh open OR re-click while open), auto-dismissing. Shares the
+  // app's transient-message primitive with the Palette sync popup.
+  const {
+    message: placePromptMessage,
+    show: showPlacePrompt,
+    dismiss: dismissPlacePrompt
+  } = useTransientMessage(5000)
   const {
     windows,
     focusWindow,
@@ -358,6 +368,11 @@ export default function App(): JSX.Element {
   }, [incomingByLevel, levelState.level])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState<boolean>(false)
+  // Shared synchronous save/build gate: Save (Ctrl+S) and the emulator chains
+  // (Test Level / Launch) all funnel into the same overlay write, so they must
+  // never run concurrently. A ref (not state) so the guard is synchronous — two
+  // triggers in the same tick can't both pass it.
+  const busyRef = useRef(false)
   const dirty = isDirty(levelState)
   // Bumped by a Banks-panel migrate / de-couple toggle so the byte-budget gate
   // re-fetches — migrating a bank-mate out reclaims room, so a "N over budget"
@@ -534,14 +549,25 @@ export default function App(): JSX.Element {
   }, [])
 
   // Activate a toolbar tool — shared by the tool buttons and the Q/W/E/T
-  // hotkeys. The Place tool also pops the Place panel so an entity can be armed.
+  // hotkeys. "Place" is NOT a persistent tool: place mode is driven purely by an
+  // armed picker entity (`placement !== null`). Clicking Place is a momentary
+  // action that opens the picker and prompts, but leaves us in Select mode until
+  // an entry is picked (onPickPlacement arms it). Any real tool leaves place mode.
   const selectTool = useCallback(
     (id: string) => {
+      if (id === 'place') {
+        setActiveTool('select')
+        openWindow('picker')
+        // Prompt the user to pick an entry — shown whether the panel was just
+        // opened or was already open (re-click). Dismissed once one is armed.
+        showPlacePrompt('Pick an object or sprite to place in the Place panel.')
+        return
+      }
+      setPlacement(null)
       setActiveTool(id)
-      if (id === 'place') openWindow('picker')
       if (id === 'paint') openWindow('paint')
     },
-    [openWindow]
+    [openWindow, showPlacePrompt]
   )
 
   // Object-finder seed: shift-clicking an entry in the Place panel populates the
@@ -560,41 +586,53 @@ export default function App(): JSX.Element {
     [openWindow]
   )
 
-  // Place panel → arm an item + switch to the Place tool. Clicking the canvas
-  // then calls onPlaceAt, which appends the entity and selects it.
+  // Place panel → arm an item (entering place mode; `placement !== null` is the
+  // single source of truth). Ensure we're on Select (not erase/spawn) so the only
+  // active mode is placement. Clicking the canvas then calls onPlaceAt.
   const onPickPlacement = useCallback((item: PlacementItem) => {
     setPlacement(item)
-    setActiveTool('place')
-  }, [])
-  // Drop out of the Place tool back to Select so the toolbar button de-highlights
-  // (Escape clears the armed placement too — see useLevelKeyboardShortcuts).
-  const cancelPlacement = useCallback(() => setActiveTool('select'), [])
-  // Right-click on the canvas while placing → clear the armed item and return to
-  // Select (mirrors Escape, minus the selection clear). Passed to Canvas.
-  const onCancelPlacement = useCallback(() => {
-    setPlacement(null)
-    cancelPlacement()
-  }, [cancelPlacement])
+    setActiveTool('select')
+    // Clear any prior selection so the placement ghost is the only highlight and
+    // stray arrow keys can't nudge a leftover selection while placing.
+    setSelection([])
+    // The prompt is fulfilled — drop the toast.
+    dismissPlacePrompt()
+  }, [dismissPlacePrompt])
+  // Exit place mode — disarm the item (which drops the cursor ghost + de-highlights
+  // the Place button + deselects the picker row, all keyed off `placement`).
+  const cancelPlacement = useCallback(() => setPlacement(null), [])
+  // Right-click on the canvas while placing → exit place mode. Passed to Canvas.
+  const onCancelPlacement = cancelPlacement
+  // Commit the armed entity at a cell. `keepPlacing` (Shift-click) leaves the item
+  // armed for rapid repeat placement WITHOUT selecting; a plain click selects the
+  // placed entity and returns to Select (clears `placement`).
   const onPlaceAt = useCallback(
-    (cx: number, cy: number) => {
+    (cx: number, cy: number, keepPlacing: boolean) => {
       if (!placement) return
       const newUid = levelState.nextUid
       if (placement.kind === 'object') {
+        // Clamp the (possibly Shift+arrow-resized) extents to the drop cell so a
+        // grown preview can't place an out-of-bounds box (addObject doesn't clamp
+        // w/h — same anchor-relative clamp the resize handles use).
+        const { w, h } = clampObjectResize(
+          { x: cx, y: cy, w: placement.w, h: placement.h } as LevelObject,
+          placement.w,
+          placement.h
+        )
         dispatchLevel({
           type: 'addObject',
-          template: {
-            num: placement.num,
-            exnum: placement.exnum,
-            x: cx,
-            y: cy,
-            w: placement.w,
-            h: placement.h
-          }
+          template: { num: placement.num, exnum: placement.exnum, x: cx, y: cy, w, h }
         })
-        setSelection([{ kind: 'object', uid: newUid }])
+        if (!keepPlacing) {
+          setSelection([{ kind: 'object', uid: newUid }])
+          setPlacement(null)
+        }
       } else if (placement.kind === 'sprite') {
         dispatchLevel({ type: 'addSprite', template: { num: placement.num, x: cx, y: cy } })
-        setSelection([{ kind: 'sprite', uid: newUid }])
+        if (!keepPlacing) {
+          setSelection([{ kind: 'sprite', uid: newUid }])
+          setPlacement(null)
+        }
       } else {
         // Exit: per-screen singleton on the clicked cell's screen. If the screen
         // already has one, select it instead of silently no-opping; otherwise add
@@ -604,7 +642,10 @@ export default function App(): JSX.Element {
         const screen = ((cy >> 4) << 4) | (cx >> 4)
         const existing = lvl.exits.find((e) => e.screenIndex === screen)
         if (existing) {
-          setSelection([{ kind: 'exit', uid: existing.uid! }])
+          if (!keepPlacing) {
+            setSelection([{ kind: 'exit', uid: existing.uid! }])
+            setPlacement(null)
+          }
           return
         }
         dispatchLevel({
@@ -612,7 +653,10 @@ export default function App(): JSX.Element {
           screenIndex: screen,
           dest: { levelRecordId: lvl.recordId, x: cx, y: cy }
         })
-        setSelection([{ kind: 'exit', uid: newUid }])
+        if (!keepPlacing) {
+          setSelection([{ kind: 'exit', uid: newUid }])
+          setPlacement(null)
+        }
       }
     },
     [placement, levelState.nextUid, levelState.level]
@@ -664,14 +708,18 @@ export default function App(): JSX.Element {
   // Save every dirty document (level + string tables) — the toolbar Save button
   // and the Ctrl+S shortcut. Each document's save marks the build dirty as needed.
   const onSaveAll = useCallback(async () => {
-    if (!anyDirty || isSaving) return
+    // busyRef also blocks a Save that overlaps an in-flight Test Level/Launch
+    // save (they share the ref); isSaving state drives the button label.
+    if (!anyDirty || busyRef.current) return
+    busyRef.current = true
     setIsSaving(true)
     try {
       await saveAll()
     } finally {
       setIsSaving(false)
+      busyRef.current = false
     }
-  }, [anyDirty, isSaving, saveAll])
+  }, [anyDirty, saveAll])
 
   // Shared log sink for the emulator buttons + ROM popover.
   const appendLog = useCallback((line: string) => setLog((l) => [...l, line]), [])
@@ -1146,7 +1194,8 @@ export default function App(): JSX.Element {
     testSpawn,
     testInventory,
     appendLog,
-    refreshEmulatorState
+    refreshEmulatorState,
+    busyRef
   })
 
   // Subscribe App to catalog mutations so a post-extract refresh propagates
@@ -1212,6 +1261,7 @@ export default function App(): JSX.Element {
     selection,
     primarySelection,
     setSelection,
+    placement,
     setPlacement,
     cancelPlacement,
     globalUndo,
@@ -1398,23 +1448,39 @@ export default function App(): JSX.Element {
                   </svg>
                 </button>
               )}
-              <button
-                type="button"
-                className={`se-tool${activeTool === t.id ? ' is-active' : ''}`}
-                onClick={() => selectTool(t.id)}
-                title={`${t.label}  (${t.hotkey})${t.hint ? `  ·  ${t.hint}` : ''}`}
-              >
-                <svg viewBox="0 0 16 16" width="16" height="16">
-                  <path
-                    d={t.path}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.25"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+              {/* Wrapped so the Place tool can anchor its prompt toast directly
+                  beneath the button (App-owned via useTransientMessage). The span
+                  hugs the 30px button, so the toolbar layout is unchanged. */}
+              <span className="se-tool-anchor">
+                <button
+                  type="button"
+                  className={`se-tool${
+                    // Exactly one tool highlighted: place mode (an armed entity)
+                    // lights ONLY Place — not the underlying Select — otherwise the
+                    // active tool. (`activeTool` stays 'select' while placing, so
+                    // Place must win here.)
+                    (placement !== null ? t.id === 'place' : activeTool === t.id)
+                      ? ' is-active'
+                      : ''
+                  }`}
+                  onClick={() => selectTool(t.id)}
+                  title={`${t.label}  (${t.hotkey})${t.hint ? `  ·  ${t.hint}` : ''}`}
+                >
+                  <svg viewBox="0 0 16 16" width="16" height="16">
+                    <path
+                      d={t.path}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                {t.id === 'place' && placePromptMessage && (
+                  <div className="se-tool-toast">{placePromptMessage}</div>
+                )}
+              </span>
             </Fragment>
           ))}
           <span className="se-toolbar__divider" />
@@ -1518,7 +1584,7 @@ export default function App(): JSX.Element {
               type="button"
               className={`se-tool se-tool--save${anyDirty ? ' is-dirty' : ''}`}
               onClick={() => void onSaveAll()}
-              disabled={!anyDirty || isSaving || saveBlocked}
+              disabled={!anyDirty || isSaving || emuBusy || saveBlocked}
               title={
                 saveBlocked
                   ? `Can't save — ${blockers.filter((b) => b.scope === 'save' && gates(b)).map((b) => b.message).join('; ')}`
@@ -1597,7 +1663,7 @@ export default function App(): JSX.Element {
           cameraRef={cameraRef}
           viewportRef={viewportRef}
           cameraRequest={cameraReq}
-          placing={activeTool === 'place' && placement !== null}
+          placement={placement}
           onPlaceAt={onPlaceAt}
           onCancelPlacement={onCancelPlacement}
           regionPickMode={pickingRegion}

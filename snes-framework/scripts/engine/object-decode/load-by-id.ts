@@ -127,6 +127,9 @@ export interface DecodeLevelFromLevelDataOptions {
    *  cosmetic random-tile variants. Omit for the default deterministic seed.
    *  See decodeLevel options. */
   prngSeed?: number;
+  /** Collect per-object drawn-tile footprints for editor hit-testing (see
+   *  decodeLevel options / `resolveObjectFootprints`). */
+  collectObjectCells?: boolean;
 }
 
 /**
@@ -173,7 +176,8 @@ export function decodeLevelFromLevelData(
   const { state, stats } = decodeLevel(opts.rom, opts.symbols, bytes, {
     provenanceTargets: opts.provenanceTargets,
     prngReplayBySite: opts.prngReplayBySite,
-    prngSeed: opts.prngSeed
+    prngSeed: opts.prngSeed,
+    collectObjectCells: opts.collectObjectCells
   });
   return {
     state,

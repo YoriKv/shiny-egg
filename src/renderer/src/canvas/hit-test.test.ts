@@ -64,6 +64,7 @@ describe('spawn hit-test override', () => {
   const layers = { spriteOutlines: true, exits: false } as LayerVisibility
   const noIncoming: IncomingExit[] = []
   const bounds = null // SpriteBoundsMap accepts null
+  const footprints = null // ObjectFootprints; null ⇒ objects box-fallback (no objects here)
   // Base spawn at cell (5,5) → centre (88,88).
   const level = {
     empty: false,
@@ -76,7 +77,7 @@ describe('spawn hit-test override', () => {
   const spawnHit = (hits: Selection[]): Selection | undefined => hits.find((h) => h.kind === 'spawn')
 
   test('param omitted → falls back to level.spawn (base position)', () => {
-    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds))).toEqual({
+    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, footprints))).toEqual({
       kind: 'spawn',
       spawn: { x: 5, y: 5 }
     })
@@ -85,20 +86,71 @@ describe('spawn hit-test override', () => {
   test('override relocates the hit point — moved marker is grabbable, base no longer hits', () => {
     // Override spawn to cell (10,10) → centre (168,168).
     expect(
-      spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 168, 168, bounds, { x: 10, y: 10 }))
+      spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 168, 168, bounds, footprints, { x: 10, y: 10 }))
     ).toEqual({ kind: 'spawn', spawn: { x: 10, y: 10 } })
     expect(
-      spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, { x: 10, y: 10 }))
+      spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, footprints, { x: 10, y: 10 }))
     ).toBeUndefined()
   })
 
   test('explicit null override → spawn not selectable (level has no entrance)', () => {
-    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, null))).toBeUndefined()
+    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, footprints, null))).toBeUndefined()
   })
 
   test('hitTestSpawn (hover) honours the override', () => {
     expect(hitTestSpawn(level, view, layers, rect, 168, 168, { x: 10, y: 10 })).toBe(true)
     expect(hitTestSpawn(level, view, layers, rect, 88, 88, { x: 10, y: 10 })).toBe(false)
     expect(hitTestSpawn(level, view, layers, rect, 88, 88, null)).toBe(false)
+  })
+})
+
+// Drawn-tiles object hit-testing: an object's clickable region is its stamped
+// cells (footprints), not its bounding box. With pan=0/zoom=1 at the origin,
+// cell (cx,cy)'s centre is ((cx+0.5)*16, (cy+0.5)*16) and cellIndexAt = cy*256+cx.
+describe('drawn-tiles object hit-testing', () => {
+  const view: View = { panX: 0, panY: 0, zoom: 1 }
+  const rect = { left: 0, top: 0 } as DOMRect
+  // Object-only: sprite/spawn/exit layers off so only the object loop runs.
+  const layers = { bg1Outlines: true, spriteOutlines: false, exits: false } as unknown as LayerVisibility
+  const noIncoming: IncomingExit[] = []
+  const bounds = null
+  const level = {
+    empty: false,
+    special: false,
+    objects: [
+      { uid: 1, num: 0x10, x: 2, y: 3, w: 1, h: 1 }, // stamps cell (2,3)
+      { uid: 2, num: 0x11, x: 2, y: 3, w: 1, h: 1 }, // ALSO stamps (2,3) — drawn later ⇒ on top
+      { uid: 3, num: 0x12, x: 5, y: 5, w: 1, h: 1 } // command obj: no footprint ⇒ box fallback
+    ],
+    sprites: [],
+    exits: []
+  } as unknown as LevelData
+  const CELL_2_3 = 3 * 256 + 2
+  // uid 1 + 2 both stamp (2,3); uid 3 stamps nothing (absent from the map).
+  const footprints = new Map<number, Set<number>>([
+    [1, new Set([CELL_2_3])],
+    [2, new Set([CELL_2_3])]
+  ])
+  const objUids = (hits: Selection[]): number[] =>
+    hits.filter((h) => h.kind === 'object').map((h) => (h as { uid: number }).uid)
+
+  test('click on a drawn cell → stack top-first, INCLUDING the buried object', () => {
+    // Centre of cell (2,3) = (40, 56). Both objects stamp it; uid 2 is on top.
+    expect(objUids(hitTestAll(level, view, layers, noIncoming, rect, 40, 56, bounds, footprints))).toEqual([2, 1])
+  })
+
+  test('click off every footprint cell selects nothing (tiles are the region, not the box)', () => {
+    // Cell (2,4) = centre (40, 72): not a stamped cell, and outside uid 3's box.
+    expect(objUids(hitTestAll(level, view, layers, noIncoming, rect, 40, 72, bounds, footprints))).toEqual([])
+  })
+
+  test('an object that stamps nothing falls back to its bounding box', () => {
+    // uid 3 box = cell (5,5) = centre (88, 88).
+    expect(objUids(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, footprints))).toEqual([3])
+  })
+
+  test('null footprints → every object box-fallback (pre-refetch / legacy behaviour)', () => {
+    // With no footprint data, uid 1 + 2 boxes both cover cell (2,3) ⇒ both hit.
+    expect(objUids(hitTestAll(level, view, layers, noIncoming, rect, 40, 56, bounds, null))).toEqual([2, 1])
   })
 })

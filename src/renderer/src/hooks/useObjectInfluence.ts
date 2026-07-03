@@ -14,7 +14,8 @@ type GroupMove = { objUids: Set<number>; sprUids: Set<number>; dx: number; dy: n
  * multi-select group move — is active, fetch the dragged object(s)' per-cell
  * provenance classification (footprint / neighbour / buried) for the *pending*
  * position and return the latest result for the draw pass. Returns `null` when
- * no object drag is active.
+ * no object drag is active. (The Place tool's not-yet-placed footprint preview
+ * uses a separate decode-once-and-translate path — see usePlacementFootprint.)
  *
  * Performance:
  *  - The fetch re-runs only when the drag's **integer cell** position/extent

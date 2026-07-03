@@ -21,6 +21,7 @@ import { bgr15ToHex, hexToBgr15 } from '../lib/bgr15'
 import { type PaletteEditorApi } from '../edit-session/usePaletteEditor'
 import { type GradientEditorApi } from '../edit-session/useGradientEditor'
 import { useEmulatorRunning } from '../hooks/useEmulatorRunning'
+import { useTransientMessage } from '../hooks/useTransientMessage'
 import { useThrottledCallback } from '../lib/throttle'
 import { fillGradient, gradientOffset, GRADIENT_BLACK, GRADIENT_STOPS } from '../lib/gradient'
 import { persistedState } from '../lib/persisted-state'
@@ -732,7 +733,10 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
   const editor = props.editor
   const emulatorRunning = useEmulatorRunning()
   const [syncing, setSyncing] = useState(false)
-  const [syncStatus, setSyncStatus] = useState<string | null>(null)
+  // Transient sync-result popup — the shared self-dismissing toast (useTransientMessage),
+  // also used by the Place tool's prompt. 6 s auto-dismiss + click-to-dismiss.
+  const { message: syncStatus, show: showSyncStatus, dismiss: dismissSyncStatus } =
+    useTransientMessage(6000)
   // "Auto Sync": when on, color edits re-sync to the emulator live as you drag —
   // on the same throttled cadence as the on-canvas preview (every draft change),
   // not just on release. Persisted UI pref; success is kept silent (no popup spam
@@ -754,40 +758,33 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
   // so it never competes with gameplay; the button only enables while EmuHawk runs.
   const handleSync = useCallback(async (opts?: { silentOnSuccess?: boolean }) => {
     setSyncing(true)
-    setSyncStatus(null)
+    dismissSyncStatus()
     try {
       const currentOffsets = new Set(editor.draft.map((e) => e.offset))
       const revert = [...lastSyncedOffsets.current].filter((o) => !currentOffsets.has(o))
       const r = await window.shinyEgg.bizhawk.applyPaletteLive(editor.draft, revert)
       if (!r.applied) {
-        setSyncStatus('Emulator not running.')
+        showSyncStatus('Emulator not running.')
       } else if (r.scene) {
         lastSyncedOffsets.current = currentOffsets
         if (!opts?.silentOnSuccess)
-          setSyncStatus(`Synced to ${r.scene} screen (${r.bytesWritten ?? 0} B). Re-sync after switching screens.`)
+          showSyncStatus(`Synced to ${r.scene} screen (${r.bytesWritten ?? 0} B). Re-sync after switching screens.`)
       } else {
         const reason =
           r.detail ??
           (r.gamemode !== undefined
             ? `game mode 0x${r.gamemode.toString(16).padStart(2, '0').toUpperCase()}`
             : 'screen not classified')
-        setSyncStatus(
+        showSyncStatus(
           `Current screen not recognized — ${reason}. Nothing written; try on a level or the world map.`
         )
       }
     } catch (e) {
-      setSyncStatus(`Sync failed — ${(e as Error).message}`)
+      showSyncStatus(`Sync failed — ${(e as Error).message}`)
     } finally {
       setSyncing(false)
     }
-  }, [editor])
-
-  // Clear the status after a few seconds so it doesn't linger.
-  useEffect(() => {
-    if (!syncStatus) return
-    const t = setTimeout(() => setSyncStatus(null), 6000)
-    return () => clearTimeout(t)
-  }, [syncStatus])
+  }, [editor, showSyncStatus, dismissSyncStatus])
 
   // ── Auto Sync ──────────────────────────────────────────────────────────────
   // When on, push edits to the emulator on the SAME cadence as the live canvas
@@ -881,7 +878,7 @@ export function PaletteBody(props: PaletteBodyProps): JSX.Element {
         <div
           className="se-palette-sync__status"
           title="Click to dismiss"
-          onClick={() => setSyncStatus(null)}
+          onClick={dismissSyncStatus}
         >
           {syncStatus}
         </div>

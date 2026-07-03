@@ -55,10 +55,23 @@ export { signed8, signed16 } from '../utils.ts';
  *  what the decode renders), and stream order guarantees a non-target writer that
  *  finds an existing entry came after the target that wrote it. */
 function recordProvenance(state: DecodeState, off: number): void {
+  const idx = state.currentObjectIndex;
+  // Drawn-tiles hit-testing side-channel: record EVERY object that stamps this
+  // cell (not just the visible/topmost one), so a click can cycle through
+  // overwritten objects. Independent of the drag-provenance targets below; both
+  // short-circuit to a null check on the normal render path.
+  const cs = state.cellStampers;
+  if (cs !== null) {
+    let writers = cs.get(off);
+    if (writers === undefined) {
+      writers = new Set();
+      cs.set(off, writers);
+    }
+    writers.add(idx);
+  }
   const m = state.provenanceCells;
   const targets = state.provenanceTargets;
   if (m === null || targets === null) return;
-  const idx = state.currentObjectIndex;
   if (targets.has(idx)) {
     m.set(off, { neighbor: off !== (state.zp1D & 0x7fff), buried: false, by: idx });
   } else {

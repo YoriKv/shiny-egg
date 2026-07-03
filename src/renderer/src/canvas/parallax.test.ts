@@ -4,6 +4,7 @@ import {
   cameraOrigin,
   applyCameraSnap,
   clampCamera,
+  clampPanToCamera,
   CAMERA_W,
   CAMERA_H,
   type ParallaxRates
@@ -110,5 +111,51 @@ describe('clampCamera', () => {
   })
   it('leaves an in-bounds camera unchanged', () => {
     expect(clampCamera({ x: 1000, y: 500 }, W, H)).toEqual({ x: 1000, y: 500 })
+  })
+})
+
+describe('clampPanToCamera', () => {
+  // The pan-lock counterpart to clampCamera: it must hold the pan at the same limit
+  // the drawn box respects, so the level can't scroll under a stuck box. The
+  // load-bearing property is round-trip exactness — feeding the returned pan back
+  // into cameraOrigin reproduces the CLAMPED origin dead-on (cameraOrigin rounds to
+  // integer world px, so the camera delta is whole and the pan shift is exact).
+  const SIZE = { w: 800, h: 600 }
+  it('leaves an in-bounds camera pan untouched', () => {
+    // panX=panY=0 → cameraOrigin (72, 38), inside a 4096×2048 level.
+    const view = { panX: 0, panY: 0, zoom: 2 }
+    expect(clampPanToCamera(view, SIZE, 4096, 2048)).toEqual({ panX: 0, panY: 0 })
+  })
+  it('pulls the pan back so the camera stops exactly at the left/top edge', () => {
+    // panX=panY=344 → cameraOrigin (-100, -172), off the left/top; lock to origin 0.
+    const view = { panX: 344, panY: 344, zoom: 2 }
+    const locked = clampPanToCamera(view, SIZE, 4096, 2048)
+    expect(cameraOrigin({ ...view, ...locked }, SIZE)).toEqual({ x: 0, y: 0 })
+  })
+  it('pulls the pan back so the camera stops exactly at the right/bottom edge', () => {
+    // A 512×352 level → camera max origin (256, 128); panX=panY=-400 overshoots both.
+    const view = { panX: -400, panY: -400, zoom: 2 }
+    const locked = clampPanToCamera(view, SIZE, 512, 352)
+    expect(cameraOrigin({ ...view, ...locked }, SIZE)).toEqual({
+      x: 512 - CAMERA_W,
+      y: 352 - CAMERA_H
+    })
+  })
+  it('is idempotent — clamping an already-locked pan is a no-op', () => {
+    const view = { panX: 344, panY: -400, zoom: 3 }
+    const once = clampPanToCamera(view, SIZE, 512, 352)
+    const twice = clampPanToCamera({ ...view, ...once }, SIZE, 512, 352)
+    expect(twice).toEqual(once)
+  })
+  it('holds ONE pan while pushing further past the edge (no ±1px jitter)', () => {
+    // Every off-bounds drag target must clamp to the SAME held pan. The old
+    // rounded-origin correction sawtoothed between two values across these inputs
+    // (−7536 / −7535 at zoom 2), jittering the level under the fixed box.
+    const held = new Set(
+      [-8000, -8001, -8002, -8003, -8100].map(
+        (panX) => clampPanToCamera({ panX, panY: 0, zoom: 2 }, SIZE, 4096, 2048).panX
+      )
+    )
+    expect(held.size).toBe(1)
   })
 })

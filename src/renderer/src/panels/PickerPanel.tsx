@@ -529,8 +529,8 @@ export function PickerBody({
       </div>
       <p className="se-picker__hint">
         {armed
-          ? `Placing ${armed.label} — click the canvas (Esc to stop).`
-          : 'Pick an entry, then click the canvas to place it.'}
+          ? `Click to place · Shift-click to place multiple · Shift+arrows resize.`
+          : 'Pick an object or sprite to place.'}
       </p>
       {preview && (
         <HoverPreview

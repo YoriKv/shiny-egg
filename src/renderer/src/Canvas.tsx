@@ -18,12 +18,13 @@ import {
   INCOMING_HIT_HALF_PX,
   LEVEL_CELLS_H,
   LEVEL_CELLS_W,
+  LEVEL_PX_H,
+  LEVEL_PX_W,
   SCREEN_CELLS,
   SPAWN_HIT_HALF_PX,
   exitCenterX,
   exitCenterY,
   makeScreenIndex,
-  objectVisualBox,
   screenCol,
   screenOf,
   screenRow,
@@ -32,8 +33,10 @@ import {
 import { MAX_LEVEL_SPRITES, clampCell, clampGroupMove, clampObjectMove, clampObjectResize, clampSpriteMove } from './canvas/limits'
 import { formatLevelId, getLevel } from './data/levels'
 import { hex0x } from './lib/hex'
-import type { IncomingExit, LayerVisibility, Selection } from './types'
+import type { IncomingExit, LayerVisibility, PlacementItem, Selection } from './types'
 import { useObjectInfluence } from './hooks/useObjectInfluence'
+import { usePlacementFootprint } from './hooks/usePlacementFootprint'
+import { useObjectCells } from './hooks/useObjectCells'
 import { useNeighborDependencies } from './hooks/useNeighborDependencies'
 import { useBehaviorProbes } from './hooks/useBehaviorProbes'
 import { useEntityRenderValidity } from './hooks/useEntityRenderValidity'
@@ -60,6 +63,7 @@ import {
   hitTestRect,
   hitTestSpawn,
   hitTestSprite,
+  objectHitAtPoint,
   selectionKey,
   spriteHit,
   unionSelections
@@ -76,6 +80,7 @@ import {
 import { useLevelRenderLayers } from './hooks/useLevelRenderLayers'
 import { drawScene } from './canvas/draw/scene'
 import type { CameraPreview } from './canvas/draw/camera-preview'
+import { clampPanToCamera } from './canvas/parallax'
 import { CameraPreviewControl } from './canvas/CameraPreviewControl'
 import { persistedState } from './lib/persisted-state'
 
@@ -133,10 +138,14 @@ export interface CanvasProps {
    *  `levelRecordId`. Highest-priority view source on load (overrides spawn/fit);
    *  `nonce` re-fires a repeat restore to the same view. */
   cameraRequest: { levelRecordId: number; view: View; nonce: number } | null
-  /** Add-picker armed + Place tool active → a quiet canvas click places the
-   *  armed entity at the clicked cell (via onPlaceAt) instead of selecting. */
-  placing: boolean
-  onPlaceAt: (cellX: number, cellY: number) => void
+  /** The Add-picker's armed entity, or null when not in place mode. When set the
+   *  Place tool is active: a cursor-following ghost previews it and a quiet canvas
+   *  click places it at the clicked cell (via onPlaceAt) instead of selecting. */
+  placement: PlacementItem | null
+  /** Commit the armed entity at a cell. `keepPlacing` (Shift-click) keeps the
+   *  item armed for rapid repeat placement instead of selecting the placed
+   *  entity and dropping back to Select. */
+  onPlaceAt: (cellX: number, cellY: number, keepPlacing: boolean) => void
   /** Right-click while placing → clear the armed item and drop back to the
    *  Select tool (mirrors Escape) instead of opening the entity context menu. */
   onCancelPlacement: () => void
@@ -235,7 +244,7 @@ export function Canvas({
   cameraRef,
   viewportRef,
   cameraRequest,
-  placing,
+  placement,
   onPlaceAt,
   onCancelPlacement,
   regionPickMode,
@@ -257,6 +266,10 @@ export function Canvas({
   canvasBackground,
   gridColor
 }: CanvasProps): JSX.Element {
+  // Place mode is driven purely by an armed picker entity — `placement !== null`
+  // is the single source of truth (there is no separate "place tool" flag). The
+  // derived bool gates every place-vs-select branch below.
+  const placing = placement !== null
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [view, setView] = useState<View>(INITIAL_VIEW)
@@ -274,12 +287,19 @@ export function Canvas({
   // Pin the view zoom to the selected 1×–4× whenever Camera Preview is on. Zoom ABOUT
   // THE VIEWPORT CENTRE (not by keeping pan) so the camera keeps the same level
   // position when the zoom changes — the camera is the viewport-centre world point,
-  // and zoomAt holds that point fixed.
+  // and zoomAt holds that point fixed. Then lock the pan to the level bounds so the
+  // camera can't sit past an edge — this covers ENABLING preview (from any prior
+  // view), a zoom change, and a viewport resize, which the drag-time lock can't.
   useEffect(() => {
     if (!cameraOn) return
-    setView((v) =>
-      v.zoom === cameraSettings.zoom ? v : zoomAt(v, size.w / 2, size.h / 2, cameraSettings.zoom / v.zoom)
-    )
+    setView((v) => {
+      const zoomed =
+        v.zoom === cameraSettings.zoom ? v : zoomAt(v, size.w / 2, size.h / 2, cameraSettings.zoom / v.zoom)
+      const locked = clampPanToCamera(zoomed, size, LEVEL_PX_W, LEVEL_PX_H)
+      return locked.panX === zoomed.panX && locked.panY === zoomed.panY
+        ? zoomed
+        : { ...zoomed, panX: locked.panX, panY: locked.panY }
+    })
   }, [cameraOn, cameraSettings.zoom, view.zoom, size])
   const level = levelState.level
   // Selection derivations. `primary` (the sole element when exactly one thing is
@@ -347,6 +367,14 @@ export function Canvas({
   // Cursor cell (level x/y) for the bottom-right coordinate readout. Null when
   // the cursor is off the canvas or outside the level extent.
   const [cursorCell, setCursorCell] = useState<{ x: number; y: number } | null>(null)
+  // Place-mode ghost target: the cell the armed entity's preview follows. Only
+  // non-null while placing AND the cursor is over the level, so the draw effect
+  // stays quiet (no per-cell redraw) outside place mode. Cleared when place mode
+  // ends and on pointer-leave.
+  const [previewCell, setPreviewCell] = useState<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    if (!placing) setPreviewCell(null)
+  }, [placing])
 
   // Press state — kept in a ref so mousemove doesn't re-render. `moved`
   // flips to true once the press passes CLICK_THRESHOLD; that gates both
@@ -529,7 +557,26 @@ export function Canvas({
   // Object-drag cell-highlight: per-cell provenance (footprint/neighbour/buried)
   // for the dragged object(s) at their pending position — single move/resize OR a
   // multi-select group move (one decode for the whole group). Null otherwise.
-  const influence = useObjectInfluence(level, moveOverlay, resizeOverlay, groupMove)
+  const dragInfluence = useObjectInfluence(level, moveOverlay, resizeOverlay, groupMove)
+  // Place-tool footprint preview: the armed OBJECT's footprint decoded ONCE per
+  // item/size, then translated to the cursor cell locally (no IPC on move) — the
+  // same green tint a dragged object shows, previewing where a click will land.
+  // Objects only (sprites have no decode footprint). Mutually exclusive with a
+  // drag, so the two feed one `influence` value the scene draws.
+  const placeItem = useMemo(
+    () =>
+      placement && placement.kind === 'object'
+        ? { num: placement.num, exnum: placement.exnum, w: placement.w, h: placement.h }
+        : null,
+    [placement]
+  )
+  const placeFootprint = usePlacementFootprint(level, placeItem, previewCell)
+  const influence = dragInfluence ?? placeFootprint
+  // Per-object drawn-tile footprints (uid → cell set) for hit-testing: an object's
+  // clickable region is its drawn tiles, not its bounding box. Fetched + cached
+  // per object-state change (useObjectCells); null until the first fetch resolves,
+  // where hit-testing falls back to bounding boxes.
+  const objectFootprints = useObjectCells(level)
   // Per-sprite neighbour-dependency status (rail/slime/pair/pipe etc.) for the
   // always-on error badge + selected-sprite overlay. Rides the Sprite-Editing
   // layer; recomputed per edit-commit (see the hook).
@@ -599,14 +646,24 @@ export function Canvas({
   // preserving the current zoom. (focusViewFor works in cells and resets zoom to
   // a default; the minimap wants raw pixels and the user's current zoom kept.)
   const navigateToWorldPixel = useCallback((worldX: number, worldY: number): void => {
-    setView((v) => ({
-      zoom: v.zoom,
-      panX: sizeRef.current.w / 2 - worldX * v.zoom,
-      panY: sizeRef.current.h / 2 - worldY * v.zoom
-    }))
+    setView((v) => {
+      const next = {
+        zoom: v.zoom,
+        panX: sizeRef.current.w / 2 - worldX * v.zoom,
+        panY: sizeRef.current.h / 2 - worldY * v.zoom
+      }
+      // In Camera Preview the pan is locked to the level, so a minimap jump near an
+      // edge clamps the camera the same way a drag does (box + level stay in sync)
+      // rather than parking the level under a stuck box.
+      if (!cameraOnRef.current) return next
+      const locked = clampPanToCamera(next, sizeRef.current, LEVEL_PX_W, LEVEL_PX_H)
+      return { ...next, panX: locked.panX, panY: locked.panY }
+    })
   }, [])
   const spriteBoundsRef = useRef(spriteBounds)
   spriteBoundsRef.current = spriteBounds
+  const objectFootprintsRef = useRef(objectFootprints)
+  objectFootprintsRef.current = objectFootprints
   const moveOverlayRef = useRef(moveOverlay)
   moveOverlayRef.current = moveOverlay
   const resizeOverlayRef = useRef(resizeOverlay)
@@ -815,6 +872,7 @@ export function Canvas({
       spriteBounds, neighborStatus, behaviorProbes, generatorThumbs, renderValidity, influence, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
       incoming, testSpawn, spawnOverride: spawnDragOverlay ?? spawnOverride, paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
       exitDrag, incomingOverlay, marquee, paintDrag,
+      placementPreview: placement && previewCell ? { item: placement, x: previewCell.x, y: previewCell.y } : null,
       cameraPreview: cameraOn ? cameraSettings : null
     })
   }, [
@@ -855,6 +913,8 @@ export function Canvas({
     paintTool,
     paintHeights,
     paintDrag,
+    placement,
+    previewCell,
     cameraOn,
     cameraSettings
   ])
@@ -921,6 +981,7 @@ export function Canvas({
             layers,
             incomingRef.current,
             spriteBoundsRef.current,
+            objectFootprintsRef.current,
             rect,
             e.clientX,
             e.clientY
@@ -980,7 +1041,7 @@ export function Canvas({
         if (wrap) {
           const rect = wrap.getBoundingClientRect()
           const onSelected = hitTestAll(
-            level, view, layers, incomingRef.current, rect, e.clientX, e.clientY, spriteBoundsRef.current
+            level, view, layers, incomingRef.current, rect, e.clientX, e.clientY, spriteBoundsRef.current, objectFootprintsRef.current
           ).some(
             (h) =>
               (h.kind === 'object' && selObjUids.has(h.uid)) ||
@@ -995,6 +1056,9 @@ export function Canvas({
               sprUids: selSprUids,
               moved: false
             }
+            // Arm the group overlay at a ZERO delta on press so the object members'
+            // footprint tint shows on click+hold (see moveObj above).
+            setGroupMove({ objUids: selObjUids, sprUids: selSprUids, dx: 0, dy: 0 })
             setIsPanning(true)
             return
           }
@@ -1030,13 +1094,16 @@ export function Canvas({
               handle,
               moved: false
             }
+            // Arm the resize overlay at the CURRENT extents on press so the
+            // footprint tint shows on click+hold (see moveObj above).
+            setResizeOverlay({ uid: o.uid!, w: o.w, h: o.h })
             setIsPanning(true)
             return
           }
-          // Move-grab box mirrors draw's box (objectVisualBox): a size-0 axis is
-          // 1/4 tile. Shared with the hit-test so grab area == click hit-box.
-          const b = objectVisualBox(o)
-          if (wx >= b.x0 && wx < b.x0 + b.w && wy >= b.y0 && wy < b.y0 + b.h) {
+          // Move-grab uses the SAME drawn-tiles hit region as select/hover (falling
+          // back to the bounding box for command / no-gfx objects), so you grab the
+          // object to move it exactly where you can click to select it.
+          if (objectHitAtPoint(o, objectFootprintsRef.current, wx, wy)) {
             dragRef.current = {
               kind: 'moveObj',
               startX: e.clientX,
@@ -1044,6 +1111,9 @@ export function Canvas({
               objUid: o.uid!,
               moved: false
             }
+            // Arm the move overlay at a ZERO delta on press so the footprint tint
+            // (useObjectInfluence) shows on click+hold, not only once dragged.
+            setMoveOverlay({ kind: 'object', uid: o.uid!, dx: 0, dy: 0 })
             setIsPanning(true)
             return
           }
@@ -1170,7 +1240,21 @@ export function Canvas({
     const applyPan = (): void => {
       panFrame = 0
       if (!panTarget) return
-      const { x, y } = panTarget
+      let { x, y } = panTarget
+      // Camera Preview locks the pan to the level: the drawn box is already
+      // clamped, so hold the pan at the same limit rather than let the level keep
+      // scrolling under a stuck box. Zoom is pinned in preview, so viewRef's zoom
+      // is the live one.
+      if (cameraOnRef.current) {
+        const locked = clampPanToCamera(
+          { panX: x, panY: y, zoom: viewRef.current.zoom },
+          sizeRef.current,
+          LEVEL_PX_W,
+          LEVEL_PX_H
+        )
+        x = locked.panX
+        y = locked.panY
+      }
       setView((v) => ({ ...v, panX: x, panY: y }))
     }
     const onMove = (e: MouseEvent): void => {
@@ -1278,6 +1362,7 @@ export function Canvas({
           layers,
           incomingRef.current,
           spriteBoundsRef.current,
+          objectFootprintsRef.current,
           rect,
           e.clientX,
           e.clientY
@@ -1520,13 +1605,13 @@ export function Canvas({
           if (d.moved) {
             const found = hitTestRect(
               levelRef.current, viewRef.current, layers, rect,
-              d.startX, d.startY, e.clientX, e.clientY, spriteBoundsRef.current
+              d.startX, d.startY, e.clientX, e.clientY, spriteBoundsRef.current, objectFootprintsRef.current
             )
             onSelect(unionSelections(base, found))
           } else {
             const hits = hitTestAll(
               levelRef.current, viewRef.current, layers, incomingRef.current, rect,
-              e.clientX, e.clientY, spriteBoundsRef.current
+              e.clientX, e.clientY, spriteBoundsRef.current, objectFootprintsRef.current
             ).filter((h) => h.kind === 'object' || h.kind === 'sprite')
             onSelect(applyShiftClick(base, hits))
           }
@@ -1552,12 +1637,15 @@ export function Canvas({
           endDrag()
           return
         }
-        // Place mode: a quiet click drops the armed entity at the cell.
+        // Place mode: a quiet click drops the armed entity at the cell. Shift-click
+        // keeps the item armed (rapid repeat placement) instead of selecting the
+        // placed entity and dropping back to Select.
         if (placingRef.current) {
           const { x: wx, y: wy } = clientToWorld(viewRef.current, e.clientX - rect.left, e.clientY - rect.top)
           onPlaceAtRef.current(
             Math.max(0, Math.min(255, Math.floor(wx / CELL_PX))),
-            Math.max(0, Math.min(127, Math.floor(wy / CELL_PX)))
+            Math.max(0, Math.min(127, Math.floor(wy / CELL_PX))),
+            e.shiftKey
           )
           lastClickRef.current = null
           endDrag()
@@ -1572,6 +1660,7 @@ export function Canvas({
           e.clientX,
           e.clientY,
           spriteBoundsRef.current,
+          objectFootprintsRef.current,
           spawnOverrideRef.current ?? levelRef.current?.spawn
         )
         const now = Date.now()
@@ -1668,7 +1757,35 @@ export function Canvas({
       const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
       const lvl = levelRef.current
       const v = viewRef.current
-      setHovered(hitTestObject(lvl, v, layers, rect, e.clientX, e.clientY))
+      // Cursor level cell (shared by the bottom-right readout + the place-mode
+      // ghost) — null when off-grid. Identity-preserving: this runs at mousemove
+      // rate, and a fresh {x,y} per move would re-render the whole component even
+      // while the cell is unchanged — return the previous object so React bails.
+      const { x: cwx, y: cwy } = clientToWorld(v, e.clientX - rect.left, e.clientY - rect.top)
+      const ccx = Math.floor(cwx / CELL_PX)
+      const ccy = Math.floor(cwy / CELL_PX)
+      const onGrid = !!lvl && ccx >= 0 && ccx < LEVEL_CELLS_W && ccy >= 0 && ccy < LEVEL_CELLS_H
+      setCursorCell((prev) => {
+        if (!onGrid) return null
+        return prev && prev.x === ccx && prev.y === ccy ? prev : { x: ccx, y: ccy }
+      })
+      // Place mode: the armed ghost follows the cursor and is the ONLY highlight —
+      // suppress entity hover / resize-cursor so nothing competes with the preview,
+      // and skip the selection hit-tests (a placing click never selects).
+      if (placingRef.current) {
+        setPreviewCell((prev) => {
+          if (!onGrid) return null
+          return prev && prev.x === ccx && prev.y === ccy ? prev : { x: ccx, y: ccy }
+        })
+        setHovered(null)
+        setHoveredSprite(null)
+        setHoveredExit(false)
+        setHoveredSpawn(false)
+        setHoveredIncoming(false)
+        setResizeCursor(null)
+        return
+      }
+      setHovered(hitTestObject(lvl, v, layers, rect, e.clientX, e.clientY, objectFootprintsRef.current))
       setHoveredSprite(hitTestSprite(lvl, v, layers, rect, e.clientX, e.clientY, spriteBoundsRef.current))
       setHoveredExit(hitTestExit(lvl, v, layers, rect, e.clientX, e.clientY))
       setHoveredSpawn(
@@ -1677,17 +1794,6 @@ export function Canvas({
       setHoveredIncoming(
         hitTestIncoming(lvl, v, layers, incomingRef.current, rect, e.clientX, e.clientY)
       )
-      // Cursor level cell for the bottom-right readout — null when off-grid.
-      // Identity-preserving: this runs at mousemove rate, and a fresh {x,y}
-      // object per move would re-render the whole component even while the
-      // cell is unchanged — return the previous object so React bails.
-      const { x: cwx, y: cwy } = clientToWorld(v, e.clientX - rect.left, e.clientY - rect.top)
-      const ccx = Math.floor(cwx / CELL_PX)
-      const ccy = Math.floor(cwy / CELL_PX)
-      setCursorCell((prev) => {
-        if (!lvl || ccx < 0 || ccx >= LEVEL_CELLS_W || ccy < 0 || ccy >= LEVEL_CELLS_H) return null
-        return prev && prev.x === ccx && prev.y === ccy ? prev : { x: ccx, y: ccy }
-      })
       // Resize-handle hover → cursor hint (single selected object only).
       let rc: string | null = null
       if (primary?.kind === 'object' && lvl) {
@@ -1726,7 +1832,8 @@ export function Canvas({
         rect,
         e.clientX,
         e.clientY,
-        spriteBoundsRef.current
+        spriteBoundsRef.current,
+        objectFootprintsRef.current
       )
       const hit = hits.find(
         (h) => h.kind === 'object' || h.kind === 'sprite' || h.kind === 'exit'
@@ -1873,6 +1980,7 @@ export function Canvas({
         setHoveredIncoming(false)
         setResizeCursor(null)
         setCursorCell(null)
+        setPreviewCell(null)
       }}
     >
       <canvas ref={canvasRef} className="se-canvas__el" />

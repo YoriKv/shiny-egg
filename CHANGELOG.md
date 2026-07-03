@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.12 - 2026-07-03
+
+- Improved placement tool and panel UX.
+- Improved selection UX. Level tiles are now selectable and draggable by their drawn tiles.
+- World map level mappings can now correctly map to any record id.
+- Camera preview now locks panning to level bounds.
+- Fixed a data corruption bug caused by erasing many tiles quickly in a row.
+
 ## v0.5.11 - 2026-07-03
 
 - Dedicated YYCHR export panel with file browser, thumbnail previews, and in project storage.

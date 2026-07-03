@@ -23,6 +23,7 @@ import { hex0x } from '../lib/hex'
 
 let current: LevelsCatalog = { groups: [] }
 let byId = indexById(current)
+let byTranslevel = indexByTranslevel(current)
 const listeners = new Set<() => void>()
 
 // Renderer mirror of the active project's REMOVED record ids (records flagged
@@ -63,6 +64,22 @@ function indexById(cat: LevelsCatalog): Map<number, LevelCatalogEntry> {
   return out
 }
 
+/** Index by TRANSLEVEL slot. Level NAMES are a translevel-slot property (the
+ *  Bank51 name string is keyed by map slot, not by data record), so name/label
+ *  lookups for a world-map slot must resolve by translevel — NOT by hopping
+ *  through the record id, which mis-resolves the moment a slot's entrance record
+ *  is repointed (the world-map "Plays" edit) and only re-aligns on save. Bonus /
+ *  null-record slots carry a translevel too, so they're included. */
+function indexByTranslevel(cat: LevelsCatalog): Map<number, LevelCatalogEntry> {
+  const out = new Map<number, LevelCatalogEntry>()
+  for (const group of cat.groups) {
+    for (const lvl of group.levels) {
+      if (lvl.translevelId !== undefined && !out.has(lvl.translevelId)) out.set(lvl.translevelId, lvl)
+    }
+  }
+  return out
+}
+
 /** Latest catalog snapshot. */
 export function getLevelsCatalog(): LevelsCatalog {
   return current
@@ -82,6 +99,22 @@ export function getAllLevels(): LevelCatalogEntry[] {
  *  Null-id bonus / mini-game slots aren't indexed, so they never resolve here. */
 export function getLevel(id: number): LevelCatalogEntry | undefined {
   return byId.get(id)
+}
+
+/** Lookup by TRANSLEVEL slot (world-map position), not data-record id. Use this
+ *  for a world-map slot's name/label — the name is a translevel property, so it
+ *  stays correct even while the slot's "Plays" record is being edited (before
+ *  save re-aligns the record→translevel overlay). See indexByTranslevel. */
+export function getLevelByTranslevel(translevelId: number): LevelCatalogEntry | undefined {
+  return byTranslevel.get(translevelId)
+}
+
+/** Number of level-data pointer-table records — valid record ids are
+ *  0 .. getRecordCount()-1. From the catalog IPC (`LEVEL_RECORD_COUNT`), so it
+ *  tracks a pointer-table extension. Falls back to a full byte (256 → max id
+ *  0xFF) if a catalog somehow lacks the field, so an input isn't over-restricted. */
+export function getRecordCount(): number {
+  return current.recordCount ?? 0x100
 }
 
 export function formatLevelId(id: number): string {
@@ -114,6 +147,7 @@ function notify(): void {
 export function setCatalog(next: LevelsCatalog): void {
   current = next
   byId = indexById(next)
+  byTranslevel = indexByTranslevel(next)
   notify()
 }
 

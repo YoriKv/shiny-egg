@@ -14,7 +14,7 @@ import type {
     RenderImage,
     ScreenExit
 } from '../../../../preload/api'
-import type {IncomingExit, LayerVisibility, Selection} from '../../types'
+import type {IncomingExit, LayerVisibility, PlacementItem, Selection} from '../../types'
 import type {View} from '../view'
 import type {SpriteBoundsMap} from '../hit-test'
 import {CELL_PX, SCREEN_CELLS, LEVEL_PX_W, LEVEL_PX_H, screenCol, screenRow} from '../geometry'
@@ -45,6 +45,7 @@ import {drawObjectInfluence} from './object-influence'
 import {drawResizeHandles, objectResizeHandles} from './handles'
 import {drawExits, drawIncomingExits} from './exits'
 import {drawSpawnGlyph, drawSpawnOutline, drawTestSpawnGlyph} from './glyphs'
+import {drawPlacementPreview} from './placement-preview'
 import {selectionAccent} from './selection'
 
 // Live drag/preview overlays the draw effect shadows (formerly inline useState
@@ -146,6 +147,9 @@ export interface SceneParams {
     incomingOverlay: IncomingOverlay | null
     marquee: Marquee | null
     paintDrag: PaintDrag | null
+    /** Armed Place-tool ghost: the picked entity + the cursor cell it follows.
+     *  Null unless the Place tool is armed and the cursor is over the level. */
+    placementPreview: { item: PlacementItem; x: number; y: number } | null
     /** Camera Preview settings, or null when off. When set, the view zoom is pinned
      *  to `.zoom` (caller-enforced) and BG2/BG3/gradient parallax-align to the virtual
      *  camera box (centred, screen-snapped per `.snap`); `.mask` blacks out the rest. */
@@ -190,6 +194,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         incomingOverlay,
         marquee,
         paintDrag,
+        placementPreview,
         cameraPreview
     } = p
     if (!canvas) return
@@ -540,6 +545,14 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
                 for (const c of paintDrag.erased) merged.delete(c)
             }
             drawPaintOverlay(ctx, merged, view.zoom, paintDrag ? new Set([...paintDrag.set.keys(), ...paintDrag.erased]) : null, paintDrag?.erasing ?? false)
+        }
+        // Armed Place-tool ghost — a cursor-following preview of the entity about
+        // to be placed, on top of the level content so it's unmistakable. Nothing
+        // is committed until the click; this is purely a display shadow.
+        if (placementPreview) {
+            drawPlacementPreview(
+                ctx, placementPreview.item, placementPreview.x, placementPreview.y, view.zoom, spriteBounds
+            )
         }
         // Shift-drag marquee box on top of everything — a transient selection UI
         // overlay (dashed chartreuse with a faint fill).

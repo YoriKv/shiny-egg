@@ -65,3 +65,48 @@ export function resolveProvenanceCells(state: DecodeState): ProvenanceCell[] {
   }
   return out;
 }
+
+/** Level grid width in cells (256×128) — the stride for the absolute cell index
+ *  `y * 256 + x` that `resolveObjectFootprints` emits and the editor hit-test
+ *  uses (must match the renderer's `LEVEL_CELLS_W`). */
+const LEVEL_CELLS_W = 256;
+
+/**
+ * Resolve `state.cellStampers` (buffer offset → set of stamper stream indices)
+ * into per-object drawn-tile footprints: `out[i]` = the absolute cell indices
+ * (`y * 256 + x`, 0..32767) that object stream index `i` stamped a tile into,
+ * INCLUDING cells later overwritten by another object (the recorder captures
+ * every writer, so a click can cycle through buried objects). Dense over
+ * `objectCount` — an object that stamps nothing gets an empty array (the editor
+ * falls back to its bounding box). Pure; inverts the same page indirection as
+ * `resolveProvenanceCells`. Returns all-empty when the collector wasn't armed.
+ */
+export function resolveObjectFootprints(state: DecodeState, objectCount: number): number[][] {
+  const out: number[][] = Array.from({ length: objectCount }, () => []);
+  const cs = state.cellStampers;
+  if (cs === null || cs.size === 0) return out;
+
+  const pageToScreen = new Int16Array(PAGES).fill(-1);
+  for (let screen = 0; screen < state.screenPageMap.length; screen++) {
+    const slot = state.screenPageMap[screen]!;
+    if (slot === SCREEN_PAGE_UNALLOCATED) continue;
+    const page = slot & LRU_PAGE_MASK;
+    if (page === 0) continue;
+    pageToScreen[page] = screen;
+  }
+
+  for (const [off, writers] of cs) {
+    const page = off >> 9;
+    const screen = pageToScreen[page] ?? -1;
+    if (screen < 0) continue;
+    const row = (off & 0x1ff) >> 5;
+    const col = (off & 0x1f) >> 1;
+    const x = (screen & 0x0f) * 16 + col;
+    const y = (screen >> 4) * 16 + row;
+    const cell = y * LEVEL_CELLS_W + x;
+    for (const idx of writers) {
+      if (idx >= 0 && idx < objectCount) out[idx]!.push(cell);
+    }
+  }
+  return out;
+}

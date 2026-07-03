@@ -252,8 +252,44 @@ function verifyLevelRoundTrip(
   return null
 }
 
+// Per-key async serialization. Two overlapping saves/imports of the SAME level
+// would otherwise race the two-file (object + sprite) write and the shared temp
+// (see writeAtomic), persisting a torn or mismatched `.bin` pair — the "phantom
+// object" corruption. Callers keyed the same run one-at-a-time; different keys
+// (different levels) still run in parallel. The map entry is dropped once its
+// tail settles so keys never accumulate.
+const resourceLocks = new Map<string, Promise<unknown>>()
+
+async function withResourceLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = resourceLocks.get(key) ?? Promise.resolve()
+  const run = prev.then(fn) // prev is a swallowed tail (below), so it never rejects
+  // Track a non-throwing tail so a rejection here can't become an unhandled
+  // rejection AND the next waiter still chains strictly after this one settles.
+  const tail = run.catch(() => {})
+  resourceLocks.set(key, tail)
+  try {
+    return await run
+  } finally {
+    if (resourceLocks.get(key) === tail) resourceLocks.delete(key)
+  }
+}
+
+/** Lock key covering a level's overlay `.bin` pair (object + sprite). */
+const levelBinLockKey = (levelRecordId: number): string => `level-bin:${levelRecordId}`
+
 /** Serialize an edited level into the active project's overlay `.bin`(s). */
 export async function saveLevelResource(
+  levelRecordId: number,
+  level: LevelData
+): Promise<SaveLevelResult> {
+  // One writer at a time per level, so the object+sprite write can't interleave
+  // with another save/import of the same level (see withResourceLock).
+  return withResourceLock(levelBinLockKey(levelRecordId), () =>
+    saveLevelResourceLocked(levelRecordId, level)
+  )
+}
+
+async function saveLevelResourceLocked(
   levelRecordId: number,
   level: LevelData
 ): Promise<SaveLevelResult> {
@@ -871,6 +907,18 @@ export function resetGfxEditFile(file: string): ResetGfxEditResult {
  * actually has that stream file in the base map.
  */
 export async function saveLevelRawResource(
+  levelRecordId: number,
+  objectBytes: Buffer | null,
+  spriteBytes: Buffer | null
+): Promise<SaveLevelResult> {
+  // Same per-level lock as saveLevelResource — an import and an editor save of the
+  // same level must not interleave their two-file writes.
+  return withResourceLock(levelBinLockKey(levelRecordId), () =>
+    saveLevelRawResourceLocked(levelRecordId, objectBytes, spriteBytes)
+  )
+}
+
+async function saveLevelRawResourceLocked(
   levelRecordId: number,
   objectBytes: Buffer | null,
   spriteBytes: Buffer | null
@@ -1781,10 +1829,25 @@ export function exceptionalSaveBlockReason(levelRecordId: number): string | null
 
 /** Write `data` to `file` atomically (via .tmp + rename). A string is written
  *  as UTF-8 (Node's writeFile default), a Buffer as raw bytes. */
+// Monotonic suffix so two concurrent writeAtomic calls to the SAME target never
+// share a temp path.
+let atomicWriteSeq = 0
+
 async function writeAtomic(file: string, data: Buffer | string): Promise<void> {
-  const tmp = file + '.tmp'
-  await writeFile(tmp, data)
-  await rename(tmp, file)
+  // Unique temp path per write. A fixed `${file}.tmp` collides when two writes to
+  // the same target overlap (two overlapping saveResource calls — e.g. the Save
+  // button/Ctrl+S racing Test Level/Launch): both truncate the one temp from 0
+  // and race the rename, leaving a torn/mixed file on disk — the persistent,
+  // unclickable "phantom object" corruption. A pid+seq suffix gives each in-flight
+  // write its own temp; the last rename wins with a wholly-valid file.
+  const tmp = `${file}.${process.pid}.${atomicWriteSeq++}.tmp`
+  try {
+    await writeFile(tmp, data)
+    await rename(tmp, file)
+  } catch (err) {
+    await rm(tmp, { force: true }) // don't leak the temp on a failed write
+    throw err
+  }
 }
 
 /** Read a workRoot-relative base (framework) file as UTF-8 text. */

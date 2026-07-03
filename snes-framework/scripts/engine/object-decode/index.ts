@@ -81,7 +81,7 @@ export {
   type DecodeLevelByIdResult,
   type DecodeLevelFromLevelDataOptions
 } from './load-by-id.ts';
-export { resolveProvenanceCells, type ProvenanceCell } from './provenance.ts';
+export { resolveProvenanceCells, resolveObjectFootprints, type ProvenanceCell } from './provenance.ts';
 
 // Install every object-decode handler at module load, so any consumer of
 // `decodeLevel` gets a working Map16 buffer out of the box. The ordered list
@@ -121,6 +121,11 @@ export interface DecodeLevelOptions {
    *  pin. Only meaningful for untagged sites (a replay queue, when present, takes
    *  precedence over the LFSR). See state.ts `prngState`. */
   prngSeed?: number;
+  /** Collect per-object drawn-tile footprints (state.cellStampers) for the
+   *  editor's drawn-tiles hit-testing. Off by default; arming it allocates a Map
+   *  and a Set per stamped cell but never touches the rendered buffer, so the
+   *  decode output stays byte-identical. Resolve with `resolveObjectFootprints`. */
+  collectObjectCells?: boolean;
 }
 
 export function decodeLevel(
@@ -162,6 +167,11 @@ export function decodeLevel(
   if (opts.provenanceTargets != null && opts.provenanceTargets.length > 0) {
     state.provenanceTargets = new Set(opts.provenanceTargets);
     state.provenanceCells = new Map();
+  }
+
+  // Arm the drawn-tiles footprint collector (editor hit-testing) when requested.
+  if (opts.collectObjectCells) {
+    state.cellStampers = new Map();
   }
 
   // 3. Populate per-tileset Map16-ID template slots in WRAM (cart

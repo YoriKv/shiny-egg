@@ -59,8 +59,16 @@ const CATEGORIES: Category[] = [
  * extract time via the vendored V1.0 SymbolMap — see buildLevelMap(). Each
  * entry's label maps 1:1 to a LevelData/.bin filename.
  */
+/** Number of entries in the level-data pointer table (`Ptrs:`) — i.e. the count
+ *  of valid record ids (0 .. LEVEL_RECORD_COUNT-1). Version-global. This is the
+ *  single source of truth for the record-id range: extract iterates it here, and
+ *  it's surfaced to the renderer via the `levels:catalog` IPC so the world-map
+ *  entrance editor's record-id input caps to the last real record — bumping this
+ *  when the pointer table is extended flows through automatically. */
+export const LEVEL_RECORD_COUNT = 222
+
 const ROM_TABLES = {
-  levelCount: 222,
+  levelCount: LEVEL_RECORD_COUNT,
   // Cart-address constants are resolved via the vendored V1.0 SymbolMap at
   // extract time — see buildLevelMap() — so a future asm patch that shifts
   // these tables only requires updating the vendored map, not this file.

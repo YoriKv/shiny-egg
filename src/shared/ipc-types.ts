@@ -557,6 +557,18 @@ export interface CollisionTableResult {
   pipeEntryBits: Uint8Array
 }
 
+/** `render:objectCells` response — per-object drawn-tile footprints for the
+ *  editor's drawn-tiles hit-testing. `footprints[i]` = the absolute cell indices
+ *  (`y * 256 + x`, 0..32767) that the object at stream index `i` in the request's
+ *  `override.objects` stamped a tile into, INCLUDING cells later overwritten by a
+ *  higher object (so a click can cycle through buried objects). Dense over the
+ *  object list — an object that stamps nothing (command object / unported
+ *  handler) gets an empty array and the editor falls back to its bounding box.
+ *  The request is a plain `LevelRenderRequest` (levelRecordId + override). */
+export interface ObjectCellsResponse {
+  footprints: number[][]
+}
+
 /** `render:objectInfluence` request — decode `override` (the level with the
  *  dragged object(s) at their pending position) recording provenance for the
  *  objects at `targetIndices` in `override.objects` (one index for a single
