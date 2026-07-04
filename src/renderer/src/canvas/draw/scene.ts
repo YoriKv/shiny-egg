@@ -17,7 +17,7 @@ import type {
 import type {IncomingExit, LayerVisibility, PlacementItem, Selection} from '../../types'
 import type {View} from '../view'
 import type {SpriteBoundsMap} from '../hit-test'
-import {CELL_PX, SCREEN_CELLS, LEVEL_PX_W, LEVEL_PX_H, screenCol, screenRow, type ObjectOutlineBox} from '../geometry'
+import {LEVEL_PX_W, LEVEL_PX_H, type ObjectOutlineBox} from '../geometry'
 import {linksFor, resolveEntityRef} from '../entity-links'
 import {objectSizeMode} from '../../data/object-record'
 import {drawScreenGrid} from './grid'
@@ -44,7 +44,7 @@ import type {NeighborStatusMap} from '../../hooks/useNeighborDependencies'
 import {drawLinks} from './links'
 import {drawObjectInfluence} from './object-influence'
 import {drawResizeHandles, objectResizeHandles} from './handles'
-import {drawExits, drawIncomingExits} from './exits'
+import {drawExits, drawIncomingExits, strokeScreenOutline} from './exits'
 import {drawSpawnGlyph, drawSpawnOutline, drawTestSpawnGlyph} from './glyphs'
 import {drawPlacementPreview} from './placement-preview'
 import {selectionAccent} from './selection'
@@ -532,18 +532,10 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             }
             drawExits(ctx, drawExitsArr, primary, view.zoom)
             if (exitDrag && !exitDrag.valid) {
-                const col = screenCol(exitDrag.screen)
-                const row = screenRow(exitDrag.screen)
-                ctx.save()
-                ctx.strokeStyle = 'rgba(248, 113, 113, 0.9)'
-                ctx.lineWidth = 2 / view.zoom
-                ctx.strokeRect(
-                    col * SCREEN_CELLS * CELL_PX,
-                    row * SCREEN_CELLS * CELL_PX,
-                    SCREEN_CELLS * CELL_PX,
-                    SCREEN_CELLS * CELL_PX
-                )
-                ctx.restore()
+                // Same rect geometry as the per-exit screen outline drawExits just
+                // traced for the dragged exit, at the selected width — so the red
+                // warning paints exactly over the state-colored outline beneath.
+                strokeScreenOutline(ctx, exitDrag.screen, 'rgba(248, 113, 113, 0.9)', 2.5, view.zoom)
             }
             // During an incoming-marker drag, render it at its pending cell.
             let drawIncomingArr = incoming

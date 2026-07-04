@@ -8,11 +8,48 @@
 import type { ScreenExit } from '../../../../preload/api'
 import { getLevel } from '../../data/levels'
 import type { IncomingExit, Selection } from '../../types'
-import { CELL_PX, EXIT_MARKER_HALF_PX, exitMarkerX, exitMarkerY } from '../geometry'
+import {
+  CELL_PX,
+  EXIT_MARKER_HALF_PX,
+  SCREEN_PX,
+  exitMarkerX,
+  exitMarkerY,
+  screenCol,
+  screenRow
+} from '../geometry'
 import { hex0x } from '../../lib/hex'
 import { monoAdvance } from './text'
 import { drawDoorIcon } from './door-icons'
 import { SELECTION_ACCENT, selectionAccent } from './selection'
+
+
+/**
+ * Trace a screen's boundary in a marker state color — the outline drawn around
+ * each exit's owning screen (matching its corner icon), also reused by scene.ts
+ * for the invalid-drop warning so the two rects coincide exactly. Inset by half
+ * the line width so the stroke sits fully inside the screen and two adjacent
+ * exit screens keep visually distinct outlines. `lineWidthPx` is in screen px
+ * (scaled by 1/zoom like every overlay stroke).
+ */
+export function strokeScreenOutline(
+  ctx: CanvasRenderingContext2D,
+  screenIndex: number,
+  color: string,
+  lineWidthPx: number,
+  zoom: number
+): void {
+  const lw = lineWidthPx / zoom
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.lineWidth = lw
+  ctx.strokeRect(
+    screenCol(screenIndex) * SCREEN_PX + lw / 2,
+    screenRow(screenIndex) * SCREEN_PX + lw / 2,
+    SCREEN_PX - lw,
+    SCREEN_PX - lw
+  )
+  ctx.restore()
+}
 
 
 /**
@@ -29,6 +66,21 @@ export function drawExits(
   const selectedUid =
     selection && selection.kind === 'exit' ? selection.uid : -1
   ctx.save()
+  // Screen-outline pass first: trace each exit's owning screen in the marker's
+  // state color, so which screen the exit belongs to reads at a glance (the
+  // corner icon alone doesn't convey the extent). A separate pass so a long
+  // label overrunning into the next screen is never crossed by that screen's
+  // outline. Widths match the door chip's border (1.5 idle / 2.5 selected).
+  for (const e of exits) {
+    const isSelected = e.uid === selectedUid
+    strokeScreenOutline(
+      ctx,
+      e.screenIndex,
+      isSelected ? selectionAccent(0.9) : 'rgba(34, 211, 238, 0.75)',
+      isSelected ? 2.5 : 1.5,
+      zoom
+    )
+  }
   const half = EXIT_MARKER_HALF_PX
   // Label text style is constant across the pass — set the font + measure one
   // glyph (monospace, see ./text) once here instead of per exit.

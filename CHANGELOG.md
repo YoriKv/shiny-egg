@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.1 - 2026-07-04
+
+- Add a zoom percent view and dropdown.
+- Screen exit outline.
+
 ## v0.6.0 - 2026-07-03
 
 - New "basic" sprite and object outline mode that mimics Advynia editing style.

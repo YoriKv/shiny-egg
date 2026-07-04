@@ -74,9 +74,12 @@ import {
   clientToWorld,
   fitViewForLevel,
   focusViewFor,
+  stepZoomPreset,
   zoomAt,
+  zoomTo,
   type View
 } from './canvas/view'
+import { publishZoom } from './canvas/zoom-store'
 import { useLevelRenderLayers } from './hooks/useLevelRenderLayers'
 import { drawScene } from './canvas/draw/scene'
 import { objectOutlineBoxes } from './canvas/draw/objects'
@@ -139,6 +142,10 @@ export interface CanvasProps {
    *  `levelRecordId`. Highest-priority view source on load (overrides spawn/fit);
    *  `nonce` re-fires a repeat restore to the same view. */
   cameraRequest: { levelRecordId: number; view: View; nonce: number } | null
+  /** Toolbar zoom-preset pick: zoom to the absolute level about the viewport
+   *  centre (keeps what the user is looking at in place). `nonce` re-fires a
+   *  repeat pick of the same preset after wheel-zooming away and back. */
+  zoomRequest: { zoom: number; nonce: number } | null
   /** The Add-picker's armed entity, or null when not in place mode. When set the
    *  Place tool is active: a cursor-following ghost previews it and a quiet canvas
    *  click places it at the clicked cell (via onPlaceAt) instead of selecting. */
@@ -245,6 +252,7 @@ export function Canvas({
   cameraRef,
   viewportRef,
   cameraRequest,
+  zoomRequest,
   placement,
   onPlaceAt,
   onCancelPlacement,
@@ -797,9 +805,12 @@ export function Canvas({
   const pendingCameraRef = useRef<{ levelRecordId: number; view: View } | null>(null)
 
   // Mirror the live camera up to App (for navigate-away snapshots) without
-  // re-rendering it — App holds the ref.
+  // re-rendering it — App holds the ref. The zoom additionally goes to the
+  // zoom store, whose only subscriber is the toolbar ZoomMenu (its live
+  // percent display) — still no App re-render per wheel tick.
   useEffect(() => {
     cameraRef.current = view
+    publishZoom(view.zoom)
   }, [view, cameraRef])
 
   // Cycle state: when a click lands on a stack of multiple selectables, each
@@ -904,6 +915,16 @@ export function Canvas({
       pendingCameraRef.current = { levelRecordId: cameraRequest.levelRecordId, view: cameraRequest.view }
     }
   }, [cameraRequest])
+
+  // Toolbar zoom-preset pick: jump to the absolute zoom about the viewport
+  // centre, so what the user is looking at stays put. Ignored while Camera
+  // Preview pins the zoom (same rule as wheel-zoom — the pin effect would
+  // immediately snap it back anyway).
+  useEffect(() => {
+    if (!zoomRequest) return
+    if (cameraOnRef.current) return
+    setView((v) => zoomTo(v, sizeRef.current.w / 2, sizeRef.current.h / 2, zoomRequest.zoom))
+  }, [zoomRequest])
 
   // Track wrapper size so the canvas backing store stays crisp at any DPR.
   useLayoutEffect(() => {
@@ -1806,7 +1827,17 @@ export function Canvas({
       const rect = wrap.getBoundingClientRect()
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
-      setView((v) => zoomAt(v, cx, cy, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP))
+      // Chromium remaps Shift+wheel to a horizontal scroll (deltaX carries the
+      // motion, deltaY = 0), so read whichever axis moved.
+      const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX
+      if (delta === 0) return
+      // Shift+wheel snaps to the next/previous preset zoom (the toolbar
+      // dropdown's stops); plain wheel is the continuous ZOOM_STEP factor.
+      setView((v) =>
+        e.shiftKey
+          ? zoomTo(v, cx, cy, stepZoomPreset(v.zoom, delta < 0 ? 1 : -1))
+          : zoomAt(v, cx, cy, delta < 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
+      )
     }
     wrap.addEventListener('wheel', handler, { passive: false })
     return () => wrap.removeEventListener('wheel', handler)

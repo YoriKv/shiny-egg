@@ -15,6 +15,34 @@ export const MIN_ZOOM = 0.25
 export const MAX_ZOOM = 6
 export const ZOOM_STEP = 1.12
 
+/** The toolbar zoom-dropdown presets (also the Shift+wheel snap stops). Plain
+ *  wheel zoom is continuous (ZOOM_STEP), so the live zoom is usually between
+ *  presets; MAX_ZOOM intentionally exceeds the largest preset. Ascending. */
+export const ZOOM_PRESETS: readonly number[] = [0.25, 0.5, 1, 2, 3, 4]
+
+/** Tolerance for "is the zoom AT a preset" in stepZoomPreset. Presets are
+ *  assigned exactly (never accumulated), so this only needs to absorb the
+ *  round-off of zoomTo's factor arithmetic — keep it far below the gap
+ *  between any two presets. */
+const PRESET_EPS = 1e-9
+
+/**
+ * The next preset zoom in `dir` (+1 in, -1 out) from `zoom` — the Shift+wheel
+ * snap. A zoom sitting exactly on a preset steps to its neighbour; a zoom
+ * between presets snaps to the nearest one in that direction. Returns `zoom`
+ * unchanged when no preset lies further that way (past either end). Pure.
+ */
+export function stepZoomPreset(zoom: number, dir: 1 | -1): number {
+  if (dir > 0) {
+    for (const p of ZOOM_PRESETS) if (p > zoom + PRESET_EPS) return p
+  } else {
+    for (let i = ZOOM_PRESETS.length - 1; i >= 0; i--) {
+      if (ZOOM_PRESETS[i]! < zoom - PRESET_EPS) return ZOOM_PRESETS[i]!
+    }
+  }
+  return zoom
+}
+
 export const INITIAL_VIEW: View = { panX: 16, panY: 16, zoom: 1 }
 
 /** Inset of the top-left-most object from the canvas top-left when we auto-fit. */
@@ -67,18 +95,28 @@ export function focusViewFor(
 }
 
 /**
- * Zoom by `factor` about the canvas point (cx, cy) — keeps that point fixed
- * under the cursor (the wheel-zoom rule). Zoom is clamped to the [MIN_ZOOM,
- * MAX_ZOOM] range. Pure.
+ * Zoom to the absolute level `zoom` about the canvas point (cx, cy) — keeps
+ * that point fixed (the wheel-zoom rule). Assigns `zoom` exactly (clamped to
+ * [MIN_ZOOM, MAX_ZOOM]) so a preset pick lands on the preset value, not a
+ * factor-multiplication approximation of it. Pure.
  */
-export function zoomAt(view: View, cx: number, cy: number, factor: number): View {
-  const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.zoom * factor))
+export function zoomTo(view: View, cx: number, cy: number, zoom: number): View {
+  const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
   const actual = newZoom / view.zoom
   return {
     zoom: newZoom,
     panX: cx - (cx - view.panX) * actual,
     panY: cy - (cy - view.panY) * actual
   }
+}
+
+/**
+ * Zoom by `factor` about the canvas point (cx, cy) — keeps that point fixed
+ * under the cursor (the wheel-zoom rule). Zoom is clamped to the [MIN_ZOOM,
+ * MAX_ZOOM] range. Pure.
+ */
+export function zoomAt(view: View, cx: number, cy: number, factor: number): View {
+  return zoomTo(view, cx, cy, view.zoom * factor)
 }
 
 /**

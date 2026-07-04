@@ -72,6 +72,7 @@ import { useLevelNavigation } from './hooks/useLevelNavigation'
 import { getAllLevels, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
 import { ColorAlphaButton } from './toolbar/ColorAlphaButton'
+import { ZoomMenu } from './toolbar/ZoomMenu'
 import type { IncomingExit, LayerVisibility, OutlineMode, PlacementItem, Selection } from './types'
 import { nextGridMode, nextOutlineMode } from './types'
 
@@ -582,6 +583,15 @@ export default function App(): JSX.Element {
   const onGridColorChange = useCallback((color: string) => {
     setGridColor(color)
     void window.shinyEgg.settings.set({ gridColor: color })
+  }, [])
+  // Toolbar zoom-preset pick → Canvas (nonce'd request, like focusReq/cameraReq,
+  // so re-picking a preset after wheel-zooming away still fires). The live zoom
+  // flows the other way through the zoom store (canvas/zoom-store.ts), not App
+  // state — see ZoomMenu.
+  const [zoomReq, setZoomReq] = useState<{ zoom: number; nonce: number } | null>(null)
+  const zoomNonceRef = useRef(0)
+  const onZoomTo = useCallback((zoom: number) => {
+    setZoomReq({ zoom, nonce: ++zoomNonceRef.current })
   }, [])
   const onRoomListHelpHiddenChange = useCallback((hidden: boolean) => {
     setRoomListHelpHidden(hidden)
@@ -1545,6 +1555,7 @@ export default function App(): JSX.Element {
             </Fragment>
           ))}
           <span className="se-toolbar__divider" />
+          <ZoomMenu onZoomTo={onZoomTo} />
           <label className="se-toolbar__bgcolor" title="Canvas background color">
             <span className="se-toolbar__swatch-label">BG</span>
             <input
@@ -1724,6 +1735,7 @@ export default function App(): JSX.Element {
           cameraRef={cameraRef}
           viewportRef={viewportRef}
           cameraRequest={cameraReq}
+          zoomRequest={zoomReq}
           placement={placement}
           onPlaceAt={onPlaceAt}
           onCancelPlacement={onCancelPlacement}

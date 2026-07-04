@@ -948,6 +948,63 @@ h3 { margin: 0; }
   color: var(--ink-3);
 }
 
+/* Zoom dropdown — sits left of the BG/Grid swatches with the same
+   caption-over-control silhouette. The trigger shows the LIVE canvas zoom
+   (wheel zoom overrides the last-picked preset), the popover the preset stops. */
+.se-zoommenu {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.se-zoommenu__trigger {
+  height: 24px;
+  min-width: 44px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  transition: border-color 0.12s;
+}
+.se-zoommenu__trigger:hover { border-color: var(--line-strong); }
+.se-zoommenu__trigger.is-open { border-color: var(--accent); }
+.se-zoommenu__pop {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  z-index: 9000; /* above the stage, like the neighbouring .se-colorpick__pop */
+  min-width: 64px;
+  padding: 4px 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+  /* NOT se-fade-in: its translateY keyframes would replace the translateX(-50%)
+     centering while running, flashing the pop half a width to the right. */
+  animation: se-fade-in-centered 0.14s ease-out;
+}
+@keyframes se-fade-in-centered {
+  from { opacity: 0; transform: translate(-50%, -2px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.se-zoommenu__row {
+  display: block;
+  width: 100%;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  transition: background-color 0.08s, color 0.08s;
+}
+.se-zoommenu__row:hover {
+  background: var(--bg-elevated);
+}
+
 .se-toolbar__layers {
   /* Fixed 5-column grid intentionally splits the toggles into two functional
      rows: row 1 = visual layers (sprites, BG1, BG2, BG3, backdrop), row 2 =
@@ -3947,6 +4004,7 @@ h3 { margin: 0; }
 .se-picker__row.is-armed,
 .se-levelmenu__row.is-active,
 .se-sublevelmenu__row.is-active,
+.se-zoommenu__row.is-active,
 .se-btn.is-primary:hover:not(:disabled) {
   background: var(--accent);
   color: var(--bg-base);
