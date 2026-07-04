@@ -10,8 +10,10 @@ import { GfxImportReconciler } from './gfx-import-reconcile'
 import { loadRomAndSymbols } from './render/rom-cache'
 import type { ImportGraphicsResult } from '../shared/ipc-types'
 
-/** Flatten the all-graphics import counts into log lines + errors + warnings + a changed total. */
-function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; warnings: string[]; changed: number; paletteChanged: number } {
+/** Flatten the all-graphics import counts into log lines + errors + warnings + a changed
+ *  total. Exported for the M1TE-Maps project import (m1te-maps-project.ts), which runs
+ *  the same importer against the project's fixed m1te folder. */
+export function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; warnings: string[]; changed: number; paletteChanged: number } {
   const log: string[] = []
   const push = (n: number, label: string): void => { if (n > 0) log.push(`${n} ${label}${n === 1 ? '' : 's'} changed`) }
   push(r.imported, 'gfx file')
@@ -27,6 +29,7 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   if (r.sceneryImported > 0) log.push('title scenery changed')
   if (r.sceneImported > 0) log.push('storybook scene changed')
   push(r.bonusImported, 'bonus-game screen')
+  if (r.bossImported > 0) log.push('Raphael arena layout changed')
   push(r.paletteImported, 'screen palette color')
   if (r.skipped > 0 || r.imported > 0) log.push(`${r.skipped} unchanged`)
 
@@ -35,7 +38,8 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   // sprites / levels / worlds, so the change has wider reach than the user picked.
   // They're advisories, not failures — keep them out of `errors` so they render
   // amber (warning), not red. See the renderer's two log channels in GraphicsPanel.
-  const warnings: string[] = []
+  // Seeded with the importer's own advisories (newer-export stamp, off-palette paint).
+  const warnings: string[] = [...r.warnings]
   if (r.yychrPadEdited > 0) warnings.push(`${r.yychrPadEdited} YY-CHR sheet${r.yychrPadEdited === 1 ? '' : 's'} had edits past the sheet's end (bank padding) — those pixels were ignored.`)
   if (r.spritePropagated > 0) warnings.push(`${r.spritePropagated} other sprite${r.spritePropagated === 1 ? '' : 's'} share edited tiles and also changed.`)
   if (r.glyphShared > 0) warnings.push(`${r.glyphShared} other sprite${r.glyphShared === 1 ? '' : 's'} share an edited glyph.`)
@@ -44,7 +48,7 @@ function gfxResultToLog(r: GfxImportCounts): { log: string[]; errors: string[]; 
   if (r.paletteImported > 0) warnings.push('Screen-palette color edits write to the shared master palette blob — a color also used by another screen or level changes there too.')
 
   const changed = r.imported + r.spriteImported + r.iconImported +
-    r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.sceneImported + r.bonusImported + r.glyphImported + r.fontImported + r.yychrImported + r.paletteImported
+    r.levelIconImported + r.mapTerrainImported + r.logoImported + r.islandImported + r.sceneryImported + r.sceneImported + r.bonusImported + r.bossImported + r.glyphImported + r.fontImported + r.yychrImported + r.paletteImported
   return { log, errors, warnings, changed, paletteChanged: r.paletteImported }
 }
 
@@ -106,6 +110,7 @@ export async function importGraphicsFolder(dir: string): Promise<Exclude<ImportG
       if (r.ok) {
         log.push('BG regions:', ...r.log.map((l) => `  ${l}`))
         errors.push(...r.errors)
+        warnings.push(...r.warnings)
         changed += r.regions + r.repositioned
         repositioned += r.repositioned
       } else {

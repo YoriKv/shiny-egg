@@ -47,6 +47,8 @@
     "./world-map-terrain": "./scripts/engine/world-map-terrain.ts",
     "./world-map-m1te2": "./scripts/engine/world-map-m1te2.ts",
     "./screen-m1te2": "./scripts/engine/screen-m1te2.ts",
+    "./screen-raphael": "./scripts/engine/screen-raphael.ts",
+    "./m1te2": "./scripts/engine/m1te2.ts",
     "./symbol-map": "./scripts/engine/symbol-map.ts",
     "./object-decode": "./scripts/engine/object-decode/index.ts",
     "./surface-fit": "./scripts/engine/surface-fit.ts",

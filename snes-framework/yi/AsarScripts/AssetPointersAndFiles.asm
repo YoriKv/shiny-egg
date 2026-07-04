@@ -929,6 +929,15 @@ LevelDataPointersEnd:
 
 ;--------------------------------------------------------------------
 
+; Heads-up: five entries in this set are Mode-7 CHR blobs, NOT tilemaps --
+; file $B1 (title-screen island) and $B9-$BC (Raphael moon-arena character
+; sets; file $BD, the arena's actual 64x64 tilemap, is genuine tilemap data).
+; The cart's pointer table files these CHR blobs in the Tilemap set, so the
+; extractor drops them into Tilemaps/ (scripts/extract.ts). Cosmetic only:
+; downstream CHR tools (YY-CHR, the title-island graphics path) re-read them
+; as CHR, and re-encode stays byte-exact because the codec picks LZ2 vs LZ16
+; by the file's membership in the compressed-pointer tables, not by the
+; directory it was extracted to.
 TilemapPointersStart:
 	dl $3697A1,$369A25,DATA_5B17A1,DATA_5B17A1End
 	dl $369A25,$369CC2,DATA_5B1A25,DATA_5B1A25End

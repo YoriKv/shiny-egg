@@ -33,10 +33,12 @@ import { exportWorldMapLevelIcons } from 'snes-framework/world-map-level-icons'
 import { exportWorldMapTerrain, exportWorldMapGround } from 'snes-framework/world-map-terrain'
 import { exportWorldMapM1 } from 'snes-framework/world-map-m1te2'
 import { exportScreenM1 } from 'snes-framework/screen-m1te2'
+import { exportRaphaelArena } from 'snes-framework/screen-raphael'
 import { exportMetasprites } from 'snes-framework/sprite-metasprite'
 import { exportSpriteGlyphs } from 'snes-framework/sprite-glyph'
 import { decodeFontSheet, FONT_SHEETS } from 'snes-framework/msg-font'
 import { imageAseprite } from 'snes-framework/gfx-aseprite'
+import { app } from 'electron'
 import { encodePng } from 'snes-framework/png'
 import { collectYychrExport, yychrReadme } from './gfx-yychr-io'
 import type { RenderHeaderRequest, ExportGfxOptions, GfxExportTrack } from '../shared/ipc-types'
@@ -67,6 +69,7 @@ import {
   type MapGroundManifestEntry,
   type MapM1Manifest,
   type ScreenM1ManifestEntry,
+  type BossArenaManifestEntry,
   type TitleLogoManifestEntry,
   type TitleIslandManifestEntry,
   type TitleSceneryManifestEntry,
@@ -94,6 +97,7 @@ export function gfxTrackFolder(opts: ExportGfxOptions): { folder: string; strip:
   const t = opts.tracks[0]
   if (t === 'worldmap') return { folder: 'map', strip: 'screens/map/' }
   if (t === 'systemscreens') return { folder: 'screens', strip: 'screens/' }
+  if (t === 'bosses') return { folder: 'bosses', strip: 'bosses/' }
   if (t === 'metasprites') return { folder: 'metasprites', strip: '' }
   if (t === 'fonts') return { folder: 'fonts', strip: 'fonts/' }
   if (t === 'yychr') return { folder: 'yychr', strip: 'yychr/' }
@@ -335,6 +339,19 @@ export function exportGfxPngsToDir(
     mapGroundManifest = { file, fileId: g.fileId, width: g.width, height: g.height, tileKeys: g.tileKeys, paletteOffsets: useAse ? g.paletteOffsets : undefined }
   }
 
+  // The Bosses track — Raphael's Mode-7 moon arena. PNG = view; .aseprite = the layout
+  // tilemap → round-trips to the $BD byte-cell tilemap file. Char pixels edit via the
+  // YY-CHR track (advanced/raphael-chars-*); the arena has no M1TE2 form (M1TE can't
+  // represent 1-byte Mode-7 cells).
+  let bossArenaManifest: BossArenaManifestEntry | null = null
+  if (want('bosses')) {
+    const b = exportRaphaelArena(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() })
+    const useAse = aseFmt && b.aseprite
+    const file = rebase(useAse ? b.file.replace(/\.png$/, '.aseprite') : b.file)
+    emit(file, useAse ? b.aseprite! : b.png)
+    bossArenaManifest = { file, fileId: b.fileId, width: b.width, height: b.height, tileKeys: b.tileKeys, paletteOffsets: useAse ? b.paletteOffsets : undefined }
+  }
+
   // World-map M1TE2 ".M1" sessions — when the World Map track is exported in M1TE2 format,
   // these REPLACE the PNG/Aseprite map outputs above (all skipped via wantWorldMapPng). Two
   // products: the overworld (one .M1 per world — the full 64×32 screen, BG1+BG2+BG3
@@ -476,6 +493,7 @@ export function exportGfxPngsToDir(
     join(outDir, MANIFEST),
     JSON.stringify(
       {
+        exportedBy: app.getVersion(),
         checksums,
         entries: manifest,
         metasprites: { header, sprites: metaManifest },
@@ -484,6 +502,7 @@ export function exportGfxPngsToDir(
         levelIcons: levelIconManifest,
         mapTerrain: mapTerrainManifest,
         mapGround: mapGroundManifest,
+        bossArena: bossArenaManifest,
         mapM1: mapM1Manifest,
         screenM1: screenM1Manifest.length > 0 ? screenM1Manifest : null,
         titleLogo: titleLogoManifest,
@@ -504,7 +523,7 @@ export function exportGfxPngsToDir(
     count:
       screens.length + metas.length + glyphs.length +
       mapIcons.length + levelIcons.length + mapTerrain.length +
-      (mapGroundManifest ? 1 : 0) + (titleLogoManifest ? 1 : 0) + (titleIslandManifest ? 1 : 0) + (titleSceneryManifest ? 1 : 0) +
+      (mapGroundManifest ? 1 : 0) + (bossArenaManifest ? 1 : 0) + (titleLogoManifest ? 1 : 0) + (titleIslandManifest ? 1 : 0) + (titleSceneryManifest ? 1 : 0) +
       (storybookSceneManifest ? 1 : 0) +
       fontManifest.length +
       (mapM1Manifest ? mapM1Manifest.overworlds.length + (mapM1Manifest.icons ? 1 : 0) : 0) +
@@ -549,6 +568,10 @@ function readmeText(): string {
     '    Layout covers the title logo and floating island; the boot logo, title scenery',
     '    and storybook are pixels only. These screens animate their colors in-game, so',
     '    the extracted picture shows just one frame.',
+    '',
+    'Bosses                    Layout, Palette.',
+    '    Raphael\'s Mode-7 moon arena — rearrange the 8×8 tiles that build the moon,',
+    '    clouds and stars (Aseprite extract). Tile pixels edit via the YY-CHR tab.',
     '',
     'Message Font / Pictures   Pixels (PNG or Aseprite).',
     '    The 1bpp message font glyphs + message-box pictures, as a 2-color image (index 0',

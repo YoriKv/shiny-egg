@@ -9,6 +9,11 @@ type MoveOverlay = { kind: 'object' | 'sprite'; uid: number; dx: number; dy: num
 type ResizeOverlay = { uid: number; w: number; h: number } | null
 type GroupMove = { objUids: Set<number>; sprUids: Set<number>; dx: number; dy: number } | null
 
+/** How long a press must be held before the cell tint appears (unless the drag
+ *  moves a cell first, which reveals it immediately). A click-to-cycle press
+ *  releases well inside this window, so it never flashes the tint. */
+const TINT_HOLD_MS = 250
+
 /**
  * Object-drag cell-highlight. While an OBJECT move/resize drag — or a
  * multi-select group move — is active, fetch the dragged object(s)' per-cell
@@ -32,6 +37,11 @@ type GroupMove = { objUids: Set<number>; sprUids: Set<number>; dx: number; dy: n
  *    decode never paints stale cells.
  *
  * Behaviour notes:
+ *  - The tint is HELD BACK briefly at drag start: Canvas arms the overlays on
+ *    press (zero delta) so the tint can show on click+hold, but a quick click —
+ *    selecting, or cycling through stacked objects — would flash it. Nothing is
+ *    fetched or shown until the press has lasted TINT_HOLD_MS or the drag
+ *    leaves its arming cell (a `drag.key` change), whichever comes first.
  *  - `targetIndices` MUST index the SAME array that gets serialized + decoded
  *    (`override.objects`). The override is a clone of `level.objects` in stream
  *    order, so `findIndex(uid)` is the decode stream index — never pass a uid to
@@ -87,8 +97,29 @@ export function useObjectInfluence(
   const dragKey = drag?.key ?? null
   const dragKind = drag?.kind ?? null
 
+  // Tint reveal gate — see the hold-back behaviour note above. `armKeyRef`
+  // remembers the key the drag armed with (press, zero delta); any other key
+  // means the drag really moved, so reveal at once instead of waiting out the
+  // hold timer.
+  const [revealed, setRevealed] = useState(false)
+  const armKeyRef = useRef<string | null>(null)
   useEffect(() => {
-    if (dragKey === null || dragKind === null) {
+    if (dragKey === null) {
+      armKeyRef.current = null
+      setRevealed(false)
+      return
+    }
+    if (armKeyRef.current !== null && dragKey !== armKeyRef.current) {
+      setRevealed(true)
+      return
+    }
+    armKeyRef.current = dragKey
+    const t = window.setTimeout(() => setRevealed(true), TINT_HOLD_MS)
+    return () => window.clearTimeout(t)
+  }, [dragKey])
+
+  useEffect(() => {
+    if (dragKey === null || dragKind === null || !revealed) {
       setInfluence(null)
       return
     }
@@ -158,9 +189,10 @@ export function useObjectInfluence(
     return () => {
       cancelled = true
     }
-    // Keyed on the cell-quantized drag signal: refetch per cell, not per frame.
+    // Keyed on the cell-quantized drag signal (refetch per cell, not per frame)
+    // + the reveal gate, so the first fetch fires when the hold timer lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragKey])
+  }, [dragKey, revealed])
 
   return influence
 }

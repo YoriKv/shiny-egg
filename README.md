@@ -114,3 +114,6 @@ work this tool couldn't exist. So thank you to these folks and many more.
   install under `resources/snes-framework/m1te-licenses/`, and the upstream
   source is at https://github.com/nesdoug/M1TE2. It runs separately from the
   editor.
+- The warp exit / entrance marker icons are by **Delapouite**
+  ([game-icons.net](https://game-icons.net)), recolored, under
+  [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).

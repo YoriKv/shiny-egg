@@ -196,6 +196,11 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
         for (const f of st?.files ?? []) {
             (groups.get(f.category) ?? groups.set(f.category, []).get(f.category)!).push(f)
         }
+        // Within a category, sort by file id (the export walks scenes, so manifest
+        // order is scene order); non-chr sheets (no fileId) sort by name at the end.
+        for (const files of groups.values()) {
+            files.sort((a, b) => (a.fileId ?? Infinity) - (b.fileId ?? Infinity) || a.file.localeCompare(b.file))
+        }
         const order: [string, string][] = [
             ...CATEGORIES.filter(([k]) => groups.has(k)),
             ...[...groups.keys()].filter((k) => !CATEGORIES.some(([c]) => c === k)).sort().map((k): [string, string] => [k, k])
@@ -376,6 +381,14 @@ const SheetRow = memo(function SheetRow({f, thumb, busy, yychrExe, onImportFile,
             <div className="se-yychr__info">
                 <div className="se-yychr__toprow">
                     <span className="se-graphics__item-label" title={f.file}>{f.description}</span>
+                    {f.unused && (
+                        <span
+                            className="se-yychr__status se-yychr__status--unused"
+                            title="Verified unused — nothing in-game reads this sheet, so edits won't change any visuals"
+                        >
+                            unused
+                        </span>
+                    )}
                     {f.status === 'changed' && <span className="se-yychr__status se-yychr__status--changed">changed</span>}
                     {f.status === 'missing' && <span className="se-yychr__status se-yychr__status--missing">missing</span>}
                     <button

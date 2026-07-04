@@ -1,6 +1,8 @@
-import { useEffect, useRef, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import { formatLevelId, levelLabel, useRemovedRecords } from './data/levels'
 import { useDropdown } from './hooks/useDropdown'
+import { HelpDialog } from './HelpDialog'
+import { ROOM_LIST_HELP, RoomListHelpPref } from './app-help'
 
 export interface SubLevelMenuProps {
   /** The root level RECORD id (the LevelMenu pick) — anchors the BFS. */
@@ -13,6 +15,11 @@ export interface SubLevelMenuProps {
   /** True while BFS is still in flight. */
   loading: boolean
   onSelect: (id: number) => void
+  /** Hide the "Room List — Help" entry at the bottom of the dropdown. App owns
+   *  the preference (persisted); the checkbox inside the help dialog — mirrored
+   *  in the Level Editor Help, which is how it comes back — drives it. */
+  helpHidden: boolean
+  onHelpHiddenChange: (hidden: boolean) => void
 }
 
 /**
@@ -26,7 +33,9 @@ export function SubLevelMenu({
   currentLevelRecordId,
   subLevels,
   loading,
-  onSelect
+  onSelect,
+  helpHidden,
+  onHelpHiddenChange
 }: SubLevelMenuProps): JSX.Element | null {
   const { open, setOpen, containerRef } = useDropdown()
   const activeRef = useRef<HTMLButtonElement>(null)
@@ -34,7 +43,7 @@ export function SubLevelMenu({
   // disable it here so it's clearly not openable. The central nav guard refuses
   // it regardless — this is the visible cue. See hooks/useLevelNavigation.
   const removed = useRemovedRecords()
-
+  const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -42,6 +51,19 @@ export function SubLevelMenu({
   }, [open])
 
   if (rootLevelRecordId === null) return null
+
+  // Rendered in the chip AND dropdown branches so an open dialog survives
+  // discovery collapsing the menu to the single-room chip.
+  const helpDialog = (
+    <HelpDialog
+      open={helpOpen}
+      title="Room List — Help"
+      footer={<RoomListHelpPref hidden={helpHidden} onChange={onHelpHiddenChange} />}
+      onClose={() => setHelpOpen(false)}
+    >
+      {ROOM_LIST_HELP}
+    </HelpDialog>
+  )
 
   const triggerLabel = describe(currentLevelRecordId, rootLevelRecordId)
   const hasSubRooms = subLevels.length > 1
@@ -64,6 +86,7 @@ export function SubLevelMenu({
           <span className="se-sublevelmenu__name">{triggerLabel}</span>
           <span className="se-sublevelmenu__count">{indicator}</span>
         </div>
+        {helpDialog}
       </div>
     )
   }
@@ -124,8 +147,25 @@ export function SubLevelMenu({
               </button>
             )
           })}
+          {!helpHidden && (
+            <>
+              <div className="se-sublevelmenu__divider" />
+              <button
+                type="button"
+                className="se-sublevelmenu__row se-sublevelmenu__row--help"
+                onClick={() => {
+                  setHelpOpen(true)
+                  setOpen(false)
+                }}
+              >
+                <span className="se-sublevelmenu__rowtag">?</span>
+                <span className="se-sublevelmenu__rowname">Room List &mdash; Help</span>
+              </button>
+            </>
+          )}
         </div>
       )}
+      {helpDialog}
     </div>
   )
 }

@@ -3,7 +3,8 @@
 // of that palette is appended on the right — the swatch IS the color↔index
 // contract, so the PNG is self-describing: import reads the swatch to recover
 // the palette, maps each tile pixel back to its index (exact RGB match; off-
-// palette or transparent → index 0), and re-encodes SNES tile bytes for
+// palette or transparent → index 0, painted off-palette pixels counted into
+// `opts.stats` so the import can warn), and re-encodes SNES tile bytes for
 // `saveGfxEdit`. Unedited tiles round-trip exactly when the palette has no
 // duplicate colors; a duplicate maps to the lowest index (visually identical).
 //
@@ -168,6 +169,11 @@ function colorIndexMap(pal: readonly number[]): Map<number, number> {
  * fidelity) — the swatch is then ignored (it can't disambiguate sub-palettes
  * that share colors). Each tile's palette is the same RGB list its sub-palette
  * was rendered with at export, so unedited tiles still round-trip byte-exact.
+ *
+ * `opts.stats` is an out-counter: every PAINTED (non-transparent) pixel whose
+ * color matches no palette slot — flattened to index 0 — bumps `offPalette`, so
+ * the import can surface a warning instead of dropping the paint silently
+ * (anti-aliased edits and wrong-palette paints land here).
  */
 export function imageToGfx(
   img: ImageData,
@@ -176,6 +182,7 @@ export function imageToGfx(
     base?: Uint8Array;
     index0Transparent?: boolean;
     tilePalette?: (tileIndex: number) => readonly number[];
+    stats?: { offPalette: number };
   } = {}
 ): Uint8Array {
   const d = layoutDims(layout);
@@ -203,9 +210,16 @@ export function imageToGfx(
           if (baseGrid) {
             const bi = baseGrid[gy * d.gridW + gx]!;
             const unchanged = i0t && bi === 0 ? a === 0 : a !== 0 && rgb === pal[bi];
-            v = unchanged ? bi : a === 0 ? 0 : map.get(rgb) ?? 0;
+            if (unchanged) v = bi;
+            else if (a !== 0) {
+              const m = map.get(rgb);
+              if (m === undefined && opts.stats) opts.stats.offPalette++;
+              v = m ?? 0;
+            }
           } else if (a !== 0) {
-            v = map.get(rgb) ?? 0;
+            const m = map.get(rgb);
+            if (m === undefined && opts.stats) opts.stats.offPalette++;
+            v = m ?? 0;
           }
         }
         idx[r * 8 + c] = v;

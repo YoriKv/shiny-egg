@@ -22,8 +22,8 @@ import {
   LEVEL_PX_W,
   SCREEN_CELLS,
   SPAWN_HIT_HALF_PX,
-  exitCenterX,
-  exitCenterY,
+  exitMarkerX,
+  exitMarkerY,
   makeScreenIndex,
   screenCol,
   screenOf,
@@ -79,6 +79,7 @@ import {
 } from './canvas/view'
 import { useLevelRenderLayers } from './hooks/useLevelRenderLayers'
 import { drawScene } from './canvas/draw/scene'
+import { objectOutlineBoxes } from './canvas/draw/objects'
 import type { CameraPreview } from './canvas/draw/camera-preview'
 import { clampPanToCamera } from './canvas/parallax'
 import { CameraPreviewControl } from './canvas/CameraPreviewControl'
@@ -233,7 +234,7 @@ export function Canvas({
   selection,
   onSelect,
   onJumpToLevel,
-  layers,
+  layers: layersProp,
   incoming,
   onMoveIncoming,
   levelState,
@@ -284,6 +285,52 @@ export function Canvas({
   }, [cameraSettings])
   const cameraOnRef = useRef(cameraOn)
   cameraOnRef.current = cameraOn
+  // Render Only: a session-only override that hides every editor overlay (object
+  // outlines, sprite outlines, exits, collision) for a clean look at the rendered
+  // level — WITHOUT touching the toolbar layer toggles. It rides over `layers`
+  // here (see the effective-layers memo) rather than mutating App's state, so the
+  // toolbar buttons keep showing the user's real choices; flipping it off restores
+  // them. Because the effective layers feed hit-testing too, the hidden overlays
+  // also stop capturing clicks while Render Only is on (nothing to select behind a
+  // hidden outline).
+  const [renderOnly, setRenderOnly] = useState(false)
+  // Effective layer visibility: the prop, with the overlay layers forced off while
+  // Render Only is active. EVERY internal consumer (drawScene + all hit-tests) reads
+  // this `layers`, so the override is total and single-sourced.
+  const layers = useMemo<LayerVisibility>(
+    () =>
+      renderOnly
+        ? { ...layersProp, bg1Outlines: 'off', spriteOutlines: 'off', exits: false, collision: false }
+        : layersProp,
+    [renderOnly, layersProp]
+  )
+  // Space toggles Render Only; Shift+Space toggles Camera Preview. Both are
+  // canvas-local view overrides, so their shortcut lives here (next to their
+  // state) rather than in App's plain-key handler. Ignored while typing in a
+  // field, and — since both toggles are checkboxes (INPUT) — when one holds
+  // focus, so its native Space toggle still fires (a single flip, not a double).
+  // Ctrl/Cmd/Alt are left alone so other chords keep working.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== ' ' && e.code !== 'Space') return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (
+        t &&
+        (t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable)
+      ) {
+        return
+      }
+      e.preventDefault()
+      if (e.shiftKey) setCameraOn((v) => !v)
+      else setRenderOnly((v) => !v)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   // Pin the view zoom to the selected 1×–4× whenever Camera Preview is on. Zoom ABOUT
   // THE VIEWPORT CENTRE (not by keeping pan) so the camera keeps the same level
   // position when the zoom changes — the camera is the viewport-centre world point,
@@ -577,14 +624,23 @@ export function Canvas({
   // per object-state change (useObjectCells); null until the first fetch resolves,
   // where hit-testing falls back to bounding boxes.
   const objectFootprints = useObjectCells(level)
+  // Extended objects encode no W/H, so their nominal box is a meaningless 1×1.
+  // Derive an anchor-relative outline box from each ext object's drawn-tile
+  // footprint so its outline (and gfx-missing badge) match the tiles it stamps;
+  // applied to the live anchor in drawObjects, so it tracks move-drags. Memoised
+  // on the committed level + footprints (both stable during a drag).
+  const objOutlineBoxes = useMemo(
+    () => objectOutlineBoxes(level?.objects ?? [], objectFootprints),
+    [level, objectFootprints]
+  )
   // Per-sprite neighbour-dependency status (rail/slime/pair/pipe etc.) for the
   // always-on error badge + selected-sprite overlay. Rides the Sprite-Editing
   // layer; recomputed per edit-commit (see the hook).
-  const neighborStatus = useNeighborDependencies(level, layers.spriteOutlines)
+  const neighborStatus = useNeighborDependencies(level, layers.spriteOutlines !== 'off')
   // Probe-derived behavior geometry (chain lengths, march tracks, rail traces)
   // for the selected-sprite overlay — measured against the live level data, so
   // it tracks both sprite drags and terrain edits.
-  const behaviorProbes = useBehaviorProbes(level, layers.spriteOutlines)
+  const behaviorProbes = useBehaviorProbes(level, layers.spriteOutlines !== 'off')
   // Render-validity for the loaded level (gfx-missing markers on placed
   // entities). Header-keyed + main-side cached, so it refetches only on a
   // level/header change — not per edit commit.
@@ -869,11 +925,12 @@ export function Canvas({
   useEffect(() => {
     drawScene(canvasRef.current, {
       size, view, level, layers, gridColor, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
-      spriteBounds, neighborStatus, behaviorProbes, generatorThumbs, renderValidity, influence, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
+      spriteBounds, neighborStatus, behaviorProbes, generatorThumbs, renderValidity, influence, objOutlineBoxes, objectFootprints, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
       incoming, testSpawn, spawnOverride: spawnDragOverlay ?? spawnOverride, paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
       exitDrag, incomingOverlay, marquee, paintDrag,
       placementPreview: placement && previewCell ? { item: placement, x: previewCell.x, y: previewCell.y } : null,
-      cameraPreview: cameraOn ? cameraSettings : null
+      cameraPreview: cameraOn ? cameraSettings : null,
+      renderOnly
     })
   }, [
     view,
@@ -893,6 +950,8 @@ export function Canvas({
     moveOverlay,
     resizeOverlay,
     influence,
+    objOutlineBoxes,
+    objectFootprints,
     neighborStatus,
     behaviorProbes,
     generatorThumbs,
@@ -916,7 +975,8 @@ export function Canvas({
     placement,
     previewCell,
     cameraOn,
-    cameraSettings
+    cameraSettings,
+    renderOnly
   ])
 
   /**
@@ -1057,7 +1117,8 @@ export function Canvas({
               moved: false
             }
             // Arm the group overlay at a ZERO delta on press so the object members'
-            // footprint tint shows on click+hold (see moveObj above).
+            // footprint tint shows on click+hold (after useObjectInfluence's short
+            // reveal delay — see moveObj above).
             setGroupMove({ objUids: selObjUids, sprUids: selSprUids, dx: 0, dy: 0 })
             setIsPanning(true)
             return
@@ -1077,14 +1138,13 @@ export function Canvas({
           const { x: wx, y: wy } = clientToWorld(view, e.clientX - rect.left, e.clientY - rect.top)
           // Resize handles take precedence over the move-box — they sit on the
           // box edges/corner. Gated by the object's sizeMode (extended objects
-          // have no W/H → no handles → falls through to move).
-          const handle = hitResizeHandle(
-            o,
-            objectSizeMode(o.num, o.exnum, propTable),
-            wx,
-            wy,
-            view.zoom
-          )
+          // have no W/H → no handles → falls through to move) and, matching the
+          // draw, only in 'detailed' mode — render mode hides them, so grabbing
+          // an invisible handle would be surprising; fall through to move.
+          const handle =
+            layers.bg1Outlines === 'detailed'
+              ? hitResizeHandle(o, objectSizeMode(o.num, o.exnum, propTable), wx, wy, view.zoom)
+              : null
           if (handle) {
             dragRef.current = {
               kind: 'resizeObj',
@@ -1095,7 +1155,8 @@ export function Canvas({
               moved: false
             }
             // Arm the resize overlay at the CURRENT extents on press so the
-            // footprint tint shows on click+hold (see moveObj above).
+            // footprint tint shows on click+hold (after useObjectInfluence's short
+            // reveal delay — see moveObj above).
             setResizeOverlay({ uid: o.uid!, w: o.w, h: o.h })
             setIsPanning(true)
             return
@@ -1112,7 +1173,9 @@ export function Canvas({
               moved: false
             }
             // Arm the move overlay at a ZERO delta on press so the footprint tint
-            // (useObjectInfluence) shows on click+hold, not only once dragged.
+            // (useObjectInfluence) shows on click+hold, not only once dragged. The
+            // hook holds the tint back briefly so a quick click-to-cycle through
+            // stacked objects never flashes it.
             setMoveOverlay({ kind: 'object', uid: o.uid!, dx: 0, dy: 0 })
             setIsPanning(true)
             return
@@ -1146,8 +1209,8 @@ export function Canvas({
         if (exit && wrap) {
           const rect = wrap.getBoundingClientRect()
           const { x: wx, y: wy } = clientToWorld(view, e.clientX - rect.left, e.clientY - rect.top)
-          const cx = exitCenterX(exit.screenIndex)
-          const cy = exitCenterY(exit.screenIndex)
+          const cx = exitMarkerX(exit.screenIndex)
+          const cy = exitMarkerY(exit.screenIndex)
           if (Math.abs(wx - cx) <= EXIT_MARKER_HALF_PX && Math.abs(wy - cy) <= EXIT_MARKER_HALF_PX) {
             dragRef.current = {
               kind: 'moveExit',
@@ -1794,9 +1857,10 @@ export function Canvas({
       setHoveredIncoming(
         hitTestIncoming(lvl, v, layers, incomingRef.current, rect, e.clientX, e.clientY)
       )
-      // Resize-handle hover → cursor hint (single selected object only).
+      // Resize-handle hover → cursor hint (single selected object only, and only
+      // in 'detailed' mode where the handles are drawn/grabbable).
       let rc: string | null = null
-      if (primary?.kind === 'object' && lvl) {
+      if (primary?.kind === 'object' && lvl && layers.bg1Outlines === 'detailed') {
         const o = lvl.objects.find((ob) => ob.uid === primary.uid)
         if (o) {
           const { x: wx, y: wy } = clientToWorld(v, e.clientX - rect.left, e.clientY - rect.top)
@@ -2050,8 +2114,21 @@ export function Canvas({
         <div className="se-canvas__coords">{coordsText}</div>
       )}
 
-      {/* Top-right view controls: Camera Preview (left) + Reset view (right) */}
+      {/* Top-right view controls: Render Only + Camera Preview (left) + Reset view (right) */}
       <div className="se-canvas__viewbtns">
+        {level && !level.empty && !level.special && (
+          <label
+            className={`se-canvas__renderonly${renderOnly ? ' is-active' : ''}`}
+            title="Hide all editor overlays (object / sprite outlines, exits, collision) for a clean look at the rendered level, without changing the layer toggles (Space)"
+          >
+            <input
+              type="checkbox"
+              checked={renderOnly}
+              onChange={(e) => setRenderOnly(e.target.checked)}
+            />
+            Render Only
+          </label>
+        )}
         {level && !level.empty && !level.special && (
           <CameraPreviewControl
             enabled={cameraOn}

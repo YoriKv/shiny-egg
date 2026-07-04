@@ -13,6 +13,7 @@
 
 import { readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
+import { app } from 'electron'
 import { renderYychrSheetRgba, yychrColName, yychrPalName } from 'snes-framework/gfx-yychr'
 import type {
   YychrProjectExportResult,
@@ -25,7 +26,7 @@ import type {
 import { exportGfxPngsToDir } from './gfx-png-export'
 import { changedSinceExport, fileChecksum, FileHashCache } from './gfx-import-conflict'
 import { GfxImportReconciler } from './gfx-import-reconcile'
-import { MANIFEST, readYychrManifest, updateManifestChecksums, type YychrManifestEntry, type YychrManifestFile } from './gfx-manifest'
+import { MANIFEST, isNewerAppVersion, newerExportWarning, readYychrManifest, updateManifestChecksums, type YychrManifestEntry, type YychrManifestFile } from './gfx-manifest'
 import { importYychrEntries } from './gfx-yychr-io'
 import { getCurrentProjectId } from './projects'
 import { projectRoot } from './framework-paths'
@@ -90,9 +91,11 @@ export function buildYychrProjectState(): YychrProjectState {
       description: e.description,
       kind: e.kind,
       format: e.format,
+      fileId: e.fileId,
       bpp: e.bpp,
       sizeBytes: e.sizeBytes,
       tileCount: Math.ceil(e.sizeBytes / displayTileBytes(e)),
+      unused: e.unused,
       status: st.status,
       hash: st.hash
     }
@@ -159,6 +162,9 @@ export async function importYychrProject(files: string[] | null): Promise<YychrP
     }
     const errors = [...counts.errors, ...applyRes.conflicts]
     const warnings: string[] = []
+    if (isNewerAppVersion(manifest.exportedBy, app.getVersion())) {
+      warnings.push(newerExportWarning('This YY-CHR export', manifest.exportedBy!, app.getVersion()))
+    }
     if (counts.padEdited > 0) {
       warnings.push(`${counts.padEdited} sheet${plural(counts.padEdited)} had edits past the sheet's end (bank padding) — those pixels were ignored.`)
     }

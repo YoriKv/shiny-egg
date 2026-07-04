@@ -5,6 +5,9 @@ export interface HelpDialogProps {
   title: string
   /** Help content — JSX so it can carry lists, shortcuts, emphasis, etc. */
   children: ReactNode
+  /** Optional actions-row content, rendered left of the Close button (e.g. the
+   *  sub-room help's "Hide … in Dropdown" checkbox). */
+  footer?: ReactNode
   onClose: () => void
 }
 
@@ -15,7 +18,7 @@ export interface HelpDialogProps {
  * `panel-help` registry. Always rendered when a panel has help; returns null
  * while closed.
  */
-export function HelpDialog({ open, title, children, onClose }: HelpDialogProps): JSX.Element | null {
+export function HelpDialog({ open, title, children, footer, onClose }: HelpDialogProps): JSX.Element | null {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent): void => {
@@ -35,6 +38,7 @@ export function HelpDialog({ open, title, children, onClose }: HelpDialogProps):
         <h3 className="se-modal__title">{title}</h3>
         <div className="se-help__body">{children}</div>
         <div className="se-modal__actions">
+          {footer}
           <button type="button" className="se-btn is-primary" onClick={onClose}>
             Close
           </button>

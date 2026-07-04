@@ -87,6 +87,10 @@ export interface Settings {
    *  pure-black canvas-background default is bumped to the new grey exactly once
    *  (a user who later re-picks black keeps it). See main/settings.ts. */
   canvasBgDefaultMigrated?: boolean
+  /** Hide the "Room List — Help" entry at the bottom of the Room dropdown.
+   *  App-wide, set via the checkbox in the room-list / Level Editor help
+   *  dialogs; absent ⇒ shown. */
+  hideRoomListHelp?: boolean
 }
 
 /** Result of the `aseprite:locate` file picker (same shape as the BizHawk one):
@@ -127,12 +131,16 @@ export interface YychrProjectFile {
   kind: 'chr' | 'raw' | 'chunky' | '1bpp'
   /** chr only: the compressed blob's codec. */
   format?: 'lz2' | 'lz16'
+  /** chr only: the blob's pointer-table index — the tab's within-category sort key. */
+  fileId?: number
   /** Native depth (display metadata). */
   bpp: 1 | 2 | 4 | 8
   /** True blob length (the on-disk file is bank-padded beyond it). */
   sizeBytes: number
   /** Whole 8×8 tiles in the sheet (display metadata). */
   tileCount: number
+  /** Verified unused (manifest-stamped): edits round-trip but change nothing in-game. */
+  unused?: boolean
   status: YychrFileStatus
   /** sha256 of the CURRENT on-disk bytes (null when missing) — the renderer's
    *  thumbnail cache key, so a focus refresh re-fetches only re-edited sheets. */
@@ -185,6 +193,43 @@ export interface YychrThumbnailEntry {
   file: string
   thumb: YychrThumbnail | null
 }
+
+// ── The per-project M1TE maps export (the Graphics panel's "M1TE Maps" tab) ──
+// The M1TE twin of the yychr pathway: every fixed `.M1` map surface (6 overworlds
+// + the icons grid + the 9 tilemap-based system screens) exports to ONE fixed
+// folder inside the active project (`<projectRoot>/m1te/`), and the tab browses
+// it: on-disk composed thumbnail + change status (the same sha256 gate) +
+// per-file open-in-M1TE + per-file/all import. Backend: src/main/m1te-maps-project.ts.
+// (The per-LEVEL BG-layer `.M1`s stay on the Extract/Import tab — they need a
+// loaded level; these are the cart-static map surfaces.)
+
+/** One exported `.M1` map session in the project's m1te folder (+ live status). */
+export interface M1teMapsFile {
+  /** Folder-relative path (e.g. `screens/map/overworld-w0.M1`). */
+  file: string
+  /** Grouping key (`map` | `title` | `storybook` | `bonus`). */
+  category: string
+  description: string
+  status: YychrFileStatus
+  /** sha256 of the CURRENT on-disk bytes (null when missing) — the thumbnail cache key. */
+  hash: string | null
+}
+
+/** The M1TE Maps tab's whole view (the yychr-state twin). */
+export interface M1teMapsState {
+  exported: boolean
+  dir: string
+  changedCount: number
+  files: M1teMapsFile[]
+}
+
+/** Result of exporting the `.M1` map surfaces into the project folder. */
+export type M1teMapsExportResult = { ok: true; count: number; dir: string } | { ok: false; error: string }
+
+/** Result of a project-folder `.M1` import (one file or all changed). */
+export type M1teMapsImportResult =
+  | { ok: true; dir: string; changed: number; log: string[]; errors: string[]; warnings: string[] }
+  | { ok: false; error: string }
 
 /** The located Aseprite, with the version probed from `<exe> --version`. The
  *  `.aseprite` format has NO version field (aseprite/docs/ase-file-specs.md — the
@@ -922,7 +967,7 @@ export interface Map16BlockPreview {
  *  icons + terrain / ground; `systemscreens` covers the boot / title / storybook
  *  char sheets + the title logo / island / scenery + storybook scene. (`worldmap` +
  *  `systemscreens` are the two halves of what used to be a single `screens` track.) */
-export type GfxExportTrack = 'metasprites' | 'worldmap' | 'systemscreens' | 'fonts' | 'yychr'
+export type GfxExportTrack = 'metasprites' | 'worldmap' | 'systemscreens' | 'bosses' | 'fonts' | 'yychr'
 
 export interface ExportGfxOptions {
   /** Limit the export to these tracks. */
@@ -1026,6 +1071,8 @@ export type BgRegionImportResult =
       perRegion: RegionImportLogEntry[]
       log: string[]
       errors: string[]
+      /** Advisory notices (shown amber), e.g. the export was written by a newer shiny-egg. */
+      warnings: string[]
     }
   | { ok: false; error: string }
   | { canceled: true }

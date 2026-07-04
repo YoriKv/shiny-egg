@@ -61,7 +61,7 @@ describe('applyShiftClick', () => {
 describe('spawn hit-test override', () => {
   const view: View = { panX: 0, panY: 0, zoom: 1 }
   const rect = { left: 0, top: 0 } as DOMRect
-  const layers = { spriteOutlines: true, exits: false } as LayerVisibility
+  const layers = { spriteOutlines: 'detailed', exits: false } as LayerVisibility
   const noIncoming: IncomingExit[] = []
   const bounds = null // SpriteBoundsMap accepts null
   const footprints = null // ObjectFootprints; null ⇒ objects box-fallback (no objects here)
@@ -111,7 +111,7 @@ describe('drawn-tiles object hit-testing', () => {
   const view: View = { panX: 0, panY: 0, zoom: 1 }
   const rect = { left: 0, top: 0 } as DOMRect
   // Object-only: sprite/spawn/exit layers off so only the object loop runs.
-  const layers = { bg1Outlines: true, spriteOutlines: false, exits: false } as unknown as LayerVisibility
+  const layers = { bg1Outlines: 'detailed', spriteOutlines: 'off', exits: false } as unknown as LayerVisibility
   const noIncoming: IncomingExit[] = []
   const bounds = null
   const level = {

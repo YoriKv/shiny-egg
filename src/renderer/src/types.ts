@@ -28,6 +28,35 @@ export function nextGridMode(mode: GridMode): GridMode {
 }
 
 /**
+ * Sprite / object outline mode — a 3-state toolbar toggle, cycled by the editing
+ * button (detailed → render → off → detailed):
+ *   'detailed' — the full blueprint: outlines over every entity, plus id
+ *                labels, badges, and (objects) resize handles. Editing on.
+ *   'render'   — a cleaner preview. Drops the per-entity outline box + id label,
+ *                showing ONLY the selected entity as an alternating black/white
+ *                dashed line — a trace of an object's drawn tiles, a box for a
+ *                sprite. Keeps all the guiding overlays (badges, hint lines,
+ *                behaviour/neighbour visuals). Click-to-select still on.
+ *   'off'      — no outlines and no hit-testing: the entity type can't be
+ *                selected or edited (the old "hide outlines" state).
+ */
+export type OutlineMode = 'detailed' | 'render' | 'off'
+
+/** Cycle order for the outline toggles: detailed → render → off → detailed. */
+export const OUTLINE_MODE_CYCLE: readonly OutlineMode[] = ['detailed', 'render', 'off']
+
+/** The mode the outline button advances to from `mode` (one step around the cycle). */
+export function nextOutlineMode(mode: OutlineMode): OutlineMode {
+  return OUTLINE_MODE_CYCLE[(OUTLINE_MODE_CYCLE.indexOf(mode) + 1) % OUTLINE_MODE_CYCLE.length]!
+}
+
+/** Whether this outline mode allows selecting/editing its entities. Hit-testing
+ *  is enabled in both 'detailed' and 'render'; only 'off' disables it. */
+export function outlineEditable(mode: OutlineMode): boolean {
+  return mode !== 'off'
+}
+
+/**
  * Toolbar visibility toggles. The three BG flags match the SNES PPU layers
  * the level loader populates:
  *   bg1 — the decoded BG1 (object stream); shown as "Foreground"
@@ -60,18 +89,18 @@ export interface LayerVisibility {
    *  Drawn on TOP of every other layer so the user can cross-reference
    *  collision shapes against the foreground at a glance. Default off. */
   collision: boolean
-  /** Object outlines + labels (the blueprint view of the level-stream
-   *  parser). Used to be bundled with `bg1` since both originate from
-   *  the object stream, but they're independently useful — turn off
-   *  outlines to see the BG1 tiles cleanly, or turn off BG1 tiles to
-   *  see the blueprint without graphics noise. Default on. Also gates
-   *  click-to-select on objects (no outline → no hit). */
-  bg1Outlines: boolean
-  /** Sprite outlines + hex-id labels (the blueprint view of the sprite list) —
-   *  the sprite analog of `bg1Outlines`. Draws a bounding box + id label over
-   *  every sprite and gates click-to-select (no outline → no hit), exactly as
-   *  `bg1Outlines` does for objects. Default on. */
-  spriteOutlines: boolean
+  /** Object outline mode (3-state OutlineMode — see above). 'detailed' draws the
+   *  full blueprint (per-object box + id label); 'render' drops those and traces
+   *  only the selected object's drawn tiles as a dashed line (keeping badges +
+   *  guiding overlays); 'off' hides everything AND disables click-to-select on
+   *  objects. Default 'detailed'. */
+  bg1Outlines: OutlineMode
+  /** Sprite outline mode — the sprite analog of `bg1Outlines` (3-state
+   *  OutlineMode). 'detailed' draws a box + hex-id over every sprite; 'render'
+   *  drops those and shows only the selected sprite as a dashed box (keeping
+   *  badges + guiding overlays); 'off' hides everything AND disables
+   *  click-to-select on sprites. Default 'detailed'. */
+  spriteOutlines: OutlineMode
   /** Background-grid overlay mode (a 3-state toggle — see GridMode). 'screen'
    *  draws faint per-screen lines + the brighter editable-boundary rectangle;
    *  'tile' adds the finer per-cell lines on top; 'off' hides it entirely. A
@@ -128,7 +157,7 @@ export type Selection =
 export type PlacementItem =
   | { kind: 'object'; num: number; exnum?: number; w: number; h: number; label: string }
   | { kind: 'sprite'; num: number; label: string }
-  /** A screen exit (the picker's "Exit / Special" tab): clicking the canvas
+  /** A screen exit (the picker's "Screen Exit" tab): clicking the canvas
    *  adds a warp exit on the clicked cell's SCREEN (exits are per-screen
    *  singletons), defaulting to a self-warp at that cell. */
   | { kind: 'exit'; label: string }

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.0 - 2026-07-03
+
+- New "basic" sprite and object outline mode that mimics Advynia editing style.
+- Added keyboard shortcuts for the hide/show outline/bg buttons.
+- Cleaned up exit/entrance visuals.
+- Added room list help entry.
+- M1TE map export panel similar to YYCHR.
+
 ## v0.5.12 - 2026-07-03
 
 - Improved placement tool and panel UX.

@@ -20,8 +20,9 @@
 //                           `($5F8A36+growth, N−growth, $FF)` (same trick as
 //                           `boundary-move.ts` for level pools). Needs the
 //                           build-tree merge so the edited Bank57.asm is used.
-//   - growth > N          → OVERFLOW: spill blobs into FreeRegion50/51 via
-//                           `relocate.ts` (not yet wired — see `planGfxLayout`).
+//   - growth > N          → OVERFLOW: the build moves the edited blobs out of
+//                           the arena into FreeRegion50/51 (`relocateGfxBlobs`,
+//                           run by `buildProject` after the level-data layout).
 //
 // Both the data-only and boundary-move paths are proven end-to-end against a
 // real asar build (decode the built ROM back, edit + shifted neighbour intact).
@@ -305,14 +306,15 @@ export function writeGfxEdit(
  * boundary a prior build left in the tree (when there's no `Bank57` overlay for
  * `materializeBuildTree` to re-stamp) is normalized back first, so the rewrite is
  * idempotent across rebuilds. Data-only needs no asm edit (the merged tree is
- * already correct); overflow throws (relocation not yet wired). `treeYiRoot` is
- * the build tree's `yi/` dir.
+ * already correct). Overflow is not this function's job — the build routes it to
+ * `relocateGfxBlobs` instead — so an overflow plan here is a caller bug and
+ * throws. `treeYiRoot` is the build tree's `yi/` dir.
  */
 export function applyGfxLayout(treeYiRoot: string, plan: GfxLayoutPlan): void {
   if (plan.mode === 'overflow') {
     throw new Error(
-      `gfx-reinsert: edit grows the arena by ${plan.growth}B, ${plan.overflowBy}B past the ` +
-        `${plan.fillSize}B slack. Relocation to FreeRegion50/51 is not yet wired.`
+      `gfx-reinsert: overflow plans (arena +${plan.growth}B, ${plan.overflowBy}B past the ` +
+        `${plan.fillSize}B slack) are placed by relocateGfxBlobs, not applyGfxLayout`
     );
   }
   if (plan.mode !== 'boundary-move') return; // data-only: the merged tree is already correct

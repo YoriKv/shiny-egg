@@ -47,6 +47,68 @@ export const LEVEL_EDITOR_HELP = (
   </>
 )
 
+/** "Room List — Help" — how the Room dropdown's list is discovered and how to
+ *  grow it. Opened from the dropdown's own bottom entry (see SubLevelMenu). */
+export const ROOM_LIST_HELP = (
+  <>
+    <p>
+      The <b>Room</b> dropdown lists every room reachable from the selected
+      level&rsquo;s entry room. <b>ENTRY</b> is the room the world map boots;
+      the rest are numbered in the order discovery finds them.
+    </p>
+    <p>
+      <b>How the list is built:</b> the editor walks the level&rsquo;s screen
+      exits breadth-first &mdash; the entry room&rsquo;s exits first, then each
+      destination room&rsquo;s exits, and so on. Any level record a warp lands
+      in becomes a room of this level; there is no separate sub-room table in
+      the ROM.
+    </p>
+    <p>
+      <b>Adding a room:</b> place a screen exit (Place panel &rarr; Exits) in
+      any room of the level and point its <b>Destination Level</b> (Properties
+      panel) at the room you want. The walk re-reads saved data, so the new
+      room appears after you <b>Save</b>.
+    </p>
+    <p>
+      <b>What&rsquo;s excluded:</b> a destination that is itself a level in the
+      main Level dropdown is not listed (and its own rooms aren&rsquo;t
+      descended into) &mdash; it&rsquo;s a full level in its own right, not a
+      sub-room of this one.
+    </p>
+    <p>
+      <b>Removed rooms:</b> a room removed in Level Banks still shows here
+      (grayed out) while an exit points at it; restore it in Level Banks to
+      open it again.
+    </p>
+    <p>
+      <b>Navigating:</b> double-click a screen exit on the canvas to jump into
+      its destination room; double-click an incoming marker to jump back to its
+      source. A level with no sub-rooms shows a static &ldquo;single
+      room&rdquo; chip instead of this dropdown.
+    </p>
+  </>
+)
+
+/** Footer checkbox shared by the Room List help and Level Editor help dialogs —
+ *  hides the "Room List — Help" entry in the Room dropdown. The preference is
+ *  owned by App (persisted in localStorage) so both dialogs mirror one state,
+ *  and this one (reachable from the always-present Level Editor Help) is how
+ *  the entry comes back after being hidden. */
+export function RoomListHelpPref({
+  hidden,
+  onChange
+}: {
+  hidden: boolean
+  onChange: (hidden: boolean) => void
+}): JSX.Element {
+  return (
+    <label className="se-help__pref">
+      <input type="checkbox" checked={hidden} onChange={(e) => onChange(e.target.checked)} />
+      <span>Hide Room List Help in Dropdown</span>
+    </label>
+  )
+}
+
 /** About-page body. Fetches the running app version on mount. */
 export function AboutBody(): JSX.Element {
   const [version, setVersion] = useState<string | null>(null)

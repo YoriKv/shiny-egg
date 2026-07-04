@@ -30,6 +30,9 @@ import type {
   YychrProjectExportResult,
   YychrProjectImportResult,
   YychrThumbnailEntry,
+  M1teMapsState,
+  M1teMapsExportResult,
+  M1teMapsImportResult,
   ObjectCellsResponse,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -415,6 +418,11 @@ const api = {
     yychrImportProject: (files: string[] | null): Promise<YychrProjectImportResult> =>
       ipcRenderer.invoke('editor:yychrImportProject', files),
     yychrThumbnails: (files: string[]): Promise<YychrThumbnailEntry[]> => ipcRenderer.invoke('editor:yychrThumbnails', files),
+    m1teMapsState: (): Promise<M1teMapsState> => ipcRenderer.invoke('editor:m1teMapsState'),
+    m1teMapsExport: (): Promise<M1teMapsExportResult> => ipcRenderer.invoke('editor:m1teMapsExport'),
+    m1teMapsImport: (files: string[] | null): Promise<M1teMapsImportResult> =>
+      ipcRenderer.invoke('editor:m1teMapsImport', files),
+    m1teMapsThumbnails: (files: string[]): Promise<YychrThumbnailEntry[]> => ipcRenderer.invoke('editor:m1teMapsThumbnails', files),
     listRegionExports: (): Promise<string[]> => ipcRenderer.invoke('editor:listRegionExports'),
     removeRegionExport: (dir: string): Promise<string[]> => ipcRenderer.invoke('editor:removeRegionExport', dir),
     openRegionFolder: (dir: string): Promise<void> => ipcRenderer.invoke('editor:openRegionFolder', dir),

@@ -67,6 +67,10 @@ import type {
   YychrProjectExportResult,
   YychrProjectImportResult,
   YychrThumbnailEntry,
+  M1teMapsState,
+  M1teMapsExportResult,
+  M1teMapsImportResult,
+  M1teMapsFile,
   ObjectCellsResponse,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -246,6 +250,10 @@ export type {
   YychrProjectImportResult,
   YychrThumbnail,
   YychrThumbnailEntry,
+  M1teMapsFile,
+  M1teMapsState,
+  M1teMapsExportResult,
+  M1teMapsImportResult,
   PaintCorner,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -673,6 +681,19 @@ export interface EditorAPI {
    *  trip (a null thumb: missing file or the Mode-7 tilemap, which isn't pixel
    *  art). The tab fetches in chunks and caches content-addressed. */
   yychrThumbnails: (files: string[]) => Promise<YychrThumbnailEntry[]>
+  /** The M1TE Maps tab's browse state — the yychr-state twin over the project's
+   *  fixed `m1te/` folder of `.M1` map sessions. */
+  m1teMapsState: () => Promise<M1teMapsState>
+  /** Export every fixed `.M1` map surface (overworlds + icons + tilemap screens)
+   *  into the project's `m1te/` folder (no dialog; the tab owns the folder). */
+  m1teMapsExport: () => Promise<M1teMapsExportResult>
+  /** Import edited `.M1`s from the project folder — `files` = folder-relative paths
+   *  for a per-file import, null = everything changed. Advances cleanly-imported
+   *  files' stored checksums so their changed status clears. */
+  m1teMapsImport: (files: string[] | null) => Promise<M1teMapsImportResult>
+  /** `.M1` thumbnails composed from the ON-DISK bytes (slots back-to-front), one
+   *  batch per IPC round trip; null = missing/invalid file. */
+  m1teMapsThumbnails: (files: string[]) => Promise<YychrThumbnailEntry[]>
   /** Folders this project has exported region(s) to (most-recent first) — the
    *  Region tab lists them with per-folder import / remove. */
   listRegionExports: () => Promise<string[]>

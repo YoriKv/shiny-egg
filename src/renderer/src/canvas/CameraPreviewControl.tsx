@@ -37,7 +37,7 @@ export function CameraPreviewControl({
     <div className="se-campreview" ref={containerRef}>
       <label
         className={`se-campreview__toggle${enabled ? ' is-active' : ''}`}
-        title="Preview the in-game camera (256×224) with parallax-aligned BG2 / BG3 / sky. Pins zoom to the chosen 1×–4×."
+        title="Preview the in-game camera (256×224) with parallax-aligned BG2 / BG3 / sky. Pins zoom to the chosen 1×–4× (Shift+Space)."
       >
         <input type="checkbox" checked={enabled} onChange={(e) => onEnabledChange(e.target.checked)} />
         Camera Preview

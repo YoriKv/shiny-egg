@@ -179,7 +179,7 @@ export type LevelAction =
   | { /** Clone one exit (by uid) onto the first free screen; takes `nextUid`. */
       type: 'duplicateExit'; uid: number }
   | {
-      /** Place a new WARP exit on a screen (the Place tool's "Exit / Special"
+      /** Place a new WARP exit on a screen (the Place tool's "Screen Exit"
        *  entry). One exit per screen — an occupied screen is a no-op (the
        *  caller selects the existing exit instead). Defaults to a self-warp
        *  back to the clicked cell: immediately valid, obviously editable. */

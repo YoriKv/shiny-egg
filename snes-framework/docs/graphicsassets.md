@@ -959,7 +959,7 @@ The very first thing the cart draws is a **warning splash** — a screenful of t
 on a near-blank background. (The framework labels these modes "Nintendo Presents";
 what the code actually plots is the peripheral / region warning.) Handlers live
 in Bank10: prep `CODE_gm00_ninpresents_prep` (`$10:838B`), controller check
-`CODE_gm01_ninpresents_load` (`$10:891E`), hold `CODE_gm03_ninpresents_show`
+`CODE_gm01_boot_controller_check` (`$10:891E`), hold `CODE_gm03_ninpresents_show`
 (`$10:83E7`). Flow: `$00` set-up → `$01` controller handshake → `$02` fade-in →
 `$03` hold (`$011A` 128-frame timer) → `$04` fade-out into the attract-cutscene
 loader (`$05`).

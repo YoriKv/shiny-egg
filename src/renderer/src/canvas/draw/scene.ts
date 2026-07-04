@@ -17,19 +17,20 @@ import type {
 import type {IncomingExit, LayerVisibility, PlacementItem, Selection} from '../../types'
 import type {View} from '../view'
 import type {SpriteBoundsMap} from '../hit-test'
-import {CELL_PX, SCREEN_CELLS, LEVEL_PX_W, LEVEL_PX_H, screenCol, screenRow} from '../geometry'
+import {CELL_PX, SCREEN_CELLS, LEVEL_PX_W, LEVEL_PX_H, screenCol, screenRow, type ObjectOutlineBox} from '../geometry'
 import {linksFor, resolveEntityRef} from '../entity-links'
 import {objectSizeMode} from '../../data/object-record'
 import {drawScreenGrid} from './grid'
 import {drawPaintOverlay} from './paint'
-import {drawObjects} from './objects'
+import {drawObjects, drawObjectRenderOutlines} from './objects'
+import type {ObjectFootprints} from '../../hooks/useObjectCells'
 import {drawDecodedBg1} from './decoded-bg1'
 import {drawCollisionLayer} from './collision'
 import {drawBgLayers, drawBgOverlays, drawBgForeground, type BgLayerBitmaps, type ParallaxDraw} from './bg-layers'
 import {parallaxOffsets, cameraOrigin, applyCameraSnap, clampCamera} from '../parallax'
 import {buildBandedGradient} from '../../lib/gradient-banded'
 import {drawCameraGradient, drawCameraOverlay, cameraBoxScreenRect, type CameraPreview, type BoxRect} from './camera-preview'
-import {drawSpriteGlyphs, drawSpriteOutlines} from './sprites'
+import {drawSpriteGlyphs, drawSpriteOutlines, drawSpriteRenderOutlines} from './sprites'
 import {drawEntranceGlyphs} from './entrance-glyphs'
 import {drawCommandObjectBadges, drawCommandSpriteBadges} from './command-badges'
 import {drawGeneratorBadges} from './generator-badges'
@@ -124,6 +125,13 @@ export interface SceneParams {
      *  entities). Null until the first fetch resolves — no markers. */
     renderValidity: EntityValidityView | null
     influence: DecodedObjectInfluence | null
+    /** Per-uid footprint outline boxes for extended objects (draw/objects.ts
+     *  `objectOutlineBoxes`), so their outline matches the tiles they stamp
+     *  instead of the meaningless 1×1 nominal box. Empty when none / pre-fetch. */
+    objOutlineBoxes: ReadonlyMap<number, ObjectOutlineBox>
+    /** Per-uid drawn-tile footprints (useObjectCells) — the exact cells each
+     *  object stamps, traced as the selected-object outline in render mode. */
+    objectFootprints: ObjectFootprints
     hovered: LevelObject | null
     hoveredSprite: LevelSprite | null
     hoveredSpawn: boolean
@@ -154,6 +162,13 @@ export interface SceneParams {
      *  to `.zoom` (caller-enforced) and BG2/BG3/gradient parallax-align to the virtual
      *  camera box (centred, screen-snapped per `.snap`); `.mask` blacks out the rest. */
     cameraPreview: CameraPreview | null
+    /** Render Only: hide every editor annotation drawn on the still-visible Sprites
+     *  layer (landmark glyphs, entrance arrows, command / generator badges, the spawn
+     *  marker) so only the rendered level shows. The outline / exit / collision overlays
+     *  are already suppressed upstream via the effective `layers` (Canvas forces them
+     *  off); this flag covers the annotations that share the Sprites layer with the real
+     *  sprite pixels — which stay visible — so `layers.sprites` alone can't gate them. */
+    renderOnly: boolean
 }
 
 /** Paint the full scene. `canvas` may be null (effect runs before mount). */
@@ -174,6 +189,8 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         generatorThumbs,
         renderValidity,
         influence,
+        objOutlineBoxes,
+        objectFootprints,
         hovered,
         hoveredSprite,
         hoveredSpawn,
@@ -195,7 +212,8 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         marquee,
         paintDrag,
         placementPreview,
-        cameraPreview
+        cameraPreview,
+        renderOnly
     } = p
     if (!canvas) return
     const dpr = window.devicePixelRatio || 1
@@ -369,21 +387,30 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         if (layers.grid !== 'off') {
             drawScreenGrid(ctx, view.zoom, layers.grid, gridColor)
         }
-        // Object outlines / blueprint — gated on `bg1Outlines` (split from
-        // `bg1` so the user can toggle outlines independently of the
-        // rendered tiles). `drawObjects` filters internally via
-        // `isLayerVisible`, but skipping the whole call when outlines are
-        // off saves a per-object pass.
-        if (layers.bg1Outlines) {
-            drawObjects(ctx, drawObjs, hovered, selObjUids, view.zoom, layers)
+        // Object outlines — 3-state `bg1Outlines` (OutlineMode). 'detailed' draws
+        // the full blueprint (per-object box + hex-id label); 'render' shows only
+        // the SELECTED object as an alternating dashed trace of its stamped tiles.
+        // BOTH editing modes keep the guiding overlays (gfx-missing badge, resize
+        // handles, command badge) — only the box+label differ; 'off' draws nothing
+        // (and hit-test.ts disables selection).
+        if (layers.bg1Outlines !== 'off') {
+            if (layers.bg1Outlines === 'detailed') {
+                drawObjects(ctx, drawObjs, hovered, selObjUids, view.zoom, layers, objOutlineBoxes)
+            } else {
+                drawObjectRenderOutlines(
+                    ctx, drawObjs, selObjUids, objectFootprints, level.objects, view.zoom
+                )
+            }
             // Gfx-missing markers (render-validity) ride the same layer as the
             // outlines they annotate.
             if (renderValidity) {
-                drawObjectValidityIndicators(ctx, drawObjs, renderValidity, view.zoom)
+                drawObjectValidityIndicators(ctx, drawObjs, renderValidity, view.zoom, objOutlineBoxes)
             }
-            // Resize handles only for a SINGLE selected object (resize is single-only).
+            // Resize handles only for a SINGLE selected object (resize is single-only),
+            // and only in 'detailed' mode — the render outline traces tiles, not the
+            // w/h box the handles pull against, so they'd read as detached there.
             // Drawn from `drawObjs` so they track the live resize preview.
-            if (primary?.kind === 'object') {
+            if (layers.bg1Outlines === 'detailed' && primary?.kind === 'object') {
                 const so = drawObjs.find((o) => o.uid === primary.uid)
                 if (so) {
                     const sm = objectSizeMode(so.num, so.exnum, propTable)
@@ -411,29 +438,41 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         if (spriteCanvas && layers.sprites) {
             drawDecodedBg1(ctx, spriteCanvas)
         }
-        if (layers.sprites) drawSpriteGlyphs(ctx, drawSprs, view.zoom)
+        // Editor annotations that ride the Sprites layer: landmark glyphs (goal /
+        // boss door / checkpoint), entrance arrows, command / generator badges, and
+        // the spawn marker. They're stand-ins for entities the sprite-cel render
+        // can't draw, so Render Only hides them (unlike the real pixels above) for a
+        // clean look — gated on `spriteAnnotations`, not bare `layers.sprites`.
+        const spriteAnnotations = layers.sprites && !renderOnly
+        if (spriteAnnotations) drawSpriteGlyphs(ctx, drawSprs, view.zoom)
         // Entrance / teleport sprites have no in-game cel — draw their stand-in arrow /
         // portal glyph here on the same Sprites graphics layer (entrance-glyphs.ts).
-        if (layers.sprites) drawEntranceGlyphs(ctx, drawSprs)
+        if (spriteAnnotations) drawEntranceGlyphs(ctx, drawSprs)
         // Command sprites (Graphic/Palette Changer, auto-scroll, …) have no cel either —
         // mark them with a half-transparent command-abbreviation badge (command-badges.ts).
-        if (layers.sprites) drawCommandSpriteBadges(ctx, drawSprs)
+        if (spriteAnnotations) drawCommandSpriteBadges(ctx, drawSprs)
         // Generator sprites — purple square with the spawned enemy's (cached) thumbnail,
         // plus a red X for stoppers (generator-badges.ts).
-        if (layers.sprites) drawGeneratorBadges(ctx, drawSprs, generatorThumbs)
+        if (spriteAnnotations) drawGeneratorBadges(ctx, drawSprs, generatorThumbs)
         // Spawn flag rides the Sprites layer (grouped with the goal / checkpoint
         // landmark glyphs); its selectable outline rides Sprite Editing below.
         // The world-map draft overrides the base spawn so an unsaved edit moves
         // the marker live.
         const spawn = spawnOverride ?? level.spawn
-        if (layers.sprites && spawn) {
+        if (spriteAnnotations && spawn) {
             drawSpawnGlyph(ctx, spawn.x, spawn.y, view.zoom)
         }
-        // Sprite OUTLINE overlay (gated independently on `spriteOutlines`): a box
-        // + hex-id over every sprite, with hover/selection — mirrors the object
-        // blueprint and gates click-to-select (see hit-test).
-        if (layers.spriteOutlines) {
-            drawSpriteOutlines(ctx, drawSprs, hoveredSprite, selSprUids, view.zoom, spriteBounds)
+        // Sprite OUTLINE overlay — 3-state `spriteOutlines` (OutlineMode), mirroring
+        // the object outlines. 'detailed' = box + hex-id over every sprite; 'render'
+        // = only the SELECTED sprite as an alternating dashed box. BOTH keep the
+        // variant hints + gfx-missing badges — only the box+label differ; 'off' =
+        // nothing (hit-test.ts disables selection).
+        if (layers.spriteOutlines !== 'off') {
+            if (layers.spriteOutlines === 'detailed') {
+                drawSpriteOutlines(ctx, drawSprs, hoveredSprite, selSprUids, view.zoom, spriteBounds)
+            } else {
+                drawSpriteRenderOutlines(ctx, drawSprs, selSprUids, view.zoom, spriteBounds)
+            }
             // Position-derived variant badges (e.g. pinwheel spin direction from X-cell parity).
             drawSpriteVariantHints(ctx, drawSprs, view.zoom, spriteBounds)
             // Gfx-missing markers — after the variant hints so the error badge
@@ -447,7 +486,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // selected sprite's trigger-zone / patrol-extent / orbit / runtime-snap
         // geometry. Drawn BEFORE the neighbour visuals so a red error badge and
         // the neighbour target markers win their corners/cells.
-        if (layers.spriteOutlines) {
+        if (layers.spriteOutlines !== 'off') {
             drawCapWarnings(ctx, drawSprs, view.zoom, spriteBounds)
             if (primary?.kind === 'sprite' && !moveOverlay && !groupMove) {
                 const spr = drawSprs.find((s) => s.uid === primary.uid)
@@ -457,7 +496,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // Neighbour-dependency visuals ride the Sprite-Editing layer: an always-on
         // red "!" badge on any sprite with an unmet enforce dependency, plus a
         // satisfied/missing target overlay for the selected sprite.
-        if (layers.spriteOutlines && neighborStatus) {
+        if (layers.spriteOutlines !== 'off' && neighborStatus) {
             drawNeighborIndicators(ctx, drawSprs, neighborStatus, spriteBounds, view.zoom)
             // Selection overlay (target boxes + connectors) is a static affordance —
             // suppress it while dragging a sprite, where the connector would chase the
@@ -469,11 +508,13 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             }
         }
         // Prize: full-tile icon on the cell above each SELECTED prize-bearing sprite (its contents).
-        if (layers.spriteOutlines && !moveOverlay && !groupMove) {
+        if (layers.spriteOutlines !== 'off' && !moveOverlay && !groupMove) {
             drawSpritePrize(ctx, drawSprs, selSprUids, view.zoom)
         }
-        // Spawn's sprite-style selectable outline (Sprite Editing layer).
-        if (layers.spriteOutlines && spawn) {
+        // Spawn's sprite-style selectable outline (Sprite Editing layer). Drawn in
+        // both editing modes ('detailed' + 'render') since it's hover/select-gated
+        // already; only 'off' (which also disables its hit-test) hides it.
+        if (layers.spriteOutlines !== 'off' && spawn) {
             drawSpawnOutline(
                 ctx, spawn.x, spawn.y, hoveredSpawn, primary?.kind === 'spawn', view.zoom
             )

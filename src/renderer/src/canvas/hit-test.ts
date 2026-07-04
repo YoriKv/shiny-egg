@@ -13,8 +13,8 @@ import {
   LEVEL_CELLS_H,
   LEVEL_CELLS_W,
   SPAWN_HIT_HALF_PX,
-  exitCenterX,
-  exitCenterY,
+  exitMarkerX,
+  exitMarkerY,
   objectVisualBox
 } from './geometry'
 import type { View } from './view'
@@ -209,8 +209,8 @@ export function hitTestAll(
   // Exits sit on top, so cycle them first.
   if (layers.exits) {
     for (const e of level.exits) {
-      const ex = exitCenterX(e.screenIndex)
-      const ey = exitCenterY(e.screenIndex)
+      const ex = exitMarkerX(e.screenIndex)
+      const ey = exitMarkerY(e.screenIndex)
       if (
         Math.abs(wx - ex) <= EXIT_MARKER_HALF_PX &&
         Math.abs(wy - ey) <= EXIT_MARKER_HALF_PX
@@ -238,7 +238,7 @@ export function hitTestAll(
   // not selectable. The spawn is sprite-like: its flag glyph rides the Sprites
   // layer, its selectable outline rides Sprite Editing. It's cycled before the
   // sprite list to keep the exits → incoming → spawn → sprites → objects order.
-  if (layers.spriteOutlines) {
+  if (layers.spriteOutlines !== 'off') {
     const spawn = spawnPos !== undefined ? spawnPos : level.spawn
     if (spawn) {
       const sx = (spawn.x + 0.5) * CELL_PX
@@ -329,7 +329,7 @@ export function hitTestRect(
   const rx1 = Math.max(a.wx, b.wx)
   const ry1 = Math.max(a.wy, b.wy)
   const hits: Selection[] = []
-  if (layers.spriteOutlines) {
+  if (layers.spriteOutlines !== 'off') {
     for (const s of level.sprites) {
       const box = spriteOutlineBox(s, spriteBounds)
       if (rectsOverlap(rx0, ry0, rx1, ry1, box.x0, box.y0, box.x0 + box.w, box.y0 + box.h)) {
@@ -381,7 +381,7 @@ export function hitTestSprite(
   clientY: number,
   spriteBounds: SpriteBoundsMap
 ): LevelSprite | null {
-  if (!level || level.empty || level.special || !layers.spriteOutlines) return null
+  if (!level || level.empty || level.special || layers.spriteOutlines === 'off') return null
   const { wx, wy } = clientToWorld(rect, view, clientX, clientY)
   // Walk in reverse so later-drawn sprites win when stacked.
   for (let i = level.sprites.length - 1; i >= 0; i--) {
@@ -402,8 +402,8 @@ export function hitTestExit(
   if (!level || level.empty || level.special || !layers.exits) return false
   const { wx, wy } = clientToWorld(rect, view, clientX, clientY)
   for (const e of level.exits) {
-    const ex = exitCenterX(e.screenIndex)
-    const ey = exitCenterY(e.screenIndex)
+    const ex = exitMarkerX(e.screenIndex)
+    const ey = exitMarkerY(e.screenIndex)
     if (
       Math.abs(wx - ex) <= EXIT_MARKER_HALF_PX &&
       Math.abs(wy - ey) <= EXIT_MARKER_HALF_PX
@@ -448,7 +448,7 @@ export function hitTestSpawn(
   /** Effective spawn cell (entrance-table draft); defaults to `level.spawn`. */
   spawnPos?: { x: number; y: number } | null
 ): boolean {
-  if (!level || level.empty || level.special || !layers.spriteOutlines) return false
+  if (!level || level.empty || level.special || layers.spriteOutlines === 'off') return false
   const spawn = spawnPos !== undefined ? spawnPos : level.spawn
   if (!spawn) return false
   const { wx, wy } = clientToWorld(rect, view, clientX, clientY)

@@ -6,7 +6,7 @@ import { NameProjectModal } from './NameProjectModal'
 import { HelpDialog } from './HelpDialog'
 import { ImportRomDialog } from './ImportRomDialog'
 import { ImportGbaDialog } from './ImportGbaDialog'
-import { AboutBody, LEVEL_EDITOR_HELP } from './app-help'
+import { AboutBody, LEVEL_EDITOR_HELP, RoomListHelpPref } from './app-help'
 import { useEditSession } from './edit-session/EditSession'
 
 interface ProjectMenuProps {
@@ -20,6 +20,11 @@ interface ProjectMenuProps {
    *  `removedVanillaIds` = records the optional post-import "remove all vanilla
    *  levels" pass took out (empty/absent when the option was off). */
   onImported: (removedVanillaIds?: number[]) => void
+  /** "Hide Room List Help in Dropdown" — the app-wide setting behind the
+   *  checkbox at the bottom of the Level Editor Help dialog, mirroring the one
+   *  in the sub-room help itself (App owns the state; see SubLevelMenu). */
+  roomListHelpHidden: boolean
+  onRoomListHelpHiddenChange: (hidden: boolean) => void
 }
 
 // Mirror of the main-side name rule (src/main/projects.ts isValidProjectName):
@@ -49,7 +54,13 @@ function baseName(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p
 }
 
-export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps): JSX.Element {
+export function ProjectMenu({
+  current,
+  onChange,
+  onImported,
+  roomListHelpHidden,
+  onRoomListHelpHiddenChange
+}: ProjectMenuProps): JSX.Element {
   const { anyDirty, dirtyKeys, saveAll, discardAll } = useEditSession()
 
   const { open, setOpen, containerRef } = useDropdown()
@@ -565,6 +576,7 @@ export function ProjectMenu({ current, onChange, onImported }: ProjectMenuProps)
         onClose={() => setAppDialog(null)}
       >
         {LEVEL_EDITOR_HELP}
+        <RoomListHelpPref hidden={roomListHelpHidden} onChange={onRoomListHelpHiddenChange} />
       </HelpDialog>
 
       <HelpDialog

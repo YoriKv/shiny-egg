@@ -5,6 +5,7 @@ import {headerFromLevel} from './TilesPanel'
 import {getSprite} from '../data/obj-metadata'
 import {persistedState} from '../lib/persisted-state'
 import {YychrTab} from './YychrTab'
+import {M1teMapsTab} from './M1teMapsTab'
 // The "Map16 Blocks" tab is removed from the UI for now: its structural edits (reassigning a
 // block's quadrant tiles / palette / flip) don't live-preview on the canvas — only a rebuild
 // shows them — and BG1 *pixel* edits already preview via the BG1-area editor. The implementation
@@ -49,7 +50,7 @@ const AUTO_OPEN_KEY = 'shinyEgg.autoOpenExports.v1'
 
 /** The panel's tabs: the extract/import body, and the per-project YY-CHR sheet
  *  browser (YychrTab.tsx). Active tab persisted per the localStorage convention. */
-type PanelTab = 'extract' | 'yychr'
+type PanelTab = 'extract' | 'yychr' | 'm1te'
 const TAB_STORE = persistedState<{ tab: PanelTab }>('shinyEgg.graphicsPanel.v1', {tab: 'extract'})
 
 /** What the export dropdown writes. `worldmap`/`systemscreens`/`metasprites` are
@@ -57,7 +58,7 @@ const TAB_STORE = persistedState<{ tab: PanelTab }>('shinyEgg.graphicsPanel.v1',
  *  track); BG1/2/3 are the positioned-region export. Aseprite is available for the BG
  *  regions, the two screen tracks (the title logo + island assemble as real tilemaps,
  *  the maps as layered tilemaps), and metasprites. */
-type ExportTarget = 'worldmap' | 'systemscreens' | 'fonts' | 'metasprites' | 'bg1' | 'bg2' | 'bg3'
+type ExportTarget = 'worldmap' | 'systemscreens' | 'bosses' | 'fonts' | 'metasprites' | 'bg1' | 'bg2' | 'bg3'
 // `metasprites` is intentionally omitted from the dropdown for now (export removed from
 // the UI). The implementation is kept — engine `sprite-metasprite.ts`, the
 // `tracks:['metasprites']` exportGfxPngs path, and the import auto-detect all still work;
@@ -68,6 +69,7 @@ const TARGETS: { value: ExportTarget; label: string }[] = [
     {value: 'bg3', label: 'BG3'},
     {value: 'worldmap', label: 'World Map'},
     {value: 'systemscreens', label: 'Boot/Story/Title Screens'},
+    {value: 'bosses', label: 'Bosses'},
     {value: 'fonts', label: 'Message Font / Pictures'}
 ]
 // (The whole-cart YY-CHR export moved off this dropdown to the panel's YY-CHR tab —
@@ -78,17 +80,17 @@ const regionLayerOf = (t: ExportTarget): BgRegionLayer => (t === 'bg1' ? 1 : t =
 // The two screen tracks (world map + boot/story/title) — cart-static graphics, so they
 // export with no level loaded (unlike the BG regions + metasprites, which need the level).
 const isScreenTarget = (t: ExportTarget): boolean => t === 'worldmap' || t === 'systemscreens'
-// Cart-static targets that need NO level loaded (the screen tracks + the Bank09 1bpp
-// message font / pictures, which are raw global graphics).
-const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'fonts'
+// Cart-static targets that need NO level loaded (the screen tracks, the Bosses arena, and
+// the Bank09 1bpp message font / pictures, which are raw global graphics).
+const isLevelIndependent = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'bosses' || t === 'fonts'
 // Targets whose Aseprite output goes through the gfx-png export (the screen tracks =
 // assembled tilemaps + single-image icons/scenery; metasprites = single-image-with-palette
 // projects; fonts = the 1bpp message font / pictures as a single-image 2-color project —
 // not a tilemap, since they're 8×12 unique glyphs / a flat bitmap, not 8×8 CHR). The BG
 // regions use the separate exportBgRegion path.
-const isAsepriteGfxTarget = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'metasprites' || t === 'fonts'
+const isAsepriteGfxTarget = (t: ExportTarget): boolean => isScreenTarget(t) || t === 'bosses' || t === 'metasprites' || t === 'fonts'
 const gfxTracksOf = (t: ExportTarget): GfxExportTrack[] =>
-    t === 'metasprites' ? ['metasprites'] : t === 'worldmap' ? ['worldmap'] : t === 'fonts' ? ['fonts'] : ['systemscreens']
+    t === 'metasprites' ? ['metasprites'] : t === 'worldmap' ? ['worldmap'] : t === 'bosses' ? ['bosses'] : t === 'fonts' ? ['fonts'] : ['systemscreens']
 
 interface Props {
     /** The level currently loaded in the canvas — its palette colors the export. */
@@ -494,9 +496,9 @@ export function GraphicsBody({
                 {yychrError && <span className="se-graphics__log-error">⚠ {yychrError}</span>}
             </div>
 
-            {/* Two tabs: the extract/import body, and the per-project YY-CHR sheet
-                browser. (A restored Map16 tab — see the top-of-file note — would be a
-                third `se-tab` + branch here.) */}
+            {/* Three tabs: the extract/import body, the per-project YY-CHR sheet browser,
+                and the per-project M1TE map browser. (A restored Map16 tab — see the
+                top-of-file note — would be a fourth `se-tab` + branch here.) */}
             <div className="se-tabs se-graphics__tabs">
                 <button
                     className={`se-tab${tab === 'extract' ? ' is-active' : ''}`}
@@ -508,7 +510,13 @@ export function GraphicsBody({
                     className={`se-tab${tab === 'yychr' ? ' is-active' : ''}`}
                     onClick={() => pickTab('yychr')}
                 >
-                    YY-CHR
+                    YY-CHR Graphics
+                </button>
+                <button
+                    className={`se-tab${tab === 'm1te' ? ' is-active' : ''}`}
+                    onClick={() => pickTab('m1te')}
+                >
+                    M1TE Maps
                 </button>
             </div>
             {tab === 'yychr' ? (
@@ -517,6 +525,12 @@ export function GraphicsBody({
                     key={projectScope ?? ''}
                     yychrExe={yychrExe}
                     onOpenYychr={onOpenYychr}
+                    onMutated={onMutated}
+                    onImported={refreshEdits}
+                />
+            ) : tab === 'm1te' ? (
+                <M1teMapsTab
+                    key={projectScope ?? ''}
                     onMutated={onMutated}
                     onImported={refreshEdits}
                 />
@@ -596,7 +610,7 @@ export function GraphicsBody({
                                 ? `Aseprite ${asepriteInfo?.version} can’t open tilemap extracts — needs 1.3+`
                                 : asepriteOk
                                     ? (isRegion ? 'Edit pixels at 8×8 — a shared CHR tile is one Aseprite tile' : '')
-                                    : 'Aseprite extract is for the BG layers, the screens, the message font / pictures, and metasprites'
+                                    : 'Aseprite extract is for the BG layers, the screens, the Bosses arena, the message font / pictures, and metasprites'
                         }
                     >
                         <input

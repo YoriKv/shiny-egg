@@ -12,7 +12,7 @@
 
 import type { LevelObject, LevelSprite, SpriteCelBounds } from '../../../../preload/api'
 import type { EntityValidityView } from '../../hooks/useEntityRenderValidity'
-import { objectVisualBox } from '../geometry'
+import { objectOutlineBox, type ObjectOutlineBox } from '../geometry'
 import { spriteOutlineBox, SPRITE_LABEL_MIN_ZOOM } from './sprites'
 
 const MAGENTA = '#d136d1'
@@ -43,14 +43,17 @@ export function drawObjectValidityIndicators(
   ctx: CanvasRenderingContext2D,
   objects: LevelObject[],
   validity: EntityValidityView,
-  zoom: number
+  zoom: number,
+  /** Same ext-object footprint boxes drawObjects uses, so the badge stays pinned
+   *  to the drawn outline's top-right corner rather than the nominal 1×1 box. */
+  outlineBoxes: ReadonlyMap<number, ObjectOutlineBox> = new Map()
 ): void {
   if (zoom < SPRITE_LABEL_MIN_ZOOM) return // hide with the id labels/badges
   const size = 12 / zoom
   ctx.save()
   for (const o of objects) {
     if (validity.objectVerdict(o.num, o.exnum) !== 'invalid') continue
-    const box = objectVisualBox(o)
+    const box = objectOutlineBox(o, outlineBoxes)
     drawGfxMissingBadge(ctx, box.x0 + box.w - size, box.y0, size, zoom)
   }
   ctx.restore()

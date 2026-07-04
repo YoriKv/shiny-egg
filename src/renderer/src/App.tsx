@@ -40,7 +40,7 @@ import { DiscardChangesModal } from './DiscardChangesModal'
 import { OverlayUpgradeModal } from './OverlayUpgradeModal'
 import { FloatingWindow } from './FloatingWindow'
 import { panelHelp } from './panel-help'
-import { LayerToggles } from './toolbar/LayerToggles'
+import { LayerToggles, LAYER_DIGIT_ROW, LAYER_SHIFT_DIGIT_ROW } from './toolbar/LayerToggles'
 import { PropertiesBody } from './panels/PropertiesPanel'
 import { HeaderBody } from './panels/HeaderPanel'
 import { PaletteBody } from './panels/PalettePanel'
@@ -72,8 +72,8 @@ import { useLevelNavigation } from './hooks/useLevelNavigation'
 import { getAllLevels, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
 import { ColorAlphaButton } from './toolbar/ColorAlphaButton'
-import type { IncomingExit, LayerVisibility, PlacementItem, Selection } from './types'
-import { nextGridMode } from './types'
+import type { IncomingExit, LayerVisibility, OutlineMode, PlacementItem, Selection } from './types'
+import { nextGridMode, nextOutlineMode } from './types'
 
 type Operation = 'extract' | 'build' | null
 
@@ -158,16 +158,13 @@ const DEFAULT_LAYERS: LayerVisibility = {
   // layers panel; the default-off keeps the editor's first-launch screen
   // looking clean.
   collision: false,
-  // Object outlines default on — they were previously bundled into `bg1`
-  // so existing users expect them visible by default. persistedState's
-  // shallow merge with defaults means storage payloads from before this
-  // field existed pick up the `true` default automatically.
-  bg1Outlines: true,
-  // Sprite outlines default on — the sprite analog of `bg1Outlines`. The
-  // shallow merge with defaults means existing v2 storage payloads (which
-  // pre-date this field) pick up the `true` default automatically, so no
-  // version bump is needed.
-  spriteOutlines: true,
+  // Object outlines default to the full blueprint. `bg1Outlines` is a 3-state
+  // OutlineMode now ('detailed' | 'render' | 'off'), so the storage key bumps to
+  // v4: a pre-existing boolean `true`/`false` from a v3 payload would otherwise
+  // shallow-merge in and break the detailed/render/off comparisons.
+  bg1Outlines: 'detailed',
+  // Sprite outlines — the sprite analog of `bg1Outlines`, same 3-state mode.
+  spriteOutlines: 'detailed',
   // Background grid defaults to its lightest mode (per-screen lines) —
   // preserves the previous always-drawn screen grid. `grid` is a 3-state
   // GridMode now ('off' | 'screen' | 'tile'), so the storage key is bumped to
@@ -176,12 +173,46 @@ const DEFAULT_LAYERS: LayerVisibility = {
   grid: 'screen'
 }
 
-// v3 bumped from v2 when `grid` went boolean → 3-state GridMode (v2 itself
-// bumped from v1 when foreground/background split into bg1/bg2/bg3).
+// v4 bumped from v3 when bg1Outlines/spriteOutlines went boolean → 3-state
+// OutlineMode. (v3 bumped from v2 when `grid` went boolean → 3-state GridMode;
+// v2 from v1 when foreground/background split into bg1/bg2/bg3.)
 const layersStore = persistedState<LayerVisibility>(
+  'shinyEgg.layers.v4',
+  DEFAULT_LAYERS
+)
+// Legacy v3 store — outline layers were booleans there. Read as a fallback so a
+// user's existing layer prefs carry across the v4 bump instead of resetting.
+const layersStoreV3 = persistedState<LayerVisibility>(
   'shinyEgg.layers.v3',
   DEFAULT_LAYERS
 )
+
+/** Coerce a persisted outline field to the 3-state OutlineMode. Pre-v4 payloads
+ *  stored these as booleans (outline on/off) — map on → 'detailed', off → 'off'
+ *  so the user keeps their choice; anything unrecognised → the 'detailed'
+ *  default (guards against a stale value showing "undefined" in the UI). */
+function coerceOutlineMode(v: unknown): OutlineMode {
+  if (v === 'detailed' || v === 'render' || v === 'off') return v
+  return v === false ? 'off' : 'detailed'
+}
+
+/** Load layer prefs, migrating a pre-v4 (boolean-outline) payload forward: prefer
+ *  the v4 key, else fall back to the v3 key, then coerce the two outline fields in
+ *  either case (a payload written mid-migration could still hold a boolean). */
+function loadLayers(): LayerVisibility {
+  let hasV4 = false
+  try {
+    hasV4 = window.localStorage.getItem('shinyEgg.layers.v4') !== null
+  } catch {
+    hasV4 = false
+  }
+  const raw = hasV4 ? layersStore.load() : layersStoreV3.load()
+  return {
+    ...raw,
+    bg1Outlines: coerceOutlineMode(raw.bg1Outlines),
+    spriteOutlines: coerceOutlineMode(raw.spriteOutlines)
+  }
+}
 
 // Test Level inventory (the eggs/keys steppers by the Test Level button) —
 // which items Yoshi enters the level holding. Persisted so the choice sticks
@@ -335,7 +366,7 @@ export default function App(): JSX.Element {
     commitWindowSize,
     resetWindow
   } = useFloatingWindows()
-  const [layers, setLayers] = useState<LayerVisibility>(layersStore.load)
+  const [layers, setLayers] = useState<LayerVisibility>(loadLayers)
   // Level state lives in App so the Save button (toolbar) can read
   // dirty + dispatch `saved`. Canvas reads `level` and `dispatchLevel`
   // through props.
@@ -343,7 +374,7 @@ export default function App(): JSX.Element {
   // Live overlay (task: exit↔entrance marker sync): the loaded level's OWN warp
   // exits replace its on-disk contributions in the incoming map, so placing an
   // exit or editing destX/destY/destLevel moves/creates/removes the matching
-  // entrance marker in the same commit — no stale "incoming entry" visuals.
+  // entrance marker in the same commit — no stale "incoming entrance" visuals.
   const liveIncomingByLevel = useMemo(() => {
     const lvl = levelState.level
     if (!lvl || lvl.empty || lvl.special) return incomingByLevel
@@ -530,10 +561,15 @@ export default function App(): JSX.Element {
   const DEFAULT_GRID_COLOR = 'rgba(0, 0, 0, 0.65)'
   const [canvasBg, setCanvasBg] = useState(DEFAULT_CANVAS_BG)
   const [gridColor, setGridColor] = useState(DEFAULT_GRID_COLOR)
+  // "Room List — Help" dropdown-entry visibility — an app-wide setting like the
+  // colors above. Driven by the checkbox mirrored in the sub-room help and
+  // Level Editor Help dialogs (the latter is how the entry comes back).
+  const [roomListHelpHidden, setRoomListHelpHidden] = useState(false)
   useEffect(() => {
     void window.shinyEgg.settings.get().then((s) => {
       if (s.canvasBackgroundColor) setCanvasBg(s.canvasBackgroundColor)
       if (s.gridColor) setGridColor(s.gridColor)
+      if (s.hideRoomListHelp) setRoomListHelpHidden(true)
     })
   }, [])
   useEffect(() => {
@@ -546,6 +582,10 @@ export default function App(): JSX.Element {
   const onGridColorChange = useCallback((color: string) => {
     setGridColor(color)
     void window.shinyEgg.settings.set({ gridColor: color })
+  }, [])
+  const onRoomListHelpHiddenChange = useCallback((hidden: boolean) => {
+    setRoomListHelpHidden(hidden)
+    void window.shinyEgg.settings.set({ hideRoomListHelp: hidden })
   }, [])
 
   // Activate a toolbar tool — shared by the tool buttons and the Q/W/E/T
@@ -1239,10 +1279,14 @@ export default function App(): JSX.Element {
   }, [layers])
 
   const toggleLayer = useCallback((key: keyof LayerVisibility) => {
-    // The grid is a 3-state cycle (off → screen → tile → off), not a boolean —
-    // advance it through GridMode. Every other layer is a plain on/off flip.
+    // The grid + the two outline toggles are 3-state cycles (not booleans) —
+    // advance them through their mode. Every other layer is a plain on/off flip.
     if (key === 'grid') {
       setLayers((l) => ({ ...l, grid: nextGridMode(l.grid) }))
+      return
+    }
+    if (key === 'bg1Outlines' || key === 'spriteOutlines') {
+      setLayers((l) => ({ ...l, [key]: nextOutlineMode(l[key]) }))
       return
     }
     setLayers((l) => ({ ...l, [key]: !l[key] }))
@@ -1295,12 +1339,15 @@ export default function App(): JSX.Element {
 
   // Plain-key shortcuts: Q/W/E/T pick the toolbar tools (Select / Place / Erase /
   // Set Spawn) — see TOOL_HOTKEYS — R re-rolls the decode RNG (the Refresh RNG
-  // button), and G toggles the grid overlay (cycling its off → screen → tile
-  // modes, same as the toolbar button). Plain keys only: ignored while typing in
-  // a field and whenever a modifier is held, so Ctrl+R (Test Level) etc. still win.
+  // button), G toggles the grid overlay (cycling its off → screen → tile
+  // modes, same as the toolbar button), and 1–5 / Shift+1–5 toggle the layer
+  // buttons (plain = row 2 editing overlays, Shift = row 1 visual layers — see
+  // LAYER_DIGIT_ROW / LAYER_SHIFT_DIGIT_ROW). Ignored while typing in a field
+  // and whenever Ctrl/Cmd/Alt is held, so Ctrl+R (Test Level) etc. still win;
+  // Shift is a modifier only for the digit row.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
       const t = e.target as HTMLElement | null
       if (
         t &&
@@ -1311,6 +1358,16 @@ export default function App(): JSX.Element {
       ) {
         return
       }
+      // Layer toggles — matched on e.code (Digit1…Digit5), not e.key, because
+      // Shift+digit produces a layout-dependent character ('!' on US).
+      const digit = /^Digit([1-5])$/.exec(e.code)
+      if (digit) {
+        e.preventDefault()
+        const idx = Number(digit[1]) - 1
+        toggleLayer((e.shiftKey ? LAYER_SHIFT_DIGIT_ROW : LAYER_DIGIT_ROW)[idx]!)
+        return
+      }
+      if (e.shiftKey) return
       const k = e.key.toLowerCase()
       if (k === 'g') {
         e.preventDefault()
@@ -1377,6 +1434,8 @@ export default function App(): JSX.Element {
         >
         <ProjectMenu
           current={project}
+          roomListHelpHidden={roomListHelpHidden}
+          onRoomListHelpHiddenChange={onRoomListHelpHiddenChange}
           onChange={onProjectChange}
           onImported={(removedVanillaIds) => {
             void onRomImported()
@@ -1397,6 +1456,8 @@ export default function App(): JSX.Element {
             subLevels={subLevels}
             loading={subLevelsLoading}
             onSelect={(id) => requestNav(() => navigateTo(rootLevelRecordId, id))}
+            helpHidden={roomListHelpHidden}
+            onHelpHiddenChange={onRoomListHelpHiddenChange}
           />
           {resolvingRoot && (
             <span className="se-toolbar__hint" title="Reverse-searching for the catalog level that owns this room">

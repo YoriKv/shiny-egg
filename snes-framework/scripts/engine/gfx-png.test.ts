@@ -55,7 +55,7 @@ console.log('\n=== index 0 transparent stays index 0 ===');
   assert(eqBytes(back, tiles), 'transparent-index-0 round-trip exact');
 }
 
-console.log('\n=== off-palette pixel → index 0 ===');
+console.log('\n=== off-palette pixel → index 0, counted in stats ===');
 {
   const layout = lz16Layout(1);
   const tiles = new Uint8Array(512); // all index 0
@@ -63,10 +63,27 @@ console.log('\n=== off-palette pixel → index 0 ===');
   const img = gfxToImage(tiles, layout, pal);
   // Paint pixel (0,0) an off-palette color.
   img.rgba[0] = 1; img.rgba[1] = 2; img.rgba[2] = 3; img.rgba[3] = 255;
-  const back = imageToGfx(img, layout);
-  const idxOut = new Uint8Array(64);
+  const stats = { offPalette: 0 };
+  const back = imageToGfx(img, layout, { stats });
   // decode tile 0 pixel (0,0): all-zero tile bytes → index 0 everywhere.
   assert(back.every((v) => v === 0), 'off-palette pixel mapped to index 0 (tile stays all-0)');
+  assert(stats.offPalette === 1, 'painted off-palette pixel bumps stats.offPalette');
+
+  // Base-aware: unchanged pixels never count; the repainted one still does.
+  const statsBase = { offPalette: 0 };
+  imageToGfx(img, layout, { base: tiles, stats: statsBase });
+  assert(statsBase.offPalette === 1, 'base-aware: only the repainted off-palette pixel counts');
+
+  // A transparent pixel is an erase to index 0, not off-palette paint.
+  img.rgba[3] = 0;
+  const statsTransparent = { offPalette: 0 };
+  imageToGfx(img, layout, { stats: statsTransparent });
+  assert(statsTransparent.offPalette === 0, 'transparent pixel not counted');
+
+  // An unedited image counts nothing.
+  const statsClean = { offPalette: 0 };
+  imageToGfx(gfxToImage(tiles, layout, pal), layout, { base: tiles, stats: statsClean });
+  assert(statsClean.offPalette === 0, 'unedited image counts zero');
 }
 
 console.log('\n=== 2bpp round-trip ===');

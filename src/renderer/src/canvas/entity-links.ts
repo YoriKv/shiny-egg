@@ -15,7 +15,7 @@
 import type { LevelData, LevelObject, LevelSprite, ScreenExit } from '../../../preload/api'
 import { isExitTriggerObject, isExitTriggerSprite } from '../data/exit-triggers'
 import { getObjectInfo } from '../data/obj-metadata'
-import { CELL_PX, exitCenterX, exitCenterY, objectVisualBox, screenOf } from './geometry'
+import { CELL_PX, exitMarkerX, exitMarkerY, objectVisualBox, screenOf } from './geometry'
 import { objectCellBox } from './limits'
 import type { Selection } from '../types'
 
@@ -125,7 +125,7 @@ const RULES: AssociationRule[] = [exitPipeDoorRule, exitPipeHostRule]
 /** World-px center anchor for a link endpoint at this entity. */
 export function entityAnchorPx(ref: EntityRef): { x: number; y: number } {
   if (ref.kind === 'exit') {
-    return { x: exitCenterX(ref.exit.screenIndex), y: exitCenterY(ref.exit.screenIndex) }
+    return { x: exitMarkerX(ref.exit.screenIndex), y: exitMarkerY(ref.exit.screenIndex) }
   }
   if (ref.kind === 'sprite') {
     return { x: (ref.spr.x + 0.5) * CELL_PX, y: (ref.spr.y + 0.5) * CELL_PX }

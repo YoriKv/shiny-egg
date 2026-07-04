@@ -18,7 +18,7 @@ import type { LevelSprite, SpriteCelBounds } from '../../../../preload/api'
 import { getSprite } from '../../data/obj-metadata'
 import { CELL_PX, spriteCelBox } from '../geometry'
 import { drawFlagGlyph, glyphZoomScale } from './glyphs'
-import { drawAnchorDot, drawSelectionBox, HOVER_ACCENT } from './selection'
+import { drawAnchorDot, drawSelectionBox, HOVER_ACCENT, strokeBasicOutline } from './selection'
 import { beginIdLabels, drawIdLabel } from './text'
 import { hex } from '../../lib/hex'
 
@@ -87,6 +87,30 @@ export function spriteOutlineBox(
   const cel = spriteCelBoundsFor(s, bounds)
   if (cel) return spriteCelBox(s.x, s.y, cel)
   return { x0: s.x * CELL_PX, y0: s.y * CELL_PX, w: CELL_PX, h: CELL_PX }
+}
+
+/**
+ * Render-mode sprite outline: for each SELECTED sprite, an alternating
+ * black/white dashed box (strokeBasicOutline) — the clean render-preview
+ * counterpart to the full `drawSpriteOutlines` blueprint. Same box shape as
+ * detailed mode (spriteOutlineBox, from the sprite's live position, so it follows
+ * a drag); no id label, no hover.
+ */
+export function drawSpriteRenderOutlines(
+  ctx: CanvasRenderingContext2D,
+  sprites: LevelSprite[],
+  selectedUids: Set<number>,
+  zoom: number,
+  bounds: Map<number, SpriteCelBounds> | null | undefined
+): void {
+  if (selectedUids.size === 0) return
+  for (const s of sprites) {
+    if (s.uid == null || !selectedUids.has(s.uid)) continue
+    const b = spriteOutlineBox(s, bounds)
+    ctx.beginPath()
+    ctx.rect(b.x0, b.y0, b.w, b.h)
+    strokeBasicOutline(ctx, zoom)
+  }
 }
 
 /**

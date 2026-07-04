@@ -33,16 +33,18 @@ export const LEVEL_CELLS_H = LEVEL_SCREENS_H * SCREEN_CELLS
 export const LEVEL_PX_W = LEVEL_CELLS_W * CELL_PX
 export const LEVEL_PX_H = LEVEL_CELLS_H * CELL_PX
 
-/** Half-extent of an exit marker, in world (pre-zoom) pixels. */
-export const EXIT_MARKER_HALF_PX = 12
+/** Half-extent of an exit marker's door icon, in world (pre-zoom) pixels. Sized
+ *  so the whole chip spans one tile (2 × 8 = 16 = CELL_PX); the incoming marker
+ *  is normalized to the same size. */
+export const EXIT_MARKER_HALF_PX = 8
 
 /** Half-extent (world px) of the spawn flag's clickable square. The pole
  *  extends ~9 px up from the cell center, so we offset / size accordingly. */
 export const SPAWN_HIT_HALF_PX = 10
 
 /** Half-extent (world px) of an incoming-exit marker's clickable square.
- *  Matches the diamond's drawn size (0.85 × EXIT_MARKER_HALF_PX). */
-export const INCOMING_HIT_HALF_PX = 10
+ *  Matches the door icon (normalized to one tile — EXIT_MARKER_HALF_PX). */
+export const INCOMING_HIT_HALF_PX = 8
 
 /**
  * Visual / interaction extent of one object dimension, in cells. A size of 0 is
@@ -83,12 +85,21 @@ export function screenOf(cx: number, cy: number): number {
   return makeScreenIndex(Math.floor(cx / SCREEN_CELLS), Math.floor(cy / SCREEN_CELLS))
 }
 
-export function exitCenterX(screenIndex: number): number {
-  return screenCol(screenIndex) * SCREEN_PX + SCREEN_PX / 2
+/** Inset (world px) of the exit marker's CENTER from its screen's top-left
+ *  corner: half a tile, so the one-tile door icon lands exactly in the screen's
+ *  top-left cell (chip corner flush with the screen corner). */
+export const EXIT_MARKER_INSET_PX = CELL_PX / 2
+
+/** Exit marker centre X — anchored at the TOP-LEFT corner of the exit's screen
+ *  (inset so the chip clears the screen boundary), not the screen centre. The
+ *  single source for the exit marker position: draw (exits.ts), hit-test, and
+ *  the link anchor (entity-links.ts) all call it so they can't drift. */
+export function exitMarkerX(screenIndex: number): number {
+  return screenCol(screenIndex) * SCREEN_PX + EXIT_MARKER_INSET_PX
 }
 
-export function exitCenterY(screenIndex: number): number {
-  return screenRow(screenIndex) * SCREEN_PX + SCREEN_PX / 2
+export function exitMarkerY(screenIndex: number): number {
+  return screenRow(screenIndex) * SCREEN_PX + EXIT_MARKER_INSET_PX
 }
 
 /** World-pixel box of a sprite's composited cel, given its tile (x, y) anchor
@@ -146,4 +157,71 @@ export function objectVisualBox(o: {
     w: objectBoxExtent(o.w) * CELL_PX,
     h: objectBoxExtent(o.h) * CELL_PX
   }
+}
+
+/**
+ * An extended object's outline box, expressed ANCHOR-RELATIVE in cells: `offX`/
+ * `offY` are the footprint's min corner minus the object's anchor `(x, y)`, and
+ * `w`/`h` are its cell extent. Applied to the object's LIVE anchor by
+ * `objectOutlineBox`, so the box tracks a move-drag automatically — exactly how
+ * `spriteCelBox` applies per-num bounds to a sprite's live position. Extended
+ * objects encode no W/H (their nominal box is a meaningless 1×1), so we size
+ * their outline to the tiles they actually stamp instead. Built by
+ * `objectOutlineBoxes` (draw/objects.ts) from the per-object footprints.
+ */
+export interface ObjectOutlineBox {
+  offX: number
+  offY: number
+  w: number
+  h: number
+}
+
+/**
+ * Cell-space bounding box of a set of absolute cell indices (`y * LEVEL_CELLS_W
+ * + x`), as returned by `render:objectCells` / `useObjectCells`. Returns the min
+ * corner and the inclusive cell extent, or null for an empty set.
+ */
+export function footprintCellBounds(
+  cells: ReadonlySet<number>
+): { minX: number; minY: number; w: number; h: number } | null {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const c of cells) {
+    const x = c % LEVEL_CELLS_W
+    const y = Math.floor(c / LEVEL_CELLS_W)
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+  }
+  if (maxX < 0) return null
+  return { minX, minY, w: maxX - minX + 1, h: maxY - minY + 1 }
+}
+
+/**
+ * The world-px outline box to DRAW for an object. An extended object with a
+ * derived footprint box (uid present in `outlineBoxes`) is outlined to its
+ * stamped tiles, tracking its live anchor; every other object (standard, or an
+ * ext object that stamps nothing / whose footprint hasn't fetched yet) falls
+ * back to `objectVisualBox`. This is the single source for the drawn outline —
+ * `drawObjects` and its validity badge both go through it, so the badge stays
+ * pinned to the box's corner. Hit-testing is deliberately unchanged (it targets
+ * the exact footprint cells for ext objects); this only sizes the visible box.
+ */
+export function objectOutlineBox(
+  o: { x: number; y: number; w: number; h: number; uid?: number },
+  outlineBoxes: ReadonlyMap<number, ObjectOutlineBox>
+): { x0: number; y0: number; w: number; h: number } {
+  const b = o.uid != null ? outlineBoxes.get(o.uid) : undefined
+  if (b) {
+    return {
+      x0: (o.x + b.offX) * CELL_PX,
+      y0: (o.y + b.offY) * CELL_PX,
+      w: b.w * CELL_PX,
+      h: b.h * CELL_PX
+    }
+  }
+  return objectVisualBox(o)
 }

@@ -11,6 +11,43 @@ import { type TileRegion } from 'snes-framework/screen-gfx'
 /** The manifest filename at the export-dir root. */
 export const MANIFEST = 'gfx-manifest.json'
 
+// Every export artifact (the manifest's top-level `exportedBy`, and each bg-region
+// sidecar) is stamped with the app version that wrote it. Import compares it against
+// the running version and warns when the artifact is from a NEWER shiny-egg — a newer
+// export may carry sections/fields this version doesn't know, so a quiet partial
+// import gets an explanation. Absent on pre-stamp exports (never warns). Older-than-
+// current artifacts import as before (the manifest formats are read tolerantly).
+
+/** True when `exported` (an artifact's stamped app version) is a NEWER release than
+ *  `current`. Dotted-segment compare: numeric segments numerically (missing = 0),
+ *  non-numeric fallback lexicographic. Unstamped (undefined) is never newer. */
+export function isNewerAppVersion(exported: string | undefined, current: string): boolean {
+  if (!exported) return false
+  const pa = exported.split('.')
+  const pb = current.split('.')
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const a = pa[i] ?? '0'
+    const b = pb[i] ?? '0'
+    const an = parseInt(a, 10)
+    const bn = parseInt(b, 10)
+    if (Number.isFinite(an) && Number.isFinite(bn)) {
+      if (an !== bn) return an > bn
+    } else if (a !== b) {
+      return a > b
+    }
+  }
+  return false
+}
+
+/** The amber warning line for an artifact stamped by a newer shiny-egg. `what`
+ *  names the artifact ("This export folder", "bg2-region.m1.json", …). */
+export function newerExportWarning(what: string, exported: string, current: string): string {
+  return (
+    `${what} was exported by shiny-egg ${exported} — newer than this app (${current}). ` +
+    `Data added by newer versions may be skipped; upgrade shiny-egg if the import looks incomplete.`
+  )
+}
+
 /** Top-level `checksums` map in gfx-manifest.json: each manifest-relative artifact path →
  *  sha256 (hex) of its bytes at export. The import checksum gate (gfx-import-reconcile.ts
  *  `changedSinceExport`) skips any artifact whose current bytes still match — so a file the
@@ -121,6 +158,22 @@ export interface MapGroundManifestEntry {
   tileKeys?: number[]
   /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = transparent/
    *  non-blob) — the import writes edited colors back to the blob. Aseprite mode only. */
+  paletteOffsets?: number[]
+}
+
+/** The Raphael boss arena (Mode-7, the Bosses track). The `.aseprite` round-trips LAYOUT
+ *  edits to the $BD LZ2 tilemap file via saveGfxEdit (1-byte cells = char indices); the PNG
+ *  is the view. Char PIXELS edit via the YY-CHR track (advanced/raphael-chars-*). */
+export interface BossArenaManifestEntry {
+  file: string
+  fileId: number
+  width: number
+  height: number
+  /** Per-tileset-tile `(char<<3)|palRow` key (`raphaelTileKeys`; index 0 = `-1`) — the
+   *  import maps cells back from this without re-deriving. Aseprite mode only. */
+  tileKeys?: number[]
+  /** Per-`.aseprite`-palette-entry master-palette-blob byte-offset (`-1` = non-blob) —
+   *  the import writes edited colors back to the blob. Aseprite mode only. */
   paletteOffsets?: number[]
 }
 
@@ -283,12 +336,18 @@ export interface YychrManifestEntry {
   glyphW?: number
   glyphH?: number
   cols?: number
+  /** Verified unused: nothing in-game reads this sheet (leftover data), so edits
+   *  round-trip but change no visuals. Producer-stamped (gfx-yychr-io
+   *  `VERIFIED_UNUSED_LZ2`); the YY-CHR tab shows it as a badge. */
+  unused?: boolean
 }
 
 /** A folder's gfx-manifest.json narrowed to its yychr view: the sheet rows + the
  *  checksum map their change-status gate reads. `readYychrManifest` returns it only
  *  when the manifest actually carries yychr rows. */
 export interface YychrManifestFile {
+  /** App version that wrote the export (absent on pre-stamp exports). */
+  exportedBy?: string
   checksums?: GfxManifestChecksums
   yychr: YychrManifestEntry[]
 }
@@ -298,11 +357,12 @@ export interface YychrManifestFile {
 export function readYychrManifest(dir: string): YychrManifestFile | null {
   try {
     const parsed = JSON.parse(readFileSync(join(dir, MANIFEST), 'utf8')) as {
+      exportedBy?: string
       checksums?: GfxManifestChecksums
       yychr?: YychrManifestEntry[] | null
     }
     if (!Array.isArray(parsed.yychr) || parsed.yychr.length === 0) return null
-    return { checksums: parsed.checksums, yychr: parsed.yychr }
+    return { exportedBy: parsed.exportedBy, checksums: parsed.checksums, yychr: parsed.yychr }
   } catch {
     return null
   }

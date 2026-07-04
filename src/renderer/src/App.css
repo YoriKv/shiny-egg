@@ -1138,6 +1138,34 @@ h3 { margin: 0; }
   color: var(--ink);
   border-color: var(--line-strong);
 }
+/* Render Only: a self-contained checkbox toggle that hides every editor overlay
+   for a clean look at the rendered level. Styled to match the view-control cluster. */
+.se-canvas__renderonly {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.se-canvas__renderonly:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.se-canvas__renderonly.is-active {
+  color: var(--ink);
+}
+.se-canvas__renderonly input {
+  margin: 0;
+  cursor: pointer;
+}
 /* Camera Preview control: an on/off checkbox toggle + a "▾" options button, with a
    settings popover (mask / zoom / snap). */
 .se-campreview {
@@ -3703,6 +3731,20 @@ h3 { margin: 0; }
   color: var(--ink-4);
 }
 
+/* "Room List — Help" footer entry: separated from the room rows and subdued so
+   it reads as an affordance, not a room. */
+.se-sublevelmenu__divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}
+.se-sublevelmenu__row--help .se-sublevelmenu__rowname {
+  color: var(--ink-3);
+}
+.se-sublevelmenu__row--help:hover .se-sublevelmenu__rowname {
+  color: var(--ink);
+}
+
 /* ── ROM menu trigger ──────────────────────────────────────────────────── */
 
 .se-rommenu {
@@ -4300,6 +4342,30 @@ h3 { margin: 0; }
 }
 .se-help__body .se-help__list li:last-child {
   margin-bottom: 0;
+}
+/* The "Hide Room List Help in Dropdown" preference checkbox, mirrored in two
+   help dialogs with different placements: a footnote under the Level Editor
+   Help text (in the body), and in the actions row left of Close in the
+   sub-room help itself. */
+.se-help__pref {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+.se-help__pref input {
+  cursor: pointer;
+}
+.se-help__body .se-help__pref {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.se-modal__actions .se-help__pref {
+  margin-right: auto;
 }
 
 /* About page — shown in the help dialog's body. */
@@ -5533,6 +5599,9 @@ h3 { margin: 0; }
 }
 .se-yychr__status--missing {
   color: var(--danger, #e06c6c);
+}
+.se-yychr__status--unused {
+  color: var(--text-dim, #8a8a8a);
 }
 /* (The hover popout is the shared .se-hover-preview — see lib/hover-preview.tsx.) */
 

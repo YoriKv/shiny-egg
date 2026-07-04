@@ -8,9 +8,10 @@
 import type { ScreenExit } from '../../../../preload/api'
 import { getLevel } from '../../data/levels'
 import type { IncomingExit, Selection } from '../../types'
-import { CELL_PX, EXIT_MARKER_HALF_PX, exitCenterX, exitCenterY } from '../geometry'
+import { CELL_PX, EXIT_MARKER_HALF_PX, exitMarkerX, exitMarkerY } from '../geometry'
 import { hex0x } from '../../lib/hex'
 import { monoAdvance } from './text'
+import { drawDoorIcon } from './door-icons'
 import { SELECTION_ACCENT, selectionAccent } from './selection'
 
 
@@ -35,60 +36,43 @@ export function drawExits(
   ctx.textBaseline = 'top'
   const adv = monoAdvance(ctx)
   for (const e of exits) {
-    const cx = exitCenterX(e.screenIndex)
-    const cy = exitCenterY(e.screenIndex)
+    // Anchored at the TOP-LEFT corner of the exit's screen (see exitMarkerX/Y),
+    // so it reads as belonging to that screen square rather than floating at its
+    // centre.
+    const cx = exitMarkerX(e.screenIndex)
+    const cy = exitMarkerY(e.screenIndex)
     const isSelected = e.uid === selectedUid
     const stroke = isSelected ? SELECTION_ACCENT : '#22d3ee'
 
-    // Marker: a door-glyph diamond with an arrow inside, distinctive enough
-    // to read at small sizes. Drawn at fixed world-pixel size so it scales
-    // with zoom (so high-zoom views show a generous click target).
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-    ctx.strokeStyle = stroke
-    ctx.lineWidth = (isSelected ? 2.5 : 1.5) / zoom
-    ctx.beginPath()
-    ctx.moveTo(cx, cy - half)
-    ctx.lineTo(cx + half, cy)
-    ctx.lineTo(cx, cy + half)
-    ctx.lineTo(cx - half, cy)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
+    // Exit-door glyph (arrow leaving) tinted by state, on a dark chip. Fixed
+    // world-pixel size so it scales with zoom (a generous click target when
+    // zoomed in).
+    drawDoorIcon(ctx, cx, cy, half, 'exit', stroke, zoom, isSelected)
 
-    // Arrow glyph inside the diamond (right-pointing — direction-agnostic
-    // since exits don't always have an obvious "into here" direction).
-    ctx.fillStyle = stroke
-    ctx.beginPath()
-    ctx.moveTo(cx - half / 3, cy - half / 3)
-    ctx.lineTo(cx + half / 3, cy)
-    ctx.lineTo(cx - half / 3, cy + half / 3)
-    ctx.closePath()
-    ctx.fill()
-
-    // Label below the marker. At very low zoom, drop the label so it doesn't
-    // smear into adjacent markers — the marker itself is still hit-testable.
-    if (zoom >= 0.4) {
-      let label: string
-      if (e.variant === 'warp') {
-        const dest = getLevel(e.destLevelRecordId)
-        label = dest ? `${dest.slot} ${dest.name}` : `→ ${hex0x(e.destLevelRecordId)}`
-      } else {
-        label = `Minibattle ${hex0x(e.minibattleId)}`
-      }
-      const padX = 4 / zoom
-      const padY = 2 / zoom
-      const lw = label.length * adv + padX * 2
-      const lh = 14 / zoom
-      const lx = cx - lw / 2
-      const ly = cy + half + 2 / zoom
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-      ctx.fillRect(lx, ly, lw, lh)
-      ctx.strokeStyle = isSelected ? selectionAccent(0.6) : 'rgba(34, 211, 238, 0.6)'
-      ctx.lineWidth = 1 / zoom
-      ctx.strokeRect(lx, ly, lw, lh)
-      ctx.fillStyle = stroke
-      ctx.fillText(label, lx + padX, ly + padY)
+    // Label below the marker, left-aligned to the chip so it stays inside the
+    // screen (the marker now hugs the top-left corner). Drawn at every zoom —
+    // labels can overlap when far out, but always knowing where an exit leads
+    // beats legibility there (the incoming labels match).
+    let label: string
+    if (e.variant === 'warp') {
+      const dest = getLevel(e.destLevelRecordId)
+      label = dest ? `to ${dest.slot} ${dest.name}` : `to ${hex0x(e.destLevelRecordId)}`
+    } else {
+      label = `Minibattle ${hex0x(e.minibattleId)}`
     }
+    const padX = 4 / zoom
+    const padY = 2 / zoom
+    const lw = label.length * adv + padX * 2
+    const lh = 14 / zoom
+    const lx = cx - half
+    const ly = cy + half + 2 / zoom
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+    ctx.fillRect(lx, ly, lw, lh)
+    ctx.strokeStyle = isSelected ? selectionAccent(0.6) : 'rgba(34, 211, 238, 0.6)'
+    ctx.lineWidth = 1 / zoom
+    ctx.strokeRect(lx, ly, lw, lh)
+    ctx.fillStyle = stroke
+    ctx.fillText(label, lx + padX, ly + padY)
   }
   ctx.restore()
 }
@@ -114,8 +98,8 @@ export function drawIncomingExits(
       ? `${selection.incoming.sourceLevelRecordId}:${selection.incoming.sourceScreenIndex}`
       : null
   ctx.save()
-  // A bit smaller than outgoing markers so they don't fight for attention.
-  const half = EXIT_MARKER_HALF_PX * 0.85
+  // Normalized to the same size as the outgoing exit door (one tile).
+  const half = EXIT_MARKER_HALF_PX
   const amber = '#fb923c'
   const lime = SELECTION_ACCENT
   // Label style is constant for the pass; measure one glyph (monospace) once.
@@ -128,45 +112,23 @@ export function drawIncomingExits(
     const isSelected = selKey === `${e.sourceLevelRecordId}:${e.sourceScreenIndex}`
     const stroke = isSelected ? lime : amber
 
-    // Hollow dashed diamond.
-    ctx.strokeStyle = stroke
-    ctx.lineWidth = (isSelected ? 2.25 : 1.5) / zoom
-    ctx.setLineDash([4 / zoom, 3 / zoom])
-    ctx.beginPath()
-    ctx.moveTo(cx, cy - half)
-    ctx.lineTo(cx + half, cy)
-    ctx.lineTo(cx, cy + half)
-    ctx.lineTo(cx - half, cy)
-    ctx.closePath()
-    ctx.stroke()
-    ctx.setLineDash([]) // reset before arrow
+    // Entry-door glyph (arrow entering) at the exact landing cell — amber to keep
+    // the incoming markers a distinct family from the cyan outgoing exits.
+    drawDoorIcon(ctx, cx, cy, half, 'entry', stroke, zoom, isSelected)
 
-    // Inward-pointing arrow (chevron pointing toward center from the left
-    // edge — clear visual cue of "stuff enters here").
-    ctx.strokeStyle = stroke
-    ctx.lineWidth = (isSelected ? 2 : 1.5) / zoom
-    ctx.beginPath()
-    ctx.moveTo(cx - half + 2 / zoom, cy - half / 2)
-    ctx.lineTo(cx - 1 / zoom, cy)
-    ctx.lineTo(cx - half + 2 / zoom, cy + half / 2)
-    ctx.stroke()
-
-    // Tiny "from <id>" label below the marker — only when zoomed in
-    // enough to read. Skipped when zoomed out so a level with many
-    // incoming refs stays legible.
-    if (zoom >= 1.2) {
-      const label = `from ${hex0x(e.sourceLevelRecordId)}`
-      const padX = 3 / zoom
-      const padY = 1.5 / zoom
-      const lw = label.length * adv + padX * 2
-      const lh = 12 / zoom
-      const lx = cx - lw / 2
-      const ly = cy + half + 2 / zoom
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-      ctx.fillRect(lx, ly, lw, lh)
-      ctx.fillStyle = stroke
-      ctx.fillText(label, lx + padX, ly + padY)
-    }
+    // Tiny "from <id>" label below the marker — drawn at every zoom, matching
+    // the outgoing "to …" labels.
+    const label = `from ${hex0x(e.sourceLevelRecordId)}`
+    const padX = 3 / zoom
+    const padY = 1.5 / zoom
+    const lw = label.length * adv + padX * 2
+    const lh = 12 / zoom
+    const lx = cx - lw / 2
+    const ly = cy + half + 2 / zoom
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+    ctx.fillRect(lx, ly, lw, lh)
+    ctx.fillStyle = stroke
+    ctx.fillText(label, lx + padX, ly + padY)
   }
   ctx.restore()
 }

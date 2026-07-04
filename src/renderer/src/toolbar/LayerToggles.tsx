@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from 'react'
-import type { GridMode, LayerVisibility } from '../types'
+import type { GridMode, LayerVisibility, OutlineMode } from '../types'
 
 export interface LayerTogglesProps {
   layers: LayerVisibility
@@ -79,10 +79,11 @@ function pathIcon(d: string, filled: boolean, active: boolean): ReactNode {
 }
 
 /** Sprite-editing icon — a dashed blueprint box (the "outline") with two sprite
- *  dots inside; the dots fill when active. Pairs with the object-editing icon
- *  (OBJECTS_OUTLINE_PATH), which is a dashed box with a label tab. */
-function spriteOutlineIcon(active: boolean): ReactNode {
-  const dot = active ? 'currentColor' : 'none'
+ *  dots inside. 3-state OutlineMode (like gridIcon): dots FILL in 'detailed',
+ *  are hollow in 'render'/'off'; the button's is-off class dims the whole icon
+ *  for 'off'. Pairs with objectOutlineIcon (a dashed box with a label tab). */
+function spriteOutlineIcon(mode: OutlineMode): ReactNode {
+  const dot = mode === 'detailed' ? 'currentColor' : 'none'
   return (
     <>
       <rect x="2.5" y="2.5" width="11" height="11" rx="0.5"
@@ -104,7 +105,28 @@ interface LayerItem {
    *  Used by the editing toggles, whose label ("Sprite editing") doesn't read
    *  naturally with a bare Show/Hide verb. */
   describe?: (active: boolean) => string
+  /** Extra hotkey shown before the digit hint in the tooltip (the grid's
+   *  legacy `G`, which cycles the same modes as Shift+5). */
+  extraHotkey?: string
   render: (active: boolean) => ReactNode
+}
+
+/** Digit-key shortcut rows, in left-to-right button order: plain 1–5 toggle
+ *  row 2 (the editing / overlay toggles), Shift+1–5 toggle row 1 (the visual
+ *  layers) — each chord maps to the column its digit sits in. Exported so
+ *  App's keyboard handler and the tooltip hints below derive from the same
+ *  source and can't drift. */
+export const LAYER_DIGIT_ROW: ReadonlyArray<keyof LayerVisibility> = [
+  'spriteOutlines', 'bg1Outlines', 'exits', 'collision', 'grid'
+]
+export const LAYER_SHIFT_DIGIT_ROW: ReadonlyArray<keyof LayerVisibility> = [
+  'sprites', 'bg1', 'bg2', 'bg3', 'backdrop'
+]
+
+/** The digit / Shift+digit chord for a layer key, for the tooltip hint. */
+function digitHotkey(key: keyof LayerVisibility): string {
+  const r1 = LAYER_DIGIT_ROW.indexOf(key)
+  return r1 >= 0 ? `${r1 + 1}` : `Shift+${LAYER_SHIFT_DIGIT_ROW.indexOf(key) + 1}`
 }
 
 const SPRITE_PATH =
@@ -149,16 +171,40 @@ const GRID_NEXT_ACTION: Record<GridMode, string> = {
   tile: 'Hide grid'
 }
 
-// Object-editing icon — a dashed-outline rectangle with a small label tab in
-// the corner. Communicates "blueprint outlines drawn over the foreground" —
-// distinct from the stackedLayersIcon's solid-fill front rectangle that means
-// "render the tiles".
-const OBJECTS_OUTLINE_PATH =
-  'M2 4 L6 4 M8 4 L14 4 ' +     // top edge, dashed
-  'M14 4 L14 9 M14 11 L14 14 ' + // right edge, dashed
-  'M14 14 L8 14 M6 14 L2 14 ' +  // bottom edge, dashed
-  'M2 14 L2 11 M2 9 L2 4 ' +     // left edge, dashed
-  'M2 2 L7 2 L7 5 L2 5 Z'        // small label tab top-left
+/** Object-editing icon — a dashed blueprint box (same as spriteOutlineIcon)
+ *  around a 2×2 CHECKERBOARD of tiles (two diagonal cells; objects stamp tiles,
+ *  and the checker reads distinctly from the sprite toggle's dots). 3-state
+ *  OutlineMode, mirroring spriteOutlineIcon: the two tiles FILL solid in
+ *  'detailed', are hollow outlines in 'render'/'off'; is-off dims the whole
+ *  icon. Kept to two cells so it reads at 16 px. */
+function objectOutlineIcon(mode: OutlineMode): ReactNode {
+  const fill = mode === 'detailed' ? 'currentColor' : 'none'
+  return (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="0.5"
+        fill="none" stroke="currentColor" strokeWidth="1.25"
+        strokeDasharray="2.5 1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="4" y="4" width="4" height="4" fill={fill}
+        stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+      <rect x="8" y="8" width="4" height="4" fill={fill}
+        stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+    </>
+  )
+}
+
+// Tooltip for the outline buttons — names the action a click performs (advancing
+// to the NEXT mode in detailed → render → off → detailed), mirroring
+// GRID_NEXT_ACTION. `noun` is 'sprite' or 'object'.
+function outlineNextAction(mode: OutlineMode, noun: string): string {
+  switch (mode) {
+    case 'detailed':
+      return `Show render ${noun} outline (selected only)`
+    case 'render':
+      return `Disable ${noun} editing`
+    case 'off':
+      return `Show detailed ${noun} outline`
+  }
+}
 
 export function LayerToggles({ layers, onToggle }: LayerTogglesProps): JSX.Element {
   // 5-column grid, row-major. Row 1 = visual layers (sprites, BG1, BG2, BG3,
@@ -199,14 +245,17 @@ export function LayerToggles({ layers, onToggle }: LayerTogglesProps): JSX.Eleme
     {
       key: 'spriteOutlines',
       label: 'Sprite editing',
-      describe: (a) => `${a ? 'Hide' : 'Show'} sprite outlines`,
-      render: (active) => spriteOutlineIcon(active)
+      // 3-state cycle (detailed → render → off). Tooltip + icon read
+      // layers.spriteOutlines directly; the loop's boolean `active` only drives
+      // the is-active styling (true for both 'detailed' and 'render').
+      describe: () => outlineNextAction(layers.spriteOutlines, 'sprite'),
+      render: () => spriteOutlineIcon(layers.spriteOutlines)
     },
     {
       key: 'bg1Outlines',
       label: 'Object editing',
-      describe: (a) => `${a ? 'Hide' : 'Show'} object outlines`,
-      render: (active) => pathIcon(OBJECTS_OUTLINE_PATH, false, active)
+      describe: () => outlineNextAction(layers.bg1Outlines, 'object'),
+      render: () => objectOutlineIcon(layers.bg1Outlines)
     },
     {
       key: 'exits',
@@ -224,7 +273,8 @@ export function LayerToggles({ layers, onToggle }: LayerTogglesProps): JSX.Eleme
       // 3-state cycle (off → screen → tile). Both the tooltip and the icon read
       // layers.grid directly; the loop's boolean `active` only drives the
       // is-active styling (true for both 'screen' and 'tile').
-      describe: () => `${GRID_NEXT_ACTION[layers.grid]} (G)`,
+      describe: () => GRID_NEXT_ACTION[layers.grid],
+      extraHotkey: 'G',
       render: () => gridIcon(layers.grid)
     }
   ]
@@ -237,9 +287,11 @@ export function LayerToggles({ layers, onToggle }: LayerTogglesProps): JSX.Eleme
         // as "on" in any mode but 'off'.
         const raw = layers[it.key]
         const active = typeof raw === 'boolean' ? raw : raw !== 'off'
-        const tip = it.describe
+        const base = it.describe
           ? it.describe(active)
           : `${active ? 'Hide' : 'Show'} ${it.label}${it.tag ? ` (${it.tag})` : ''}`
+        const chord = digitHotkey(it.key)
+        const tip = `${base} (${it.extraHotkey ? `${it.extraHotkey} / ` : ''}${chord})`
         return (
           <button
             key={it.key}

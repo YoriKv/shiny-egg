@@ -391,7 +391,7 @@ function IncomingProps({
   return (
     <dl className="se-props__list">
       <dt>Kind</dt>
-      <dd><span className="se-props__id-kind">Incoming entry</span></dd>
+      <dd><span className="se-props__id-kind">Incoming entrance</span></dd>
       <dt>From level</dt>
       <dd>
         {source ? `${source.slot} ${source.name}` : '—'}{' '}
@@ -422,12 +422,9 @@ function IncomingProps({
       )}
       <dt>Hint</dt>
       <dd className="se-props__desc">
-        Drag the marker to move where the source room&apos;s exit lands the
-        player, or set the <strong>Entrance</strong> above to change how the
-        player arrives — both edit the source level&apos;s exit and auto-save it
-        (undoable). Double-click to jump back to the source room and center on
-        its outgoing exit — an editor-only reverse navigation the player
-        can&apos;t make in-game.
+        Drag to move where the player lands; set <strong>Entrance</strong> to
+        change how they arrive — both edit the source room&apos;s exit.
+        Double-click to jump to the source room.
       </dd>
     </dl>
   )
@@ -703,7 +700,7 @@ function ExitProps({
       <dt>Kind</dt>
       <dd>
         <span className="se-props__id-kind">
-          {exit.variant === 'warp' ? 'Exit · Warp' : 'Exit · Minibattle'}
+          {exit.variant === 'warp' ? 'Screen Exit · Warp' : 'Screen Exit · Minibattle'}
         </span>
       </dd>
       {/* Variant toggle (E2): converts the record's payload wholesale (the

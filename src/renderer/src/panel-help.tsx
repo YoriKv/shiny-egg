@@ -281,8 +281,10 @@ export const PANEL_HELP: PanelHelp = {
         <b>What to export:</b> a <b>BG1&nbsp;area</b> (use <b>Select&nbsp;area</b> and
         shift-drag a rectangle on the canvas to choose the region), the whole{' '}
         <b>BG2</b> or <b>BG3</b> background, the <b>World&nbsp;Map</b> (the overworld map
-        graphics), or the <b>Boot/Story/Title&nbsp;Screens</b> (the boot, title and
-        storybook graphics).
+        graphics), the <b>Boot/Story/Title&nbsp;Screens</b> (the boot, title and
+        storybook graphics), or <b>Bosses</b> (Raphael&rsquo;s Mode-7 moon arena as an
+        Aseprite layout &mdash; rearrange the tiles that build the moon, clouds and
+        stars; the tile pixels edit via the YY-CHR tab).
       </p>
       <p>
         <b>Format:</b> <b>PNG</b> opens in any image editor and includes a swatch column
@@ -312,9 +314,12 @@ export const PANEL_HELP: PanelHelp = {
         (Test&nbsp;Level / Launch) bakes everything into the ROM.
       </p>
       <p>
-        The <b>Map16 Blocks</b> tab is a separate editor for the 16&times;16 object
-        blocks &mdash; which 8&times;8 tile, palette row, and flip each quadrant uses
-        &mdash; without leaving the editor.
+        Two more tabs browse fixed per-project export folders (no dialogs):{' '}
+        <b>YY-CHR&nbsp;Graphics</b> exports every tile sheet in the game as raw files
+        YY-CHR edits in place, and <b>M1TE&nbsp;Maps</b> exports every fixed map — the
+        overworlds, the level icons, and the tilemap-based screens — as M1TE sessions.
+        Both show on-disk previews, light up files you&rsquo;ve changed externally, and
+        import per-file or all at once.
       </p>
     </>
   )

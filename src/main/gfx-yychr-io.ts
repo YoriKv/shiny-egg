@@ -176,6 +176,17 @@ export interface YychrExportCollection {
   notes: string[]
 }
 
+/** lz2 slots VERIFIED UNUSED (tmp/list-other-gfx.ts against the dev cart + the
+ *  classification audit): GFX_5B03C0..5B121D are in no scene, no spriteset, and no
+ *  BG2/BG3 tilemap table (NOT the lz16 sprite files $6F-$72 — a different id
+ *  space), and each decompresses to exactly 0x800 B = one leftover 32×32 tilemap
+ *  screen parked just before the Tilemaps block — dead data the extract's pointer
+ *  sets file under Graphics/. Exported with an `-unused` name tag + manifest flag
+ *  (badge in the YY-CHR tab): the bytes still round-trip, but nothing in-game reads
+ *  them, so edits won't change any visuals. The REST of other/ stays untagged —
+ *  "no known scene loads" ≠ unused (cutscene/ending screens aren't modeled). */
+const VERIFIED_UNUSED_LZ2 = new Set([0x6f, 0x70, 0x71, 0x72])
+
 /** lz2 self-terminates, so an unreferenced file's size is discoverable by decoding. */
 function decodeLz2Auto(rom: Uint8Array, symbols: SymbolMap, fileId: number): Uint8Array {
   const tablePC = symbols.pc('DATA_lz2_compressed_gfx_ptrs')
@@ -216,6 +227,8 @@ export function collectYychrExport(rom: Uint8Array, symbols: SymbolMap): YychrEx
     tiles: Uint8Array
     rowCount?: number
     cpc?: boolean
+    /** Verified unused (VERIFIED_UNUSED_LZ2): edits round-trip but change nothing in-game. */
+    unused?: boolean
     pal?: Uint8Array
     col?: Uint8Array
   }): void => {
@@ -239,7 +252,8 @@ export function collectYychrExport(rom: Uint8Array, symbols: SymbolMap): YychrEx
       bpp: args.bpp,
       sizeBytes: args.tiles.length,
       rowCount: args.rowCount,
-      tileBytes: args.bpp === 2 ? 16 : args.bpp === 8 ? 64 : 32
+      tileBytes: args.bpp === 2 ? 16 : args.bpp === 8 ? 64 : 32,
+      unused: args.unused
     })
   }
 
@@ -317,11 +331,13 @@ export function collectYychrExport(rom: Uint8Array, symbols: SymbolMap): YychrEx
   // regardless of the display depth). Tilemaps/ entries are excluded (not CHR),
   // except the Mode-7 set — the extract classifies $B1 as a tilemap but the island
   // track proves it's char data.
+  // Slots proven dead get the `-unused` tag (VERIFIED_UNUSED_LZ2).
   try {
     const bank06 = readFileSync(join(frameworkWorkRoot(), 'yi', GFX_ARENA.ptrBankFile), 'utf8')
     const lz2Labels = parseGfxPtrTable(bank06, 'lz2')
     const assets = join(frameworkWorkRoot(), 'assets', 'yi')
     let unrefOther = 0
+    let verifiedUnused = 0
     let orphanViewOnly = 0
     for (let id = 0; id < lz2Labels.length; id++) {
       if (seen.has(`lz2/${id}`)) continue
@@ -379,6 +395,18 @@ export function collectYychrExport(rom: Uint8Array, symbols: SymbolMap): YychrEx
           pal,
           col
         })
+      } else if (VERIFIED_UNUSED_LZ2.has(id)) {
+        verifiedUnused++
+        emitChr({
+          base: `other/${hexId(id)}-unused`,
+          description: `UNUSED — leftover 32×32 tilemap data (lz2 file 0x${id.toString(16).toUpperCase()}); nothing in-game reads it, so edits won't change any visuals`,
+          format: 'lz2',
+          fileId: id,
+          bpp: 4,
+          tiles,
+          unused: true,
+          pal: firstCgram ? buildPalFromCgram(firstCgram, 0) : undefined
+        })
       } else {
         unrefOther++
         emitChr({
@@ -426,6 +454,7 @@ export function collectYychrExport(rom: Uint8Array, symbols: SymbolMap): YychrEx
     }
     if (lz16Unsized > 0) notes.push(`${lz16Unsized} lz16 file(s) couldn't be sized (no row count fits their compressed stream) — not exported.`)
     if (unrefOther > 0) notes.push(`${unrefOther} file(s) no known scene loads exported under other/ with unverified depth.`)
+    if (verifiedUnused > 0) notes.push(`${verifiedUnused} sheet(s) tagged *-unused are VERIFIED unused (leftover tilemap data) — edits round-trip but change nothing in-game.`)
     if (orphanViewOnly > 0) notes.push(`${orphanViewOnly} orphaned sheet(s) (other/*-orphan) are VIEW-ONLY — the game never loads them and edits to them are not imported.`)
   } catch (e) {
     notes.push(`Pointer-table sweep skipped: ${e instanceof Error ? e.message : String(e)}`)
@@ -550,6 +579,12 @@ export function yychrReadme(notes: string[]): string {
     '',
     'Tiles are often shared: editing one tile changes it everywhere it appears',
     '(every level using the sheet, every sprite using the tile).',
+    '',
+    'Sheets named *-unused hold data the game verifiably never reads (leftover',
+    'tilemaps) — edits import fine but change nothing in-game. Sheets named',
+    '*-orphan are view-only (never imported). The rest of other/ is art no KNOWN',
+    'screen loads; some of it may belong to screens the editor does not model yet,',
+    'so it is exported normally.',
     '',
     ...(notes.length > 0 ? ['Coverage notes:', ...notes.map((n) => `  - ${n}`), ''] : [])
   ].join('\n')

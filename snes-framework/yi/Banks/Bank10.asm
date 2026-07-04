@@ -811,14 +811,13 @@ CODE_1087C4:
 	RTS
 
 ;-------------------------------------------------------------------------
-; CODE_gm44_unknown -- Game mode $44: boot hardware-check halt (raid: gm44_unknown).
+; CODE_gm44_pal_halt -- Game mode $44: boot hardware-check halt (raid: gm44_unknown).
 ; Reached from gm$00 via the $43 fade when $213F bit 4 (PPU2 NTSC/PAL flag;
 ; 1=PAL/50Hz) is set -- i.e. an NTSC cart booted on a PAL console. Each frame
 ; ramps live palette mirror entries $01/$03/$06/$07 toward $8000 (wrapping to
 ; $0000). Does NOT INC the gamemode and does NOT re-check: a permanent halt,
 ; only power-off/reset escapes. Never seen on the intended NTSC hardware.
 ;-------------------------------------------------------------------------
-CODE_gm44_unknown:
 CODE_gm44_pal_halt:	; corrected-behavior alias: PAL-console hardware-check halt (raid's "unknown" is this)
 CODE_1088FB:
 	REP.b #$20
@@ -837,7 +836,7 @@ CODE_10890A:
 	RTL
 
 ;-------------------------------------------------------------------------
-; CODE_gm01_ninpresents_load -- Game mode $01: boot peripheral/controller check.
+; CODE_gm01_boot_controller_check -- Game mode $01: boot peripheral/controller check.
 ; Runs for exactly ONE frame (verified via the boot-modes trace). JSR
 ; CODE_108987 manually serial-reads both joypads ($4016/$4017 -> $00..$03),
 ; then sanity-checks them: a floating/disconnected pad reads $FF, and

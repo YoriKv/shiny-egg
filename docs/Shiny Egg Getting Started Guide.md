@@ -28,15 +28,17 @@ Each panel in the editor also has its own help dialog with additional informatio
 
 ![[guide-help.png]]
 
+**Tip:** All panels can be moved and resized by dragging the header and the bottom right corner. If a panel goes off screen, you can reset it by right-clicking either its header or its button in the toolbar.
 ## Levels
 
 To open a level for editing, either select it from the Level menu, or type the record ID of the level in the **go to room** box.
 
 ![[guide-03.png]]
 
-Once a level has been opened, you can view its subrooms in the **room** dropdown.
+Once a level has been opened, you can view its subrooms in the **room** dropdown. The help entry here explains how the list is populated and how to add rooms to a level.
 
 ![[guide-04.png]]
+
 
 ## Level Editor - Toolbar
 
@@ -56,6 +58,8 @@ Always available.
 * **Mouse 5 / Alt + Right** to jump forward after a jump back (works like browser history)
 * **Arrow Keys** to move an object/sprite
 * **Shift + Arrow Keys** to resize an object/sprite
+* **Space** - Toggle "Render Only" mode which hides all overlay/outline visuals
+* **Shift + Space** - Toggle Camera Preview mode
 
 From left to right on the toolbar.
 
@@ -81,16 +85,17 @@ From left to right on the toolbar.
 
 ### 3 - Show/Hide Layers
 
-Top Row - From left to right. Show/hide rendered visual.
+Top Row - From left to right. Show/hide rendered visual. Keyboard Shortcut: Shift + 1/2/3/4/5
 * Show/Hide Sprites
 * Show/Hide BG1 - The level objects/tiles that compose the majority of the level's terrain.
 * Show/Hide BG2 - Decorative background layer 2. Can sometimes appear in front of BG1.
 * Show/Hide BG3 - Decorative background layer 3. Can sometimes appear in front of BG1.
 * Show/Hide Backdrop Gradient - Decorative background gradient.
 
-Bottom Row - From left to right. Show/hide outlines. Enables and disables interacting with these layers.
-* Show/Hide Sprite Outlines
-* Show/Hide Object Outlines (BG1)
+Bottom Row - From left to right. Toggle outline visibility and enable/disable editing of specific layers. Keyboard Shortcut: 1/2/3/4/5
+* Show Detailed Sprite Outlines / Show Basic Sprite Outlines / Disable Sprite Editing
+* Show Detailed Object Outlines / Show Basic Object Outlines / Disable Object Editing
+	* Objects are standard and extended objects on BG1, the level's tiles and decorations.
 * Show/Hide Exits
 * Show/Hide Collision Visuals - A color overlay showing actual collision shapes and some collision metadata.
 * Show Screen Grid / Show Tile Grid / Hide Grid
@@ -158,8 +163,9 @@ The editing canvas and render of the currently loaded level. Previews changes li
 
 **1 - Minimap**. Click/drag to pan. Click on the header to minimize.
 **2 - Camera Controls**
-* **Reset View**
-* **Camera Preview** - Previews the way the camera looks in game. Including BG2/3/gradient parallax. Options for masking, zoom, and snapping the camera.
+* **Render Only** - Space - Toggles render only mode which temporarily disables all overlay visuals like outlines and other informational markers. Helpful for quickly previewing the level layout without additional visual noise.
+* **Camera Preview** - Shift+Space - Previews the way the camera looks in game. Including BG2/3/gradient parallax. Options for masking, zoom, and snapping the camera.
+* * **Reset View**
 **3 - Current level statistics**
 **4 - Cursor x/y/screen position**
 

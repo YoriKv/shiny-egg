@@ -112,9 +112,9 @@ function specialRows(): Row[] {
       sub: '\u2014',
       category: 'exit',
       tip:
-        'Screen Exit \u2014 click a cell to add a warp exit on that SCREEN (one exit per ' +
-        '16\u00d716-cell screen). Defaults to a self-warp at the clicked cell; edit the ' +
-        'destination (or switch it to a minibattle) in Properties.',
+        'Screen Exit - click a screen to add a screen exit there. A screen exit is used to define' +
+          'the destination for all exit sprites/objects on that screen. For example, pipes. A screen' +
+          'exit determines the destination for those sprites/objects.',
       exit: true,
       setupRules: [],
       spawnedOnly: false,
@@ -425,7 +425,7 @@ export function PickerBody({
           className={`se-tab${tab === 'special' ? ' is-active' : ''}`}
           onClick={() => setTab('special')}
         >
-          Exit / Special
+          Screen Exit
         </button>
       </div>
       <input

@@ -7,7 +7,7 @@
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MANIFEST, readYychrManifest, updateManifestChecksums } from './gfx-manifest.ts'
+import { MANIFEST, isNewerAppVersion, readYychrManifest, updateManifestChecksums } from './gfx-manifest.ts'
 
 let failures = 0
 function assert(cond: boolean, msg: string): void {
@@ -24,6 +24,7 @@ try {
   assert(readYychrManifest(dir) === null, 'manifest with no yychr rows → null (a PNG-track folder)')
 
   const manifest = {
+    exportedBy: '0.5.12',
     checksums: { 'bg2/f10.2bpp.gb': 'aaaa', 'other/f20.4bpp.sfc': 'bbbb' },
     entries: [{ file: 'x.png', description: 'kept-verbatim' }],
     yychr: [
@@ -35,6 +36,18 @@ try {
   const read = readYychrManifest(dir)
   assert(read !== null && read.yychr.length === 1 && read.yychr[0]!.file === 'bg2/f10.2bpp.gb', 'yychr rows read back')
   assert(read!.checksums?.['bg2/f10.2bpp.gb'] === 'aaaa', 'checksums map read back')
+  assert(read!.exportedBy === '0.5.12', 'exportedBy version stamp read back')
+
+  // ── isNewerAppVersion (the export version-stamp gate) ───────────────────────
+  assert(!isNewerAppVersion(undefined, '0.5.12'), 'unstamped (pre-stamp export) is never newer')
+  assert(!isNewerAppVersion('0.5.12', '0.5.12'), 'same version is not newer')
+  assert(!isNewerAppVersion('0.5.11', '0.5.12'), 'older export is not newer')
+  assert(!isNewerAppVersion('0.5', '0.5.0'), 'missing segments compare as 0')
+  assert(isNewerAppVersion('0.5.13', '0.5.12'), 'newer patch detected')
+  assert(isNewerAppVersion('0.6.0', '0.5.99'), 'newer minor beats larger patch')
+  assert(isNewerAppVersion('1.0.0', '0.5.12'), 'newer major detected')
+  assert(isNewerAppVersion('0.5.12.1', '0.5.12'), 'extra segment counts as newer')
+  assert(isNewerAppVersion('0.10.0', '0.9.0'), 'numeric (not lexicographic) segment compare')
 
   // ── updateManifestChecksums (the import write-back) ─────────────────────────
   assert(updateManifestChecksums(dir, {}), 'empty updates → true no-op')

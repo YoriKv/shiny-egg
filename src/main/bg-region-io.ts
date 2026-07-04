@@ -15,6 +15,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, type Dirent } from 'node:fs'
 import { join } from 'node:path'
+import { app } from 'electron'
 import { buildMetatileContext, type MetatileHeader } from 'snes-framework/object-metatile'
 import {
   renderBg1Region, diffBg1Region, buildBgRegionContext, renderBgRegion, diffBgRegionTiles, bgRegionPng,
@@ -28,6 +29,7 @@ import { decodeLevelFromLevelData } from 'snes-framework/object-decode'
 import { decodePng, type ImageData } from 'snes-framework/png'
 import { canvasRegion, liveTiles } from './gfx-import-utils'
 import { fileChecksum } from './gfx-import-conflict'
+import { isNewerAppVersion, newerExportWarning } from './gfx-manifest'
 import { GfxImportReconciler } from './gfx-import-reconcile'
 import { loadLevelPalettes } from 'snes-framework/load-palettes'
 import { type SymbolMap } from 'snes-framework/symbol-map'
@@ -90,6 +92,9 @@ interface BgRegionSidecar {
   /** sha256 of the exported image artifact (`.png`/`.aseprite`) — the import checksum gate
    *  skips a region whose bytes still match (unedited since export). Absent on old exports. */
   checksum?: string
+  /** App version that wrote the export — import warns when it's newer than the running
+   *  app (a newer sidecar may carry fields this version ignores). Absent on old exports. */
+  exportedBy?: string
 }
 
 /** Sidecar for an M1TE2 `.M1` export (written as `bg{1,2,3}-region.m1.json`, distinct from
@@ -110,6 +115,8 @@ interface M1te2Sidecar {
   cells?: Bg1RegionCell[]
   /** sha256 of the exported `.M1` artifact — the import checksum gate skips an unedited session. */
   checksum?: string
+  /** App version that wrote the export (see `BgRegionSidecar.exportedBy`). */
+  exportedBy?: string
 }
 
 /** Build the exported palette layout (used rows × stride) with each entry's CGRAM
@@ -274,7 +281,8 @@ export function exportBgRegionToDir(
         format: 'm1te2', layer, header, bpp, tileSize,
         width: regionWidth, height: regionHeight,
         cells: layer === 1 ? cells : undefined,
-        checksum: fileChecksum(m1.bytes)
+        checksum: fileChecksum(m1.bytes),
+        exportedBy: app.getVersion()
       }
       writeFileSync(join(dir, `${base}.m1.json`), JSON.stringify(m1sc, null, 2))
       return { ok: true, file: `${base}.M1`, cells: editableCount, dir, warning: cropWarning }
@@ -330,7 +338,7 @@ export function exportBgRegionToDir(
     sidecar.checksum = fileChecksum(image) // the import checksum gate skips an unedited region
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, `${base}.${ext}`), image)
-    writeFileSync(join(dir, `${base}.json`), JSON.stringify(sidecar, null, 2))
+    writeFileSync(join(dir, `${base}.json`), JSON.stringify({ ...sidecar, exportedBy: app.getVersion() }, null, 2))
     const cells = layer === 1 ? sidecar.cells!.length : sidecar.subCells!.filter((s) => s.gfx).length
     return { ok: true, file: `${base}.${ext}`, cells, dir }
   } catch (e) {
@@ -401,7 +409,16 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
 
     const errors: string[] = []
     const log: string[] = []
+    const warnings: string[] = []
     const perRegion: RegionImportLogEntry[] = []
+    // Version stamp: remember the newest sidecar written by a NEWER shiny-egg (one
+    // warning per folder at the end — newer sidecars may carry fields we ignore).
+    let newerExport: string | null = null
+    const noteExportStamp = (sc: { exportedBy?: string }): void => {
+      if (isNewerAppVersion(sc.exportedBy, app.getVersion()) && (!newerExport || isNewerAppVersion(sc.exportedBy, newerExport))) {
+        newerExport = sc.exportedBy!
+      }
+    }
     // CHR tile edits + palette colors now flow into the SHARED reconciler (gfx-import-reconcile),
     // which merges across regions AND with the gfx-png importer, conflict-checks, and writes once
     // in graphics-folder-io. Tilemap WORD placement stays a direct saveGfxEdit here (single-owner).
@@ -416,6 +433,7 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
 
     for (const scFile of sidecars) {
       const sc = JSON.parse(readFileSync(join(dir, scFile), 'utf8')) as BgRegionSidecar
+      noteExportStamp(sc)
       const asePath = join(dir, scFile.replace(/\.json$/, '.aseprite'))
       const pngPath = join(dir, scFile.replace(/\.json$/, '.png'))
       if (unchanged(existsSync(asePath) ? asePath : pngPath, sc)) continue // unedited → skip
@@ -620,6 +638,7 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
     for (const scFile of m1Sidecars) {
       try {
         const sc = JSON.parse(readFileSync(join(dir, scFile), 'utf8')) as M1te2Sidecar
+        noteExportStamp(sc)
         const m1Name = scFile.replace(/\.m1\.json$/, '.M1')
         const m1Path = join(dir, m1Name)
         if (!existsSync(m1Path)) { errors.push(`${scFile}: missing ${m1Name}`); continue }
@@ -725,7 +744,8 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
     // reconciler.apply() (graphics-folder-io), after the gfx-png importer has also recorded.
     // `applied`/`paletteChanged` are reported from there; here they're 0 (this importer only
     // records them + does the single-owner tilemap-word saves counted in `repositioned`).
-    return { ok: true, dir, applied: 0, repositioned, conflicts, regions, mismatches, paletteChanged: 0, perRegion, log, errors }
+    if (newerExport) warnings.unshift(newerExportWarning('This region export', newerExport, app.getVersion()))
+    return { ok: true, dir, applied: 0, repositioned, conflicts, regions, mismatches, paletteChanged: 0, perRegion, log, errors, warnings }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }

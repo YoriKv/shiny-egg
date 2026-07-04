@@ -41,6 +41,8 @@
 // base+{0,1,16,17} with the word's flips applied to the whole block — matching the YI
 // 16×16 BG2/BG3 PPU exactly, so a YI 16×16 tilemap word maps 1:1.
 
+import { decode2bppTile, decode4bppTile } from './tile.ts';
+
 /** The size we WRITE (v2). The legacy v1 size (parse-only) is M1TE2_SIZE_V1. */
 export const M1TE2_SIZE = 74000;
 /** Legacy v1 size — still accepted by parse() so an older export round-trips. */
@@ -198,4 +200,84 @@ export function parseM1te2(bytes: Uint8Array): M1te2Doc {
     chr4bpp: bytes.slice(V1_OFF_CHR4, V1_OFF_CHR4 + CHR4_BYTES),
     chr2bpp: bytes.slice(V1_OFF_CHR2, V1_OFF_CHR2 + CHR2_BYTES)
   };
+}
+
+// ── preview render (the "M1TE Maps" tab thumbnails) ──────────────────────────
+
+export interface M1te2Preview {
+  rgba: Uint8Array;
+  width: number;
+  height: number;
+}
+
+/**
+ * Render a parsed session to RGBA for an on-disk preview thumbnail (so external
+ * M1TE edits show BEFORE import). SNES-style compose: the canvas is filled with
+ * palette color 0 (the backdrop), then the three map slots draw back-to-front
+ * (slot 2 = the 2bpp BG3, then 1, then 0 — both 4bpp), each cell's tile decoded
+ * with its word's palette row + flips, pixel 0 transparent. 16×16 tile mode
+ * expands one word into base+{0,1,16,17} with the word's flips (the same block
+ * shape the producers write). Display-only — nothing round-trips through this.
+ */
+export function renderM1te2Rgba(doc: M1te2Doc): M1te2Preview {
+  const scale = doc.tileSize === 16 ? 2 : 1;
+  const W = doc.mapWidth * 8 * scale;
+  const H = doc.mapHeight * 8 * scale;
+  const rgba = new Uint8Array(W * H * 4);
+  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, W * H);
+  const e5 = (v: number): number => ((v << 3) | (v >> 2)) & 0xff;
+  const pal = new Uint32Array(128);
+  for (let i = 0; i < 128; i++) {
+    const w = doc.palette[i * 2]! | (doc.palette[i * 2 + 1]! << 8);
+    pal[i] = ((0xff << 24) | (e5((w >> 10) & 0x1f) << 16) | (e5((w >> 5) & 0x1f) << 8) | e5(w & 0x1f)) >>> 0;
+  }
+  u32.fill(pal[0]!);
+
+  const idx = new Uint8Array(64);
+  // One 8×8 tile of `slot` at pixel (dx,dy); pixel 0 = transparent (backdrop shows).
+  const draw = (slot: 0 | 1 | 2, tile: number, palRow: number, hf: boolean, vf: boolean, dx: number, dy: number): void => {
+    if (tile >= 1024) return;
+    if (slot === 2) decode2bppTile(doc.chr2bpp, tile * 16, hf, vf, idx, 0);
+    else decode4bppTile(doc.chr4bpp, tile * 32, hf, vf, idx, 0);
+    const stride = slot === 2 ? 4 : 16;
+    for (let y = 0; y < 8; y++) {
+      const py = dy + y;
+      if (py < 0 || py >= H) continue;
+      for (let x = 0; x < 8; x++) {
+        const v = idx[y * 8 + x]!;
+        if (v === 0) continue;
+        const px = dx + x;
+        if (px >= 0 && px < W) u32[py * W + px] = pal[(palRow * stride + v) & 0x7f]!;
+      }
+    }
+  };
+
+  for (const slot of [2, 1, 0] as const) {
+    const map = doc.maps[slot];
+    for (let y = 0; y < doc.mapHeight; y++) {
+      for (let x = 0; x < doc.mapWidth; x++) {
+        const w = map[y * MAP_STRIDE + x]!;
+        if (w === 0) continue; // tile 0 / row 0 / no flip — the editor's empty cell
+        const t = w & 0x3ff;
+        const palRow = (w >> 10) & 0x07;
+        const hf = (w & 0x4000) !== 0;
+        const vf = (w & 0x8000) !== 0;
+        if (doc.tileSize === 8) {
+          draw(slot, t, palRow, hf, vf, x * 8, y * 8);
+        } else {
+          // 16×16: SNES 2×2 block base+{0,1,16,17}; flips reorder the quadrants and
+          // flip each sub-tile (the whole block mirrors, matching the PPU).
+          for (let q = 0; q < 4; q++) {
+            const qx = q & 1;
+            const qy = q >> 1;
+            const sub = t + (qy ? 16 : 0) + (qx ? 1 : 0);
+            const px = x * 16 + (hf ? 1 - qx : qx) * 8;
+            const py = y * 16 + (vf ? 1 - qy : qy) * 8;
+            draw(slot, sub, palRow, hf, vf, px, py);
+          }
+        }
+      }
+    }
+  }
+  return { rgba, width: W, height: H };
 }

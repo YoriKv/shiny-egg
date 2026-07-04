@@ -111,6 +111,7 @@ import {
 } from 'snes-framework/sprite-metasprite'
 import { glyphWritesForSprite } from 'snes-framework/sprite-glyph'
 import { encodeFontSheet } from 'snes-framework/msg-font'
+import { app } from 'electron'
 import { decodePng } from 'snes-framework/png'
 import { canvasRegion, decodeEditedToRgba, decodeGfxFile, liveTiles } from './gfx-import-utils'
 import { changedSinceExport, type GfxImportReconciler } from './gfx-import-reconcile'
@@ -126,8 +127,11 @@ import { resourcePaletteToBase, applyPaletteEdits } from './render/render-core'
 import { gfxLiveEdits } from './gfx-live-cache'
 import { saveGfxEdit, saveIslandTilemap, saveLogoTilemap, loadPaletteEdits, loadLogoTilemapEdits, loadIslandTilemapEdits, applyScreenPlacementOverlays, applyRawChrOverlays, readRawChrBase } from './resources'
 import { frameworkWorkRoot } from './framework-paths'
+import { buildRaphaelArenaContext, raphaelTileKeys, diffRaphaelArenaPlacement } from 'snes-framework/screen-raphael'
 import {
   MANIFEST,
+  isNewerAppVersion,
+  newerExportWarning,
   type GfxManifestChecksums,
   type GfxManifestEntry,
   type MetaspriteManifestEntry,
@@ -138,6 +142,7 @@ import {
   type MapGroundManifestEntry,
   type MapM1Manifest,
   type ScreenM1ManifestEntry,
+  type BossArenaManifestEntry,
   type TitleLogoManifestEntry,
   type TitleIslandManifestEntry,
   type TitleSceneryManifestEntry,
@@ -268,6 +273,11 @@ export interface ImportGfxResult {
   bonusImported: number
   bonusSkipped: number
   bonusMissing: number
+  /** Raphael-arena LAYOUT edits (the Bosses track) routed to the $BD byte-cell
+   *  Mode-7 tilemap (via saveGfxEdit). */
+  bossImported: number
+  bossSkipped: number
+  bossMissing: number
   /** Dynamic-sprite glyph edits routed to the raw glyph `.bin` (via saveRawChrEdit). */
   glyphImported: number
   glyphSkipped: number
@@ -290,6 +300,9 @@ export interface ImportGfxResult {
    *  across all screen `.aseprite` tracks — the color analog of the tile-layout imports. */
   paletteImported: number
   errors: string[]
+  /** Advisory notices (shown amber): the newer-shiny-egg export stamp, and PNG pixels
+   *  painted with a color outside the swatch (flattened to color 0). */
+  warnings: string[]
 }
 
 /**
@@ -315,12 +328,21 @@ function faithfulGfxRole(relFile: string): string | undefined {
   }
 }
 
-export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportReconciler): Promise<ImportGfxResult> {
+export async function importGfxPngsFromDir(
+  dir: string,
+  reconciler: GfxImportReconciler,
+  opts: {
+    /** Limit the import to these manifest-relative files — everything else gates as
+     *  'unchanged' (skipped). The M1TE-Maps tab's per-file import. */
+    only?: ReadonlySet<string>
+  } = {}
+): Promise<ImportGfxResult> {
   const manifestPath = join(dir, MANIFEST)
   if (!existsSync(manifestPath)) {
     throw new Error(`No ${MANIFEST} in the selected folder — pick a folder you exported to.`)
   }
-  const { checksums, entries, metasprites, glyphs, mapIcons, levelIcons, mapTerrain, mapGround, mapM1, screenM1, titleLogo, titleIsland, titleScenery, storybookScene, fonts, yychr } = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+  const { exportedBy, checksums, entries, metasprites, glyphs, mapIcons, levelIcons, mapTerrain, mapGround, bossArena, mapM1, screenM1, titleLogo, titleIsland, titleScenery, storybookScene, fonts, yychr } = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+    exportedBy?: string
     checksums?: GfxManifestChecksums
     entries: GfxManifestEntry[]
     metasprites?: { header: RenderHeaderRequest; sprites: MetaspriteManifestEntry[] }
@@ -329,6 +351,7 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
     levelIcons?: LevelIconManifestEntry[]
     mapTerrain?: MapTerrainManifestEntry[]
     mapGround?: MapGroundManifestEntry
+    bossArena?: BossArenaManifestEntry | null
     mapM1?: MapM1Manifest | null
     screenM1?: ScreenM1ManifestEntry[] | null
     titleLogo?: TitleLogoManifestEntry
@@ -362,11 +385,23 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
   let imported = 0, skipped = 0, missing = 0
   let paletteImported = 0
   const errors: string[] = []
+  const warnings: string[] = []
+  // Version stamp: warn when the folder was exported by a NEWER shiny-egg — sections this
+  // version doesn't know are silently ignored by the tolerant parse above, so say why.
+  if (isNewerAppVersion(exportedBy, app.getVersion())) {
+    warnings.push(newerExportWarning('This export folder', exportedBy!, app.getVersion()))
+  }
+  /** Off-palette paint advisory (imageToGfx stats): the paint reached the ROM as color 0. */
+  const offPaletteWarning = (file: string, n: number): string =>
+    `${file}: ${n} pixel${n === 1 ? '' : 's'} used a color not in the palette swatch — flattened to color 0 (anti-aliasing or off-palette paint?).`
   // The CHECKSUM GATE (gfx-import-reconcile.ts): an artifact whose bytes still match its
   // export-time sha256 is skipped — the user didn't touch it, so it contributes nothing and
   // can't revert a newer edit (the anti-thrash fix). A pre-checksum export (no `checksums`)
   // imports unconditionally, as before.
-  const gate = (relFile: string): 'missing' | 'unchanged' | 'changed' => changedSinceExport(dir, relFile, checksums?.[relFile])
+  const gate = (relFile: string): 'missing' | 'unchanged' | 'changed' => {
+    if (opts.only && !opts.only.has(relFile)) return 'unchanged' // outside the requested set
+    return changedSinceExport(dir, relFile, checksums?.[relFile])
+  }
   // Fold a placement DELTA (cells changed vs base ⊕ overlay) into the existing FULL-SET overlay
   // → the new full set for saveLogoTilemap/saveIslandTilemap (which write base ⊕ set). Screen
   // placement is single-owner (only the logo/island track writes its tilemap), so it stays a
@@ -463,7 +498,11 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
           for (const ed of edits) editedRegion.set(ed.bytes, ed.tileIndex * tileBytes)
         } else {
           const img = decodePng(readFileSync(p))
-          editedRegion = imageToGfx(img, { tilesWide: w, tilesTall: h, bpp: e.bpp }, { base: baseRegion, index0Transparent: e.index0Transparent })
+          const stats = { offPalette: 0 }
+          editedRegion = imageToGfx(img, { tilesWide: w, tilesTall: h, bpp: e.bpp }, { base: baseRegion, index0Transparent: e.index0Transparent, stats })
+          // Warn BEFORE the unchanged gate: off-palette paint over an index-0 pixel flattens
+          // back to 0 (byte-identical → skipped), which is exactly the silently-dropped case.
+          if (stats.offPalette > 0) warnings.push(offPaletteWarning(e.file, stats.offPalette))
           if (eq(editedRegion, baseRegion)) { skipped++; continue } // unchanged → no overlay
         }
         const full = base.slice()
@@ -497,7 +536,10 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
         ? (t: number): readonly number[] =>
             e.perTilePalette!.subPalettes[e.perTilePalette!.tileSub[t] ?? 0] ?? e.perTilePalette!.subPalettes[0]!
         : undefined
-      const tiles = imageToGfx(img, layout, { base, index0Transparent: e.index0Transparent, tilePalette }).subarray(0, e.sizeBytes)
+      const stats = { offPalette: 0 }
+      const tiles = imageToGfx(img, layout, { base, index0Transparent: e.index0Transparent, tilePalette, stats }).subarray(0, e.sizeBytes)
+      // Warn BEFORE the no-op gate (see the region path above — dropped paint is the point).
+      if (stats.offPalette > 0) warnings.push(offPaletteWarning(e.file, stats.offPalette))
       if (eq(tiles, base)) { skipped++; continue } // checksum changed but pixels identical → no-op
       recordSheet(tiles)
     } catch (err) {
@@ -682,6 +724,39 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
         }
       } catch (err) {
         errors.push(`${mapGround.file}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
+  // Raphael arena layout (the Bosses track) — the mapGround import's twin: a layout
+  // `.aseprite` → the $BD byte-cell Mode-7 tilemap (single-owner → direct save); an edited
+  // embedded palette → the master blob. The context takes the live gfx cache so a re-import
+  // diffs against base ⊕ unbuilt edits (idempotent round-trip). The PNG is a view — skipped.
+  let bossImported = 0, bossSkipped = 0, bossMissing = 0
+  if (bossArena) {
+    const gv = gate(bossArena.file)
+    if (gv === 'missing') { bossMissing++ }
+    else if (gv === 'unchanged') { bossSkipped++ }
+    else if (!bossArena.file.endsWith('.aseprite')) { bossSkipped++ }
+    else {
+      try {
+        const ctx = buildRaphaelArenaContext(rom, symbols, gfxLiveEdits())
+        const keys = bossArena.tileKeys ?? raphaelTileKeys(ctx) // from manifest; derive only for old exports
+        const struct = decodeAsepriteStructural(readFileSync(join(dir, bossArena.file)))
+        const { tilemap, erased } = diffRaphaelArenaPlacement(ctx, keys, struct)
+        if (erased > 0) errors.push(erasedCellsWarning(bossArena.file, erased))
+        if (!tilemap) { bossSkipped++ } // single-owner $BD tilemap → direct save
+        else {
+          const r = saveGfxEdit('lz2', bossArena.fileId, tilemap, undefined, { kind: 'tilemap', unitBytes: 1, role: 'Raphael arena (Mode-7)' })
+          if (r.ok) bossImported++
+          else errors.push(`${bossArena.file}: ${r.error}`)
+        }
+        // COLORS: an edited embedded palette → the master blob (independent of placement).
+        if (bossArena.paletteOffsets) {
+          for (const ed of diffAsepritePalette(struct.palette, bossArena.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, bossArena.file); paletteImported++ }
+        }
+      } catch (err) {
+        errors.push(`${bossArena.file}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
   }
@@ -1174,10 +1249,12 @@ export async function importGfxPngsFromDir(dir: string, reconciler: GfxImportRec
     sceneryImported, scenerySkipped, sceneryMissing,
     sceneImported, sceneSkipped, sceneMissing,
     bonusImported, bonusSkipped, bonusMissing,
+    bossImported, bossSkipped, bossMissing,
     glyphImported, glyphSkipped, glyphMissing, glyphShared,
     fontImported, fontSkipped, fontMissing,
     yychrImported, yychrSkipped, yychrMissing, yychrPadEdited,
     paletteImported,
-    errors
+    errors,
+    warnings
   }
 }

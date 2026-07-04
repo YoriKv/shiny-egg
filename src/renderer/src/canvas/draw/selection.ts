@@ -18,6 +18,29 @@ export function selectionAccent(alpha: number): string {
 /** Accent at 0.85 — the shared hover-outline stroke (objects / sprites / spawn). */
 export const HOVER_ACCENT = selectionAccent(0.85)
 
+/**
+ * Stroke the CURRENT path as an alternating black/white dashed line — the
+ * "basic" (render-mode) entity outline. Two phase-shifted passes over the same
+ * (already-built) path: black dashes, then white in their gaps, so the outline
+ * reads over any tile without depending on a theme color. Constant screen size
+ * via `zoom`. Self-contained (save/restore) — build the path (beginPath + rect /
+ * segments), then call this; it leaves no dash/style state behind.
+ */
+export function strokeBasicOutline(ctx: CanvasRenderingContext2D, zoom: number): void {
+  const dash = 3 / zoom
+  ctx.save()
+  ctx.lineWidth = 1 / zoom
+  ctx.lineCap = 'butt'
+  ctx.setLineDash([dash, dash])
+  ctx.lineDashOffset = 0
+  ctx.strokeStyle = '#000000'
+  ctx.stroke()
+  ctx.lineDashOffset = dash // fill the black gaps with white → alternating
+  ctx.strokeStyle = '#ffffff'
+  ctx.stroke()
+  ctx.restore()
+}
+
 /** Draw the selected-entity box: a thick chartreuse rectangle with small
  *  marching-ant corner ticks, at constant screen width (strokes scale by
  *  1/zoom). `box` is in world pixels; self-contained (save/restore) so it

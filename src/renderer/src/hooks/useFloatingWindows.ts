@@ -64,8 +64,8 @@ const INITIAL_WINDOWS: WindowDef[] = [
     width: 600,
     height: 580,
     z: 1,
-    // Closed by default; reopen from the toolbar. Properties is the only
-    // panel shown on a fresh launch.
+    // Closed by default; reopen from the toolbar. Properties + Place (picker) are
+    // the panels shown on a fresh launch.
     open: false,
     anchor: 'top-center',
     kind: 'tiles'
@@ -144,7 +144,9 @@ const INITIAL_WINDOWS: WindowDef[] = [
     width: 300,
     height: 580,
     z: 4,
-    open: false,
+    // Open on a fresh layout (alongside Properties); a persisted layout's saved
+    // open state still wins, so this only governs a first-time / reset launch.
+    open: true,
     anchor: 'top-left',
     anchorOffsetY: MINIMAP_EXPANDED_HEIGHT + 12,
     kind: 'picker'

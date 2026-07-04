@@ -241,7 +241,7 @@ Two boot-specific quirks:
 - **Custom color ramp.** A per-frame routine (`CODE_1088FB`) ramps live-mirror
   colors **1, 3, 6, 7** toward white (INC with wrap at `$8000`) to fade the logo
   — a bespoke effect on specific colors, not the standard fade engine.
-- **Own CGRAM clear.** `gm01_ninpresents_load` (`$10:891E`) does its **own**
+- **Own CGRAM clear.** `gm01_boot_controller_check` (`$10:891E`) does its **own**
   force-blank `STZ` sweep of the `$70:2000` mirror (one-frame controller check)
   rather than relying on the normal flush.
 
