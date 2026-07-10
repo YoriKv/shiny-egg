@@ -6364,6 +6364,7 @@ CODE_01B243:
 
 ;---------------------------------------------------------------------------
 
+;@editable:music-init-songs begin
 DATA_01B24B:
 	; SMWC tweak $01B259: byte at offset $0E (15th entry) -- change to [02] (and
 	; pair with $00853D->[04]) to make music header E play "Welcome to Yoshi's
@@ -6371,6 +6372,7 @@ DATA_01B24B:
 	db $01,$01,$01,$01,$01,$09,$01,$01
 	db $09,$0C,$01,$02,$00,$01,$00,$00
 	db $00,$02,$01
+;@editable:music-init-songs end
 
 CODE_01B25E:
 	PHP

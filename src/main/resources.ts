@@ -101,12 +101,25 @@ import {
   serializeYoshiColors,
   YOSHI_COLORS_FILE
 } from 'snes-framework/yoshi-colors'
+import {
+  MUSIC_SETS_BANK00_FILE,
+  MUSIC_SETS_BANK01_FILE,
+  parseMusicSets,
+  serializeMusicSets
+} from 'snes-framework/music-sets'
+import {
+  parseWorldMapPaths,
+  serializeWorldMapPaths,
+  WORLD_MAP_PATHS_FILE
+} from 'snes-framework/world-map-paths'
 import type {
   EditableResource,
   MessagePtrTableModel,
+  MusicSetsModel,
   SaveResourceResult,
   StringTableModel,
   WorldMapModel,
+  WorldMapPathsModel,
   YoshiColorsModel
 } from 'snes-framework/types'
 import { buildOutputDir, frameworkWorkRoot, overlayRoot, writeFileAtomicSync } from './framework-paths'
@@ -117,6 +130,7 @@ import {
   getProjectNewSlots,
   getProjectRelocations,
   getProjectRemovedLevels,
+  requireWritableProject,
   setLevelNewSlot,
   setLevelRelocation
 } from './projects'
@@ -1392,13 +1406,57 @@ export async function loadResource(resource: EditableResource): Promise<unknown>
       return loadAsmRegionResource(resource.id)
     case 'world-map':
       return loadWorldMapResource()
+    case 'world-map-paths':
+      return loadWorldMapPathsResource()
     case 'yoshi-colors':
       return loadYoshiColorsResource()
+    case 'music-sets':
+      return loadMusicSetsResource()
     default: {
       const _never: never = resource
       throw new Error(`Unknown resource: ${JSON.stringify(_never)}`)
     }
   }
+}
+
+// ── Music set tables ────────────────────────────────────────────────────────
+// The four byte tables the level header's music value resolves through
+// (Bank00: setting→row, the 13 block rows, item denial; Bank01: init songs).
+// Edited from the Audio panel's Sets tab; an asm edit → overlay copies of
+// both bank files (renderer marks the build dirty). See scripts/music-sets.ts
+// + research/plan-audio-panel.md §1.10.
+
+/** Load the music set tables (overlay-first, both banks). */
+export function loadMusicSetsResource(): MusicSetsModel {
+  const b00 = readOverlayFirst(MUSIC_SETS_BANK00_FILE)
+  const b01 = readOverlayFirst(MUSIC_SETS_BANK01_FILE)
+  return parseMusicSets(b00.contentText, b01.contentText)
+}
+
+/** Splice the edited set tables into the active project's overlay copies of
+ *  Bank00.asm + Bank01.asm (atomic per file; only changed bytes rewrite, so
+ *  sibling edits in the same files survive). */
+export async function saveMusicSetsResource(model: unknown): Promise<SaveResourceResult> {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+
+  const b00 = readOverlayFirst(MUSIC_SETS_BANK00_FILE)
+  const b01 = readOverlayFirst(MUSIC_SETS_BANK01_FILE)
+  const result = serializeMusicSets(b00.contentText, b01.contentText, model as MusicSetsModel)
+  if (!result.ok) return { ok: false, error: result.error }
+
+  const files: string[] = []
+  if (result.bank00Text !== b00.contentText) {
+    await saveOverlayFile(projectId, MUSIC_SETS_BANK00_FILE, result.bank00Text)
+    files.push(MUSIC_SETS_BANK00_FILE)
+  }
+  if (result.bank01Text !== b01.contentText) {
+    await saveOverlayFile(projectId, MUSIC_SETS_BANK01_FILE, result.bank01Text)
+    files.push(MUSIC_SETS_BANK01_FILE)
+  }
+  return { ok: true, files }
 }
 
 // ── World-map entrance table ───────────────────────────────────────────────
@@ -1480,6 +1538,38 @@ export function levelRecordOverrides(): Map<number, number> {
   } catch {
     return new Map()
   }
+}
+
+// ── World-map Yoshi path tables ──────────────────────────────────────────────
+// The per-world Yoshi dot positions + per-level walk checkpoints are `dw` data
+// in two `;@editable` regions of Bank17.asm (see scripts/world-map-paths.ts).
+// An edit is an asm edit → overlay copy of Bank17.asm (build-tree path, build
+// dirty on save via the renderer's onSaved) — same shape as the world-map
+// entrance editor above. Fixed length, so no byte budget. Enrolled in
+// DATA_OVERLAY_EDITORS so pre-marker overlays migrate instead of false-drifting.
+
+/** Load the Yoshi path tables (overlay-first) into their structured model. */
+export function loadWorldMapPathsResource(): WorldMapPathsModel {
+  const { contentText } = readOverlayFirst(WORLD_MAP_PATHS_FILE)
+  return parseWorldMapPaths(contentText)
+}
+
+/** Splice the edited path coordinates into the active project's overlay copy of
+ *  Bank17.asm and write it back (atomic). Splices onto the OVERLAY-first content
+ *  so a sibling edit in the same file survives; only changed words are rewritten.
+ *  Renderer marks the build dirty on success (asm edits don't render live). */
+export async function saveWorldMapPathsResource(model: unknown): Promise<SaveResourceResult> {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+
+  const { contentText } = readOverlayFirst(WORLD_MAP_PATHS_FILE)
+  const result = serializeWorldMapPaths(contentText, model as WorldMapPathsModel)
+  if (!result.ok) return { ok: false, error: result.error }
+
+  await saveOverlayFile(projectId, WORLD_MAP_PATHS_FILE, result.text)
+  return { ok: true, files: [WORLD_MAP_PATHS_FILE] }
 }
 
 // ── Per-level Yoshi-color table ────────────────────────────────────────────
@@ -1602,8 +1692,12 @@ export async function saveResource(
       return saveAsmRegionResource(resource.id, model)
     case 'world-map':
       return saveWorldMapResource(model)
+    case 'world-map-paths':
+      return saveWorldMapPathsResource(model)
     case 'yoshi-colors':
       return saveYoshiColorsResource(model)
+    case 'music-sets':
+      return saveMusicSetsResource(model)
     default: {
       const _never: never = resource
       return { ok: false, error: `Unknown resource: ${JSON.stringify(_never)}` }
@@ -1883,13 +1977,3 @@ async function saveOverlayFile(projectId: string, file: string, text: string): P
   await writeAtomic(dest, text)
 }
 
-/** Resolve the active project for an overlay save, or a friendly error result —
- *  the projectId + base-compatibility guard every overlay save shares (returns
- *  the same messages they returned inline). */
-function requireWritableProject(): { ok: true; projectId: string } | { ok: false; error: string } {
-  const projectId = getCurrentProjectId()
-  if (!projectId) return { ok: false, error: 'No active project to save into.' }
-  const compat = ensureProjectBaseCompatible(projectId)
-  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
-  return { ok: true, projectId }
-}

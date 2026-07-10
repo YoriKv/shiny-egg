@@ -1,6 +1,16 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ShinyEggAPI } from './api'
 import type {
+  AudioAramUsageResult,
+  AudioCatalogResult,
+  AudioComposeSpcResult,
+  AudioDecodeSongResult,
+  AudioExportRunResult,
+  AudioExportStateResult,
+  AudioImportResult,
+  AudioSongImportPreviewResult,
+  AudioSongImportRunResult,
+  AudioSongImportStateResult,
   Bg1LayerResponse,
   BgLayersResult,
   BizhawkWarp,
@@ -196,6 +206,10 @@ const api = {
      *  the built ROM/symbols are unavailable. */
     paletteCatalog: (): Promise<PaletteCatalog | null> =>
       ipcRenderer.invoke('render:paletteCatalog'),
+    /** Composited 512×256 overworld terrain for one world (0-based) — the World
+     *  Map panel's Yoshi-path preview. Null when the built ROM is unavailable. */
+    worldMapTerrain: (world: number): Promise<RenderImage | null> =>
+      ipcRenderer.invoke('render:worldMapTerrain', world),
     /** Run the object decoder on a level and return the stamped Map16
      *  buffer plus per-screen page mapping. Null for empty / special-case
      *  records (e.g. 0x38, the engine-driven intro-cutscene level). Pass
@@ -318,6 +332,8 @@ const api = {
     },
     export: (id: string): Promise<ProjectExportResult> =>
       ipcRenderer.invoke('project:export', id),
+    exportPatch: (id: string): Promise<ProjectExportResult> =>
+      ipcRenderer.invoke('project:exportPatch', id),
     openFolder: (id: string): Promise<void> =>
       ipcRenderer.invoke('project:openFolder', id),
     delete: (id: string): Promise<ProjectDeleteResult> =>
@@ -563,6 +579,56 @@ const api = {
     signals: (level: LevelData): Promise<LevelDecodeSignals> =>
       ipcRenderer.invoke('validation:signals', level),
     allLevels: (): Promise<LevelValidationInput[]> => ipcRenderer.invoke('validation:allLevels')
+  },
+
+  // Audio panel: browse/audition the built ROM's music + SFX (synthesized
+  // .spc playback), timeline decoding, and the per-project export folder
+  // (export-all + sample/song import).
+  audio: {
+    catalog: (): Promise<AudioCatalogResult> => ipcRenderer.invoke('audio:catalog'),
+    aramUsage: (): Promise<AudioAramUsageResult> => ipcRenderer.invoke('audio:aramUsage'),
+    composeSongSpc: (setting: number, songSlotId: number): Promise<AudioComposeSpcResult> =>
+      ipcRenderer.invoke('audio:composeSongSpc', setting, songSlotId),
+    composeSfxSpc: (id: number): Promise<AudioComposeSpcResult> =>
+      ipcRenderer.invoke('audio:composeSfxSpc', id),
+    composeRowSpc: (blockIds: number[], songSlotId: number): Promise<AudioComposeSpcResult> =>
+      ipcRenderer.invoke('audio:composeRowSpc', blockIds, songSlotId),
+    decodeSong: (setting: number, songSlotId: number): Promise<AudioDecodeSongResult> =>
+      ipcRenderer.invoke('audio:decodeSong', setting, songSlotId),
+    decodeSfx: (id: number): Promise<AudioDecodeSongResult> =>
+      ipcRenderer.invoke('audio:decodeSfx', id),
+    exportState: (): Promise<AudioExportStateResult> => ipcRenderer.invoke('audio:exportState'),
+    exportAll: (): Promise<AudioExportRunResult> => ipcRenderer.invoke('audio:exportAll'),
+    importSamples: (): Promise<AudioImportResult> => ipcRenderer.invoke('audio:importSamples'),
+    readExportedSpc: (rel: string): Promise<AudioComposeSpcResult> =>
+      ipcRenderer.invoke('audio:readExportedSpc', rel),
+    openExportFolder: (): Promise<void> => ipcRenderer.invoke('audio:openExportFolder'),
+    songImportState: (downsampleToFit?: boolean, dropStaccatoToFit?: boolean, useSmwSamples?: boolean, noEcho?: boolean): Promise<AudioSongImportStateResult> =>
+      ipcRenderer.invoke('audio:songImportState', downsampleToFit, dropStaccatoToFit, useSmwSamples, noEcho),
+    previewSongImport: (
+      rel: string,
+      sourceSlot: number,
+      targetBlockId: number,
+      downsampleToFit?: boolean,
+      dropStaccatoToFit?: boolean,
+      useSmwSamples?: boolean,
+      noEcho?: boolean,
+      targetSlotId?: number | null
+    ): Promise<AudioSongImportPreviewResult> =>
+      ipcRenderer.invoke('audio:previewSongImport', rel, sourceSlot, targetBlockId, downsampleToFit, dropStaccatoToFit, useSmwSamples, noEcho, targetSlotId),
+    importSong: (
+      rel: string,
+      sourceSlot: number,
+      targetBlockId: number,
+      downsampleToFit?: boolean,
+      dropStaccatoToFit?: boolean,
+      useSmwSamples?: boolean,
+      noEcho?: boolean,
+      targetSlotId?: number | null
+    ): Promise<AudioSongImportRunResult> =>
+      ipcRenderer.invoke('audio:importSong', rel, sourceSlot, targetBlockId, downsampleToFit, dropStaccatoToFit, useSmwSamples, noEcho, targetSlotId),
+    revertSongImport: (targetBlockId: number): Promise<AudioSongImportRunResult> =>
+      ipcRenderer.invoke('audio:revertSongImport', targetBlockId)
   }
 } satisfies ShinyEggAPI
 

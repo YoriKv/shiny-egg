@@ -1,7 +1,7 @@
 // IPC for the custom-patch system. The renderer's Patches panel lists the
 // active project's local patches (toggle on/off) + the prepackaged catalog (add
-// into the project), imports external `.ips` files, and opens the project's
-// patches folder. Patches are applied post-build by buildProject (see
+// into the project), imports external `.ips` / `.bps` files, and opens the
+// project's patches folder. Patches are applied post-build by buildProject (see
 // src/main/patches.ts).
 
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
@@ -11,6 +11,7 @@ import {
   ensureProjectPatchesDir,
   getPatchPoolSettings,
   importAsm,
+  importBps,
   importIps,
   listPrepackagedPatches,
   listProjectPatches,
@@ -42,23 +43,28 @@ export function registerPatchesIpc(): void {
     addPrepackagedToProject(builtinId)
   )
 
-  // Pick one or more `.ips` / `.asm` files and import them into the active
-  // project, dispatching by extension: `.ips` → binary chunks; `.asm` → an
-  // asar-style hack converted to the build-compatible form (see importAsm).
+  // Pick one or more `.ips` / `.bps` / `.asm` files and import them into the
+  // active project, dispatching by extension: `.ips` → binary chunks; `.bps` →
+  // applied to the reference cart and diffed into chunks (see importBps);
+  // `.asm` → an asar-style hack converted to the build-compatible form (see
+  // importAsm).
   ipcMain.handle('patches:import', async (): Promise<PatchImportResult[]> => {
     const win = BrowserWindow.getFocusedWindow()
     const opts: Electron.OpenDialogOptions = {
-      title: 'Import patch (.ips / .asm)',
+      title: 'Import patch (.ips / .bps / .asm)',
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'Patch (.ips / .asm)', extensions: ['ips', 'asm'] },
+        { name: 'Patch (.ips / .bps / .asm)', extensions: ['ips', 'bps', 'asm'] },
         { name: 'IPS patch', extensions: ['ips'] },
+        { name: 'BPS patch', extensions: ['bps'] },
         { name: 'asar patch', extensions: ['asm'] }
       ]
     }
     const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
     if (picked.canceled || picked.filePaths.length === 0) return []
-    return picked.filePaths.map((p) => (/\.asm$/i.test(p) ? importAsm(p) : importIps(p)))
+    return picked.filePaths.map((p) =>
+      /\.asm$/i.test(p) ? importAsm(p) : /\.bps$/i.test(p) ? importBps(p) : importIps(p)
+    )
   })
 
   // Create a new self-documenting template patch (disabled) for the user to edit.

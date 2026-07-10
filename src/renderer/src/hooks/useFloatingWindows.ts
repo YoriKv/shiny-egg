@@ -40,6 +40,7 @@ export interface WindowDef {
     | 'paint'
     | 'exits'
     | 'validation'
+    | 'audio'
 }
 
 // Start positions are driven by each window's `anchor` (resolved against the
@@ -224,6 +225,19 @@ const INITIAL_WINDOWS: WindowDef[] = [
     open: false,
     anchor: 'top-center',
     kind: 'graphics'
+  },
+  {
+    id: 'audio',
+    title: 'Audio',
+    // Music/SFX browser + audition — closed by default; reopen from the
+    // toolbar. Fixed height so the song/SFX lists scroll inside the body.
+    pos: { x: 800, y: 160 },
+    width: 600,
+    height: 560,
+    z: 8,
+    open: false,
+    anchor: 'top-center',
+    kind: 'audio'
   },
   // Paint Surface window — hidden from the UI for now (kept for later). Body is
   // panels/PaintPanel.tsx, rendered by App.tsx's w.kind === 'paint' branch. The

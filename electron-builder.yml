@@ -43,6 +43,14 @@ extraResources:
     to: snes-framework/m1te-licenses
     filter:
       - '**/*'
+  # snes_spc (Blargg's SPC700/DSP emulator core, LGPL-2.1) — our wasm build
+  # rides base64-embedded inside the renderer bundle (vendor/snes-spc), so its
+  # license text + provenance/rebuild notes ship as loose resources on every
+  # platform (the asar-licenses model).
+  - from: src/renderer/src/vendor/snes-spc/LICENSE
+    to: snes-spc-licenses/LICENSE
+  - from: src/renderer/src/vendor/snes-spc/README-provenance.txt
+    to: snes-spc-licenses/README-provenance.txt
   - from: snes-framework/global
     to: snes-framework/global
     filter:

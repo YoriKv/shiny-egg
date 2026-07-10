@@ -17,7 +17,7 @@ import {DiscardChangesModal} from '../DiscardChangesModal'
  *
  * The parent remounts this per project (`key={projectScope}`), so state never
  * leaks across a project switch. (Per-LEVEL BG-layer `.M1`s stay on the
- * Extract/Import tab — they need a loaded level.)
+ * Export/Import tab — they need a loaded level.)
  */
 
 /** Category keys in display order, with friendly headings. */

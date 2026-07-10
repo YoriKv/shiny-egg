@@ -27,6 +27,7 @@
   --accent-glow:    rgba(212, 225, 87, 0.15);
 
   --danger:         #e25a45;
+  --warn:           #c9a555;
 
   --shadow-window:  0 12px 28px -12px rgba(0, 0, 0, 0.65);
   --shadow-pop:     0 24px 48px -16px rgba(0, 0, 0, 0.7);
@@ -3076,6 +3077,130 @@ h3 { margin: 0; }
   border-top: 1px solid var(--line-faint);
 }
 
+/* World Map panel — Yoshi path section (map preview + draggable markers).
+   The stage scales to the panel width (2:1 aspect, the map's native 512×256);
+   marker hit-testing survives because svgPoint() converts pointer coords
+   through the rendered rect back into map space. */
+.se-wmpath {
+  flex: 0 0 auto;
+  border: 1px solid var(--line-faint);
+  border-radius: 4px;
+  outline: none;
+}
+
+.se-wmpath__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+}
+
+.se-wmpath__map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  background: #101418;
+}
+
+.se-wmpath__nomap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+
+.se-wmpath__overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Every line drawn twice — a black underlay reads as the line's outline. */
+.se-wmpath__line-under {
+  fill: none;
+  stroke: #000000;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.se-wmpath__line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.se-wmpath__line.is-hop {
+  stroke-dasharray: 4 3;
+  stroke: rgba(255, 255, 255, 0.6);
+}
+
+/* Dash the hop's underlay too — an opaque solid band beneath would read as a
+   solid black line and erase the walked-vs-hop distinction. */
+.se-wmpath__line-under.is-hop {
+  stroke-dasharray: 4 3;
+}
+
+.se-wmpath__dot {
+  cursor: grab;
+}
+
+.se-wmpath__dot circle {
+  fill: #2f8f4f;
+  stroke: #000000;
+  stroke-width: 1.5;
+}
+
+.se-wmpath__dot.is-sel circle {
+  fill: #45c06a;
+  stroke: #000000;
+  stroke-width: 2;
+}
+
+.se-wmpath__dot text {
+  fill: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.se-wmpath__ckpt {
+  cursor: grab;
+  fill: #ffb64a;
+  stroke: #000000;
+  stroke-width: 1;
+}
+
+.se-wmpath__ckpt.is-sel {
+  fill: #ffd54a;
+  stroke: #000000;
+  stroke-width: 1.5;
+}
+
+.se-wmpath__info {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 11px;
+}
+
+.se-wmpath__sel {
+  font-weight: 600;
+}
+
 /* Properties body */
 .se-props__empty {
   margin: 0;
@@ -4948,6 +5073,7 @@ h3 { margin: 0; }
     --accent-glow:    rgba(111, 124, 30, 0.15);
 
     --danger:         #b04535;
+    --warn:           #8f6f1c;
 
     --shadow-window:  0 8px 20px -8px rgba(0, 0, 0, 0.18);
     --shadow-pop:     0 16px 36px -12px rgba(0, 0, 0, 0.25);
@@ -5885,3 +6011,607 @@ h3 { margin: 0; }
   text-align: left;
 }
 .se-validation__level-name--jump:hover { color: var(--accent); }
+
+/* ── Audio panel ─────────────────────────────────────────────────────────── */
+.se-audio {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.se-audio--empty {
+  color: var(--ink-3);
+  font-style: italic;
+  gap: 8px;
+  align-items: flex-start;
+}
+.se-audio__transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.se-audio__tabs {
+  display: flex;
+  gap: 2px;
+}
+.se-audio__tab {
+  height: 22px;
+  padding: 0 10px;
+}
+.se-audio__tab--active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.se-audio__volume {
+  width: 90px;
+}
+.se-audio__now {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-3);
+  text-align: right;
+}
+.se-audio__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.se-audio__group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 1px 2px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.se-audio__group:first-child .se-audio__group-title {
+  margin-top: 2px;
+}
+.se-audio__group-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.se-audio__group-meta {
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.se-audio__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 2px;
+}
+.se-audio__slot {
+  width: 38px;
+  color: var(--ink-3);
+}
+.se-audio__song-note {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.se-audio__sfx-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.se-audio__row-actions {
+  display: flex;
+  gap: 4px;
+}
+.se-audio__btn {
+  height: 22px;
+}
+.se-audio__filter {
+  width: 100%;
+  margin: 2px 0 6px;
+  height: 22px;
+}
+.se-audio__empty-note {
+  color: var(--ink-3);
+  font-style: italic;
+  padding: 6px 2px;
+}
+.se-audio__status {
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--warn);
+  /* Import/budget failures put the remedy IN the message ("Enable
+   * Downsample samples to fit", byte counts, …) — wrap, never clip. */
+  overflow-wrap: break-word;
+}
+.se-audio__song-name {
+  min-width: 0;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Songs tab: per-set size/ARAM detail line + used-by-levels chips. */
+.se-audio__group-detail {
+  font-size: 10px;
+  color: var(--ink-3);
+  padding: 1px 2px 2px;
+}
+/* Songs tab: per-set ARAM usage diagram (AramUsageDiagram.tsx) — one
+   proportional bar over 0x4000-0xFF8D plus four budget gauges. */
+.se-aram {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 1px 2px 6px;
+  max-width: 600px;
+  /* Segment hues — mid-saturation so they read on both themes. */
+  --aram-samples: #5b9bd5;
+  --aram-seq: var(--accent-soft);
+  --aram-import: #b07fd8;
+  --aram-leftover: var(--line-strong);
+}
+.se-aram__bar {
+  position: relative;
+  height: 12px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.se-aram__seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.se-aram__seg--samples { background: var(--aram-samples); }
+.se-aram__seg--seq { background: var(--aram-seq); }
+.se-aram__seg--import { background: var(--aram-import); }
+.se-aram__seg--leftover {
+  background: repeating-linear-gradient(45deg, var(--aram-leftover) 0 3px, transparent 3px 6px);
+}
+/* Map-resident reservation (Score/invincibility) — occupied-looking amber
+   hatch: not the set's own data, but never claimable either. */
+.se-aram__seg--reserved {
+  background: repeating-linear-gradient(45deg, var(--warn) 0 3px, transparent 3px 6px);
+}
+.se-aram__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ink-4);
+}
+.se-aram__gauges {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px 14px;
+}
+.se-aram__gauge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-aram__gauge-label { flex: 0 0 82px; }
+.se-aram__gauge-track {
+  flex: 1;
+  min-width: 24px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-faint);
+  overflow: hidden;
+}
+.se-aram__gauge-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-soft);
+}
+.se-aram__gauge-fill.is-full { background: var(--warn); }
+.se-aram__gauge-num {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+.se-audio__levels-toggle {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.se-audio__levels-toggle:hover {
+  color: var(--accent);
+}
+.se-audio__levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 2px 4px;
+}
+.se-audio__level-chip {
+  font-size: 10px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.se-audio__level-chip:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* Sequencer popup (AudioBody SequencerPopup): a wide modal piano-roll — the
+   SequenceView inside scrolls horizontally itself. */
+.se-modal--sequencer {
+  width: min(1100px, calc(100vw - 48px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+.se-seqpop__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.se-seqpop__head .se-modal__title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.se-seqpop__close {
+  flex: 0 0 auto;
+}
+
+/* Sets tab: per-setting + per-row editors (MusicSetsTab.tsx). */
+.se-sets__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px;
+  font-size: 12px;
+}
+.se-sets__rowlabel {
+  width: auto;
+  flex: 0 0 52px;
+  white-space: nowrap;
+}
+.se-sets__name {
+  flex: 0 0 150px;
+  min-width: 0;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.se-sets__pick {
+  height: 20px;
+  min-width: 0;
+  flex: 1 1 120px;
+  max-width: 220px;
+}
+.se-sets__pick--items {
+  flex: 0 0 96px;
+}
+.se-sets__pick.is-warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.se-sets__na {
+  flex: 0 0 96px;
+  color: var(--ink-4);
+  text-align: center;
+}
+.se-sets__used {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.se-sets__advisory {
+  flex: 0 0 auto;
+  color: var(--warn);
+  cursor: help;
+}
+/* The song-sets section's "advanced — don't edit" banner. */
+.se-sets__danger {
+  color: var(--warn);
+}
+/* SFX tab: the one-shot's priority voice. */
+.se-audio__sfx-voice {
+  flex: 0 0 22px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+/* Collapsible export-section header (YY-CHR-tab pattern): caret + folder name
+   + count meta (+ status badges while collapsed, so pending sample edits
+   aren't hidden by the collapse). Mirrors .se-audio__group-title's look. */
+.se-audio__cat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 1px 2px 2px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.se-audio__cat:hover .se-audio__group-name {
+  color: var(--accent);
+}
+.se-audio__cat-caret {
+  flex: 0 0 10px;
+  align-self: center;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ink-2);
+}
+/* import/ section: one block per dropped file — header row (name, badge,
+   size, target-module picker) over indented candidate-song rows. */
+.se-audio__import-file {
+  padding: 2px 0;
+  border-bottom: 1px dotted var(--line);
+}
+.se-audio__import-file:last-child {
+  border-bottom: none;
+}
+.se-audio__import-target {
+  max-width: 190px;
+  height: 20px;
+}
+.se-audio__import-candidate {
+  padding-left: 16px;
+}
+/* Import candidates: the target's available ARAM space + per-song size
+   chips mapped onto the same budget sections the Songs-tab diagram draws. */
+.se-audio__import-budget {
+  font-size: 10px;
+  color: var(--ink-3);
+  padding: 0 2px 2px 16px;
+}
+.se-audio__sizes {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.se-audio__size-chip {
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink-3);
+}
+.se-audio__size-chip.is-over {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.se-audio__import-hidden {
+  font-size: 10px;
+  color: var(--ink-3);
+  padding: 0 2px 4px 16px;
+}
+/* MML import: the compiler's port report — every approximation/drop, always
+   fully visible (wraps; no ellipsis). */
+.se-audio__import-report {
+  font-size: 10px;
+  color: var(--ink-3);
+  padding: 0 2px 4px 16px;
+}
+.se-audio__import-report-title {
+  color: var(--ink-2);
+}
+.se-audio__import-report-list {
+  margin: 2px 0 0;
+  padding-left: 14px;
+}
+.se-audio__import-report-list li {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin: 1px 0;
+}
+.se-audio__export-actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* Import-settings dropdown (top right of the export-actions row) — the
+   camera-preview popup pattern. */
+.se-audio__settings {
+  position: relative;
+  display: flex;
+  margin-left: auto;
+}
+.se-audio__settings-btn {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.se-audio__settings-btn:hover,
+.se-audio__settings-btn.is-open {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.se-audio__settings-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+}
+.se-audio__settings-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.se-audio__settings-check input {
+  margin: 0;
+  cursor: pointer;
+}
+.se-audio__export-dir {
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+/* Imported-songs section (the graphics panel's "Changed graphics" pattern):
+   its own titled block above the folder browser. */
+.se-audio__changes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.se-audio__changes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.se-audio__changes-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.se-audio__changes-budget,
+.se-audio__changes-empty {
+  margin: 0;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.se-audio__badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+}
+.se-audio__badge--changed {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.se-audio__badge--overlay {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.se-audio__log-line {
+  padding: 2px 2px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.se-audio__log-line--rejected {
+  color: var(--warn);
+}
+.se-audio__log-warning {
+  padding-left: 12px;
+  font-size: 10px;
+  color: var(--warn);
+}
+.se-seq__pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+.se-seq__pill {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+}
+.se-seq__pill--muted {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+.se-seq__picker {
+  height: 22px;
+  max-width: 320px;
+}
+.se-seq__scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+}
+.se-seq__canvas {
+  display: block;
+}
+.se-seq__hover {
+  /* FIXED height — the readout appearing/changing must never resize its
+     container (the centered sequencer popup would shift on every hover). */
+  height: 20px;
+  line-height: 20px;
+  font-size: 10px;
+  color: var(--ink-3);
+  padding: 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.se-seq__content {
+  position: relative;
+  width: max-content;
+}
+.se-seq__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1.5px;
+  background: var(--accent);
+  pointer-events: none;
+  display: none;
+}

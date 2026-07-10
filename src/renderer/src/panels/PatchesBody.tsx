@@ -204,7 +204,7 @@ export function PatchesBody({ projectId, onMutated }: PatchesBodyProps): JSX.Ele
             className="se-tool se-tool--reopen se-patches__btn"
             disabled={busy}
             onClick={() => void importFiles()}
-            title="Import an .ips or asar .asm patch into this project (.asm is converted to the build-compatible form)"
+            title="Import an .ips, .bps, or asar .asm patch into this project (.bps is diffed against the vanilla cart; .asm is converted to the build-compatible form)"
           >
             Import file…
           </button>

@@ -4,6 +4,7 @@ import {DiscardChangesModal} from '../DiscardChangesModal'
 import {headerFromLevel} from './TilesPanel'
 import {getSprite} from '../data/obj-metadata'
 import {persistedState} from '../lib/persisted-state'
+import {formatBytes as sizeLabel} from '../lib/format-bytes'
 import {YychrTab} from './YychrTab'
 import {M1teMapsTab} from './M1teMapsTab'
 // The "Map16 Blocks" tab is removed from the UI for now: its structural edits (reassigning a
@@ -12,7 +13,7 @@ import {M1teMapsTab} from './M1teMapsTab'
 // is kept intact — `panels/Map16Panel.tsx` (`Map16Body`), the `editor.*Map16Block` IPC, and
 // `src/main/map16-edits.ts` all still work. To re-expose it, restore this import and add a
 // 'map16' member to `PanelTab` + a third `se-tab` button + render branch (the panel has a
-// tab strip again — Extract / Import and YY-CHR):
+// tab strip again — Export / Import and YY-CHR):
 // import {Map16Body} from './Map16Panel'
 
 /** Sprite id → friendly name for every sprite num (0..0x1FF) — NAMES the exported
@@ -23,9 +24,6 @@ const allSpriteNames = (): Record<number, string> => {
     for (let n = 0; n < 0x200; n++) names[n] = getSprite(n).name
     return names
 }
-
-const sizeLabel = (bytes: number): string =>
-    bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`
 
 /** The unit noun for a change's kind (CHR pixels = tiles, tilemap = cells, raw = bytes). */
 const changeUnit = (kind: GfxEditChange['kind'], n: number): string =>
@@ -48,10 +46,11 @@ const folderName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop()
 /** Versioned localStorage key for the "Auto-Open Exports" preference (default on). */
 const AUTO_OPEN_KEY = 'shinyEgg.autoOpenExports.v1'
 
-/** The panel's tabs: the extract/import body, and the per-project YY-CHR sheet
- *  browser (YychrTab.tsx). Active tab persisted per the localStorage convention. */
-type PanelTab = 'extract' | 'yychr' | 'm1te'
-const TAB_STORE = persistedState<{ tab: PanelTab }>('shinyEgg.graphicsPanel.v1', {tab: 'extract'})
+/** The panel's tabs: the export/import body, and the per-project YY-CHR sheet
+ *  browser (YychrTab.tsx). Active tab persisted per the localStorage convention
+ *  (v2: the 'extract' member became 'export'). */
+type PanelTab = 'export' | 'yychr' | 'm1te'
+const TAB_STORE = persistedState<{ tab: PanelTab }>('shinyEgg.graphicsPanel.v2', {tab: 'export'})
 
 /** What the export dropdown writes. `worldmap`/`systemscreens`/`metasprites` are
  *  gfx-export tracks (worldmap + systemscreens are the two halves of the old `screens`
@@ -97,7 +96,7 @@ interface Props {
     level: LevelData | null
     /** Active-project reload key (`${projectId}#${projectRev}`). Changes on a project
      *  switch / ROM import — re-fetches the per-project exported-folders + changed-graphics
-     *  lists so the panel never shows the previous project's extracts. */
+     *  lists so the panel never shows the previous project's exports. */
     projectScope: string | null
     /** Called after an import or reset changes files (mark the build dirty). */
     onMutated: () => void
@@ -125,7 +124,7 @@ interface Props {
  * and the positioned BG-region export (BG1 area / BG2 / BG3, PNG or Aseprite
  * tilemap). A dropdown picks what's exported; Import auto-detects everything in a
  * folder. Below: the exported-folders list, the changed-graphics reset list, and
- * the panel log (the latest extract / import / reset outcome). (Map16 block editing was a
+ * the panel log (the latest export / import / reset outcome). (Map16 block editing was a
  * separate tab — removed from the UI for now; see the note at the top of this file.)
  */
 export function GraphicsBody({
@@ -139,7 +138,7 @@ export function GraphicsBody({
     const [pendingReset, setPendingReset] = useState<GfxEditEntry | 'all' | 'palette' | null>(null)
     const [resetBusy, setResetBusy] = useState(false)
     const [resetError, setResetError] = useState<string | null>(null)
-    // Active panel tab: 'extract' = the export/import body, 'yychr' = the
+    // Active panel tab: 'export' = the export/import body, 'yychr' = the
     // per-project YY-CHR browser. (A restored Map16 tab would slot back in here —
     // see the top-of-file note.)
     const [tab, setTab] = useState<PanelTab>(() => TAB_STORE.load().tab)
@@ -157,7 +156,7 @@ export function GraphicsBody({
     // so it never overrides an explicit choice.
     const formatTouched = useRef(false)
     const pickFormat = (f: BgRegionFormat): void => { formatTouched.current = true; setExportFormat(f) }
-    // Folders this project has exported to, + the panel log (latest extract / import / reset).
+    // Folders this project has exported to, + the panel log (latest export / import / reset).
     const [folders, setFolders] = useState<string[]>([])
     // Exported .M1 session files per folder (clickable → open in M1TE), keyed by folder dir.
     const [m1Files, setM1Files] = useState<Record<string, M1ExportFile[]>>({})
@@ -255,7 +254,7 @@ export function GraphicsBody({
 
     // The exported-folders + changed-graphics lists are per-project. Re-fetch when the
     // project changes (switch / ROM import bumps projectScope) so the panel never shows
-    // the previous project's extracts; clear the now-stale panel log too.
+    // the previous project's exports; clear the now-stale panel log too.
     useEffect(() => {
         void refreshEdits()
         void refreshFolders()
@@ -332,7 +331,7 @@ export function GraphicsBody({
             setBusy(false)
             if ('canceled' in r) return
             if (r.ok) {
-                setPanelLog({ dir: '', lines: [`Extracted ${r.file} (${r.cells} editable cells) to ${folderName(r.dir)}`], errors: [], warnings: r.warning ? [r.warning] : [] })
+                setPanelLog({ dir: '', lines: [`Exported ${r.file} (${r.cells} editable cells) to ${folderName(r.dir)}`], errors: [], warnings: r.warning ? [r.warning] : [] })
                 await refreshFolders()
                 // Auto-open the export in its editor: M1TE for a .M1 (bundled — always
                 // available, opened straight to this BG layer); Aseprite otherwise (PNG /
@@ -342,7 +341,7 @@ export function GraphicsBody({
                     if (fmt === 'm1te2') void window.shinyEgg.editor.openInM1te(r.dir, r.file, regionLayerOf(target))
                     else if (asepritePath) void window.shinyEgg.editor.openInAseprite(r.dir, r.file)
                 }
-            } else setPanelLog({ dir: '', lines: [], errors: [`Extract failed: ${r.error}`], warnings: [] })
+            } else setPanelLog({ dir: '', lines: [], errors: [`Export failed: ${r.error}`], warnings: [] })
             return
         }
         // Screens + metasprites export PNG or Aseprite; the World Map can also export M1TE2
@@ -361,9 +360,9 @@ export function GraphicsBody({
         if ('canceled' in r) return
         if (r.ok) {
             const unit = gfxFmt === 'png' ? 'PNG' : 'file'
-            setPanelLog({ dir: '', lines: [`Extracted ${r.count} ${unit}${r.count === 1 ? '' : 's'} to ${folderName(r.dir)}`], errors: [], warnings: [] })
+            setPanelLog({ dir: '', lines: [`Exported ${r.count} ${unit}${r.count === 1 ? '' : 's'} to ${folderName(r.dir)}`], errors: [], warnings: [] })
             await refreshFolders()
-        } else setPanelLog({ dir: '', lines: [], errors: [`Extract failed: ${r.error}`], warnings: [] })
+        } else setPanelLog({ dir: '', lines: [], errors: [`Export failed: ${r.error}`], warnings: [] })
     }
 
     // Shared display for an import result (per-folder button or the ad-hoc dialog).
@@ -401,7 +400,7 @@ export function GraphicsBody({
         if (which === 'palette') {
             onResetPalette()
             setPendingReset(null)
-            // Report into the panel log (the unified extract / import / reset log) so a later import clears it.
+            // Report into the panel log (the unified export / import / reset log) so a later import clears it.
             setPanelLog({ dir: '', lines: ['Reset palette colors to vanilla.'], errors: [], warnings: [] })
             return
         }
@@ -423,7 +422,7 @@ export function GraphicsBody({
         if (resetPalette) onResetPalette()
         setPendingReset(null)
         if (removed > 0) onMutated()
-        // Report into the panel log (the unified extract / import / reset log) so a later import clears it.
+        // Report into the panel log (the unified export / import / reset log) so a later import clears it.
         setPanelLog({ dir: '', lines: [`Reset ${removed} file${removed === 1 ? '' : 's'}${resetPalette ? ' + palette colors' : ''} to vanilla.`], errors: [], warnings: [] })
         await refreshEdits()
     }
@@ -465,12 +464,12 @@ export function GraphicsBody({
                         className="se-graphics__radio"
                         title={
                             effectiveFormat === 'm1te2'
-                                ? 'After extracting, open the .M1 in M1TE automatically (straight to this BG layer)'
-                                : 'After extracting a single region file, open it in Aseprite automatically'
+                                ? 'After exporting, open the .M1 in M1TE automatically (straight to this BG layer)'
+                                : 'After exporting a single region file, open it in Aseprite automatically'
                         }
                     >
                         <input type="checkbox" checked={autoOpen} onChange={(e) => toggleAutoOpen(e.target.checked)} />
-                        Auto-Open Extracts
+                        Auto-Open Exports
                     </label>
                 )}
                 {asepriteError && <span className="se-graphics__log-error">⚠ {asepriteError}</span>}
@@ -496,15 +495,15 @@ export function GraphicsBody({
                 {yychrError && <span className="se-graphics__log-error">⚠ {yychrError}</span>}
             </div>
 
-            {/* Three tabs: the extract/import body, the per-project YY-CHR sheet browser,
+            {/* Three tabs: the export/import body, the per-project YY-CHR sheet browser,
                 and the per-project M1TE map browser. (A restored Map16 tab — see the
                 top-of-file note — would be a fourth `se-tab` + branch here.) */}
             <div className="se-tabs se-graphics__tabs">
                 <button
-                    className={`se-tab${tab === 'extract' ? ' is-active' : ''}`}
-                    onClick={() => pickTab('extract')}
+                    className={`se-tab${tab === 'export' ? ' is-active' : ''}`}
+                    onClick={() => pickTab('export')}
                 >
-                    Extract / Import
+                    Export / Import
                 </button>
                 <button
                     className={`se-tab${tab === 'yychr' ? ' is-active' : ''}`}
@@ -537,20 +536,20 @@ export function GraphicsBody({
             ) : (
             <div className="se-graphics__region">
                 <p className="se-graphics__desc">
-                    Extract the level’s graphics to a folder, edit them in any image editor (or
+                    Export the level’s graphics to a folder, edit them in any image editor (or
                     Aseprite), then import the folder back — only changed tiles are saved.
-                    Pick <strong>what</strong> to extract below; <code>BG1 area</code> extracts the
+                    Pick <strong>what</strong> to export below; <code>BG1 area</code> exports the
                     rectangle you select on the canvas, the other <code>BG</code> layers the whole
                     tilemap, <code>World Map</code> the overworld map graphics,{' '}
                     <code>Boot/Story/Title Screens</code> the boot / title / storybook graphics, and{' '}
                     <code>Message Font / Pictures</code> the message font + message-box pictures.
-                    The <code>BG</code> layers and the <code>World Map</code> can also extract an{' '}
+                    The <code>BG</code> layers and the <code>World Map</code> can also export an{' '}
                     <code>M1TE2</code> session (each BG layer as one <code>.M1</code>;
                     the World Map as one <code>.M1</code> per world + a combined icons file). Import auto-detects everything in the folder.
                 </p>
 
                 <div className="se-graphics__row">
-                    <span className="se-graphics__status">Extract:</span>
+                    <span className="se-graphics__status">Export:</span>
                     <select
                         className="se-input se-graphics__select"
                         value={target}
@@ -586,12 +585,12 @@ export function GraphicsBody({
                         className="se-graphics__radio"
                         title={
                             !m1te2Ok
-                                ? 'M1TE2 extract is for the BG layers (BG1 area / BG2 / BG3), the World Map, and the Boot/Story/Title screens'
+                                ? 'M1TE2 export is for the BG layers (BG1 area / BG2 / BG3), the World Map, and the Boot/Story/Title screens'
                                 : target === 'worldmap'
-                                    ? 'Extract the overworld (one .M1 per world) + a combined icons .M1 (all level icons + marker/castle) for M1TE'
+                                    ? 'Export the overworld (one .M1 per world) + a combined icons .M1 (all level icons + marker/castle) for M1TE'
                                     : target === 'systemscreens'
-                                        ? 'Extract the tilemap-based screens (title island, storybook scene, the six bonus games) as one .M1 each for M1TE'
-                                        : 'Extract an M1TE2 .M1 session (tilemap + CHR + palette) — one file for the whole BG layer (BG1 area = pixel + palette only)'
+                                        ? 'Export the tilemap-based screens (title island, storybook scene, the six bonus games) as one .M1 each for M1TE'
+                                        : 'Export an M1TE2 .M1 session (tilemap + CHR + palette) — one file for the whole BG layer (BG1 area = pixel + palette only)'
                         }
                     >
                         <input
@@ -607,10 +606,10 @@ export function GraphicsBody({
                         className="se-graphics__radio"
                         title={
                             tilemapTooOld
-                                ? `Aseprite ${asepriteInfo?.version} can’t open tilemap extracts — needs 1.3+`
+                                ? `Aseprite ${asepriteInfo?.version} can’t open tilemap exports — needs 1.3+`
                                 : asepriteOk
                                     ? (isRegion ? 'Edit pixels at 8×8 — a shared CHR tile is one Aseprite tile' : '')
-                                    : 'Aseprite extract is for the BG layers, the screens, the Bosses arena, the message font / pictures, and metasprites'
+                                    : 'Aseprite export is for the BG layers, the screens, the Bosses arena, the message font / pictures, and metasprites'
                         }
                     >
                         <input
@@ -634,8 +633,8 @@ export function GraphicsBody({
                 </div>
                 {tilemapTooOld && (
                     <p className="se-graphics__log-error" title={asepritePath ?? undefined}>
-                        ⚠ Aseprite {asepriteInfo?.version} can’t open tilemap extracts (tilemaps were added in 1.3).
-                        Extracting as PNG — update Aseprite to use the tilemap format.
+                        ⚠ Aseprite {asepriteInfo?.version} can’t open tilemap exports (tilemaps were added in 1.3).
+                        Exporting as PNG — update Aseprite to use the tilemap format.
                     </p>
                 )}
 
@@ -644,9 +643,9 @@ export function GraphicsBody({
                         className="se-banks__act"
                         onClick={() => void onExport()}
                         disabled={busy || (!isLevelIndependent(target) && !header) || (target === 'bg1' && !bg1RegionRect)}
-                        title={header || isLevelIndependent(target) ? 'Extract the selected target to a folder' : 'Load a level first (screen/font extracts need no level)'}
+                        title={header || isLevelIndependent(target) ? 'Export the selected target to a folder' : 'Load a level first (screen/font exports need no level)'}
                     >
-                        Extract…
+                        Export…
                     </button>
                     <button
                         className="se-banks__act"
@@ -679,11 +678,11 @@ export function GraphicsBody({
 
                 <div className="se-graphics__changes">
                     <div className="se-graphics__changes-head">
-                        <span className="se-graphics__changes-title">Extracted folders ({folders.length})</span>
+                        <span className="se-graphics__changes-title">Exported folders ({folders.length})</span>
                     </div>
                     {folders.length === 0 ? (
                         <p className="se-graphics__changes-empty">
-                            No extracts yet — extract above and its folder is listed here.
+                            No exports yet — export above and its folder is listed here.
                         </p>
                     ) : (
                         <ul className="se-graphics__list">

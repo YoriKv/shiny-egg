@@ -68,6 +68,10 @@ export const LEVEL_MODES: { value: number; label: string }[] = [
  *  against `.prm` usage (0x00 Flower Garden = 1-1/2-1…, 0x02 Castle = every fort,
  *  0x04 Underground = World 6, 0x05 = mini-boss rooms not Kamek). 0x0E/0x0F are
  *  blank in the table + unused → omitted (raw fallback). */
+// Labels for 0x00-0x0D are IDENTICAL to the audio catalog's
+// MUSIC_SETTING_NAMES (snes-framework/scripts/audio/catalog.ts) — one game
+// concept, one name everywhere; keep the two lists in lockstep (0x0E/0x0F
+// share the "Custom 0xNN" base; this dropdown adds a silence hint).
 export const MUSIC_TRACKS: { value: number; label: string }[] = [
   { value: 0x00, label: 'Flower Garden' },
   { value: 0x01, label: 'Overworld (above-ground)' },
@@ -82,7 +86,11 @@ export const MUSIC_TRACKS: { value: number; label: string }[] = [
   { value: 0x0a, label: 'Athletic' },
   { value: 0x0b, label: 'Invincible Mario (star)' },
   { value: 0x0c, label: 'King Bowser' },
-  { value: 0x0d, label: 'Special 4' }
+  { value: 0x0d, label: 'Special 4' },
+  // Free values — silent on an unmodified game (they point at the driver-only
+  // set); repoint them in the Audio panel's Sets tab for custom music picks.
+  { value: 0x0e, label: 'Custom 0x0E (silent until repointed)' },
+  { value: 0x0f, label: 'Custom 0x0F (silent until repointed)' }
 ]
 
 /** Curated labels for the BG1 tileset field (header[1], 4-bit, full 16-value
@@ -334,7 +342,7 @@ export function headerFields(): HeaderField[] {
       13,
       'Music',
       MUSIC_TRACKS,
-      'Background music track. No live preview — Test Level to hear it. Track names are from the game’s own BGM table (they correct several GoldenEgg mislabels).',
+      'Background music track. ▶ Play music below hears it in the editor (synthesized); Test Level hears it in-game. Track names are from the game’s own BGM table (they correct several GoldenEgg mislabels).',
       false
     ),
     num(14, 'Item memory', 'Which of 4 RAM bitmaps tracks collected items (coins/flowers/red coins, keys, opened doors). Connected sublevels that both hold collectibles should use different pages, or their collected-state collides. No live preview — Test Level to verify.', false)

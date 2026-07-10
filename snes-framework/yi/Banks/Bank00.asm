@@ -1084,28 +1084,33 @@ DATA_SPC_ptr:                                      ; Raidenthequick: DATA_SPC_pt
 ; into DATA_SPC_ptr followed by $FF terminator).
 ; Raidenthequick: DATA_spc_data_blocks.
 ;-------------------------------------------------------------------------
+;@editable:music-set-rows begin
 DATA_0084E8:
 DATA_spc_data_blocks:                              ; Raidenthequick: DATA_spc_data_blocks
 	db $2B,$FF,$FF,$FF,$25,$22,$2E,$FF,$25,$22,$1C,$FF,$25,$19,$13,$FF
 	db $25,$16,$10,$FF,$25,$16,$0D,$FF,$25,$22,$28,$FF,$25,$16,$0A,$FF
 	db $25,$19,$07,$FF,$25,$19,$1F,$FF,$25,$01,$04,$FF,$31,$34,$FF,$FF
 	db $37,$3A,$FF,$FF
+;@editable:music-set-rows end
 
 ;-------------------------------------------------------------------------
 ; DATA_item_denial_table -- per-music-track pause-menu item disable flag.
 ; $00 = items enabled, $01 = disabled, $FF = inherit (no change).
 ; Raidenthequick: DATA_item_denial_table.
 ;-------------------------------------------------------------------------
+;@editable:music-item-denial begin
 DATA_00851C:
 DATA_item_denial_table:                            ; Raidenthequick: DATA_item_denial_table
 	db $00,$00,$00,$01,$00,$01,$00,$01,$01,$01,$00,$00,$01,$00,$00,$00
 	db $FF,$00
+;@editable:music-item-denial end
 
 ;-------------------------------------------------------------------------
 ; DATA_spc_block_set_indexes -- per-level-music-ID -> DATA_spc_data_blocks row index.
 ; First byte is unused/sentinel; indexing is 1-based on the level header value.
 ; Raidenthequick: DATA_spc_block_set_indexes.
 ;-------------------------------------------------------------------------
+;@editable:music-set-indexes begin
 DATA_00852E:
 DATA_spc_block_set_indexes:                        ; Raidenthequick: DATA_spc_block_set_indexes
 	; SMWC tweak $00853D: byte at index $0F (music header setting E in 1-based
@@ -1113,6 +1118,7 @@ DATA_spc_block_set_indexes:                        ; Raidenthequick: DATA_spc_bl
 	; play "Welcome to Yoshi's Island" music. Default [00] above (end of first row).
 	db $FF,$0C,$10,$18,$1C,$14,$1C,$20,$24,$24,$24,$28,$28,$2C,$1C,$00
 	db $00,$00,$04,$08,$30
+;@editable:music-set-indexes end
 
 ;-------------------------------------------------------------------------
 ; CODE_set_level_music / CODE_upload_music_data -- pick a music track via the level

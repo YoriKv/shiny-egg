@@ -3,6 +3,7 @@ import type {YychrProjectFile, YychrProjectState, YychrThumbnail} from '../../..
 import {blitRgba} from '../lib/blit'
 import {HoverPreview} from '../lib/hover-preview'
 import {persistedState} from '../lib/persisted-state'
+import {formatBytes as sizeLabel} from '../lib/format-bytes'
 import {DiscardChangesModal} from '../DiscardChangesModal'
 
 /**
@@ -33,8 +34,6 @@ const CATEGORIES: [string, string][] = [
     ['raw', 'Raw animation / credits']
 ]
 
-const sizeLabel = (bytes: number): string =>
-    bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`
 
 /** Per-category collapse state, persisted so the browser reopens the way it was
  *  left (categories are the same set in every project). ABSENCE = collapsed —

@@ -21,6 +21,7 @@ import {
 import { dirname, join } from 'node:path'
 import { buildRom, type BuildResult } from 'snes-framework/build'
 import { readExtractionState } from 'snes-framework/state'
+import { applyAudioModuleLayout, audioBlobSizes } from 'snes-framework/audio'
 import {
   applyGfxLayout,
   computeGfxGrowth,
@@ -406,8 +407,17 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
   // the build-tree path. A shrink/no-op rides the data-only include path.
   const gfxNeedsTree = gfxPlan.mode === 'boundary-move' || gfxPlan.mode === 'overflow'
 
+  // Audio modules: an imported song blob (or a resized sample) changes a blob
+  // in the back-to-back $4E-$50 audio region, which moves the two bank-cross
+  // split incbins + the engine tail's %FREE_BYTES — asm edits, so any size
+  // delta forces the build-tree path, where applyAudioModuleLayout regenerates
+  // the three banks' layout from the effective sizes. All-retail sizes ride
+  // the include fast path (a same-size module swap needs no asm change).
+  const audioSizes = audioBlobSizes(join(base, 'assets', 'yi'), join(overlayRoot(id), 'assets', 'yi'))
+  const audioChanged = audioSizes.some((s) => s.bytes !== s.retailBytes)
+
   let result: BuildResult
-  if (overlayHasAsm(id) || layoutEdits > 0 || asmPatches || gfxNeedsTree) {
+  if (overlayHasAsm(id) || layoutEdits > 0 || asmPatches || gfxNeedsTree || audioChanged) {
     onProgress?.(
       layoutEdits > 0
         ? `Materializing build-tree (${moves.length} boundary move(s), ` +
@@ -438,6 +448,21 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
     } else if (gfxPlan.mode === 'overflow') {
       relocateGfxBlobs(join(buildTreeRoot(id), 'yi'), gfxGrowth.blobs, activeFreeRegions())
     }
+    // Audio-region layout — AFTER the level/gfx passes: Bank50's free tail is
+    // shared (it's also FreeRegion50 / the gfx spill target), and those passes
+    // reconcile Bank50.asm from clean source. Reconciles Bank4E/4F (audio-
+    // owned) every build; regenerates the blob piece list + bank-cross splits
+    // + free tail when any module size differs from retail; throws with a
+    // clear message on over-budget, V1.1 size changes, or a tail already
+    // claimed by relocated level/gfx data.
+    applyAudioModuleLayout(
+      join(base, 'yi'),
+      join(overlayRoot(id), 'yi'),
+      join(buildTreeRoot(id), 'yi'),
+      audioSizes,
+      readExtractionState(base)?.romVersion ?? 'YI_U1',
+      { bank50AlreadyReconciled: plan !== null }
+    )
     const asmCount = applyEnabledAsmPatches(buildTreeRoot(id), id)
     if (asmCount > 0) onProgress?.(`Assembling ${asmCount} asm patch(es) into the ROM…`)
     // Inject engine-label addresses (resolved from the build symbols) so asm

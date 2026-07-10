@@ -11,6 +11,7 @@
 
 import type {
   AnchorResolution,
+  AramImportBudget,
   Bg1RenderResult,
   BgLayerDescriptor,
   ForeignLevelDiff,
@@ -23,6 +24,8 @@ import type {
   PatchSource,
   RomImportInventory,
   RomVersion,
+  SettingAramUsage,
+  SongTimeline,
   SpriteCelBounds
 } from 'snes-framework/types'
 import type { CollisionEntry } from 'snes-framework/collision'
@@ -1267,9 +1270,10 @@ export interface PatchPreview {
   conflicts: Array<{ offset: number; length: number; patchIds: string[] }>
 }
 
-/** Result of importing an `.ips` / `.asm` into the active project. `notes` carries
- *  any conversion advisories (asar `.asm` import rewrites the source — e.g.
- *  `freecode` → the reserved patch pool — and reports what it changed). */
+/** Result of importing an `.ips` / `.bps` / `.asm` into the active project.
+ *  `notes` carries any conversion advisories (asar `.asm` import rewrites the
+ *  source — e.g. `freecode` → the reserved patch pool — and reports what it
+ *  changed; `.bps` import reports the diff-vs-cart conversion). */
 export type PatchImportResult =
   | { ok: true; patch: PatchSummary; notes?: string[] }
   | { ok: false; error: string }
@@ -1627,4 +1631,237 @@ export type GbaImportApplyResult =
       /** Targets that failed to write, with why. */
       failed: Array<{ targetRecordId: number; error: string }>
     }
+  | { ok: false; error: string }
+
+// ── Audio panel (audio:* IPC) ───────────────────────────────────────────────
+// Browse/audition surface over the built ROM's audio (music settings, song
+// slots, SFX ids) + .spc synthesis. See research/plan-audio-panel.md.
+
+/** One music setting (level-header field-13 value 0x00-0x0F, or an engine
+ *  context 0x10-0x13 the header can't express). Settings sharing a
+ *  `blockSetRow` play identical audio (same uploaded modules). */
+export interface AudioSettingUi {
+  /** Setting value (0x00-0x13). */
+  setting: number
+  name: string
+  /** True for the free header values (0x0E/0x0F) — producer-stamped so the
+   *  renderer never sniffs the display name. */
+  unused: boolean
+  /** Row index into the block-set table — the dedupe key for the browser. */
+  blockSetRow: number
+  /** Display names of the modules uploaded by this setting, in upload order. */
+  modules: string[]
+  /** Song slot auto-played on entry (0 = none recorded). */
+  initSongId: number
+  /** Songs playable from this setting's composed baseline (1-based slots,
+   *  display names per the community OST track structure — see
+   *  snes-framework/scripts/audio/catalog.ts SONG_NAMES). */
+  songs: Array<{ slotId: number; name: string }>
+  /** recordIds of backed level records whose header field 13 selects this
+   *  setting (empty for non-header settings). */
+  usedByLevels: number[]
+  /** ROM byte size of the row's song module (absent for engine-only rows —
+   *  the title music lives inside the driver image). ARAM-side usage lives
+   *  in the audio:aramUsage result (the Songs-tab diagram). */
+  songModuleBytes?: number
+}
+
+export interface AudioSfxUi {
+  /** Queue value for the SFX dispatcher (named ids run 0x01-0xA2; the engine
+   *  accepts 0x01-0xBF — 0xC0+ are driver commands, not SFX). */
+  id: number
+  /** Name from the framework's SoundIDs constants (e.g. "Coin"). */
+  name: string
+  /** Voice the one-shot plays on (0-7; the priority byte's high nibble). */
+  voice: number
+  /** Raw priority byte from the engine's $0EB0 table — same-voice contention
+   *  is decided by comparing these. */
+  priority: number
+}
+
+export interface AudioCatalogUi {
+  settings: AudioSettingUi[]
+  sfx: AudioSfxUi[]
+  /** The 20 upload modules (DATA_SPC_ptr block ids + display names) — the
+   *  Sets tab's row-editor vocabulary. */
+  blocks: Array<{ blockId: number; name: string; module: string; kind: 'engine' | 'samples' | 'songs' }>
+}
+
+/** Catalog fetch result — `ok: false` covers "no built ROM yet". */
+export type AudioCatalogResult = { ok: true; catalog: AudioCatalogUi } | { ok: false; error: string }
+
+/** Synthesized .spc for the in-editor player. */
+export type AudioComposeSpcResult = { ok: true; spc: ArrayBuffer } | { ok: false; error: string }
+
+/** Decoded + timed song for the Sequence inspector (timeline shape from
+ *  snes-framework/audio's sequence-timeline). */
+export type AudioDecodeSongResult =
+  | { ok: true; name: string; timeline: SongTimeline }
+  | { ok: false; error: string }
+
+/** One exported file in the project's audio-export folder. SFX are editable
+ *  MML .txt scripts; samples are .brr + decoded .wav pairs (the listing
+ *  carries the playable .wav; the raw .brr sits alongside on disk). */
+export interface AudioExportFileUi {
+  /** Path relative to the export root (`sfx/…`, `samples/<Bank>/…`). */
+  rel: string
+  /** File name (with extension). */
+  name: string
+  /** Friendly instrument name (samples only, where attested — catalog
+   *  SAMPLE_DISPLAY_NAMES, community-sourced). */
+  label?: string
+  /** Sample bank dir name (samples only). */
+  bank?: string
+  bytes: number
+  kind: 'sfx' | 'sample'
+  /** SFX only: the sound id (from the file-name prefix) — what ▶ plays. */
+  sfxId?: number
+  /** Samples only: bytes differ from the export-time manifest checksum
+   *  (i.e. edited externally, import will pick it up). */
+  changed?: boolean
+  /** Samples only: a project override (imported edit) is in effect. */
+  overlay?: boolean
+}
+
+/** One sample's outcome from an import run (mirrors the framework's
+ *  SampleImportItem — see snes-framework/scripts/audio/sample-import.ts). */
+export interface AudioImportItemUi {
+  bank: string
+  wav: string
+  file: string
+  action: 'unchanged' | 'reverted' | 'import' | 'rejected'
+  message?: string
+  warnings: string[]
+  /** Same-size edits preview instantly; resized ones need the next build. */
+  sameSize?: boolean
+}
+
+export type AudioImportResult =
+  | { ok: true; imported: number; reverted: number; items: AudioImportItemUi[] }
+  | { ok: false; error: string }
+
+/** State of the fixed per-project export folder (`<projectRoot>/audio/`). */
+export type AudioExportStateResult =
+  | { ok: true; dir: string; files: AudioExportFileUi[] }
+  | { ok: false; error: string }
+
+/** Outcome of an export-all run. */
+export type AudioExportRunResult =
+  | { ok: true; written: number; dir: string }
+  | { ok: false; error: string }
+
+/** One candidate song found in an import file (a populated $FF90 slot that
+ *  decodes; degenerate slots — template leftovers, empty pointers — carry
+ *  ok: false so the UI can hide them behind a count). */
+export interface AudioImportSongCandidateUi {
+  /** 1-based song-pointer-table slot. */
+  slot: number
+  ok: boolean
+  /** Set when another slot shares the same pointer (retail alias slots). */
+  aliasOf?: number
+  noteEvents: number
+  seqBytes: number
+  error?: string
+  /** Instrument-table rows the song needs (of the 48-row table). */
+  instrumentRows?: number
+  /** MML only — sizes from the trial build, mapping onto the ARAM sections
+   *  the Songs-tab diagram draws: custom BRR bytes/count and $3C00
+   *  directory slots the module carries. */
+  sampleBytes?: number
+  sampleCount?: number
+  dirSlots?: number
+}
+
+/** One importable file in `<projectRoot>/audio/import/`: a YI-driver .spc
+ *  snapshot (this editor's exports or emulator captures) or an MML source
+ *  (.mml/.txt — AddmusicK package or AddMusicY dialect, compiled in). */
+export interface AudioImportSongFileUi {
+  /** Path relative to the export root (`import/<name>`). */
+  rel: string
+  name: string
+  bytes: number
+  /** Parses AND runs the YI driver (spc) / compiles + fits budgets (mml);
+   *  false files show `error` instead. */
+  ok: boolean
+  error?: string
+  /** ID666 title (.spc) or #spc #title (mml), when tagged. */
+  title?: string
+  /** File kind — absent means 'spc' (pre-MML entries). */
+  kind?: 'spc' | 'mml'
+  /** MML only: detected dialect. */
+  dialect?: 'amk' | 'amy'
+  /** MML only: the port report — every approximation/drop the compiler
+   *  applied (empty = clean translation). */
+  report?: string[]
+  candidates: AudioImportSongCandidateUi[]
+}
+
+/** A replaceable song module — the import's target choices. */
+export interface AudioImportTargetUi {
+  /** DATA_SPC_ptr block id. */
+  blockId: number
+  /** Display name (e.g. "flower-garden songs"). */
+  name: string
+  /** Module identifier (e.g. "flowergarden"). */
+  module: string
+  /** Song slots the retail module patches (a whole-module import repoints
+   *  all of them — a stale slot would hang the driver in-game; a
+   *  slot-targeted MML import merges into one and keeps the rest). */
+  slots: number[]
+  /** Display name per slot (parallel to `slots` — what a slot-targeted
+   *  import would replace or preserve). */
+  slotNames: string[]
+  /** Slot choice is mandatory (the title target: its module is the engine
+   *  image — whole-module replacement isn't offered). */
+  slotRequired?: boolean
+  /** Representative music setting that uploads this module — what preview /
+   *  play compose against. */
+  setting: number
+  /** Music-setting names that upload this module (where the song is heard). */
+  usedBy: string[]
+  /** Set when an imported song currently replaces this module (overlay blob
+   *  present; source/title/targetSlots from the import metadata when
+   *  recorded — targetSlots = the slots repointed at the imported song: one
+   *  for a slot-targeted merge, all of `slots` for a whole-module import;
+   *  absent on imports made before it was stamped). */
+  imported?: { source?: string; title?: string; targetSlots?: number[]; moduleBytes: number; baseBytes: number }
+  /** ARAM space a whole-module replace can claim here (dodging the set's
+   *  resident sample banks). Absent on slot-mandatory targets (title). */
+  budgetReplace?: AramImportBudget
+  /** ARAM space a slot-targeted merge can claim (also dodging the module's
+   *  current content — its other songs keep their bytes). */
+  budgetSlot?: AramImportBudget
+}
+
+export type AudioSongImportStateResult =
+  | {
+      ok: true
+      dir: string
+      files: AudioImportSongFileUi[]
+      targets: AudioImportTargetUi[]
+      /** Remaining audio-region growth budget (bytes; V1.0's free tail minus
+       *  every overlay's net growth). */
+      freeBytes: number
+    }
+  | { ok: false; error: string }
+
+/** Outcome of importing (or reverting) a song into the project. */
+export type AudioSongImportRunResult =
+  | { ok: true; moduleBytes: number; targetRetailBytes: number; freeBytes: number; warnings: string[] }
+  | { ok: false; error: string }
+
+/** A composed try-out .spc for one (import file, source slot, target module)
+ *  pick: target set baseline minus the replaced module, plus the extracted
+ *  module. `moduleBytes` vs `targetRetailBytes` is the ROM-budget signal
+ *  (larger modules need the free-space growth pass to actually write). */
+export type AudioSongImportPreviewResult =
+  | { ok: true; spc: ArrayBuffer; warnings: string[]; moduleBytes: number; targetRetailBytes: number }
+  | { ok: false; error: string }
+
+/** Per-music-set ARAM section usage (one entry per block-set row, computed
+ *  from the composed baseline with any imported overlay module applied) —
+ *  the Songs-tab usage diagram's data. Shape from the framework
+ *  (snes-framework/scripts/audio/aram-usage.ts). */
+export type AudioAramUsageResult =
+  | { ok: true; rows: SettingAramUsage[] }
   | { ok: false; error: string }

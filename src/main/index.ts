@@ -18,6 +18,7 @@ import { registerDebugIpc } from './ipc/debug'
 import { registerPatchesIpc } from './ipc/patches'
 import { registerImportIpc } from './ipc/import'
 import { registerValidationIpc } from './ipc/validation'
+import { registerAudioIpc } from './ipc/audio'
 
 const isDev = !app.isPackaged
 
@@ -102,6 +103,7 @@ registerDebugIpc()
 registerPatchesIpc()
 registerImportIpc()
 registerValidationIpc()
+registerAudioIpc()
 
 app.whenReady().then(async () => {
   await ensureFrameworkWorkRoot()

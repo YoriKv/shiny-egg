@@ -144,12 +144,13 @@ These buttons show/hide the corresponding panel.
 **Level Header** - View and edit level header data.
 
 Graphics Panels:
-* **Graphics** - Extract graphics into a variety of formats to allow editing and importing them back in as changes.
+* **Graphics** - Export graphics into a variety of formats to allow editing and importing them back in as changes.
 * **Tiles** - View the level's loaded Map16 blocks, tilesets, spritesets, and more detailed level header data. Not currently very useful, mostly informational.
 * **Palette** - View and edit level and global colors with live preview in editor for level colors and sync to emulator for other colors. Level gradient editing is also here.
 
 Global Panels:
 * **Strings** - View and edit game strings.
+* **Audio** - Export music, sfx, and samples for editing and re-import. Allows importing songs in AMK and AMY style format.
 * **World Map** - View and edit the world map. Which levels go in which world map slot and level unlocks.
 * **Level Banks** - View and manage level memory. If levels get too big for their current slot, use this panel to migrate a level to freespace.
 * **Validation** - Various level validation checks, such as item memory positions overwriting each other.

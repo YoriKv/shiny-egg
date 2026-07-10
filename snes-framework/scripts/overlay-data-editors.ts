@@ -49,6 +49,13 @@ import {
   LOGO_TILEMAP_REGION,
   type LogoTilemapEdit
 } from './logo-tilemap.ts'
+import {
+  applyWorldMapPathsEdits,
+  readWorldMapPathsEdits,
+  WORLD_MAP_PATHS_FILE,
+  WORLD_MAP_YOSHI_DOTS_REGION,
+  WORLD_MAP_WALK_PATHS_REGION
+} from './world-map-paths.ts'
 import { findRegion, spliceRegion } from './asm/markers.ts'
 
 /** The intro-story string region shares Bank0F.asm with the logo data region. */
@@ -128,6 +135,13 @@ export function rebuildBank0FOverlay(baseText: string, overlayText: string): str
   return composeBank0FOverlay(baseText, readLogoTilemapEdits(baseText, overlayText), overlayText)
 }
 
+/** Rebuild a (possibly marker-less) `Bank17.asm` overlay = base ⊕ its Yoshi
+ *  path-coordinate edits, in marker form. The readers' label-scan fallback
+ *  extracts edits from a marker-less overlay. */
+export function rebuildBank17Overlay(baseText: string, overlayText: string): string {
+  return applyWorldMapPathsEdits(baseText, readWorldMapPathsEdits(baseText, overlayText))
+}
+
 // ── Representative edits (region-coverage guard) ──────────────────────────────
 // Mirror the real editor apply paths (via the same compose*) so the guard
 // exercises what production does.
@@ -144,6 +158,15 @@ function sampleBank57Edit(baseText: string, gradientPtrText: string): string {
 
 function sampleBank0FEdit(baseText: string): string {
   return composeBank0FOverlay(baseText, [{ offset: 5, value: 0x4242 }, { offset: 447, value: 0x8307 }], null)
+}
+
+function sampleBank17Edit(baseText: string): string {
+  return applyWorldMapPathsEdits(baseText, [
+    { table: 'dots', offset: 0, value: 0x42 }, // W1 dot 1 X
+    { table: 'dots', offset: 96 + 14, value: 0x88 }, // W1 dot 8 Y (y axis starts at byte 96)
+    { table: 'walk', offset: 4, value: 0x60 }, // 1-1 checkpoint 2 X
+    { table: 'walk', offset: 384 + 4, value: 0x90 } // 1-1 checkpoint 2 Y (y axis at byte 384)
+  ])
 }
 
 // ── The registry ──────────────────────────────────────────────────────────────
@@ -177,5 +200,11 @@ export const DATA_OVERLAY_EDITORS: DataOverlayEditor[] = [
     regions: [LOGO_TILEMAP_REGION],
     rebuild: (over, readBase) => rebuildBank0FOverlay(readBase(LOGO_TILEMAP_BANK_FILE), over),
     sampleEdit: (readBase) => sampleBank0FEdit(readBase(LOGO_TILEMAP_BANK_FILE))
+  },
+  {
+    file: WORLD_MAP_PATHS_FILE, // Bank17.asm — Yoshi dot + walk-checkpoint coord tables
+    regions: [WORLD_MAP_YOSHI_DOTS_REGION, WORLD_MAP_WALK_PATHS_REGION],
+    rebuild: (over, readBase) => rebuildBank17Overlay(readBase(WORLD_MAP_PATHS_FILE), over),
+    sampleEdit: (readBase) => sampleBank17Edit(readBase(WORLD_MAP_PATHS_FILE))
   }
 ]

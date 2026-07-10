@@ -267,12 +267,15 @@ export function ProjectMenu({
     }
   }
 
-  async function onExport(): Promise<void> {
+  async function onExport(kind: 'rom' | 'patch'): Promise<void> {
     if (!current || busy) return
     setBusy(true)
     setStatus('Building…')
     try {
-      const r = await window.shinyEgg.projects.export(current.id)
+      const r =
+        kind === 'rom'
+          ? await window.shinyEgg.projects.export(current.id)
+          : await window.shinyEgg.projects.exportPatch(current.id)
       if (r.ok) setStatus(`Exported → ${baseName(r.savedPath)}`)
       else if ('canceled' in r) setStatus('Export canceled.')
       else setStatus(`Export failed: ${r.error}`)
@@ -370,10 +373,20 @@ export function ProjectMenu({
                 <button
                   type="button"
                   className="se-menuitem"
-                  onClick={() => void onExport()}
+                  onClick={() => void onExport('rom')}
                   disabled={busy || !current}
+                  title="Build and save the project as a playable .sfc ROM"
                 >
-                  Export…
+                  Export as ROM…
+                </button>
+                <button
+                  type="button"
+                  className="se-menuitem"
+                  onClick={() => void onExport('patch')}
+                  disabled={busy || !current}
+                  title="Build and save the project as a .bps patch against the vanilla cart — shareable without distributing the ROM"
+                >
+                  Export as Patch…
                 </button>
                 <button
                   type="button"

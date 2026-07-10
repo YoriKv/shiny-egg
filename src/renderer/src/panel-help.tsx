@@ -266,6 +266,69 @@ export const PANEL_HELP: PanelHelp = {
       </p>
     </>
   ),
+  audio: (
+    <>
+      <p>
+        The game&rsquo;s music and sound effects, playable in the editor &mdash; the
+        panel synthesizes the exact audio-CPU image the game uploads and runs it on an
+        emulated SPC700, no emulator or rebuild needed.
+      </p>
+      <p>
+        <b>Song&nbsp;Sets</b> groups every track by its music set (the value a level&rsquo;s
+        header picks); &#9733; marks what auto-plays on entry. Each set has a sound-RAM
+        diagram: the bar is the memory the set swaps in (samples left of the tick,
+        song data right &mdash; hover any span), and the gauges track the four budgets
+        an imported or edited song spends &mdash; sequence bytes, custom-sample space,
+        sample slots, instrument rows. Empty space is what imports can claim; the
+        level count expands into clickable chips that open each level.{' '}
+        <b>SFX</b> lists every named sound effect &mdash; the <i>v</i> column is the
+        voice the one-shot plays on (same-voice sounds interrupt by priority).
+      </p>
+      <p>
+        &#9835; on any song or SFX row opens the <b>sequencer</b> — a piano-roll
+        popup showing its patterns, notes, and engine commands on their 8 voice
+        lanes, with a live playhead and per-voice mute pills during playback.
+        Esc closes it; playback keeps running.
+      </p>
+      <p>
+        <b>Edit&nbsp;Song&nbsp;Sets</b> edits what each header music value does: which modules its
+        set uploads, which song starts on entry, and the pause-item flag —
+        plus the upload lists themselves. The two unused values are free slots
+        for custom picks (selectable in the level header once repointed).
+        Edits save into the project and apply on the next build
+        (Test&nbsp;Level rebuilds automatically); &#9654; auditions any pick
+        immediately. The header panel&rsquo;s <b>Edit&nbsp;sets&hellip;</b>{' '}
+        button jumps here.
+      </p>
+      <p>
+        <b>Export/Import</b> writes everything to the project&rsquo;s <code>audio</code> folder
+        with one button: sound effects as editable MML <code>.txt</code> scripts,
+        instrument samples as raw <code>.brr</code> plus listenable <code>.wav</code>.
+        Edit the sample .wavs in any audio editor and <b>Import&nbsp;Samples</b>{' '}
+        re-encodes just what changed &mdash; edits preview instantly; a rebuild bakes
+        them in. Songs imported into the ROM sit in their own{' '}
+        <i>Imported&nbsp;songs</i> section up top, each with play and <b>Reset</b>;
+        its budget figure tracks the shared free space imports can use.
+      </p>
+      <p>
+        <b>import/</b> brings songs in from <code>.spc</code> files (emulator
+        captures of the game and its hacks) and from MML sources:
+        AddmusicK packages (the <code>.txt</code> plus its sample folder) or AddMusicY
+        files, detected automatically. SMW&rsquo;s built-in instruments and drums are
+        translated onto this game&rsquo;s own sounds, and the <i>port report</i> under
+        the file lists every approximation to listen for. Drop a file in the folder,
+        pick which song module it replaces, <b>&#9654;</b> previews it over that
+        music set, and <b>Import</b> writes it into the project &mdash; every level using
+        that music hears it. Each detected song lists its size against the same
+        budgets the Song&nbsp;Sets diagram draws (sequence bytes, samples, instrument rows,
+        sample slots) next to a <i>space in target</i> line for the chosen module
+        &mdash; a highlighted figure exceeds that space. For MML files a second dropdown can target a
+        <i> single slot</i> inside the module: the import merges in alongside the
+        module&rsquo;s other songs (they keep playing, but share the module&rsquo;s
+        space) instead of replacing them all.
+      </p>
+    </>
+  ),
   graphics: (
     <>
       <p>

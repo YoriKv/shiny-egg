@@ -1,0 +1,14 @@
+{
+  "id": "worldmap-scroll-fix",
+  "name": "World Map Scroll Fix",
+  "category": "Engine Fixes",
+  "description": "Fixes the world-map camera scrolling forever (visibly looping the map) when a Yoshi world-map position has an odd X coordinate. The vanilla scroll stepper only stops on exact equality with a target it forces even, so it silently requires every Yoshi X to be even; this removes that constraint, making arbitrary repositioned map Yoshis scroll correctly. No effect on unmodified positions. Made with AI.",
+  "details": [
+    "asm patch: in-place rewrite of the 25-byte smooth-scroll stepper CODE_17BF63 ($17:BF63), the per-frame default of the gamemode-$22 dispatch DATA_17B3C5. Vanilla steps camera $6D by +/-2 (DATA_17BECE) toward target $79 = clamp(yoshiX - $7C, 0, $100), forces the camera even (AND #$FFFE), and stops only on $6D == $79 - unreachable when $79 is odd, so the camera wraps and the 512px map tilemap loops.",
+    "The rewrite terminates when camera and target share the same even pair ((($79 EOR $6D) AND #$FFFE) == 0, i.e. <=1px apart) and drops the evening. Even coordinates: dynamics byte-for-byte equivalent to vanilla. Odd coordinates: settles within 1px from either side. Direction selection at CODE_17BF22 and the fall-through JSL at CODE_17BF7C are untouched; a build-time pad guard asserts the replacement still ends exactly at CODE_17BF7C.",
+    "The other world-map camera writers (map-load snap at $17:A856, per-frame walk-follow snap CODE_17BCEF/CODE_17BCF1, manual L/R scroll CODE_17C562 and its return CODE_17C5C5) are all clamped/overshoot-safe for arbitrary positions and need no change. Odd camera resting values already occur in vanilla via the walk-follow snap, so downstream consumers ($41 / $6094 -> SuperFX map renderer) take arbitrary pixel values.",
+    "Full investigation (root cause, verified-safe paths, secondary cosmetic quirks like the end-of-walk jump arc): yi-shiny tmp/worldmap-scroll-investigation.md."
+  ],
+  "source": "builtin",
+  "romVersionAuthored": "YI_U1"
+}

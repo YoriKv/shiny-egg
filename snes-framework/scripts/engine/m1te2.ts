@@ -256,8 +256,12 @@ export function renderM1te2Rgba(doc: M1te2Doc): M1te2Preview {
     const map = doc.maps[slot];
     for (let y = 0; y < doc.mapHeight; y++) {
       for (let x = 0; x < doc.mapWidth; x++) {
+        // Word 0 (char 0 / row 0 / no flip) DRAWS like any other word — the SNES
+        // has no empty-cell sentinel, only per-pixel index-0 transparency, and the
+        // overworld's BG3 ground legitimately places char 0 (skipping it left black
+        // backdrop holes vs renderWorldMapTerrain). Producers that mean "empty"
+        // keep a blank tile 0 (buildIconLayout), which stays invisible per-pixel.
         const w = map[y * MAP_STRIDE + x]!;
-        if (w === 0) continue; // tile 0 / row 0 / no flip — the editor's empty cell
         const t = w & 0x3ff;
         const palRow = (w >> 10) & 0x07;
         const hf = (w & 0x4000) !== 0;

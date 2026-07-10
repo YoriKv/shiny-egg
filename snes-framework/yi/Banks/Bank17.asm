@@ -6844,9 +6844,10 @@ CODE_17B77D:
 	STZ.w $1118
 	RTS
 
+;@editable:world-map-yoshi-walk-paths begin
 ; DATA_worldmap_yoshi_walk_xcoords -- SMWC: World-map Yoshi-walk path checkpoint X-coords
-; (8 words per level, 48 levels). Yoshi walks to each in order after
-; completing a level.
+; (4 words per level, 48 levels indexed world*8+level; $0000 = stop). Yoshi
+; walks to each in order after completing a level.
 DATA_17B781:
 DATA_worldmap_yoshi_walk_xcoords:
 	dw $0038,$0000,$0000,$0000,$0070,$0076,$0000,$0000
@@ -6875,7 +6876,7 @@ DATA_worldmap_yoshi_walk_xcoords:
 	dw $0196,$0196,$0000,$0000,$0000,$0000,$0000,$0000
 
 ; DATA_worldmap_yoshi_walk_ycoords -- SMWC: World-map Yoshi-walk path checkpoint Y-coords
-; (8 words per level, 48 levels). Pairs with DATA_worldmap_yoshi_walk_xcoords
+; (4 words per level, 48 levels). Pairs with DATA_worldmap_yoshi_walk_xcoords
 ; at DATA_worldmap_yoshi_walk_xcoords.
 DATA_17B901:
 DATA_worldmap_yoshi_walk_ycoords:
@@ -6903,6 +6904,7 @@ DATA_worldmap_yoshi_walk_ycoords:
 	dw $0090,$0000,$0000,$0000,$0098,$0000,$0000,$0000
 	dw $0094,$0098,$0000,$0000,$0088,$0000,$0000,$0000
 	dw $009C,$00A4,$0000,$0000,$0000,$0000,$0000,$0000
+;@editable:world-map-yoshi-walk-paths end
 
 DATA_17BA81:
 	dw $0080,$0080,$0080,$0000,$0080,$0080,$0080,$0080
@@ -7156,6 +7158,7 @@ CODE_17BD9A:
 CODE_17BDAD:
 	RTS
 
+;@editable:world-map-yoshi-dots begin
 ; DATA_worldmap_yoshi_xcoords_by_world -- SMWC: World-map per-Yoshi X-coords, 6 worlds * 8 Yoshis
 ; per world (16 bytes per world, so SMWC splits as $17BDAE/BDBE/BDCE/
 ; BDDE/BDEE/BDFE for worlds 1..6).
@@ -7178,6 +7181,7 @@ DATA_worldmap_yoshi_ycoords_by_world:
 	dw $009C,$00A4,$008C,$00B0,$00A4,$00A4,$009C,$008C
 	dw $00AC,$007C,$008C,$0080,$0074,$008C,$0084,$007C
 	dw $00AC,$00A4,$0094,$0094,$009C,$009C,$008C,$00A8
+;@editable:world-map-yoshi-dots end
 
 DATA_17BE6E:
 	dw $0001,$0001,$0001,$0001,$0001,$0001,$0000,$0001

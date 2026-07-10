@@ -18,7 +18,9 @@
 
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { WorldMapEditorApi } from '../edit-session/useWorldMapEditor'
+import type { WorldMapPathsEditorApi } from '../edit-session/useWorldMapPathsEditor'
 import type { YoshiColorsEditorApi } from '../edit-session/useYoshiColorsEditor'
+import { WorldMapPathsSection } from './WorldMapPathsSection'
 import type {
   PaletteCatalogGroup,
   WorldMapEntrance,
@@ -386,17 +388,20 @@ function worldOf(label: string): number | undefined {
 }
 
 /** The World Map window body. `editor` is the App-level entrance-table document;
- *  `yoshi` the per-level Yoshi-color document; `paletteDraft` the live palette
+ *  `yoshi` the per-level Yoshi-color document; `paths` the Yoshi path-table
+ *  document (the per-world map section); `paletteDraft` the live palette
  *  edit map (offset→BGR15) so the color previews reflect in-progress palette
  *  edits; `onJump(recordId, x, y)` loads that level + focuses the cell. */
 export function WorldMapBody({
   editor,
   yoshi,
+  paths,
   paletteDraft,
   onJump
 }: {
   editor: WorldMapEditorApi
   yoshi: YoshiColorsEditorApi
+  paths: WorldMapPathsEditorApi
   paletteDraft: Map<number, number>
   onJump?: (recordId: number, x: number, y: number) => void
 }): JSX.Element {
@@ -543,8 +548,9 @@ export function WorldMapBody({
         <div className="se-worldmap__list">
           <p className="se-worldmap__note">
             Each level's data record (<b>Plays</b>), progression (<b>Unlocks</b>) and{' '}
-            <b>Yoshi</b> color — the world's flow. No live preview; Test Level to verify. Click a
-            level to edit its spawn + checkpoints; unwired slots (removed levels) can be re-wired.
+            <b>Yoshi</b> color — the world's flow. Test Level to verify. Click a level to edit its
+            spawn + checkpoints; unwired slots (removed levels) can be re-wired. The Yoshi path
+            (map positions) is edited on the map below.
           </p>
           <table className="se-worldmap__table">
             <thead>
@@ -669,6 +675,7 @@ export function WorldMapBody({
               })}
             </tbody>
           </table>
+          {curWorld !== undefined && <WorldMapPathsSection world={curWorld} editor={paths} />}
         </div>
       )}
 
@@ -763,26 +770,35 @@ export function WorldMapBody({
       )}
 
       <div className="se-worldmap__footer">
-        {/* One Save covers both docs the panel edits — the entrance table and the
-            Yoshi-color table (each writes its own overlay file). */}
-        {(editor.saveError || yoshi.saveError) && (
-          <span className="se-strings__warn">{editor.saveError ?? yoshi.saveError}</span>
+        {/* One Save covers all three docs the panel edits — the entrance table,
+            the Yoshi-color table and the Yoshi path tables (each writes its own
+            overlay file). */}
+        {(editor.saveError || yoshi.saveError || paths.saveError) && (
+          <span className="se-strings__warn">
+            {editor.saveError ?? yoshi.saveError ?? paths.saveError}
+          </span>
         )}
-        {(editor.dirty || yoshi.dirty) && (
+        {(editor.dirty || yoshi.dirty || paths.dirty) && (
           <span className="se-meta-xs se-worldmap__dirty">unsaved</span>
         )}
         <button
           type="button"
           className="se-btn is-primary se-worldmap__save"
-          disabled={(!editor.dirty && !yoshi.dirty) || editor.saving || yoshi.saving}
+          disabled={
+            (!editor.dirty && !yoshi.dirty && !paths.dirty) ||
+            editor.saving ||
+            yoshi.saving ||
+            paths.saving
+          }
           onClick={() =>
             void Promise.all([
               editor.dirty ? editor.save() : Promise.resolve(true),
-              yoshi.dirty ? yoshi.save() : Promise.resolve(true)
+              yoshi.dirty ? yoshi.save() : Promise.resolve(true),
+              paths.dirty ? paths.save() : Promise.resolve(true)
             ])
           }
         >
-          {editor.saving || yoshi.saving ? 'Saving…' : 'Save'}
+          {editor.saving || yoshi.saving || paths.saving ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>

@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.7.0 - 2026-07-09
+
+- Bug fixes and performance improvements.
+- World map Yoshi path editor.
+- BPS patch support.
+- Export as patch option added.
+- New audio panel with a complete audio editing pipeline including...
+- Preview audio in editor.
+- Sequencer view in editor (read only).
+- Song sets tab with complete ARAM visualization and list of songs.
+- SFX tab with list of sound effects and preview.
+- Song sets editor tab that allows editing which music header value maps to which song set and song.
+- Song set editor also lets you see and edit the song set data (what it loads and in what order).
+- Music, SFX, and Samples export/import.
+- Import AMK and AMY compatible music.
+- Export, edit, and import SFX via MML.
+- Export, edit, and import samples via brr or wav.
+
 ## v0.6.1 - 2026-07-04
 
 - Add a zoom percent view and dropdown.

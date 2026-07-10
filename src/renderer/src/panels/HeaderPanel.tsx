@@ -14,6 +14,7 @@ import { useState, type Dispatch, type JSX } from 'react'
 import type { LevelData } from '../../../preload/api'
 import type { LevelAction } from '../canvas/level-reducer'
 import { headerFields, type HeaderField } from '../data/header-schema'
+import { useSpcPlayer } from '../hooks/useSpcPlayer'
 import { FieldRow } from './field-widgets'
 
 /** Action under the Visual fields: set the sprite tileset (header[7]) to the
@@ -58,14 +59,85 @@ function SpritesetFitRow({
   )
 }
 
+/** Action under the Gameplay fields: play the selected music setting in the
+ *  editor (the Audio panel's synthesized-SPC path — same shared player, so
+ *  the panel's transport shows/stops it too). Plays the setting's entry song.
+ *  `onEditSets` jumps to the Audio panel's Sets tab (edit what each music
+ *  value uploads/plays). */
+function MusicPreviewRow({ musicSetting, onEditSets }: { musicSetting: number; onEditSets?: () => void }): JSX.Element {
+  const player = useSpcPlayer()
+  const [status, setStatus] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [playedSeq, setPlayedSeq] = useState<number | null>(null)
+  const isOurs = playedSeq !== null && playedSeq === player.seq && player.playing
+
+  async function toggle(): Promise<void> {
+    if (isOurs) {
+      player.stop()
+      return
+    }
+    setBusy(true)
+    setStatus(null)
+    try {
+      const cat = await window.shinyEgg.audio.catalog()
+      if (!cat.ok) {
+        setStatus(cat.error)
+        return
+      }
+      const setting = cat.catalog.settings[musicSetting]
+      if (!setting || setting.songs.length === 0) {
+        setStatus('No song data for this music setting.')
+        return
+      }
+      const slot = setting.songs.find((s) => s.slotId === setting.initSongId) ?? setting.songs[0]
+      const r = await window.shinyEgg.audio.composeSongSpc(musicSetting, slot.slotId)
+      if (!r.ok) {
+        setStatus(r.error)
+        return
+      }
+      setPlayedSeq(await player.play(r.spc, `${setting.name} — ${slot.name}`))
+    } catch (e) {
+      setStatus((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <dd className="se-props__fitspriteset">
+      <button
+        type="button"
+        className="se-btn"
+        onClick={() => void toggle()}
+        disabled={busy}
+        title="Play this music setting's entry song in the editor (synthesized — no emulator)"
+      >
+        {isOurs ? '⏹ Stop music' : busy ? 'Composing…' : '▶ Play music'}
+      </button>
+      {onEditSets && (
+        <button
+          type="button"
+          className="se-btn"
+          onClick={onEditSets}
+          title="Open the Audio panel's Edit Song Sets tab — edit which modules each music value uploads, its entry song, and the pause-item flag"
+        >
+          Edit sets…
+        </button>
+      )}
+      {status && <span className="se-props__fithint">{status}</span>}
+    </dd>
+  )
+}
+
 export interface HeaderBodyProps {
   /** The loaded level (its `header` is the edited surface). */
   level: LevelData | null
   /** Dispatch header edits to the level reducer. */
   dispatchLevel: Dispatch<LevelAction>
+  /** Open the Audio panel's Sets tab (the music dropdown's edit affordance). */
+  onEditMusicSets?: () => void
 }
 
-export function HeaderBody({ level, dispatchLevel }: HeaderBodyProps): JSX.Element {
+export function HeaderBody({ level, dispatchLevel, onEditMusicSets }: HeaderBodyProps): JSX.Element {
   if (!level) {
     return <p className="se-props__empty">No level loaded.</p>
   }
@@ -102,6 +174,7 @@ export function HeaderBody({ level, dispatchLevel }: HeaderBodyProps): JSX.Eleme
         <span className="se-props__section-note">No live preview — Test Level to verify.</span>
       </dt>
       {fields.filter((f) => !f.preview).map(row)}
+      <MusicPreviewRow musicSetting={header[13] ?? 0} onEditSets={onEditMusicSets} />
     </dl>
   )
 }

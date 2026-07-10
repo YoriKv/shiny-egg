@@ -5,12 +5,13 @@ A Yoshi's Island (SNES) level editor.
 Features:
 - Full tile and sprite editing with copy/paste, undo, and multiselect
 - Palette editing with live preview
-- Graphics editing with edit as PNG and export to Aseprite file
 - Level header editing with live preview
 - World map editor
 - Strings editor
+- Full graphics editing pipeline with export/import of PNG, Aesprite, M1TE, and YYCHR
+- Full audio editing pipeline with export/import of AMK and AMY style MML files
 - Memory management (migrate levels to free space)
-- ASM and binary patches that are resistant to address drift
+- ASM and binary patches that are resistant to address drift and import existing patches
 - Import an existing romhack
 - Import levels from GBA
 - Integrated help and documentation for every panel and tool as well as
@@ -82,6 +83,11 @@ work this tool couldn't exist. So thank you to these folks and many more.
 - **M1TE** - the SNES tile/map editor bundled with the app for editing exported
   BG-layer graphics sessions; a fork of
   **[M1TE2](https://github.com/nesdoug/M1TE2)** (Doug Fraker / nesdoug).
+- **AddmusicK** (Kipernal and its community maintainers) - the MML song format
+  for the music importer, and the documented instrument/percussion tables
+  that make translating SMW ports to Yoshi's Island's sound driver possible.
+- **AddMusicY** (Jimmy) - the MML importer dialect, documentation, song
+  transcriptions used for references, and the included community sample library.
 
 ## AI Use Disclaimer
 
@@ -114,6 +120,15 @@ work this tool couldn't exist. So thank you to these folks and many more.
   install under `resources/snes-framework/m1te-licenses/`, and the upstream
   source is at https://github.com/nesdoug/M1TE2. It runs separately from the
   editor.
+- The Audio panel's in-editor playback uses **snes_spc** (Blargg's SNES
+  SPC-700 APU emulator, © Shay Green), licensed under the GNU LGPL v2.1 and
+  compiled to WebAssembly by us from its unmodified sources (build script in
+  our snes_spc fork's `wasm/` directory). The wasm core ships embedded in the
+  app bundle; its full license text and provenance/rebuild notes ship with
+  the install under `resources/snes-spc-licenses/`. This editor is
+  MIT-licensed with public source, so the combination can be rebuilt with a
+  modified copy of the library. Upstream:
+  http://www.slack.net/~ant/libs/audio.html.
 - The warp exit / entrance marker icons are by **Delapouite**
   ([game-icons.net](https://game-icons.net)), recolored, under
   [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).

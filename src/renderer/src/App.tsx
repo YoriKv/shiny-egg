@@ -50,7 +50,9 @@ import { gradientOffset } from './lib/gradient'
 import { TilesBody } from './panels/TilesPanel'
 import { StringsBody, useMessagePtrTableEditor, useStringsEditor } from './panels/StringsPanel'
 import { useWorldMapEditor } from './edit-session/useWorldMapEditor'
+import { useWorldMapPathsEditor } from './edit-session/useWorldMapPathsEditor'
 import { useYoshiColorsEditor } from './edit-session/useYoshiColorsEditor'
+import { useMusicSetsEditor } from './edit-session/useMusicSetsEditor'
 import { WorldMapBody } from './panels/WorldMapPanel'
 import { PickerBody } from './panels/PickerPanel'
 import { ExitsBody } from './panels/ExitsPanel'
@@ -60,6 +62,7 @@ import { ObjectFinderBody } from './panels/ObjectFinderBody'
 import { BanksBody } from './panels/BanksPanel'
 import { GraphicsBody } from './panels/GraphicsPanel'
 import { PatchesBody } from './panels/PatchesBody'
+import { AudioBody } from './panels/AudioBody'
 import { ValidationPanel } from './panels/ValidationPanel'
 import { useSubLevelBFS } from './hooks/useSubLevelBFS'
 import { useFloatingWindows, type WindowDef } from './hooks/useFloatingWindows'
@@ -72,6 +75,7 @@ import { useLevelNavigation } from './hooks/useLevelNavigation'
 import { getAllLevels, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
 import { ColorAlphaButton } from './toolbar/ColorAlphaButton'
+import { LiveColorInput } from './LiveColorInput'
 import { ZoomMenu } from './toolbar/ZoomMenu'
 import type { IncomingExit, LayerVisibility, OutlineMode, PlacementItem, Selection } from './types'
 import { nextGridMode, nextOutlineMode } from './types'
@@ -237,6 +241,7 @@ const PANEL_TOGGLES = [
   { kind: 'exits', label: 'Exits Map', title: 'Exits map + warp network' },
   { kind: 'header', label: 'Level Header', title: 'Level header' },
   { kind: 'strings', label: 'Strings', title: 'Strings' },
+  { kind: 'audio', label: 'Audio', title: 'Browse + audition music and sound effects' },
   { kind: 'world-map', label: 'World Map', title: 'World-map entrances' },
   { kind: 'banks', label: 'Level Banks', title: 'Bank byte budgets' },
   { kind: 'validation', label: 'Validation', title: 'Validate levels for playability issues' },
@@ -247,7 +252,7 @@ type PanelKind = (typeof PANEL_TOGGLES)[number]['kind']
 // inline buttons: the ROM-global panels (cart-wide data, not the loaded level)
 // under "Global Panels", and the art panels under "Graphics Panels". Everything
 // else stays an inline toggle button.
-const GLOBAL_PANEL_KINDS = new Set<string>(['strings', 'world-map', 'banks', 'patches', 'validation'])
+const GLOBAL_PANEL_KINDS = new Set<string>(['strings', 'world-map', 'banks', 'patches', 'validation', 'audio'])
 const GRAPHICS_PANEL_KINDS = new Set<string>(['graphics', 'tiles', 'palette'])
 
 // Resolve a finder jump's (kind, id, cell) to the loaded level's matching
@@ -576,14 +581,22 @@ export default function App(): JSX.Element {
   useEffect(() => {
     document.documentElement.style.setProperty('--se-canvas-bg', canvasBg)
   }, [canvasBg])
+  // Commit (release) = state + persist. The pickers' per-frame drag events go
+  // through the LiveColorInput/ColorAlphaButton preview paths instead — the BG
+  // preview writes the CSS var directly (no React state, no settings IPC), and
+  // the grid preview updates only the state (throttled in the widget).
   const onCanvasBgChange = useCallback((color: string) => {
     setCanvasBg(color)
     void window.shinyEgg.settings.set({ canvasBackgroundColor: color })
+  }, [])
+  const previewCanvasBg = useCallback((color: string) => {
+    document.documentElement.style.setProperty('--se-canvas-bg', color)
   }, [])
   const onGridColorChange = useCallback((color: string) => {
     setGridColor(color)
     void window.shinyEgg.settings.set({ gridColor: color })
   }, [])
+  const previewGridColor = useCallback((color: string) => setGridColor(color), [])
   // Toolbar zoom-preset pick → Canvas (nonce'd request, like focusReq/cameraReq,
   // so re-picking a preset after wheel-zooming away still fires). The live zoom
   // flows the other way through the zoom store (canvas/zoom-store.ts), not App
@@ -1073,6 +1086,23 @@ export default function App(): JSX.Element {
   // (saveAll) via its doc key; listed in closeDocs('world-map') so closing the
   // window prompts to save it too.
   const yoshiColorsEditor = useYoshiColorsEditor(projectScope, markRomDirty, docHistory)
+  // World-map Yoshi path tables (Bank17 dot positions + walk checkpoints) —
+  // edited from the World Map panel's per-world map section. A plain asm edit
+  // (no catalog impact), so its save just marks the build dirty; the panel's
+  // markers preview live from this draft.
+  const worldMapPathsEditor = useWorldMapPathsEditor(projectScope, markRomDirty, docHistory)
+  // Music set tables (Bank00/Bank01 ;@editable regions) — edited from the
+  // Audio panel's Sets tab. Asm edit, no live canvas preview → save marks the
+  // build dirty; auto-registers with the EditSession (saveAll) and undo via
+  // its doc key; listed in closeDocs('audio') so closing the window prompts.
+  const musicSetsEditor = useMusicSetsEditor(projectScope, markRomDirty, docHistory)
+  // Cross-panel "open the Audio panel at a tab" request (the Header panel's
+  // Edit-sets button); seq bumps so a repeat click re-applies.
+  const [audioTabRequest, setAudioTabRequest] = useState<{ tab: 'sets'; seq: number } | null>(null)
+  const openMusicSets = useCallback((): void => {
+    openWindow('audio')
+    setAudioTabRequest((r) => ({ tab: 'sets', seq: (r?.seq ?? 0) + 1 }))
+  }, [openWindow])
   // Per-line "jump" in the World Map panel: load a level (spawn / checkpoint
   // re-entry record) and focus the camera at the cell. Reuses the finder-jump
   // primitive (anchors the owning translevel, loads, focuses).
@@ -1116,9 +1146,11 @@ export default function App(): JSX.Element {
         : kind === 'strings'
           ? [levelNameStrings, messageStrings, messagePtrs, introStory, endingText]
           : kind === 'world-map'
-            ? [worldMapEditor, yoshiColorsEditor]
-            : [],
-    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor, yoshiColorsEditor]
+            ? [worldMapEditor, yoshiColorsEditor, worldMapPathsEditor]
+            : kind === 'audio'
+              ? [musicSetsEditor]
+              : [],
+    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor, yoshiColorsEditor, worldMapPathsEditor, musicSetsEditor]
   )
   const requestCloseWindow = useCallback(
     (w: WindowDef): void => {
@@ -1558,15 +1590,16 @@ export default function App(): JSX.Element {
           <ZoomMenu onZoomTo={onZoomTo} />
           <label className="se-toolbar__bgcolor" title="Canvas background color">
             <span className="se-toolbar__swatch-label">BG</span>
-            <input
-              type="color"
+            <LiveColorInput
               value={canvasBg}
-              onChange={(e) => onCanvasBgChange(e.target.value)}
+              onPreview={previewCanvasBg}
+              onCommit={onCanvasBgChange}
             />
           </label>
           <ColorAlphaButton
             value={gridColor}
-            onChange={onGridColorChange}
+            onPreview={previewGridColor}
+            onCommit={onGridColorChange}
             label="Grid"
             title="Grid color + opacity (screen + tile grid)"
           />
@@ -1826,6 +1859,7 @@ export default function App(): JSX.Element {
                 <WorldMapBody
                   editor={worldMapEditor}
                   yoshi={yoshiColorsEditor}
+                  paths={worldMapPathsEditor}
                   paletteDraft={paletteEditor.draftMap}
                   onJump={onWorldMapJump}
                 />
@@ -1848,7 +1882,7 @@ export default function App(): JSX.Element {
                   levelTileset={levelState.level?.header?.[1] ?? null}
                 />
               ) : w.kind === 'header' ? (
-                <HeaderBody level={levelState.level} dispatchLevel={dispatchLevel} />
+                <HeaderBody level={levelState.level} dispatchLevel={dispatchLevel} onEditMusicSets={openMusicSets} />
               ) : w.kind === 'exits' ? (
                 <ExitsBody
                   level={levelState.level}
@@ -1875,6 +1909,14 @@ export default function App(): JSX.Element {
                 />
               ) : w.kind === 'patches' ? (
                 <PatchesBody projectId={projectScope} onMutated={markRomDirty} />
+              ) : w.kind === 'audio' ? (
+                <AudioBody
+                  projectId={projectScope}
+                  onMutated={markRomDirty}
+                  onJumpToLevel={selectRootLevel}
+                  setsEditor={musicSetsEditor}
+                  tabRequest={audioTabRequest}
+                />
               ) : w.kind === 'banks' ? (
                 <BanksBody
                   level={levelState.level}

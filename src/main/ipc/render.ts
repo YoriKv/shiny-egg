@@ -44,6 +44,10 @@ import { bestStockSpriteset } from 'snes-framework/sprite-tile-base'
 import { hex0x } from 'snes-framework/hex'
 import { loadLevel } from 'snes-framework/level'
 import { buildPaletteCatalog } from 'snes-framework/palette-catalog'
+import {
+  buildWorldMapTerrainContext,
+  renderWorldMapTerrain
+} from 'snes-framework/world-map-terrain'
 import { frameworkWorkRoot, overlayRoot } from '../framework-paths'
 import { getCurrentProjectId } from '../projects'
 import type {
@@ -317,6 +321,22 @@ export function registerRenderIpc(): void {
   // tables + by scene, each swatch carrying its blob byte-offset so it reuses the
   // SAME global edit model as editablePalette. Colors are PRISTINE base (the
   // panel overlays the live draft), so it's independent of build freshness.
+  // Live overworld-terrain preview (the World Map panel's Yoshi-path editor):
+  // the composited 512×256 BG3 ⊕ BG2 ⊕ BG1 map for one world (0-based), served
+  // straight from the built ROM + the gfx live cache (so unbuilt tilemap/char
+  // edits preview). Cart-static per world — no per-level args. Null when the
+  // built ROM/symbols are unavailable (unbuilt cart).
+  ipcMain.handle('render:worldMapTerrain', async (_event, world: number): Promise<RenderImage | null> => {
+    try {
+      const { rom, symbols } = loadRomAndSymbols()
+      const c = buildWorldMapTerrainContext(rom, symbols, world, gfxLiveEdits())
+      const { rgba, width, height } = renderWorldMapTerrain(c)
+      return { rgba, width, height }
+    } catch {
+      return null
+    }
+  })
+
   ipcMain.handle('render:paletteCatalog', async (): Promise<PaletteCatalog | null> => {
     const { rom, symbols } = loadRomAndSymbols()
     const baseMap = pristineBasePalette(frameworkWorkRoot())

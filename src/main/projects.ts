@@ -379,6 +379,18 @@ export function ensureProjectBaseCompatible(id: string): BaseCompat {
   return { ok: true }
 }
 
+/** Resolve the active project for an overlay save, or a friendly error result —
+ *  the projectId + base-compatibility guard every overlay save shares (returns
+ *  the same messages they returned inline). Shared by the resource saves
+ *  (resources.ts) and the audio sample/song imports (audio.ts). */
+export function requireWritableProject(): { ok: true; projectId: string } | { ok: false; error: string } {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+  return { ok: true, projectId }
+}
+
 /**
  * Rename a project. Moves the folder (id == name), validates the new name,
  * and re-points the current-project setting if it was selected. Throws on an

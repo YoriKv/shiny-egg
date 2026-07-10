@@ -27,16 +27,28 @@ import type {
   PaletteCatalogEntry,
   PaletteCatalogSwatch,
   PaletteEdit,
+  MusicSetsModel,
   PoolBudgetReport,
   PoolOverview,
   SaveResourceResult,
   WorldMapEntrance,
   WorldMapMidwayEntrance,
   WorldMapModel,
+  WorldMapPathPoint,
+  WorldMapPathsModel,
   YoshiColorsModel
 } from 'snes-framework/types'
 import type { CollisionEntry } from 'snes-framework/collision'
 import type {
+  AudioAramUsageResult,
+  AudioCatalogResult,
+  AudioComposeSpcResult,
+  AudioDecodeSongResult,
+  AudioExportRunResult,
+  AudioExportStateResult,
+  AudioImportResult,
+  AudioSongImportPreviewResult,
+  AudioSongImportStateResult,
   Bg1LayerResponse,
   BgLayersResult,
   BizhawkWarp,
@@ -198,11 +210,15 @@ export type {
   StringTableModel,
   TileCoverage,
   UsedMap16,
+  MusicSetSettingModel,
+  MusicSetsModel,
   ValidationIssue,
   ValidationSeverity,
   WorldMapEntrance,
   WorldMapMidwayEntrance,
   WorldMapModel,
+  WorldMapPathPoint,
+  WorldMapPathsModel,
   YoshiColorsModel
 } from 'snes-framework/types'
 export type {
@@ -330,8 +346,36 @@ export type {
   Settings,
   SpriteLayerResponse,
   SpriteProperty,
-  SpritePropertiesRequest
+  SpritePropertiesRequest,
+  AudioAramUsageResult,
+  AudioCatalogResult,
+  AudioCatalogUi,
+  AudioComposeSpcResult,
+  AudioDecodeSongResult,
+  AudioExportFileUi,
+  AudioExportRunResult,
+  AudioExportStateResult,
+  AudioImportItemUi,
+  AudioImportResult,
+  AudioImportSongCandidateUi,
+  AudioImportSongFileUi,
+  AudioImportTargetUi,
+  AudioSettingUi,
+  AudioSfxUi,
+  AudioSongImportPreviewResult,
+  AudioSongImportRunResult,
+  AudioSongImportStateResult
 } from '../shared/ipc-types'
+export type {
+  AramImportBudget,
+  AramSegment,
+  PatternSpan,
+  SettingAramUsage,
+  SongTimeline,
+  TimedNote,
+  TimedVcmd,
+  VoiceTimeline
+} from 'snes-framework/types'
 
 // ── API surface (method-bearing; contract-only, no data analogue) ───────────
 
@@ -354,8 +398,11 @@ export interface ProjectsAPI {
    *  Returns `{ ok:false, error }` on an invalid/taken name or a locked
    *  folder (e.g. open in Explorer) — never rejects. */
   rename: (id: string, newName: string) => Promise<ProjectRenameResult>
-  /** Build the ROM and Save-As to a user-chosen `.sfc`. */
+  /** Export as ROM: build and Save-As to a user-chosen `.sfc`. */
   export: (id: string) => Promise<ProjectExportResult>
+  /** Export as Patch: build and Save-As a `.bps` patch — the built ROM
+   *  BPS-diffed against the reference cart, for ROM-free distribution. */
+  exportPatch: (id: string) => Promise<ProjectExportResult>
   /** Reveal the project folder in the OS file manager. */
   openFolder: (id: string) => Promise<void>
   /** Delete the project folder. On success returns the new current project.
@@ -498,6 +545,11 @@ export interface RenderAPI {
    *  carrying its blob offset for the shared global-edit model. Cart-static (no
    *  per-level args). Null if the built ROM/symbols are unavailable. */
   paletteCatalog: () => Promise<PaletteCatalog | null>
+  /** Composited 512×256 overworld terrain image for one world (0-based) — the
+   *  World Map panel's Yoshi-path preview (BG3 ground ⊕ BG2 scenery ⊕ BG1
+   *  path/markers, honouring unbuilt gfx-live edits). Cart-static per world.
+   *  Null when the built ROM/symbols are unavailable. */
+  worldMapTerrain: (world: number) => Promise<RenderImage | null>
   decodeLevelLayout: (req: LevelRenderRequest) => Promise<DecodedLevelLayout | null>
   /** Paint tool — forward-fit a painted height curve to std objects. The corners
    *  are interpolated into slope lines, decomposed into a representable staircase,
@@ -553,7 +605,9 @@ export interface EditorAPI {
    *  kinds return `unknown` (the caller narrows). */
   loadResource(resource: { kind: 'level'; recordId: number }): Promise<LevelData>
   loadResource(resource: { kind: 'world-map' }): Promise<WorldMapModel>
+  loadResource(resource: { kind: 'world-map-paths' }): Promise<WorldMapPathsModel>
   loadResource(resource: { kind: 'yoshi-colors' }): Promise<YoshiColorsModel>
+  loadResource(resource: { kind: 'music-sets' }): Promise<MusicSetsModel>
   loadResource(resource: EditableResource): Promise<unknown>
   /** Per-sprite-type computed read-only properties (Properties panel) — `[]` for
    *  a sprite type with no provider. */
@@ -796,6 +850,94 @@ export interface ShinyEggAPI {
   importRom: ImportRomAPI
   importGba: ImportGbaAPI
   validation: ValidationAPI
+  audio: AudioAPI
+}
+
+/** Audio panel: browse/audition the built ROM's music + SFX (synthesized
+ *  .spc → the in-editor SPC player), decode sequence/SFX timelines for the
+ *  inspector tabs, and drive the per-project export folder — export-all,
+ *  base-aware sample import, and song import, the panel's overlay-write
+ *  paths (each says when to mark the build dirty).
+ *  See research/plan-audio-panel.md. */
+export interface AudioAPI {
+  /** Music settings + song slots + SFX names over the built ROM. */
+  catalog: () => Promise<AudioCatalogResult>
+  /** Per-music-set ARAM section usage (sequence window, sample space,
+   *  directory slots, instrument rows) — the Songs-tab usage diagram.
+   *  Overlay-aware: an imported song changes the picture without a rebuild. */
+  aramUsage: () => Promise<AudioAramUsageResult>
+  /** Synthesize a playable .spc for a (setting, song slot) — the bytes the
+   *  in-editor SPC player consumes. */
+  composeSongSpc: (setting: number, songSlotId: number) => Promise<AudioComposeSpcResult>
+  /** Synthesize a playable .spc that fires one SFX (engine + global bank
+   *  baseline, port-3 poke; the engine accepts ids 0x01-0xBF). */
+  composeSfxSpc: (id: number) => Promise<AudioComposeSpcResult>
+  /** Synthesize a playable .spc for an explicit block-row (the Edit Song
+   *  Sets tab's ▶ — auditions the DRAFT row composition, unsaved edits
+   *  included; module contents come from the current build + overlays). */
+  composeRowSpc: (blockIds: number[], songSlotId: number) => Promise<AudioComposeSpcResult>
+  /** Decode + expand one song into the Sequence inspector's timed timeline. */
+  decodeSong: (setting: number, songSlotId: number) => Promise<AudioDecodeSongResult>
+  /** Decode + expand one SFX (its full remap chain, each script on its
+   *  assigned voice lane) into the same timeline shape. */
+  decodeSfx: (id: number) => Promise<AudioDecodeSongResult>
+  /** The fixed per-project export folder's contents (`<projectRoot>/audio/`). */
+  exportState: () => Promise<AudioExportStateResult>
+  /** The one-button export: every SFX script as editable MML .txt into
+   *  `<exportDir>/sfx/`, plus every BRR sample (raw .brr + decoded .wav)
+   *  into `<exportDir>/samples/<Bank>/` with the import manifest
+   *  (checksums + loop metadata). */
+  exportAll: () => Promise<AudioExportRunResult>
+  /** Base-aware import of edited sample .wavs: unchanged files skip (stale
+   *  overrides revert to base bytes), edited ones re-encode to BRR in the
+   *  project overlay. Mark the build dirty when imported+reverted > 0. */
+  importSamples: () => Promise<AudioImportResult>
+  /** Read one exported file's bytes back for in-editor playback (sample
+   *  .wav rows; SFX rows synthesize via composeSfxSpc instead). */
+  readExportedSpc: (rel: string) => Promise<AudioComposeSpcResult>
+  /** Open the export folder in the OS file manager (creates it if needed). */
+  openExportFolder: () => Promise<void>
+  /** Scan `<projectRoot>/audio/import/` (created on first scan): YI-driver
+   *  .spc files, each with its candidate songs, plus the 12 replaceable
+   *  target modules. `dropStaccatoToFit` (default false) authorizes the
+   *  over-budget retry without the AMK light-staccato note+tie splits;
+   *  `useSmwSamples` (default false) carries the packaged real SMW samples
+   *  for AMK stock instruments; `noEcho` (default false) strips echo from
+   *  compiled imports and claims the echo buffer as extra room (budgets
+   *  reflect it per target). */
+  songImportState: (downsampleToFit?: boolean, dropStaccatoToFit?: boolean, useSmwSamples?: boolean, noEcho?: boolean) => Promise<AudioSongImportStateResult>
+  /** Synthesize a try-out .spc for one (file, source slot, target module)
+   *  pick — the target set's baseline with the imported song spliced in.
+   *  No ROM write. `targetSlotId` (MML only) merges into that one slot,
+   *  preserving the module's other songs; null/omitted replaces the whole
+   *  module. */
+  previewSongImport: (
+    rel: string,
+    sourceSlot: number,
+    targetBlockId: number,
+    downsampleToFit?: boolean,
+    dropStaccatoToFit?: boolean,
+    useSmwSamples?: boolean,
+    noEcho?: boolean,
+    targetSlotId?: number | null
+  ) => Promise<AudioSongImportPreviewResult>
+  /** Import the song into the project: write the extracted module as the
+   *  target's overlay blob (budget-gated; the build's audio layout pass
+   *  re-fits the region). Mark the build dirty on ok. `targetSlotId` as in
+   *  previewSongImport. */
+  importSong: (
+    rel: string,
+    sourceSlot: number,
+    targetBlockId: number,
+    downsampleToFit?: boolean,
+    dropStaccatoToFit?: boolean,
+    useSmwSamples?: boolean,
+    noEcho?: boolean,
+    targetSlotId?: number | null
+  ) => Promise<AudioSongImportRunResult>
+  /** Remove an imported song (delete the overlay blob — the next build
+   *  reconciles the region back). Mark the build dirty on ok. */
+  revertSongImport: (targetBlockId: number) => Promise<AudioSongImportRunResult>
 }
 
 /** Level validation — the decode side of the Validation panel. The check logic
@@ -857,8 +999,9 @@ export interface PatchesAPI {
   listPrepackaged: () => Promise<PrepackagedPatch[]>
   /** Copy a prepackaged patch into the active project (does not enable it). */
   add: (builtinId: string) => Promise<PatchMutationResult>
-  /** Pick `.ips` file(s) via a dialog and import them into the active project
-   *  (does not enable them). Empty array when the dialog is cancelled. */
+  /** Pick `.ips` / `.bps` / `.asm` file(s) via a dialog and import them into the
+   *  active project (does not enable them). Empty array when the dialog is
+   *  cancelled. */
   import: () => Promise<PatchImportResult[]>
   /** Create a new self-documenting template patch in the active project (all valid
    *  fields with sample data; disabled, so the user edits then enables it). */

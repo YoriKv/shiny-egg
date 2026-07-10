@@ -6,11 +6,12 @@
 // hand-editable in a text editor. The sibling is the home for asm (so it has real
 // editor support); `readPatchFile` folds it back into `PatchFile.asm`. Back-compat:
 // a JSON with inline `asm` and no sibling still loads (every re-save migrates it
-// to the sibling). IPS is import-only — importing converts an `.ips` into chunks;
-// an asar `.asm` is imported by converting it to the build-compatible form (see
-// importAsm). Patches are **per project**: the editor
+// to the sibling). IPS/BPS are import-only — importing converts an `.ips` (or a
+// `.bps` diffed against the reference cart) into chunks; an asar `.asm` is
+// imported by converting it to the build-compatible form (see importAsm).
+// Patches are **per project**: the editor
 // ships a read-only prepackaged catalog (snes-framework/patches/), and the user
-// "adds" (copies) one into the active project, or imports an external `.ips`. The
+// "adds" (copies) one into the active project, or imports an external file. The
 // project's `patches.json` manifest records which local patches are enabled
 // (apply order; last write wins; all off by default).
 
@@ -29,9 +30,12 @@ import { outputSfcName } from 'snes-framework/rom-versions'
 import { readExtractionState } from 'snes-framework/state'
 import { mergeSymbolMaps, parseWlaSymbolMap, type SymbolMap } from 'snes-framework/symbol-map'
 import {
+  applyBps,
   applyPatches,
+  bpsInfo,
   convertAsarPatch,
   deriveAsmPatchMeta,
+  diffSpans,
   flattenIps,
   chunksToStored,
   parseIps,
@@ -58,7 +62,8 @@ import {
   frameworkWorkRoot,
   projectBuildDir,
   projectPatchesDir,
-  projectPatchManifestPath
+  projectPatchManifestPath,
+  referenceCartPath
 } from './framework-paths'
 import { getCurrentProjectId } from './projects'
 
@@ -352,41 +357,106 @@ export function addPrepackagedToProject(builtinId: string): PatchMutationResult 
   return { ok: true }
 }
 
+/** Read an import file, or the shared friendly error result. */
+function readImportFile(filePath: string): { ok: true; raw: Buffer } | { ok: false; error: string } {
+  try {
+    return { ok: true, raw: readFileSync(filePath) }
+  } catch (e) {
+    return { ok: false, error: `Could not read "${filePath}": ${(e as Error).message}` }
+  }
+}
+
+/** Shared tail of every import: unique id from the display name, the
+ *  provenance fields, `<id>.json` (+ sibling asm) write, order append,
+ *  summary result. The format-specific payload (stored chunks or asm, plus
+ *  any derived metadata) rides in `payload`; imports stay disabled until the
+ *  user enables them. */
+function saveImportedPatch(
+  projectId: string,
+  filePath: string,
+  name: string,
+  payload: Partial<PatchFile>,
+  notes?: string[]
+): PatchImportResult {
+  const id = uniqueId(projectId, slugify(name))
+  const pf: PatchFile = {
+    id,
+    name,
+    source: 'imported',
+    importedFrom: basename(filePath),
+    ...(baseRomVersion() ? { romVersionAuthored: baseRomVersion() } : {}),
+    ...payload
+  }
+  writePatchFiles(projectPatchesDir(projectId), pf)
+  appendToOrder(projectId, id)
+  return { ok: true, patch: summaryOf(pf, false), ...(notes && notes.length ? { notes } : {}) }
+}
+
 /** Import an external `.ips` into the active project: flatten it into
  *  address-based chunks and write a self-contained `<id>.json`. Not enabled.
  *  (Label remap is a build-time concern, not done here.) */
 export function importIps(filePath: string): PatchImportResult {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to import a patch into.' }
+  const read = readImportFile(filePath)
+  if (!read.ok) return read
 
-  let raw: Buffer
-  try {
-    raw = readFileSync(filePath)
-  } catch (e) {
-    return { ok: false, error: `Could not read "${filePath}": ${(e as Error).message}` }
-  }
   let ips
   try {
-    ips = parseIps(toU8(raw))
+    ips = parseIps(toU8(read.raw))
   } catch (e) {
     return { ok: false, error: `Not a valid IPS file: ${(e as Error).message}` }
   }
-
   const chunks: PatchChunk[] = flattenIps(ips)
-
-  const dir = projectPatchesDir(projectId)
-  const id = uniqueId(projectId, slugify(basename(filePath).replace(/\.ips$/i, '')))
-  const pf: PatchFile = {
-    id,
-    name: basename(filePath).replace(/\.ips$/i, ''),
-    source: 'imported',
-    importedFrom: basename(filePath),
-    ...(baseRomVersion() ? { romVersionAuthored: baseRomVersion() } : {}),
+  return saveImportedPatch(projectId, filePath, basename(filePath).replace(/\.ips$/i, ''), {
     chunks: chunksToStored(chunks)
+  })
+}
+
+/** Import an external `.bps` into the active project. BPS is a whole-file
+ *  source→target transform (CRC-pinned to its base cart), not offset-based
+ *  writes — so import applies it to the reference cart and diffs the result
+ *  back into address-based chunks, the same form as an IPS import. Only
+ *  same-size patches convert (the 2 MB cart never grows). Not enabled. */
+export function importBps(filePath: string): PatchImportResult {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to import a patch into.' }
+  const read = readImportFile(filePath)
+  if (!read.ok) return read
+
+  if (!existsSync(referenceCartPath())) {
+    return { ok: false, error: 'No reference cart to apply the BPS against — extract a cart first.' }
   }
-  writePatchFiles(dir, pf)
-  appendToOrder(projectId, id)
-  return { ok: true, patch: summaryOf(pf, false) }
+  const source = toU8(readFileSync(referenceCartPath()))
+
+  // Diff the applied target vs source into exact changed spans (diffSpans —
+  // no gap-merging, so a chunk can never clobber another patch's edit in an
+  // unchanged gap under last-wins ordering).
+  let chunks: PatchChunk[]
+  try {
+    const patch = toU8(read.raw)
+    const info = bpsInfo(patch)
+    if (info.targetSize !== source.length) {
+      return {
+        ok: false,
+        error: `The patch resizes the ROM (${source.length} → ${info.targetSize} bytes), which this cart can't do — only same-size BPS patches import.`
+      }
+    }
+    chunks = diffSpans(source, applyBps(patch, source).target)
+  } catch (e) {
+    return { ok: false, error: `Could not apply the BPS to the reference cart: ${(e as Error).message}` }
+  }
+  if (chunks.length === 0) {
+    return { ok: false, error: 'The patch makes no changes to the reference cart.' }
+  }
+
+  return saveImportedPatch(
+    projectId,
+    filePath,
+    basename(filePath).replace(/\.bps$/i, ''),
+    { chunks: chunksToStored(chunks) },
+    [`Converted from BPS: applied to the reference cart and diffed into ${chunks.length} changed region(s).`]
+  )
 }
 
 /** Import an external asar `.asm` hack into the active project: convert the asar
@@ -398,21 +468,15 @@ export function importIps(filePath: string): PatchImportResult {
 export function importAsm(filePath: string): PatchImportResult {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to import a patch into.' }
-
-  let src: string
-  try {
-    src = readFileSync(filePath, 'utf8')
-  } catch (e) {
-    return { ok: false, error: `Could not read "${filePath}": ${(e as Error).message}` }
-  }
+  const read = readImportFile(filePath)
+  if (!read.ok) return read
+  const src = read.raw.toString('utf8')
 
   const meta = deriveAsmPatchMeta(src, basename(filePath))
   // Reference symbols (base build) drift-proof the converted `org`s; null ⇒ orgs
   // stay raw (the converter notes it).
   const { asm, notes } = convertAsarPatch(src, { refSym: loadBaseSym() ?? undefined })
 
-  const dir = projectPatchesDir(projectId)
-  const id = uniqueId(projectId, slugify(meta.name))
   // Prepend a provenance + conversion-notes header so the stored asm is
   // self-explanatory (it differs from the imported source).
   const header = [
@@ -420,21 +484,19 @@ export function importAsm(filePath: string): PatchImportResult {
     ...(notes.length ? ['; Conversion notes:', ...notes.map((n) => `;   - ${n}`)] : []),
     ''
   ].join('\n')
-  const pf: PatchFile = {
-    id,
-    name: meta.name,
-    ...(meta.description ? { description: meta.description } : {}),
-    ...(meta.attribution ? { attribution: meta.attribution } : {}),
-    // The full comment block stays in the `.asm` body — no need to also store it
-    // in JSON `details`.
-    source: 'imported',
-    importedFrom: basename(filePath),
-    ...(baseRomVersion() ? { romVersionAuthored: baseRomVersion() } : {}),
-    asm: header + asm
-  }
-  writePatchFiles(dir, pf)
-  appendToOrder(projectId, id)
-  return { ok: true, patch: summaryOf(pf, false), ...(notes.length ? { notes } : {}) }
+  return saveImportedPatch(
+    projectId,
+    filePath,
+    meta.name,
+    {
+      ...(meta.description ? { description: meta.description } : {}),
+      ...(meta.attribution ? { attribution: meta.attribution } : {}),
+      // The full comment block stays in the `.asm` body — no need to also
+      // store it in JSON `details`.
+      asm: header + asm
+    },
+    notes.length ? notes : undefined
+  )
 }
 
 /** A self-documenting template `PatchFile` for the "New Patch" button: every

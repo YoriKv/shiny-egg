@@ -22,7 +22,9 @@ export type EditableResource =
   | { kind: 'level'; recordId: number }
   | { kind: 'asm-region'; id: string }
   | { kind: 'world-map' }
-  | { kind: 'yoshi-colors' };
+  | { kind: 'world-map-paths' }
+  | { kind: 'yoshi-colors' }
+  | { kind: 'music-sets' };
 
 /** The per-level Yoshi-color table (`DATA_yoshi_level_colors` in Bank02.asm):
  *  one color id per translevel slot (index = world*12+level, the same slot space
@@ -32,6 +34,30 @@ export type EditableResource =
 export interface YoshiColorsModel {
   /** `colors[translevelId]` = Yoshi color id (0..7). Length `YOSHI_COLOR_SLOTS`. */
   colors: number[];
+}
+
+/** One music setting's row in the set tables (see scripts/music-sets.ts).
+ *  `initSongId`/`itemDenial` are null where their tables end (the init table
+ *  covers settings 0x00-0x12, item denial 0x00-0x11). */
+export interface MusicSetSettingModel {
+  /** DATA_spc_data_blocks row this setting uploads (0-12). */
+  blockSetRow: number;
+  /** Song slot auto-played on entry (1-based $FF8E slot; 0 = none). */
+  initSongId: number | null;
+  /** Pause-item flag: 0 = allowed, 1 = denied, 0xFF = inherit. */
+  itemDenial: number | null;
+}
+
+/** The music set tables — what the level header's music value resolves
+ *  through (settings 0x00-0x13: header values 0x00-0x0F + engine contexts
+ *  0x10-0x13) and the 13 block-set rows' upload lists. Edited through the
+ *  `;@editable:music-*` regions in Bank00.asm / Bank01.asm. */
+export interface MusicSetsModel {
+  /** settings[setting] for 0x00-0x13. */
+  settings: MusicSetSettingModel[];
+  /** rows[row] = up to 3 DATA_SPC_ptr block ids, upload order ($FF fill
+   *  dropped). */
+  rows: number[][];
 }
 
 /** Result of a generic resource save — `files` are the overlay-relative paths
@@ -730,6 +756,32 @@ export interface WorldMapModel {
   baseMidwayIndexWords?: number[];
 }
 
+// ── World-map Yoshi path tables (world-map path editor model) ───────────────
+// The two Bank17 coordinate table groups behind the World Map panel's per-world
+// path editor: the 8 Yoshi/level dot positions per world (DATA_17BDAE/BE0E,
+// where the Yoshis sit on the overworld) and the walk checkpoints Yoshi visits
+// after clearing a level (DATA_17B781/B901). All coordinates are PIXELS in the
+// 512×256 overworld space. See scripts/world-map-paths.ts.
+
+/** One point in the overworld pixel space (x 0..511, y 0..255 on screen; the
+ *  cart words are unbounded 16-bit). */
+export interface WorldMapPathPoint {
+  x: number;
+  y: number;
+}
+
+export interface WorldMapPathsModel {
+  /** `dots[world][dot]` — 6 worlds × 8 dots: where each level's Yoshi sits on
+   *  the world map, in level order (dot 0 = level 1). Indexed world*8+dot in
+   *  the cart (NOT translevel space — the 4 extra per-world slots have no dot). */
+  dots: WorldMapPathPoint[][];
+  /** `checkpoints[world][level][k]` — 6 worlds × 8 levels × 4 checkpoint slots:
+   *  the waypoints Yoshi walks to (in order) after clearing level
+   *  (world, level), before settling on the next dot. The engine stops at the
+   *  first $0000 word, so x=y=0 = unused slot; active checkpoints are a prefix. */
+  checkpoints: WorldMapPathPoint[][][];
+}
+
 // ── Per-level Map16 usage (Tiles "Used in this level" view) ─────────────────
 // Computed by engine/level-tile-usage.ts from a decoded level's Map16 buffer.
 
@@ -1173,4 +1225,147 @@ export interface LevelValidationInput {
    *  bitmap is cleared on map entry, then persists across screen-exit warps —
    *  so the cross-level item-memory check roots its sessions at these. */
   isRoot: boolean;
+}
+
+// ── Audio: sequence-timeline shapes (Sequence inspector) ─────────────────────
+// Produced by scripts/audio/sequence-timeline.ts, consumed renderer-side via
+// the audio:decodeSong IPC — defined here on the Node-free island so both
+// tsconfigs can type the envelope without pulling the Node-flavored audio
+// modules into the renderer program. Semantics documented at the producer.
+
+export interface TimedNote {
+  startTick: number;
+  /** Duration in ticks (tie-extended). */
+  ticks: number;
+  /** Raw note byte ($80-$C7 melodic; percussion keeps its $CA+ byte too). */
+  note: number;
+  kind: 'note' | 'perc';
+  /** Percussion index (note byte − $CA) when kind === 'perc'. */
+  percIndex?: number;
+  gate?: number;
+  velocity?: number;
+}
+
+export interface TimedVcmd {
+  tick: number;
+  op: number;
+  name: string;
+  args: number[];
+}
+
+export interface VoiceTimeline {
+  /** True when the voice has a track in at least one pattern. */
+  used: boolean;
+  notes: TimedNote[];
+  vcmds: TimedVcmd[];
+}
+
+export interface PatternSpan {
+  addr: number;
+  startTick: number;
+  ticks: number;
+  /** Per-voice raw stream length before the engine's cut at `ticks`;
+   *  0 = silent. Voices longer than `ticks` are continuation-style. */
+  voiceTicks: number[];
+}
+
+export interface SongTimeline {
+  totalTicks: number;
+  patterns: PatternSpan[];
+  /** Part-list loop control: jumps to `targetPartIndex` `count` times
+   *  ($FF ≈ forever). */
+  loop: { targetPartIndex: number; count: number } | null;
+  voices: VoiceTimeline[];
+  /** First $E7 tempo value seen; null = driver default ($10). */
+  initialTempo: number | null;
+  /** Approximate duration of one full pass, in seconds. */
+  seconds: number;
+  /** Piecewise tick↔seconds mapping (one entry per tempo region, ascending
+   *  by tick; `seconds` is the cumulative time at `tick`). Drives the
+   *  playhead's seconds→tick conversion. */
+  tempoSegments: Array<{ tick: number; seconds: number; ticksPerSecond: number }>;
+  warnings: string[];
+}
+
+// ── Audio: ARAM usage/budget shapes (Songs-tab diagram + import sizing) ──────
+// Produced by scripts/audio/aram-usage.ts over a music setting's composed
+// baseline (overlay-module aware), consumed renderer-side via the
+// audio:aramUsage IPC and the song-import target budgets. Node-free island
+// for the same reason as the timeline shapes above.
+
+/** One painted run of a composed ARAM image inside the swappable region
+ *  ($4000-$FF8D) — a bar segment of the Songs-tab usage diagram. */
+export interface AramSegment {
+  /** ARAM range [start, end). */
+  start: number;
+  end: number;
+  /** Block id of the owning upload module (-1 = an imported overlay module). */
+  blockId: number;
+  /** Display label ("base samples + SFX", "imported song — <title>"). */
+  label: string;
+  /** Content class: BRR sample data, sequence data, an imported module's
+   *  bytes, engine leftovers (stale title-screen data below later uploads'
+   *  high-water mark — free for imports to overwrite), or the map-resident
+   *  reservation ($D000-$DC7E: Score + Powerful Infant, requested in-level
+   *  with no re-upload — never claimable on level-set rows). */
+  kind: 'samples' | 'seq' | 'import' | 'leftover' | 'reserved';
+}
+
+/** Per-music-setting ARAM section usage — what the Songs-tab diagram draws.
+ *  Every `free` figure counts `leftover` bytes as free (imports overwrite
+ *  them); the bar shades leftovers separately so the junk is visible. */
+export interface SettingAramUsage {
+  setting: number;
+  blockSetRow: number;
+  /** Painted runs in [$4000, $FF8E), ascending, non-overlapping (upload
+   *  order resolved — later modules own contested bytes). Gaps are free. */
+  segments: AramSegment[];
+  /** Sequence window (capped by the song-pointer table at $FF8E).
+   *  `windowStart` is $DC7F on level-set rows — $D000-$DC7E is map-resident
+   *  (Score + Powerful Infant) — and $D000 on the exempt rows (title / 1W-0
+   *  demo / map / ending). */
+  seq: {
+    windowStart: number;
+    windowEnd: number;
+    /** Bytes the set's song data occupies in the window. */
+    used: number;
+    free: number;
+    leftover: number;
+    /** Song-module bytes in the $264C-$2C00 jingle region (worldmap/welcome
+     *  overflow — outside the window, engine-reserved for everyone else). */
+    jingleBytes: number;
+  };
+  /** The engine-tail gap $230E-$264B — dead space imports may claim for
+   *  sequence or sample data (truncated in-game only by an EDL-3 echo
+   *  buffer on jingle-free targets). */
+  low: { start: number; end: number; used: number; free: number };
+  /** BRR sample space $4000-$CFFF, plus the custom/add-on window $B960+
+   *  (where an import's own samples go). */
+  samples: {
+    used: number;
+    /** Claimed $3C00-page directory entries (== how many samples exist). */
+    count: number;
+    customWindowSize: number;
+    customWindowFree: number;
+  };
+  /** DSP sample-directory page $3C00 (4-byte entries, 64 max). */
+  dir: { used: number; max: number };
+  /** Instrument table $3D00 (6-byte rows; 48 fit before the driver's own
+   *  code at $3E20 — retail song modules upload 28). */
+  rows: { used: number; max: number };
+}
+
+/** What an import can still claim in a target module, under the module
+ *  builder's layout rules (dodge the set's resident sample banks; a slot
+ *  merge also dodges the module's current content). */
+export interface AramImportBudget {
+  /** Largest contiguous free run in [$B960, $FF8E) — the ceiling on one
+   *  song's sequence data (it must land in a single gap). */
+  seqLargestGap: number;
+  /** Total free bytes there — shared by sequence + custom sample data. */
+  freeTotal: number;
+  /** Custom sample-directory slots left on the $3C00 page. */
+  dirSlotsFree: number;
+  /** Instrument-table rows left (of the 48-row table). */
+  instrumentRowsFree: number;
 }

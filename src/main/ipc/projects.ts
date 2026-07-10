@@ -2,8 +2,10 @@
 // rename / export / open-folder. Backs the toolbar Project menu.
 
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { copyFile } from 'node:fs/promises'
-import { projectRoot } from '../framework-paths'
+import { existsSync } from 'node:fs'
+import { copyFile, readFile, writeFile } from 'node:fs/promises'
+import { encodeBps } from 'snes-framework/patches'
+import { projectRoot, referenceCartPath } from '../framework-paths'
 import { buildProject } from '../build-tree'
 import { anyEmulatorRunning, stopAllEmulators } from '../emulator/registry'
 import {
@@ -107,44 +109,91 @@ export function registerProjectsIpc(): void {
     }
   )
 
-  // Export = build the ROM, then Save-As to a user-chosen .sfc. NOTE: until
-  // the per-project overlay/build-tree merge lands, this builds
-  // from the base workRoot — which currently equals the project's state, since
-  // edits aren't yet written to the overlay either.
+  // Both export flavors = build the ROM, then Save-As. NOTE: until the
+  // per-project overlay/build-tree merge lands, this builds from the base
+  // workRoot — which currently equals the project's state, since edits aren't
+  // yet written to the overlay either.
+
+  /** Build `id` for an export, streaming progress to the caller's window.
+   *  Stops any running emulator first (it holds a lock on the build output).
+   *  Throws on a build failure (the handlers turn that into `{ ok:false }`). */
+  function buildForExport(event: Electron.IpcMainInvokeEvent, id: string): string {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (anyEmulatorRunning()) stopAllEmulators()
+    return buildProject({
+      id,
+      onProgress: (msg) => win?.webContents.send('framework:progress', msg)
+    }).outputPath
+  }
+
+  async function pickSavePath(
+    event: Electron.IpcMainInvokeEvent,
+    opts: Electron.SaveDialogOptions
+  ): Promise<string | null> {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const picked = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+    return picked.canceled || !picked.filePath ? null : picked.filePath
+  }
+
+  // Export as ROM: copy the built .sfc to a user-chosen path.
   ipcMain.handle(
     'project:export',
     async (event, id: string): Promise<ProjectExportResult> => {
-      const win = BrowserWindow.fromWebContents(event.sender)
-      // Release any lock the emulator holds on the build output before rebuilding.
-      if (anyEmulatorRunning()) stopAllEmulators()
-
       let outputPath: string
       try {
-        const result = buildProject({
-          id,
-          onProgress: (msg) => win?.webContents.send('framework:progress', msg)
-        })
-        outputPath = result.outputPath
+        outputPath = buildForExport(event, id)
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
 
-      const opts = {
+      const savedPath = await pickSavePath(event, {
         title: 'Export ROM',
         defaultPath: `${id}.sfc`,
         filters: [{ name: 'SNES ROM', extensions: ['sfc'] }]
-      }
-      const picked = win
-        ? await dialog.showSaveDialog(win, opts)
-        : await dialog.showSaveDialog(opts)
-      if (picked.canceled || !picked.filePath) return { ok: false, canceled: true }
+      })
+      if (!savedPath) return { ok: false, canceled: true }
 
       try {
-        await copyFile(outputPath, picked.filePath)
+        await copyFile(outputPath, savedPath)
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
-      return { ok: true, savedPath: picked.filePath }
+      return { ok: true, savedPath }
+    }
+  )
+
+  // Export as Patch: BPS-encode the built ROM against the reference cart, so the
+  // project distributes as a small patch instead of the (copyrighted) full ROM.
+  // The reference stash is the extracted cart — the same base the build targets.
+  ipcMain.handle(
+    'project:exportPatch',
+    async (event, id: string): Promise<ProjectExportResult> => {
+      let patch: Uint8Array
+      try {
+        const outputPath = buildForExport(event, id)
+        if (!existsSync(referenceCartPath())) {
+          return { ok: false, error: 'No reference cart found — extract a cart first.' }
+        }
+        const source = new Uint8Array(await readFile(referenceCartPath()))
+        const target = new Uint8Array(await readFile(outputPath))
+        patch = encodeBps(source, target)
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+
+      const savedPath = await pickSavePath(event, {
+        title: 'Export Patch',
+        defaultPath: `${id}.bps`,
+        filters: [{ name: 'BPS patch', extensions: ['bps'] }]
+      })
+      if (!savedPath) return { ok: false, canceled: true }
+
+      try {
+        await writeFile(savedPath, patch)
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+      return { ok: true, savedPath }
     }
   )
 }
