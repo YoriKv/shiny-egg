@@ -197,6 +197,18 @@ export function computeSettingAramUsage(
   }
 
   const seqWindow = SONG_TABLE_BASE - windowStart;
+  // Whole-set import budget — the AUTHORITATIVE flexible room (mirrors the
+  // import panel's budgetReplace): dodge the set's resident sample banks + the
+  // map-resident reservation; the current song is replaceable. `freeTotal` is
+  // the real shared sample/sequence pool, so the sample gauge reflects that
+  // samples flex past the $B960 add-on window into the sequence tail + engine
+  // gap — not the fixed 5,792-byte window.
+  const budget = computeImportBudget([
+    ...blockIds
+      .filter((id) => spcBlockById(id).kind === 'samples')
+      .flatMap((id) => parseBlockFromRom(rom, catalog, id).stream.blocks),
+    ...mapResidentReservationBlocks(songModule),
+  ]);
   return {
     setting,
     blockSetRow: cfg.blockSetRow,
@@ -223,6 +235,7 @@ export function computeSettingAramUsage(
     },
     dir: { used: dirUsed, max: DIR_SLOT_MAX },
     rows: { used: Math.ceil((rowsEnd - MML_INSTRUMENT_BASE) / 6), max: INSTRUMENT_ROW_MAX },
+    budget,
   };
 }
 

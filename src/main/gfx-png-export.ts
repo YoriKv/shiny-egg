@@ -2,8 +2,8 @@
 // the selected tracks to a folder + a manifest the import side (gfx-png-import.ts)
 // reads back. Three tracks (research/graphics-editing/) — the first two are the two
 // halves of the old single "screens" track:
-//   - WORLDMAP: the overworld map's graphics (screens/map/) — the per-world map char
-//     sheets + the world-map / level icons + the terrain / ground tilemaps.
+//   - WORLDMAP: the overworld map's graphics (screens/map/) — the world-map / level
+//     icons (the terrain / ground layout maps export only as M1TE2 overworld .M1s).
 //   - SYSTEMSCREENS: the boot / title / storybook screens' graphics
 //     (screens/{boot,title,storybook}/) + the title logo / island / scenery + the
 //     storybook first-scene layout.
@@ -11,7 +11,7 @@
 //     metasprite (the assembled character), under metasprite/ (+ the GSU-rasterized
 //     sprites' glyphs under sprite-glyph/).
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   exportScreenGfxPngs,
@@ -30,7 +30,6 @@ import {
   exportStorybookScene
 } from 'snes-framework/screen-gfx'
 import { exportWorldMapLevelIcons } from 'snes-framework/world-map-level-icons'
-import { exportWorldMapTerrain, exportWorldMapGround } from 'snes-framework/world-map-terrain'
 import { exportWorldMapM1 } from 'snes-framework/world-map-m1te2'
 import { exportScreenM1 } from 'snes-framework/screen-m1te2'
 import { exportRaphaelArena } from 'snes-framework/screen-raphael'
@@ -65,8 +64,6 @@ import {
   type GlyphManifestEntry,
   type MapIconManifestEntry,
   type LevelIconManifestEntry,
-  type MapTerrainManifestEntry,
-  type MapGroundManifestEntry,
   type MapM1Manifest,
   type ScreenM1ManifestEntry,
   type BossArenaManifestEntry,
@@ -311,33 +308,10 @@ export function exportGfxPngsToDir(
     levelIconManifest.push({ file, world: ic.world, slot: ic.slot, name: ic.name, faithful: ic.faithful, width: ic.width, height: ic.height, paletteOffsets: useAse ? ic.paletteOffsets : undefined })
   }
 
-  // Per-world OVERWORLD MAP (the terrain Yoshi paths across) — one entry per world. The
-  // displayed map is a composite of BG1 (foreground: path/markers/fortress) ⊕ BG2
-  // (background scenery) ⊕ BG3 ground. The PNG is the composited VIEW; the .aseprite
-  // (Aseprite mode) is a 2-LAYER tilemap (BG1+BG2, one shared tileset), each layer
-  // round-tripping to its $7C/$7D… LZ2 tilemap file via saveGfxEdit. (Map pixels edit via
-  // the shared screens/map char sheets.)
-  const mapTerrain = wantWorldMapPng ? exportWorldMapTerrain(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() }) : []
-  const mapTerrainManifest: MapTerrainManifestEntry[] = []
-  for (const m of mapTerrain) {
-    const useAse = aseFmt && m.aseprite
-    const file = rebase(useAse ? m.file.replace(/\.png$/, '.aseprite') : m.file)
-    emit(file, useAse ? m.aseprite! : m.png)
-    mapTerrainManifest.push({ file, world: m.world, bg1FileId: m.bg1FileId, bg2FileId: m.bg2FileId, width: m.width, height: m.height, tileKeys: m.tileKeys, paletteOffsets: useAse ? m.paletteOffsets : undefined })
-  }
-
-  // The decorative GROUND behind every map (BG3, world-invariant) — one shared editable
-  // layout. PNG = view; .aseprite = the layout tilemap → round-trips to file $7E. Ground
-  // pixels edit via the M1TE2 overworld .M1 (BG3 slot). Lives at the map folder root (the
-  // common/ folder was removed); skipped in M1TE2 mode (ground is in the overworld .M1).
-  let mapGroundManifest: MapGroundManifestEntry | null = null
-  if (wantWorldMapPng) {
-    const g = exportWorldMapGround(rom, symbols, { aseprite: aseFmt, gfxOverride: gfxLiveEdits() })
-    const useAse = aseFmt && g.aseprite
-    const file = rebase(useAse ? g.file.replace(/\.png$/, '.aseprite') : g.file)
-    emit(file, useAse ? g.aseprite! : g.png)
-    mapGroundManifest = { file, fileId: g.fileId, width: g.width, height: g.height, tileKeys: g.tileKeys, paletteOffsets: useAse ? g.paletteOffsets : undefined }
-  }
+  // The per-world OVERWORLD MAP terrain + the shared GROUND strip (BG3) are no longer
+  // exported here: their layout editing lives in the M1TE2 overworld `.M1`s (below),
+  // which bundle BG1+BG2+BG3. The import handlers for their manifest entries remain
+  // (gfx-png-import.ts) so legacy dialog-exported folders still import.
 
   // The Bosses track — Raphael's Mode-7 moon arena. PNG = view; .aseprite = the layout
   // tilemap → round-trips to the $BD byte-cell tilemap file. Char pixels edit via the
@@ -472,6 +446,18 @@ export function exportGfxPngsToDir(
     for (const a of coll.artifacts) emit(rebase(a.file), a.bytes)
     for (const m of coll.manifest) yychrManifest.push({ ...m, file: rebase(m.file) })
     writeArtifact(outDir, 'README.txt', new TextEncoder().encode(yychrReadme(coll.notes)))
+    // Delete STALE .col/.adf sidecars from previous exports beside sheets that no
+    // longer ship them. Load-bearing safety, not tidiness: sidecars auto-load, and
+    // a leftover .col beside a .gba sheet re-arms YY-CHR's 4BPP-GBA Col-mode edit
+    // corruption (gfx-yychr.ts header) even after the export stopped emitting it.
+    const emitted = new Set(coll.artifacts.map((a) => join(outDir, rebase(a.file))))
+    for (const rel of readdirSync(outDir, { recursive: true }) as string[]) {
+      if (!/\.(col|adf)$/.test(rel)) continue
+      const full = join(outDir, rel)
+      if (!emitted.has(full)) {
+        try { unlinkSync(full) } catch { /* best-effort */ }
+      }
+    }
   }
 
   // System-screen M1TE2 ".M1" sessions — when the Boot/Story/Title track is exported in M1TE2
@@ -485,7 +471,7 @@ export function exportGfxPngsToDir(
     for (const s of exportScreenM1(rom, symbols)) {
       const file = rebase(s.file)
       emit(file, s.bytes)
-      screenM1Manifest.push({ file, kind: s.kind, game: s.game })
+      screenM1Manifest.push({ file, kind: s.kind, game: s.game, subMode: s.subMode, result: s.result })
     }
   }
 
@@ -500,8 +486,6 @@ export function exportGfxPngsToDir(
         glyphs: { header, sprites: glyphManifest },
         mapIcons: mapIconManifest,
         levelIcons: levelIconManifest,
-        mapTerrain: mapTerrainManifest,
-        mapGround: mapGroundManifest,
         bossArena: bossArenaManifest,
         mapM1: mapM1Manifest,
         screenM1: screenM1Manifest.length > 0 ? screenM1Manifest : null,
@@ -522,8 +506,8 @@ export function exportGfxPngsToDir(
   return {
     count:
       screens.length + metas.length + glyphs.length +
-      mapIcons.length + levelIcons.length + mapTerrain.length +
-      (mapGroundManifest ? 1 : 0) + (bossArenaManifest ? 1 : 0) + (titleLogoManifest ? 1 : 0) + (titleIslandManifest ? 1 : 0) + (titleSceneryManifest ? 1 : 0) +
+      mapIcons.length + levelIcons.length +
+      (bossArenaManifest ? 1 : 0) + (titleLogoManifest ? 1 : 0) + (titleIslandManifest ? 1 : 0) + (titleSceneryManifest ? 1 : 0) +
       (storybookSceneManifest ? 1 : 0) +
       fontManifest.length +
       (mapM1Manifest ? mapM1Manifest.overworlds.length + (mapM1Manifest.icons ? 1 : 0) : 0) +
@@ -560,14 +544,14 @@ function readmeText(): string {
     '    A level\'s background tiles.',
     '',
     'World Map                 Pixels, Palette, Layout.',
-    '    Layout covers the overworld terrain and ground; the level markers, select',
+    '    Layout is the overworld .M1 sessions (M1TE2 format); the level markers, select',
     '    pictures and shared map tiles are pixels only. The map is shown in one world\'s',
     '    colors (the game recolors the same tiles per world).',
     '',
     'Boot/Story/Title          Pixels, Palette, Layout.',
-    '    Layout covers the title logo and floating island; the boot logo, title scenery',
-    '    and storybook are pixels only. These screens animate their colors in-game, so',
-    '    the extracted picture shows just one frame.',
+    '    Layout covers the title logo and the floating island. The boot logo, title',
+    '    scenery and storybook are pixels only. These screens animate their colors',
+    '    in-game, so the extracted picture shows just one frame.',
     '',
     'Bosses                    Layout, Palette.',
     '    Raphael\'s Mode-7 moon arena — rearrange the 8×8 tiles that build the moon,',

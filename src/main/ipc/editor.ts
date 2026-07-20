@@ -19,11 +19,12 @@ import { exportGfxPngsToDir } from '../gfx-png-export'
 import { exportBgRegionToDir, importBgRegionFolder, listM1Files } from '../bg-region-io'
 import { importGraphicsFolder } from '../graphics-folder-io'
 import { addRegionExportFolder, listRegionExportFolders, removeRegionExportFolder } from '../region-exports'
-import { asepriteInfo, openInAseprite } from '../aseprite-app'
+import { asepriteInfo } from '../aseprite-app'
 import { openInM1te } from '../m1te-app'
 import { resolveYychrExe, openInYychr } from '../yychr-app'
 import { buildYychrProjectState, exportYychrProject, importYychrProject, yychrProjectThumbnails } from '../gfx-yychr-project'
 import { buildM1teMapsState, exportM1teMapsProject, importM1teMapsProject, m1teMapsThumbnails } from '../m1te-maps-project'
+import { artworkThumbnails, buildArtworkState, exportArtworkProject, importArtworkProject } from '../artwork-project'
 import { updateSettings } from '../settings'
 import { basename, join } from 'node:path'
 import { loadMap16Block, saveMap16Block, resetMap16Block, listMap16BlockEdits } from '../map16-edits'
@@ -83,6 +84,10 @@ import type {
   YychrProjectImportResult,
   YychrThumbnailEntry,
   M1teMapsState,
+  ArtworkFormat,
+  GfxProjectState,
+  GfxProjectExportResult,
+  GfxProjectImportResult,
   M1teMapsExportResult,
   M1teMapsImportResult,
   AsepriteInfo,
@@ -291,8 +296,6 @@ export function registerEditorIpc(): void {
     updateSettings({ asepritePath: p })
     return { ok: true, path: p }
   })
-  // Open a single exported file (image) in Aseprite (the "Auto-Open Exports" toggle).
-  ipcMain.handle('aseprite:open', async (_event, dir: string, file: string): Promise<boolean> => openInAseprite(join(dir, file)))
   // "Locate YY-CHR" (Graphics panel): the saved exe (settings-only — YY-CHR is
   // portable, no install dir to probe), a picker that persists it, and a per-sheet
   // launcher (`yychr.exe <file>` — the extension auto-selects the format).
@@ -320,7 +323,7 @@ export function registerEditorIpc(): void {
   ipcMain.handle('editor:yychrImportProject', async (_event, files: string[] | null): Promise<YychrProjectImportResult> => importYychrProject(files))
   ipcMain.handle('editor:yychrThumbnails', async (_event, files: string[]): Promise<YychrThumbnailEntry[]> => yychrProjectThumbnails(files))
   // Open an exported .M1 session in the bundled M1TE editor, straight to its BG layer
-  // (the "Auto-Open Exports" toggle for the M1TE2 export). Windows-native or via Wine.
+  // (the M1TE Maps tab + the exported-folders .M1 list). Windows-native or via Wine.
   ipcMain.handle('m1te:open', async (_event, dir: string, file: string, bg?: 1 | 2 | 3): Promise<boolean> => openInM1te(join(dir, file), bg))
   // The per-project M1TE maps pathway (the "M1TE Maps" tab) — the yychr pathway's
   // twin over `<projectRoot>/m1te/`. See m1te-maps-project.ts.
@@ -328,6 +331,13 @@ export function registerEditorIpc(): void {
   ipcMain.handle('editor:m1teMapsExport', async (): Promise<M1teMapsExportResult> => exportM1teMapsProject())
   ipcMain.handle('editor:m1teMapsImport', async (_event, files: string[] | null): Promise<M1teMapsImportResult> => importM1teMapsProject(files))
   ipcMain.handle('editor:m1teMapsThumbnails', async (_event, files: string[]): Promise<YychrThumbnailEntry[]> => m1teMapsThumbnails(files))
+
+  // The per-project artwork pathway (the "Misc Art" tab) — the PNG/Aseprite twin
+  // over `<projectRoot>/artwork/`. See artwork-project.ts.
+  ipcMain.handle('editor:artworkState', async (): Promise<GfxProjectState> => buildArtworkState())
+  ipcMain.handle('editor:artworkExport', async (_event, format: ArtworkFormat): Promise<GfxProjectExportResult> => exportArtworkProject(format))
+  ipcMain.handle('editor:artworkImport', async (_event, files: string[] | null): Promise<GfxProjectImportResult> => importArtworkProject(files))
+  ipcMain.handle('editor:artworkThumbnails', async (_event, files: string[]): Promise<YychrThumbnailEntry[]> => artworkThumbnails(files))
 
   // Folders this project has exported region(s) to — listed in the Region tab with
   // their own import / remove buttons (region-exports.ts).

@@ -83,6 +83,11 @@ import type {
   M1teMapsExportResult,
   M1teMapsImportResult,
   M1teMapsFile,
+  ArtworkFormat,
+  GfxProjectState,
+  GfxProjectExportResult,
+  GfxProjectImportResult,
+  GfxProjectFile,
   ObjectCellsResponse,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -270,6 +275,11 @@ export type {
   M1teMapsState,
   M1teMapsExportResult,
   M1teMapsImportResult,
+  ArtworkFormat,
+  GfxProjectState,
+  GfxProjectExportResult,
+  GfxProjectImportResult,
+  GfxProjectFile,
   PaintCorner,
   ObjectInfluenceRequest,
   ObjectInstance,
@@ -702,9 +712,6 @@ export interface EditorAPI {
   getAsepriteExe: () => Promise<AsepriteInfo | null>
   /** Pick the Aseprite executable and persist it to settings. */
   locateAseprite: () => Promise<LocateAsepriteResult>
-  /** Open `dir/file` in Aseprite (the "Auto-Open Exports" toggle). Returns false
-   *  if Aseprite isn't located or the file is missing. */
-  openInAseprite: (dir: string, file: string) => Promise<boolean>
   /** Open an exported `.M1` session (`dir/file`) in the bundled M1TE editor, opened
    *  straight to BG layer `bg` (2 or 3). Windows-native or via Wine on Linux. Returns
    *  false if the bundled exe or the file is missing (or the launch fails). */
@@ -748,6 +755,19 @@ export interface EditorAPI {
   /** `.M1` thumbnails composed from the ON-DISK bytes (slots back-to-front), one
    *  batch per IPC round trip; null = missing/invalid file. */
   m1teMapsThumbnails: (files: string[]) => Promise<YychrThumbnailEntry[]>
+  /** The Misc Art tab's browse state — the project-folder twin for the
+   *  PNG/Aseprite image tracks over the project's fixed `artwork/` folder. */
+  artworkState: () => Promise<GfxProjectState>
+  /** Export the level-independent image tracks (world map, system screens,
+   *  bosses, fonts) into the project's `artwork/` folder in the chosen format. */
+  artworkExport: (format: ArtworkFormat) => Promise<GfxProjectExportResult>
+  /** Import edited artwork from the project folder — `files` = folder-relative
+   *  paths for a per-file import, null = everything changed. Advances
+   *  cleanly-imported files' stored checksums so their changed status clears. */
+  artworkImport: (files: string[] | null) => Promise<GfxProjectImportResult>
+  /** Thumbnails decoded from the ON-DISK bytes (PNG or flattened `.aseprite`),
+   *  one batch per IPC round trip; null = missing/invalid file. */
+  artworkThumbnails: (files: string[]) => Promise<YychrThumbnailEntry[]>
   /** Folders this project has exported region(s) to (most-recent first) — the
    *  Region tab lists them with per-folder import / remove. */
   listRegionExports: () => Promise<string[]>
@@ -938,6 +958,12 @@ export interface AudioAPI {
   /** Remove an imported song (delete the overlay blob — the next build
    *  reconciles the region back). Mark the build dirty on ok. */
   revertSongImport: (targetBlockId: number) => Promise<AudioSongImportRunResult>
+  /** Delete one song slot from a module to free its bytes (the slot plays
+   *  silence until restored/re-imported); reversible with restoreSong. Mark
+   *  the build dirty on ok. */
+  deleteSong: (targetBlockId: number, slot: number) => Promise<AudioSongImportRunResult>
+  /** Restore a previously-deleted song slot from the pristine module asset. */
+  restoreSong: (targetBlockId: number, slot: number) => Promise<AudioSongImportRunResult>
 }
 
 /** Level validation — the decode side of the Validation panel. The check logic

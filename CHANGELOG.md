@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.1 - 2026-07-19
+
+- Lots of fixes and improvements to the graphics editing pipeline
+- Credits text now editable in strings panel
+
 ## v0.7.0 - 2026-07-09
 
 - Bug fixes and performance improvements.

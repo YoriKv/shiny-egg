@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type RefObject } from 'react'
 import { markupBodyByteSize, markupByteSize } from 'snes-framework/msg-markup'
 import type {
   MarkupToken,
@@ -7,6 +7,38 @@ import type {
   StringTableModel
 } from '../../../preload/api'
 import { useOverlayDocument, type DocHistory } from '../edit-session/useOverlayDocument'
+
+/**
+ * A model's live byte usage — mirrors each region's on-save budget accounting
+ * exactly, so the footer estimate and Save gating never disagree with the
+ * serializer:
+ *   - markup (message text): the ENCODED size (markupByteSize — tokens are 1–3
+ *     bytes, cosmetic `\n`s are 0); a raw char count over-counts.
+ *   - credits staff-roll: OAM letter streams — 2 bytes/letter (spaces free) +
+ *     2/line header word + 2/line break + 2 terminator per page. Letters per
+ *     line = markupBodyByteSize minus the free spaces; matches the codec's
+ *     creditsPageByteSize (drift-pinned in asm/credits-staff.test.ts). Computed
+ *     from the renderer-safe msg-markup helper — the codec module is node-side.
+ *   - glyph lines (intro/ending): per-line body size only — the cutscene
+ *     terminators are separate control directives outside the budget.
+ *   - plain lines (level names): 1 font byte per char.
+ */
+function modelUsedBytes(model: StringTableModel): number {
+  let n = 0
+  if (model.markup) {
+    for (const e of model.entries) n += markupByteSize(e.markup ?? '')
+  } else if (model.byteCost === 'credits-page') {
+    for (const e of model.entries) {
+      n += 2 + e.lines.length * 2 + Math.max(0, e.lines.length - 1) * 2
+      for (const l of e.lines) n += 2 * (markupBodyByteSize(l) - (l.match(/ /g)?.length ?? 0))
+    }
+  } else if (model.glyphLines) {
+    for (const e of model.entries) for (const l of e.lines) n += markupBodyByteSize(l)
+  } else {
+    for (const e of model.entries) for (const l of e.lines) n += [...l].length
+  }
+  return n
+}
 import { useCommitOnBlur } from '../hooks/useCommitOnBlur'
 import { persistedState } from '../lib/persisted-state'
 
@@ -73,26 +105,9 @@ export function useStringsEditor(
   // reallocated on every line edit (keeps its identity stable for memoized rows).
   const allowed = useMemo(() => new Set(draft?.allowedChars ?? []), [draft?.allowedChars])
 
-  // Bytes used. Line model: 1 font byte per char. Markup model: the ENCODED byte
-  // size (markupByteSize — tokens are 1–3 bytes, cosmetic `\n`s are 0), which
-  // matches the on-save budget; a raw char count over-counts multi-char tokens +
-  // newlines and made a pristine cart read as over budget.
-  const usedBytes = useMemo(() => {
-    let n = 0
-    if (draft) {
-      // markup + glyph-line models both encode `[token]`s to bytes, so size via
-      // markupByteSize (text char = 1 byte, glyph token = its byte count); a raw
-      // char count would over-count the bracketed tokens. Pure line model = chars.
-      if (draft.markup) for (const e of draft.entries) n += markupByteSize(e.markup ?? '')
-      // Glyph lines have NO per-line terminator (the cutscene's terminators are
-      // separate control directives, not counted in the budget), so size the body
-      // only — markupByteSize's +2 terminator would over-count every line.
-      else if (draft.glyphLines)
-        for (const e of draft.entries) for (const l of e.lines) n += markupBodyByteSize(l)
-      else for (const e of draft.entries) for (const l of e.lines) n += [...l].length
-    }
-    return n
-  }, [draft])
+  // Bytes used — the live estimate matches the on-save budget exactly for every
+  // model (see modelUsedBytes).
+  const usedBytes = useMemo(() => (draft ? modelUsedBytes(draft) : 0), [draft])
 
   // Markup tokens (`[B]`, `[$cc]`) contain chars outside the font's legal set, so
   // per-char validation would false-positive — the codec validates tokens on save.
@@ -277,6 +292,28 @@ export function StringsBody({ tabs }: { tabs: StringsTab[] }): JSX.Element {
   )
 }
 
+/** Caret-targeted text insertion for a focusable text field. `insert` focuses
+ *  the element and splices via execCommand('insertText') rather than a manual
+ *  splice, so the edit lands on the field's NATIVE undo stack (Ctrl+Z reverts a
+ *  keyboard-inserted token like any typed text) and the caret lands after it.
+ *  The resulting `input` event flows through onChange → local state, keeping
+ *  the controlled value in sync; since the value then matches the DOM, React's
+ *  re-render is a no-op write and the undo stack survives. (The keyboard
+ *  button's mousedown is preventDefault'd, so focus + selection stay put.) */
+function useCaretInsert<T extends HTMLInputElement | HTMLTextAreaElement>(): {
+  ref: RefObject<T | null>
+  insert: (text: string) => void
+} {
+  const ref = useRef<T>(null)
+  const insert = useCallback((text: string) => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    document.execCommand('insertText', false, text)
+  }, [])
+  return { ref, insert }
+}
+
 /** A single editable string line. Holds its own value while focused so typing
  *  stays local + snappy; commits up to the draft model (which triggers the
  *  table-wide budget/dirty recompute) only on blur or Enter — not per
@@ -299,13 +336,7 @@ function LineInput({
   onActivate?: (insert: ((text: string) => void) | null) => void
 }): JSX.Element {
   const { local, setLocal, commit } = useCommitOnBlur(value, onCommit)
-  const ref = useRef<HTMLInputElement>(null)
-  const insert = useCallback((text: string) => {
-    const el = ref.current
-    if (!el) return
-    el.focus()
-    document.execCommand('insertText', false, text)
-  }, [])
+  const { ref, insert } = useCaretInsert<HTMLInputElement>()
   // Ignore `[token]` spans when token-aware — they're validated by the codec.
   const check = tokenAware ? local.replace(/\[[^\]]*\]/g, '') : local
   const invalid = [...check].some((ch) => !allowed.has(ch))
@@ -342,21 +373,7 @@ function MarkupInput({
   onActivate: (insert: ((text: string) => void) | null) => void
 }): JSX.Element {
   const { local, setLocal, commit } = useCommitOnBlur(value, onCommit)
-  const taRef = useRef<HTMLTextAreaElement>(null)
-
-  // Insert `text` at the caret via execCommand('insertText') rather than a manual
-  // splice, so the edit lands on the textarea's NATIVE undo stack (Ctrl+Z reverts
-  // a keyboard-inserted token like any typed text) and the caret lands after it.
-  // The resulting `input` event flows through onChange → setLocal, keeping the
-  // controlled value in sync; since the value then matches the DOM, React's
-  // re-render is a no-op write and the undo stack survives. The keyboard button's
-  // mousedown is preventDefault'd, so focus + selection are still on this textarea.
-  const insert = useCallback((text: string) => {
-    const ta = taRef.current
-    if (!ta) return
-    ta.focus()
-    document.execCommand('insertText', false, text)
-  }, [])
+  const { ref: taRef, insert } = useCaretInsert<HTMLTextAreaElement>()
 
   const rows = Math.min(8, Math.max(2, local.split('\n').length))
   return (
@@ -502,6 +519,10 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
   // current target. Set by each MarkupInput on focus; a token button calls it.
   const activeInsert = useRef<((text: string) => void) | null>(null)
   const insertToken = useCallback((token: string) => activeInsert.current?.(`[${token}]`), [])
+  // Registered by each input on focus — the keyboard's current splice target.
+  const activate = useCallback((fn: ((text: string) => void) | null) => {
+    activeInsert.current = fn
+  }, [])
   const glyphPreviews = useGlyphPreviews(!!model?.markup || !!model?.glyphLines)
   const [kbdOpen, setKbdOpen] = useState(() => kbdDockPref.load())
   const toggleKbd = useCallback(
@@ -571,9 +592,7 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
                 <MarkupInput
                   value={entry.markup ?? ''}
                   onCommit={(v) => editMarkup(ei, v)}
-                  onActivate={(fn) => {
-                    activeInsert.current = fn
-                  }}
+                  onActivate={activate}
                 />
               ) : (
                 <div className="se-strings__entry-lines">
@@ -584,13 +603,7 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
                       allowed={allowed}
                       onCommit={(v) => editLine(ei, li, v)}
                       tokenAware={model.glyphLines}
-                      onActivate={
-                        model.glyphLines
-                          ? (fn) => {
-                              activeInsert.current = fn
-                            }
-                          : undefined
-                      }
+                      onActivate={model.glyphLines ? activate : undefined}
                     />
                   ))}
                 </div>

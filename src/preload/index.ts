@@ -41,6 +41,10 @@ import type {
   YychrProjectImportResult,
   YychrThumbnailEntry,
   M1teMapsState,
+  ArtworkFormat,
+  GfxProjectState,
+  GfxProjectExportResult,
+  GfxProjectImportResult,
   M1teMapsExportResult,
   M1teMapsImportResult,
   ObjectCellsResponse,
@@ -423,7 +427,6 @@ const api = {
     importBgRegion: (): Promise<BgRegionImportResult> => ipcRenderer.invoke('editor:importBgRegion'),
     getAsepriteExe: (): Promise<AsepriteInfo | null> => ipcRenderer.invoke('aseprite:getExe'),
     locateAseprite: (): Promise<LocateAsepriteResult> => ipcRenderer.invoke('aseprite:locate'),
-    openInAseprite: (dir: string, file: string): Promise<boolean> => ipcRenderer.invoke('aseprite:open', dir, file),
     openInM1te: (dir: string, file: string, bg?: 1 | 2 | 3): Promise<boolean> => ipcRenderer.invoke('m1te:open', dir, file, bg),
     listM1Files: (dir: string): Promise<M1ExportFile[]> => ipcRenderer.invoke('editor:listM1Files', dir),
     getYychrExe: (): Promise<string | null> => ipcRenderer.invoke('yychr:getExe'),
@@ -439,6 +442,12 @@ const api = {
     m1teMapsImport: (files: string[] | null): Promise<M1teMapsImportResult> =>
       ipcRenderer.invoke('editor:m1teMapsImport', files),
     m1teMapsThumbnails: (files: string[]): Promise<YychrThumbnailEntry[]> => ipcRenderer.invoke('editor:m1teMapsThumbnails', files),
+    artworkState: (): Promise<GfxProjectState> => ipcRenderer.invoke('editor:artworkState'),
+    artworkExport: (format: ArtworkFormat): Promise<GfxProjectExportResult> =>
+      ipcRenderer.invoke('editor:artworkExport', format),
+    artworkImport: (files: string[] | null): Promise<GfxProjectImportResult> =>
+      ipcRenderer.invoke('editor:artworkImport', files),
+    artworkThumbnails: (files: string[]): Promise<YychrThumbnailEntry[]> => ipcRenderer.invoke('editor:artworkThumbnails', files),
     listRegionExports: (): Promise<string[]> => ipcRenderer.invoke('editor:listRegionExports'),
     removeRegionExport: (dir: string): Promise<string[]> => ipcRenderer.invoke('editor:removeRegionExport', dir),
     openRegionFolder: (dir: string): Promise<void> => ipcRenderer.invoke('editor:openRegionFolder', dir),
@@ -628,7 +637,11 @@ const api = {
     ): Promise<AudioSongImportRunResult> =>
       ipcRenderer.invoke('audio:importSong', rel, sourceSlot, targetBlockId, downsampleToFit, dropStaccatoToFit, useSmwSamples, noEcho, targetSlotId),
     revertSongImport: (targetBlockId: number): Promise<AudioSongImportRunResult> =>
-      ipcRenderer.invoke('audio:revertSongImport', targetBlockId)
+      ipcRenderer.invoke('audio:revertSongImport', targetBlockId),
+    deleteSong: (targetBlockId: number, slot: number): Promise<AudioSongImportRunResult> =>
+      ipcRenderer.invoke('audio:deleteSong', targetBlockId, slot),
+    restoreSong: (targetBlockId: number, slot: number): Promise<AudioSongImportRunResult> =>
+      ipcRenderer.invoke('audio:restoreSong', targetBlockId, slot)
   }
 } satisfies ShinyEggAPI
 

@@ -377,7 +377,10 @@ export function renderGfxFiles(
  *   - `sprites` — `tier:'spriteset'` = one of the 6 per-level spriteset files
  *     (DP $17-$1C, `slot` 0-5); `tier:'global'` = an always-loaded common sheet
  *     (files $72/$19 at VRAM $8000/$F000).
- *   - `hud` — the fixed HUD / font / status sheets ($12/$76/$4F).
+ *   - `hud` — the fixed HUD / font / status sheets ($12/$76/$4F; $4F doubles as
+ *     the pause-menu overlay chrome — graphics-survey doc 11 §3c. NB these are
+ *     the in-level-manifest ids; do not conflate with same-numbered LZ2-table
+ *     tilemap blobs — the two tables are independent id spaces).
  *   - `other` — anything the classifier can't place (shouldn't occur for stock
  *     scenes; kept so a modded layout still exports somewhere).
  */
@@ -430,6 +433,10 @@ export interface PerTilePalette {
    *  block comes first (BG3 rows 0-3, BG2 rows 6-7), then any extra rows the
    *  tilemap references. */
   subPalettes: number[][];
+  /** Each sub-palette's CGRAM group number (4-color groups for 2bpp, 16-color
+   *  rows for 4bpp) — maps `tileSub` back to real CGRAM positions (the YY-CHR
+   *  export writes these into `.col` so its `.pal` can stay raw CGRAM order). */
+  rows?: number[];
   /** This level runs a per-frame palette animation that recolors THIS layer's
    *  rows (header field 11) — the exported colors are one frame of a cycle.
    *  Editing tile indices stays byte-safe; only the displayed colors animate. */
@@ -504,6 +511,8 @@ function rethrowIfBug(e: unknown): void {
 
 /** Per-tile palette context for one BG layer (computed once per export). */
 interface PerTilePaletteCtx {
+  /** Exposed CGRAM group numbers, sub index → group (see PerTilePalette.rows). */
+  exposeRows: number[];
   /** VRAM byte address of a char tile → index into subPalettes (its dominant row). */
   subByVramByte: Map<number, number>;
   /** Exposed rows as RGBA (index 0 alpha 0 = transparent) for rendering. */
@@ -635,6 +644,7 @@ function computePerTilePalette(
   }
 
   return {
+    exposeRows,
     subByVramByte,
     subPalettesRgba,
     subPalettesRgb,
@@ -731,7 +741,7 @@ export function exportLevelGfxPngs(
         rowCount,
         addr,
         index0Transparent: true,
-        perTilePalette: { tileSub, subPalettes: perTile.subPalettesRgb, paletteAnimated: perTile.paletteAnimated },
+        perTilePalette: { tileSub, subPalettes: perTile.subPalettesRgb, rows: perTile.exposeRows, paletteAnimated: perTile.paletteAnimated },
         png: new Uint8Array(png),
         aseprite: makeAse ? makeAse(tileData, params.bpp, params.paletteRow, true) : undefined
       });
@@ -781,8 +791,11 @@ export interface LevelGfxFileInfo {
   paletteRow: number;
   isSprite: boolean;
   /** BG2/BG3: per-tile sub-palette rows (tileSub indexes subPalettesRgb — 16 RGB
-   *  colors per sub for 4bpp BG2, 4 for 2bpp BG3, sub 0 = the layer's primary). */
-  perTile?: { tileSub: number[]; subPalettesRgb: number[][] };
+   *  colors per sub for 4bpp BG2, 4 for 2bpp BG3, sub 0 = the layer's primary).
+   *  `rows[sub]` = the sub's real CGRAM group number (16-color rows for 4bpp,
+   *  4-color groups for 2bpp) — lets the YY-CHR export write CGRAM-true `.col`
+   *  bytes over a raw CGRAM-ordered `.pal`. */
+  perTile?: { tileSub: number[]; subPalettesRgb: number[][]; rows: number[] };
 }
 
 /** Collect every chunk-list gfx file `header`'s scene loads, with the palette
@@ -834,7 +847,7 @@ export function collectLevelGfxInfo(
         const vramByte = (entry.vramByteOffset + t * perTileCtx.tileBytes) & 0xffff;
         tileSub.push(perTileCtx.subByVramByte.get(vramByte) ?? 0);
       }
-      perTile = { tileSub, subPalettesRgb: perTileCtx.subPalettesRgb };
+      perTile = { tileSub, subPalettesRgb: perTileCtx.subPalettesRgb, rows: perTileCtx.exposeRows };
     }
 
     out.push({

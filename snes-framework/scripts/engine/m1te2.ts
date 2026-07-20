@@ -254,6 +254,12 @@ export function renderM1te2Rgba(doc: M1te2Doc): M1te2Preview {
 
   for (const slot of [2, 1, 0] as const) {
     const map = doc.maps[slot];
+    // An ALL-ZERO map layer is a producer-empty slot (EMPTY_MAP()) — skip it
+    // entirely. Without this, an empty slot whose bpp-sibling slot POPULATES the
+    // shared CHR block (e.g. the mini-battle result .M1: BG2 real, BG1 empty,
+    // one shared 4bpp set) paints char 0 / row 0 over every cell. A layer with
+    // ANY nonzero word still draws its zero words normally (see below).
+    if (!map.some((w) => w !== 0)) continue;
     for (let y = 0; y < doc.mapHeight; y++) {
       for (let x = 0; x < doc.mapWidth; x++) {
         // Word 0 (char 0 / row 0 / no flip) DRAWS like any other word — the SNES

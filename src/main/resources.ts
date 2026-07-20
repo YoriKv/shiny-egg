@@ -77,11 +77,13 @@ import type { GfxFileEntry } from 'snes-framework/types'
 import {
   levelNameSlotLabels,
   loadFontTable,
+  parseCreditsStaff,
   parseEndingText,
   parseIntroStory,
   parseLevelNameStrings,
   parseMessagePtrTable,
   parseMessageText,
+  serializeCreditsStaff,
   serializeEndingText,
   serializeIntroStory,
   serializeLevelNameStrings,
@@ -181,6 +183,11 @@ const ASM_REGIONS: Record<string, AsmRegionDef> = {
     file: 'yi/Banks/Bank0D.asm',
     parse: parseEndingText,
     serialize: (c, b, m, ft) => serializeEndingText(c, b, m as StringTableModel, ft)
+  },
+  'credits-staff': {
+    file: 'yi/Banks/Bank00.asm',
+    parse: parseCreditsStaff,
+    serialize: (c, b, m, ft) => serializeCreditsStaff(c, b, m as StringTableModel, ft)
   }
 }
 

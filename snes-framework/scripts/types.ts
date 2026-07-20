@@ -625,6 +625,11 @@ export interface StringTableModel {
   /** Reference list of the insertable markup tokens for the editor's guide:
    *  glyphs + control codes on `markup` models, glyphs-only on `glyphLines`. */
   markupGuide?: MarkupToken[];
+  /** Overrides the editor's live byte-cost estimate. `'credits-page'` = the
+   *  credits staff-roll stream cost (2 bytes/letter + 2/line header word +
+   *  2/line break + 2 terminator; spaces free — `creditsPageByteSize`). Absent
+   *  = the default per-model sizing. */
+  byteCost?: 'credits-page';
 }
 
 /** One entry in the markup-token guide: a glyph or control code the user can
@@ -1353,6 +1358,12 @@ export interface SettingAramUsage {
   /** Instrument table $3D00 (6-byte rows; 48 fit before the driver's own
    *  code at $3E20 — retail song modules upload 28). */
   rows: { used: number; max: number };
+  /** The whole-set import budget for this set (dodging its resident sample
+   *  banks + the map-resident reservation) — the AUTHORITATIVE flexible room,
+   *  same as the import panel. `freeTotal` is the real sample/sequence pool
+   *  (samples spill past the $B960 add-on window into the sequence tail +
+   *  engine gap); `seqLargestGap` caps one song's contiguous sequence. */
+  budget: AramImportBudget;
 }
 
 /** What an import can still claim in a target module, under the module

@@ -331,6 +331,36 @@ export function loadSceneGfx(
 }
 
 /**
+ * Decompress one LZ2 gfx file straight into `vram` at `destByteOff` — the
+ * engine twin of a cart out-of-program load (`CODE_00B756` into $70:5800 + a
+ * staging DMA), used by scenes that load a tilemap OUTSIDE their
+ * `scene_gfx_layout` program (mini-battle score BG3, storybook-intro BG2/BG3).
+ * A live `gfxOverride` blob replaces the cart decode entirely (so a resized
+ * edit reports its own size in the manifest entry).
+ */
+export function loadLz2FileToVram(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  fileId: number,
+  vram: Uint8Array,
+  destByteOff: number,
+  manifest?: GfxFileEntry[],
+  gfxOverride?: ReadonlyMap<string, Uint8Array>
+): void {
+  const srcPC = resolveGfxSrcPC(rom, symbols.pc('DATA_lz2_compressed_gfx_ptrs'), fileId, 'LZ2');
+  const live = gfxOverride?.get(`lz2/${fileId}`);
+  let sizeBytes: number;
+  if (live) {
+    vram.set(live.subarray(0, Math.min(live.length, vram.length - destByteOff)), destByteOff);
+    sizeBytes = live.length;
+  } else {
+    const r = lz2(rom, srcPC, vram, destByteOff);
+    sizeBytes = r.destEnd - destByteOff;
+  }
+  manifest?.push({ fileId, format: 'lz2', srcPC, vramByteOffset: destByteOff, sizeBytes });
+}
+
+/**
  * Shared Stage-2 walk of `scene_gfx_layout` — used by both `loadLevelGfx` (the
  * in-level scene at offset 0, DP from the header) and `loadSceneGfx` (a system
  * screen at an arbitrary offset, DP set directly). `dp` holds the resolved

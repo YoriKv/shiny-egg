@@ -5,7 +5,7 @@
 // messages as directives. This module is that bridge (validated byte-for-byte
 // against the cart by msg-markup.test.ts's sibling check).
 
-import { stripComment } from './text-literals.ts';
+import { escapeDefineBangs, stripComment, unescapeDefineBangs } from './text-literals.ts';
 import type { FontTable } from './font-table.ts';
 import { hex } from '../hex.ts';
 
@@ -87,7 +87,7 @@ export function messageBodyToBytes(body: string, ft: FontTable): number[] | null
         const a = arg.trim();
         if (!a) continue;
         if (a.startsWith('"') && a.endsWith('"')) {
-          for (const ch of a.slice(1, -1)) {
+          for (const ch of unescapeDefineBangs(a.slice(1, -1))) {
             const b = ft.charToByte.get(ch);
             if (b === undefined) return null;
             bytes.push(b);
@@ -107,14 +107,15 @@ export function messageBodyToBytes(body: string, ft: FontTable): number[] | null
 /**
  * Re-emit a message byte stream as `dw`/`db` directives (for an edited message;
  * unedited ones keep their original text). Printable font chars group into
- * `db "…"`, special glyph bytes become `db $XX`, control words become `dw $XXFF`.
+ * `db "…"` (define-shaped `!` escaped — see escapeDefineBangs), special glyph
+ * bytes become `db $XX`, control words become `dw $XXFF`.
  */
 export function bytesToMessageDirectives(bytes: number[], byteToChar: Map<number, string>): string {
   const lines: string[] = [];
   let run: string[] = [];
   const flush = (): void => {
     if (run.length) {
-      lines.push(`\tdb "${run.join('')}"`);
+      lines.push(`\tdb "${escapeDefineBangs(run.join(''))}"`);
       run = [];
     }
   };

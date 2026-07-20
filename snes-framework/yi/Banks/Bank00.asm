@@ -8192,6 +8192,16 @@ CODE_00CC50:
 DATA_00CC58:
 	dw $F7BE,$0842
 
+; Credits staff-roll OAM letter streams — 35 pages (some table slots share a
+; body), consumed by the scroller above from the WRAM-relocated copy. Stream
+; format (fully traced; research/graphics-survey/09-font-hud-messages.md §4b):
+; header word = X,Y; then (letterByte, advance) pairs — letterByte bit 4 picks
+; OBJ palette 6/7 (= the glyph plane / the font code's high bit), advance = the
+; 1bpp font's proportional width (word gaps folded in); $FF + $00 end / $01 new
+; line (header word follows). Edited by the Strings panel Credits tab
+; (scripts/asm/credits-staff.ts); total stream bytes must not grow (the streams
+; live inside the fixed-size relocated block).
+;@editable:credits-staff begin
 DATA_00CC5C:
 	dw $A857,$08DA,$08B5,$0498,$07B9,$077C,$087A,$08BB
 	dw $089E,$07B9,$08BA,$085C,$00FF
@@ -8378,6 +8388,7 @@ DATA_00D290:
 
 DATA_00D2B2:
 	dw $A462,$08F5,$08D1,$0FB6,$07B6,$08D7,$08B5,$00FF
+;@editable:credits-staff end
 
 DATA_00D2C2:
 	dw DATA_00CC5C,DATA_00CC5C,DATA_00CC76,DATA_00CCB6,DATA_00CCEE,DATA_00CD0C,DATA_00CD40,DATA_00CD7A
@@ -10741,6 +10752,12 @@ CODE_00E443:
 ; MODIFIES: A, X, Y; DBR pushed/popped; $00-$05 scratch; DMA channel 0;
 ;           VRAM at the per-entry destinations.
 ; CALLERS:  CODE_prepare_tilemap_dma_queue only.
+; ORIGIN:   Original source name VRAMTR ("VRAM transfer sub", ys_rpro.asm).
+;           Oldest surviving routine in the codebase: present byte-identical
+;           in both 1991-92 predecessor prototypes (utilities/donkey_test/
+;           super_donkey_1/2.bin) and unique to this lineage — found in no
+;           other game scanned. Survives because it is fully
+;           position-independent (relative branches + DP/PPU only).
 ;-------------------------------------------------------------------------
 CODE_00E44A:
 CODE_process_tilemap_dma_queue:                    ; Raidenthequick: CODE_process_tilemap_dma_queue

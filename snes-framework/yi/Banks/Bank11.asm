@@ -303,10 +303,17 @@ DATA_mini_battle_main_ptrs:                                      ; descriptive a
 	dw CODE_main_mini_battle_watermelon_spit_2p
 	dw CODE_11825E
 
-; Per-sub-mode music ID byte (one byte per `$7E:03A7` slot). Selects which SPC700 song
-; ID to load at minigame start. Values $A2-$A7 are mini-battle/minigame tracks.
+; Per-sub-mode SCORE-SCREEN TILEMAP FILE id (one byte per `$7E:03A7>>1` slot).
+; ⚠ Correction (2026-07-18): the old comment called these "music IDs" — they are
+; LZ2 gfx FILE ids: CODE_118216 below feeds the value to CODE_00B753 (the LZ2
+; decompressor) and DMAs the result to VRAM word $3400 (the BG3 tilemap) — the
+; six mini-battle in-battle score/HUD screens $A2-$A7 (corrected again
+; 2026-07-19: NOT intro/title screens — CODE_1181D9 calls CODE_118216 the frame
+; the battle's opening message box closes, and the `EOR #$40` below flips BG3 to
+; 8×8 tiles for the score plates; $A2/$A4 are all-blank fill). (The alias label
+; keeps its old name to avoid churning references; treat it as historical.)
 DATA_11820A:
-DATA_mini_battle_music_ids:                                      ; descriptive alias
+DATA_mini_battle_music_ids:                                      ; descriptive alias (MISNOMER — intro tilemap file ids; see header comment)
 	db $A2,$A2,$A2,$A3,$A3,$A4,$A4,$A6,$A7,$A5,$A5,$A2
 
 CODE_118216:

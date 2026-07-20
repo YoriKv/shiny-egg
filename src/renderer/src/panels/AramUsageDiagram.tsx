@@ -23,7 +23,6 @@ const KIND_LABEL: Record<AramSegment['kind'], string> = {
 }
 
 const fmt = (n: number): string => n.toLocaleString('en-US')
-const pct = (addr: number): number => ((addr - REGION_START) / (REGION_END - REGION_START)) * 100
 
 function Gauge({
   label,
@@ -56,28 +55,73 @@ function Gauge({
 
 export function AramUsageDiagram({ usage }: { usage: SettingAramUsage }): JSX.Element {
   const seqWindow = usage.seq.windowEnd - usage.seq.windowStart
+  // The resident sample banks (the fixed $4000+ 'samples' region every song
+  // leans on and imports must dodge) are the biggest, least-actionable block.
+  // Collapse them into a small fixed-width chip on the LEFT so the editable
+  // region — free sample space + the sequence window — gets the bar's full
+  // width. `wpct` maps addresses above the banks onto the wide working bar.
+  const bankSegs = usage.segments.filter((s) => s.kind === 'samples')
+  const workSegs = usage.segments.filter((s) => s.kind !== 'samples')
+  const bankEnd = bankSegs.reduce((m, s) => Math.max(m, s.end), REGION_START)
+  const bankBytes = bankSegs.reduce((n, s) => n + (s.end - s.start), 0)
+  const wpct = (addr: number): number => ((addr - bankEnd) / (REGION_END - bankEnd)) * 100
+  // Sample-capable region (disjoint): the add-on window + the sequence window
+  // (samples spill into its free tail) + the engine-tail gap. `budget.freeTotal`
+  // is the free part; the rest is the resident add-on bank.
+  const sampleRegion =
+    usage.samples.customWindowSize + (usage.seq.windowEnd - usage.seq.windowStart) + (usage.low.end - usage.low.start)
   return (
     <div className="se-aram">
-      <div
-        className="se-aram__bar"
-        title={
-          `Sound RAM ${hex0x(REGION_START)}-${hex0x(REGION_END - 1)} — the region this music set swaps in.\n` +
-          'Hover the colored spans for each module; empty space is free for imported songs and samples.'
-        }
-      >
-        {usage.segments.map((s) => (
+      <div className="se-aram__bar-row">
+        {bankSegs.length > 0 && (
           <div
-            key={s.start}
-            className={`se-aram__seg se-aram__seg--${s.kind}`}
-            style={{ left: `${pct(s.start)}%`, width: `${Math.max(0.15, pct(s.end) - pct(s.start))}%` }}
-            title={`${s.label} — ${KIND_LABEL[s.kind]}\n${hex0x(s.start)}-${hex0x(s.end - 1)} · ${fmt(s.end - s.start)} B`}
-          />
-        ))}
+            className="se-aram__banks"
+            title={
+              `Resident sample banks — ${hex0x(REGION_START)}-${hex0x(bankEnd - 1)} · ${fmt(bankBytes)} B ` +
+              '(fixed; imported songs dodge these).\n' +
+              bankSegs.map((s) => `• ${s.label}: ${hex0x(s.start)}-${hex0x(s.end - 1)} (${fmt(s.end - s.start)} B)`).join('\n') +
+              '\nCollapsed here so the editable region on the right shows at full scale.'
+            }
+          >
+            {bankSegs.map((s) => (
+              <div
+                key={s.start}
+                className="se-aram__bank-seg"
+                style={{
+                  left: `${((s.start - REGION_START) / (bankEnd - REGION_START)) * 100}%`,
+                  width: `${((s.end - s.start) / (bankEnd - REGION_START)) * 100}%`
+                }}
+              />
+            ))}
+            <span className="se-aram__banks-tag">{Math.round(bankBytes / 1024)}K</span>
+          </div>
+        )}
         <div
-          className="se-aram__tick"
-          style={{ left: `${pct(0xd000)}%` }}
-          title={`${hex0x(0xd000)} — sequence window start (samples left, song data right)`}
-        />
+          className="se-aram__bar"
+          title={
+            `Editable sound RAM ${hex0x(bankEnd)}-${hex0x(REGION_END - 1)} — free sample space + the sequence window.\n` +
+            'Hover the colored spans; empty space is free for imported songs and samples.' +
+            (bankSegs.length > 0
+              ? `\n(${fmt(bankBytes)} B of fixed sample banks below ${hex0x(bankEnd)} are collapsed at left.)`
+              : '')
+          }
+        >
+          {workSegs.map((s) => (
+            <div
+              key={s.start}
+              className={`se-aram__seg se-aram__seg--${s.kind}`}
+              style={{ left: `${wpct(s.start)}%`, width: `${Math.max(0.3, wpct(s.end) - wpct(s.start))}%` }}
+              title={`${s.label} — ${KIND_LABEL[s.kind]}\n${hex0x(s.start)}-${hex0x(s.end - 1)} · ${fmt(s.end - s.start)} B`}
+            />
+          ))}
+          {bankEnd <= 0xd000 && (
+            <div
+              className="se-aram__tick"
+              style={{ left: `${wpct(0xd000)}%` }}
+              title={`${hex0x(0xd000)} — sequence window start (samples left, song data right)`}
+            />
+          )}
+        </div>
       </div>
       <div className="se-aram__gauges">
         <Gauge
@@ -103,14 +147,17 @@ export function AramUsageDiagram({ usage }: { usage: SettingAramUsage }): JSX.El
           }
         />
         <Gauge
-          label="sample window"
-          used={usage.samples.customWindowSize - usage.samples.customWindowFree}
-          max={usage.samples.customWindowSize}
+          label="sample room"
+          used={sampleRegion - usage.budget.freeTotal}
+          max={sampleRegion}
           unit="B"
           hint={
-            `The ${hex0x(0xb960)}-${hex0x(0xcfff)} add-on window where an imported song's own samples go — ` +
-            `${fmt(usage.samples.customWindowFree)} B free (imports can also spill into the sequence window's free space).\n` +
-            `All sample data in this set: ${fmt(usage.samples.used)} B across ${fmt(usage.samples.count)} samples.`
+            `Room an imported song's samples can claim — ${fmt(usage.budget.freeTotal)} B free.\n` +
+            `Samples aren't capped at the ${hex0x(0xb960)}-${hex0x(0xcfff)} add-on window (${fmt(usage.samples.customWindowSize)} B); ` +
+            `they first-fit that PLUS the free sequence tail and the ${hex0x(usage.low.start)}-${hex0x(usage.low.end - 1)} engine-tail gap. ` +
+            `With "No echo", +${fmt(0x1000)} B more.\n` +
+            `Shared with the song's sequence (one contiguous run, up to ${fmt(usage.budget.seqLargestGap)} B), so a longer song leaves less for samples.\n` +
+            `Sample data resident now: ${fmt(usage.samples.used)} B across ${fmt(usage.samples.count)} samples.`
           }
         />
         <Gauge

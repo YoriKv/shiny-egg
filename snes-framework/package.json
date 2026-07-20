@@ -29,6 +29,9 @@
     "./aseprite": "./scripts/engine/aseprite.ts",
     "./gfx-aseprite": "./scripts/engine/gfx-aseprite.ts",
     "./gfx-png": "./scripts/engine/gfx-png.ts",
+    "./gfx-file-catalog": "./scripts/engine/gfx-file-catalog.ts",
+    "./screen-minibattle": "./scripts/engine/screen-minibattle.ts",
+    "./screen-storybook-intro": "./scripts/engine/screen-storybook-intro.ts",
     "./gfx-yychr": "./scripts/engine/gfx-yychr.ts",
     "./decompress": "./scripts/engine/decompress/index.ts",
     "./strings": "./scripts/strings.ts",
@@ -90,6 +93,7 @@
     "./palette-edit": "./scripts/palette-edit.ts",
     "./gradient-edit": "./scripts/gradient-edit.ts",
     "./palette-catalog": "./scripts/engine/palette-catalog.ts",
+    "./credits-palette-facts": "./scripts/engine/credits-palette-facts.ts",
     "./island-tilemap": "./scripts/island-tilemap.ts",
     "./logo-tilemap": "./scripts/logo-tilemap.ts",
     "./overlay-data-editors": "./scripts/overlay-data-editors.ts"

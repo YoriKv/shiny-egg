@@ -201,6 +201,13 @@ export interface ScreenGfxPng {
   /** When set, the PNG is only this tile-region of the file (e.g. the boot logo);
    *  import maps edits back into the full file by these coords. */
   region?: TileRegion;
+  /** The CGRAM group this file's flat preview renders in (16-color rows for 4bpp,
+   *  4-color groups for 2bpp). Display metadata (the YY-CHR export's row badge);
+   *  superseded by `perTilePalette` when present. */
+  paletteRow: number;
+  /** The owning screen's full 512-byte CGRAM (BGR-15 LE) — the co-loaded palette
+   *  state the YY-CHR export ships raw. Display-only, never data. */
+  cgram: Uint8Array;
   /** Flat-map BG files (`f74`/`f75`): per-tile palette fidelity — each tile is
    *  colored in the palette row it actually draws with (the map BG spans rows
    *  0/3/6/7, not one tint). Import decodes per-tile via this (the same mechanism
@@ -496,7 +503,9 @@ function renderMapBgFile(
     rowCount,
     addr: fileAddr(rom, symbols, entry.format, entry.fileId),
     index0Transparent: false, // BG1 index 0 is an opaque color
-    perTilePalette: { tileSub, subPalettes: subRgb, paletteAnimated: false },
+    paletteRow: exposeRows[0] ?? 0,
+    cgram,
+    perTilePalette: { tileSub, subPalettes: subRgb, rows: exposeRows, paletteAnimated: false },
     png: new Uint8Array(png),
     aseprite: ase?.aseprite,
     paletteOffsets: ase?.paletteOffsets
@@ -591,7 +600,9 @@ function renderStorybookCharFile(
     rowCount,
     addr: fileAddr(rom, symbols, entry.format, entry.fileId),
     index0Transparent: transparentZero,
-    perTilePalette: { tileSub, subPalettes: subRgb, paletteAnimated: true },
+    paletteRow: exposeRows[0] ?? 0,
+    cgram,
+    perTilePalette: { tileSub, subPalettes: subRgb, rows: exposeRows, paletteAnimated: true },
     png: new Uint8Array(png),
     aseprite: ase?.aseprite,
     paletteOffsets: ase?.paletteOffsets
@@ -606,7 +617,7 @@ function bootVariant(): ScreenVariant {
 }
 
 /** Storybook scene descriptors — both programs are literal-only. */
-function storybookVariant(): ScreenVariant {
+export function storybookVariant(): ScreenVariant {
   return { group: '', gfx: { startOffset: 0x79, dpSlots: [] }, palette: { startOffset: 0x50, slots: [] } };
 }
 
@@ -1030,6 +1041,8 @@ function renderFile(
     addr: fileAddr(rom, symbols, entry.format, entry.fileId),
     index0Transparent,
     region: cls.region,
+    paletteRow: cls.paletteRow,
+    cgram,
     png: new Uint8Array(png),
     aseprite,
     paletteOffsets

@@ -7698,17 +7698,21 @@ CODE_08AA5D:
 
 ;---------------------------------------------------------------------------
 
-; CODE_hookbill_mode7_init -- Mode-7 tilemap initialiser for the Hookbill the Koopa
-; shell and giant Baby Bowser body. Source bytes at $7000, output stride
-; 16-byte words written to $6800. Each input byte is split into nibbles: low
-; nibble -> tile-index byte; high nibble -> palette/priority byte (via
-; LSR/SWAP). Loops $F0 times via LOOP/INC R1.
+; CODE_mode7_cpc_unpack_gsu -- GSU CPC nibble-unpack for the Hookbill the Koopa
+; and giant Baby Bowser Mode-7 CHAR files (LZ2 $B3-$B8): the GSU twin of the
+; 65816 handler CODE_mode7_cpc_unpack_chars (Bank00 CODE_00B609). Source: the
+; LZ2-decompressed CPC bytes at $7000 (2 px/byte). Each byte becomes one 16-bit
+; word at $6800: low byte = low nibble (first pixel), high byte = high nibble
+; (second pixel, via LSR x4 + SWAP) -- a pixel-byte stream the callers DMA to
+; the $2119 Mode-7 char (high) lane, NOT tilemap words. R4=$00F0 is the
+; high-nibble AND mask; the iteration count is R12 (= the LZ2 size), seeded by
+; the caller (CODE_0DD3E9 / CODE_hookbill_begin_init1) before MOVE R13,R15.
 ;
-; INPUTS: none (uses fixed register init R1=$7000, R2=$6800, R3=$0F, R4=$00F0).
-; OUTPUTS: writes 240 (16-bit) tilemap entries at $6800-$69DF.
+; INPUTS: R12 = source byte count (fixed init R1=$7000, R2=$6800, R3=$0F, R4=$00F0).
+; OUTPUTS: R12 words ( = 2*R12 bytes) of unpacked pixel bytes at $6800.
 
 CODE_08AA5F:
-CODE_hookbill_mode7_init:                ; Mode-7 init for Hookbill / giant Baby Bowser
+CODE_mode7_cpc_unpack_gsu:               ; CPC char unpack for Hookbill / giant Baby Bowser ($B3-$B8)
 	IWT R1, #$7000
 	IWT R2, #$6800
 	IBT R3, #$0F

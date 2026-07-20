@@ -1,11 +1,11 @@
 // Resolve the user's Aseprite executable for the Graphics panel's "Locate
 // Aseprite" button. Mirrors `resolveBizhawkExe` (bizhawk.ts): the saved settings
 // path if it still exists, else a common install location (existence-checked),
-// else null (the panel shows "Locate Aseprite"). The path is used to open the
-// `.aseprite` projects the BG-region exporter writes — and to PROBE the Aseprite
-// version (`asepriteInfo`), which gates the tilemap export (needs Aseprite 1.3+).
+// else null (the panel shows "Locate Aseprite"). The path is used to PROBE the
+// Aseprite version (`asepriteInfo`), which gates the tilemap export (needs
+// Aseprite 1.3+).
 
-import { execFile, spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -73,16 +73,3 @@ export async function asepriteInfo(): Promise<AsepriteInfo | null> {
   return cachedInfo
 }
 
-/** Launch Aseprite with `filePath` (detached, so it outlives this process).
- *  No-op returning false if Aseprite isn't located or the file is missing. */
-export function openInAseprite(filePath: string): boolean {
-  const exe = resolveAsepriteExe()
-  if (!exe || !existsSync(filePath)) return false
-  try {
-    // Detached + unref so Aseprite keeps running after the editor closes.
-    spawn(exe, [filePath], { cwd: join(exe, '..'), detached: true, stdio: 'ignore', windowsHide: false }).unref()
-    return true
-  } catch {
-    return false
-  }
-}

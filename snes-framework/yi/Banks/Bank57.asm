@@ -29,7 +29,13 @@
 ;#   that way (and so do all the per-blob pointer tables it consumes).
 ;#
 ;# Contents at a glance (in source order; SNES banks given for orientation):
-;#   $57:0000        SuperFXCode_YI.bin                    -- the entire SuperFX program (`%InsertNextPreCompiledCodeBlock`)
+;#   $57:0000        SuperFXCode_YI.bin slice              -- GSU-only BITMAP DATA (`%InsertNextPreCompiledCodeBlock`).
+;#                                                            NOT the SuperFX program (that assembles into banks $08-$0B);
+;#                                                            this slice of the container carries Bank57's data segment
+;#                                                            (source: SuperFX/Banks/Bank57.asm -> Graphics/SuperFX/
+;#                                                            DATA_570000.bin). Purpose unverified — independent art
+;#                                                            (byte-disproven as any flip/permutation of the $56 map
+;#                                                            chars); see research/graphics-survey/11-vram-loading.md §4.
 ;#   $57:3C00 ..     115 LZ2 graphics blobs                -- (incbin "Graphics/GFX_57xxxx.lz2" etc.)
 ;#                   spanning $57-$5A roughly              -- standard-format compressed CHR
 ;#   $5B-$5C ..      150 LZ2 tilemap blobs                 -- (incbin "Tilemaps/DATA_5BxxxxL.lz2" etc.)

@@ -332,33 +332,28 @@ export const PANEL_HELP: PanelHelp = {
   graphics: (
     <>
       <p>
-        Edit the game&rsquo;s graphics in an external editor. <b>Export</b> writes
-        graphics to a folder, you edit them, and <b>Import</b> reads the whole folder
-        back and saves only what changed. The dropdown picks what to export; Import
-        auto-detects everything in the folder you choose. Each export drops its files in a
-        cleanly-named subfolder (e.g. <code>map</code> or <code>screens</code>) with its own
-        manifest, so you can export several types into one folder — importing that folder
-        reads every subfolder.
+        Edit the game&rsquo;s graphics in external editors, one tab per pathway:{' '}
+        <b>Level&nbsp;BGs</b> for the loaded level&rsquo;s background layers, and three
+        fixed per-project folders &mdash; <b>YY-CHR&nbsp;Graphics</b>,{' '}
+        <b>M1TE&nbsp;Maps</b>, and <b>Misc&nbsp;Art</b>.
       </p>
       <p>
-        <b>What to export:</b> a <b>BG1&nbsp;area</b> (use <b>Select&nbsp;area</b> and
-        shift-drag a rectangle on the canvas to choose the region), the whole{' '}
-        <b>BG2</b> or <b>BG3</b> background, the <b>World&nbsp;Map</b> (the overworld map
-        graphics), the <b>Boot/Story/Title&nbsp;Screens</b> (the boot, title and
-        storybook graphics), or <b>Bosses</b> (Raphael&rsquo;s Mode-7 moon arena as an
-        Aseprite layout &mdash; rearrange the tiles that build the moon, clouds and
-        stars; the tile pixels edit via the YY-CHR tab).
+        <b>Level&nbsp;BGs:</b> <b>Export</b> writes a <b>BG1&nbsp;area</b> (use{' '}
+        <b>Select&nbsp;area</b> and shift-drag a rectangle on the canvas) or the whole{' '}
+        <b>BG2</b> / <b>BG3</b> layer to a folder you pick; <b>Import</b> reads the
+        folder back and saves only what changed. Below the controls: the folders
+        you&rsquo;ve exported to (click to open, re-import, or remove &mdash; any{' '}
+        <code>.M1</code> files there are clickable to open in M1TE), the graphics this
+        project has changed (each shows what it maps back to, with a reset to vanilla),
+        and the last import&rsquo;s log.
       </p>
       <p>
-        <b>Format:</b> <b>PNG</b> opens in any image editor and includes a swatch column
-        of the exact colors to paint from. <b>Aseprite&nbsp;(tilemap)</b> writes a
-        configured &ldquo;.aseprite&rdquo; file with the palette built in (no Aseprite
-        install needed to produce it). <b>M1TE2&nbsp;(.M1)</b> bundles a layer&rsquo;s
-        tilemap, tiles, and palette into one session you edit in <b>M1TE</b>, the bundled
-        tile/map editor &mdash; available for the BG layers, the World&nbsp;Map, and the
-        Boot/Story/Title screens. <b>Auto-Open&nbsp;Exports</b> opens each file as you
-        make it (in M1TE for a&nbsp;.M1, in Aseprite otherwise &mdash;{' '}
-        <b>Locate&nbsp;Aseprite</b> points the app at your install).
+        <b>Format:</b> <b>Aseprite</b> writes a configured
+        &ldquo;.aseprite&rdquo; file with the palette built in (no Aseprite install
+        needed to produce it). <b>M1TE2&nbsp;(.M1)</b> bundles a layer&rsquo;s tilemap,
+        tiles, and palette into one session you edit in <b>M1TE</b>, the bundled
+        tile/map editor. <b>Locate&nbsp;Aseprite</b> points the app at your install
+        (used to check it can open tilemap exports).
       </p>
       <p>
         <b>Palette rows.</b> Each background tile uses a single color row. If you paint
@@ -367,22 +362,18 @@ export const PANEL_HELP: PanelHelp = {
         entry) &mdash; stick to the tile&rsquo;s row.
       </p>
       <p>
-        Below the controls: the folders you&rsquo;ve exported to (click to open,
-        re-import, or remove &mdash; any <code>.M1</code> files there are clickable to
-        open in M1TE); the graphics this project has changed (each shows what it maps
-        back to, with a reset to vanilla); and the last import&rsquo;s log.
+        The three folder tabs need no dialogs &mdash; each exports to its own fixed
+        folder in the project, shows on-disk previews, lights up files you&rsquo;ve
+        changed externally, and imports per-file or all at once. <b>Misc&nbsp;Art</b> holds
+        the fixed image surfaces (the world map, the boot / title / storybook
+        screens, Raphael&rsquo;s arena, the message font) as PNGs or Aseprite projects;{' '}
+        <b>YY-CHR&nbsp;Graphics</b> every tile sheet in the game as raw files YY-CHR
+        edits in place; <b>M1TE&nbsp;Maps</b> every fixed map (the overworlds, the
+        level icons, the tilemap-based screens) as M1TE sessions.
       </p>
       <p>
-        Edits to the loaded level&rsquo;s graphics preview live on the canvas; a rebuild
-        (Test&nbsp;Level / Launch) bakes everything into the ROM.
-      </p>
-      <p>
-        Two more tabs browse fixed per-project export folders (no dialogs):{' '}
-        <b>YY-CHR&nbsp;Graphics</b> exports every tile sheet in the game as raw files
-        YY-CHR edits in place, and <b>M1TE&nbsp;Maps</b> exports every fixed map — the
-        overworlds, the level icons, and the tilemap-based screens — as M1TE sessions.
-        Both show on-disk previews, light up files you&rsquo;ve changed externally, and
-        import per-file or all at once.
+        Edits preview live on the canvas; a rebuild (Test&nbsp;Level / Launch) bakes
+        everything into the ROM.
       </p>
     </>
   )

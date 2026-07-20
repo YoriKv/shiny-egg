@@ -104,21 +104,24 @@ console.log('\n=== buildPalFromCgram (primary row first, bit 15 masked) ===');
 
 console.log('\n=== buildColSidecar (ColSetData addressing) ===');
 {
-  // 4bpp: char at file offset B reads col[B/16 + 256] → 512-byte bank stride, 256 used.
+  // 4bpp: col index = bankBase/16 + charIdx + 256 (ColSetData.cs) — the char index
+  // within a 256-char bank window is DENSE; banks stride 512 entries, first 256
+  // used. (The pre-2026-07-19 layout wrote 256 + charIdx*2 — every odd char read
+  // group 0; in-app symptom: odd tile columns in one solid wrong color.)
   const tileSub4 = Array.from({ length: 512 }, (_, t) => t & 0xff); // two banks
   const col4 = buildColSidecar(tileSub4, 4, 2 * 8192);
   assert(col4.length === 256 + (2 * 8192) / 16, '4bpp col sized to header + paddedBytes/16');
-  assert(col4[256] === 0 && col4[256 + 2] === 1, '4bpp: char n at 256 + n*2 (32B tile / 16)');
-  assert(col4[256 + 255 * 2] === 255, '4bpp: last char of bank 0');
-  assert(col4[256 + 512] === 0 && col4[256 + 512 + 2] === 1, '4bpp: bank 1 block starts at +512');
-  assert(col4.subarray(256, 256 + 512).filter((_, i) => i % 2 === 1).every((b) => b === 0), '4bpp: odd 16-byte slots unused');
-  // 2bpp: 16B chars pack contiguously (256-byte bank blocks).
+  assert(col4[256] === 0 && col4[256 + 1] === 1, '4bpp: char n at 256 + n (dense within the bank)');
+  assert(col4[256 + 255] === 255, '4bpp: last char of bank 0 at 256 + 255');
+  assert(col4.subarray(256 + 256, 256 + 512).every((b) => b === 0), '4bpp: upper half of the bank-0 block unused');
+  assert(col4[256 + 512] === 0 && col4[256 + 512 + 1] === 1, '4bpp: bank 1 block starts at +512, dense');
+  // 2bpp: 16B chars pack contiguously (256-byte bank blocks) — same as before.
   const tileSub2 = Array.from({ length: 256 }, (_, t) => (t + 1) & 0xff);
   const col2 = buildColSidecar(tileSub2, 2, 4096);
   assert(col2[256] === 1 && col2[256 + 255] === 0, '2bpp: char n at 256 + n, one byte each');
   // Padding chars past tileSub read group 0.
   const colPad = buildColSidecar([3], 4, 8192);
-  assert(colPad[256] === 3 && colPad[256 + 2] === 0, 'chars past tileSub → group 0');
+  assert(colPad[256] === 3 && colPad[256 + 1] === 0, 'chars past tileSub → group 0');
 }
 
 console.log('\n=== chunky ↔ planar (the ycompress type-1 transform) ===');
@@ -228,6 +231,17 @@ console.log('\n=== renderYychrSheetRgba (thumbnail rasterizer) ===');
   const col = buildColSidecar([1], 2, 4096);
   const r2 = renderYychrSheetRgba(sheet2, { bpp: 2, sizeBytes: 4096 }, pal2, col);
   assert(px(r2, 0).join() === '0,255,0,255', '2bpp idx 3 + col group 1 → slot 7 (ColorNum 4 stride)');
+
+  // 4bpp writer↔reader symmetry: an ODD char's col group must round-trip through
+  // the sidecar (the exact pairing the pre-2026-07-19 double-stride bug broke —
+  // odd chars all read group 0).
+  const sheet4odd = new Uint8Array(8192);
+  sheet4odd[1 * 32] = 0x80; // char 1, pixel (0,0) → idx 1
+  const pal4odd = new Uint8Array(512);
+  pal4odd[(2 * 16 + 1) * 2] = 0x1f; // group 2, color 1 = red
+  const col4odd = buildColSidecar([0, 2], 4, 8192);
+  const r4odd = renderYychrSheetRgba(sheet4odd, { bpp: 4, sizeBytes: 8192 }, pal4odd, col4odd);
+  assert(px(r4odd, 8).join() === '255,0,0,255', '4bpp odd char reads its own col group (dense charIdx)');
 
   // CPC (4BPP GBA): byte 0x21 → pixel 0 = LOW nibble (1), pixel 1 = high (2).
   const cpc = new Uint8Array(8192);

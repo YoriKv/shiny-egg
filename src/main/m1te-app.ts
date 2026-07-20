@@ -1,8 +1,8 @@
 // Launch the bundled M1TE editor (our fork of nesdoug/M1TE2) on an exported `.M1`
-// graphics session — the "auto-open after export" for the BG2/BG3 M1TE2 export.
+// graphics session — the M1TE Maps tab's per-file Open + the exported-folders list.
 // M1TE is a Windows .NET executable shipped read-only under resources/snes-framework/
 // on BOTH platforms (electron-builder shared extraResources): run natively on Windows,
-// or through `wine` on Linux/macOS. Mirrors aseprite-app.ts's `openInAseprite`.
+// or through `wine` on Linux/macOS.
 //
 // M1TE's CLI (Program.cs): `M1TE.exe <path.M1> -bg <view>` — the first non-flag arg is
 // the session to open; `-bg 2` / `-bg 3` open straight to that BG layer's view.

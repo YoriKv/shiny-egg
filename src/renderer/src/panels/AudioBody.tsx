@@ -4,6 +4,7 @@ import { useSpcPlayer } from '../hooks/useSpcPlayer'
 import { getLevel } from '../data/levels'
 import { persistedState } from '../lib/persisted-state'
 import { hex0x } from '../lib/hex'
+import { formatBytes } from '../lib/format-bytes'
 import { SequenceView } from './SequenceView'
 import { AudioExportTab } from './AudioExportTab'
 import { AramUsageDiagram } from './AramUsageDiagram'
@@ -54,12 +55,14 @@ interface SetGroup {
   /** Settings in the row, named ones first (unused 0x0E/0x0F sort last). */
   settings: AudioSettingUi[]
   modules: string[]
-  songs: Array<{ slotId: number; name: string }>
+  songs: Array<{ slotId: number; name: string; deleted?: boolean }>
   /** slot id → settings that auto-play it on entry. */
   initOf: Map<number, AudioSettingUi[]>
   usedByLevels: number[]
   /** ROM byte size of the row's song module (engine-only rows: undefined). */
   songModuleBytes?: number
+  /** Block id of the row's song module — for per-song delete/restore. */
+  songBlockId?: number
 }
 
 function groupSettings(settings: AudioSettingUi[]): SetGroup[] {
@@ -86,7 +89,8 @@ function groupSettings(settings: AudioSettingUi[]): SetGroup[] {
         songs: rep.songs,
         initOf,
         usedByLevels,
-        songModuleBytes: rep.songModuleBytes
+        songModuleBytes: rep.songModuleBytes,
+        songBlockId: rep.songBlockId
       }
     })
 }
@@ -280,6 +284,30 @@ export function AudioBody({
     [player]
   )
 
+  /** Delete or restore one song slot of a module (frees / re-adds its bytes).
+   *  Structural change — no live preview; a rebuild (Test Level) applies it. */
+  const songSlotAction = useCallback(
+    async (blockId: number, slot: number, action: 'delete' | 'restore', name: string): Promise<void> => {
+      setStatus(null)
+      const r =
+        action === 'delete'
+          ? await window.shinyEgg.audio.deleteSong(blockId, slot)
+          : await window.shinyEgg.audio.restoreSong(blockId, slot)
+      if (!r.ok) {
+        setStatus(`${action === 'delete' ? 'Delete' : 'Restore'} failed: ${r.error}`)
+        return
+      }
+      onMutated?.()
+      await refresh()
+      setStatus(
+        action === 'delete'
+          ? `Deleted “${name}” — ${formatBytes(r.freeBytes)} audio budget free. Rebuild (Test Level) to apply.`
+          : `Restored “${name}”. Rebuild (Test Level) to apply.`
+      )
+    },
+    [onMutated, refresh]
+  )
+
   const playSfx = useCallback(
     async (id: number, name: string): Promise<void> => {
       setStatus(null)
@@ -456,24 +484,43 @@ export function AudioBody({
                     })}
                   </div>
                 )}
-                {g.songs.map(({ slotId, name }) => {
+                {(() => {
+                  // Deleting must leave the module at least one song.
+                  const liveCount = g.songs.filter((s) => !s.deleted).length
+                  return g.songs.map(({ slotId, name, deleted }) => {
                   const initFor = g.initOf.get(slotId) ?? []
                   return (
-                    <div key={slotId} className="se-audio__row">
+                    <div key={slotId} className={`se-audio__row${deleted ? ' se-audio__row--deleted' : ''}`}>
                       <span className="se-audio__slot" title="Song slot id (the value written to the music mailbox)">{hex0x(slotId)}</span>
                       <span className="se-audio__song-name">{name}</span>
                       <span className="se-audio__song-note" title={initFor.length ? `Plays on entry for: ${initFor.map((s) => s.name).join(', ')}` : undefined}>
-                        {initFor.length > 0 ? `★ ${initFor.map((s) => s.name).join(', ')}` : ''}
+                        {deleted ? (
+                          <span className="se-audio__badge se-audio__badge--changed" title="Deleted — plays silence until restored or re-imported; freed its bytes. Rebuild to apply.">deleted</span>
+                        ) : initFor.length > 0 ? `★ ${initFor.map((s) => s.name).join(', ')}` : ''}
                       </span>
                       <span className="se-audio__row-actions">
                         <button className="se-audio__btn" title="Play in the editor"
+                          disabled={deleted}
                           onClick={() => void playSong(rep.setting, slotId, name)}>▶</button>
                         <button className="se-audio__btn" title="Open in the sequencer"
+                          disabled={deleted}
                           onClick={() => openInSequence(rep.setting, slotId)}>♫</button>
+                        {g.songBlockId !== undefined && (
+                          deleted ? (
+                            <button className="se-audio__btn" title="Restore this song from the original ROM"
+                              onClick={() => void songSlotAction(g.songBlockId!, slotId, 'restore', name)}>Restore</button>
+                          ) : (
+                            <button className="se-audio__btn" title={liveCount <= 1
+                              ? 'A module must keep at least one song'
+                              : 'Delete this song to free its space (e.g. to fit a bigger import into another slot) — reversible with Restore'}
+                              disabled={liveCount <= 1}
+                              onClick={() => void songSlotAction(g.songBlockId!, slotId, 'delete', name)}>Delete</button>
+                          )
+                        )}
                       </span>
                     </div>
                   )
-                })}
+                })})()}
               </div>
             )
           })}

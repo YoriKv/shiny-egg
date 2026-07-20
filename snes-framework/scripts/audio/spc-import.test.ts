@@ -14,10 +14,11 @@
 //    check (port-clear patch tolerated), and a cross-set extraction carries
 //    exactly the sample bytes the target baseline lacks.
 
-import { parseSpcFile, verifyYiDriverAram, findSpcSongCandidates, extractSongModule, synthesizeImportPreviewSpc } from './spc-import.ts';
+import { parseSpcFile, verifyYiDriverAram, findSpcSongCandidates, extractSongModule, synthesizeImportPreviewSpc, spcSongToCompiledMml } from './spc-import.ts';
 import { parseUploadStream } from './upload-stream.ts';
-import { applyUploadStream, ARAM_SIZE, composeSettingAram } from './aram.ts';
+import { applyUploadStream, ARAM_SIZE, composeSettingAram, songSlotPtr } from './aram.ts';
 import { decodeSong } from './sequence.ts';
+import { buildMmlModule } from './mml-module.ts';
 import { synthesizeSongSpc, songSlotsOfSetting } from './spc.ts';
 import { parseBlockFromRom, readAudioCatalog, songSlotsOfStream, SPC_BLOCKS } from './catalog.ts';
 import { loadDevCart } from '../engine/dev-cart.ts';
@@ -116,6 +117,38 @@ console.log('=== synthetic: candidates + extraction ===');
   assert(reparsed.blocks.length === mod.stream.blocks.length && reparsed.entry === 0x0400, 'serialized module reparses');
 }
 
+console.log('=== synthetic: .spc song → CompiledMml adapter (single-slot merge) ===');
+{
+  const { aram, baseline } = buildSyntheticAram();
+  const { compiled } = spcSongToCompiledMml(aram, 0xd000, baseline, 'synth');
+  assert(compiled.parts.length === 1 && compiled.loopPartIndex === null, 'adapter: one part, no loop (song ends with $0000)');
+  // Used rows: setInstrument 3, plus percussion base 5 filled through index 2
+  // (for dense contiguity) → rows {3,5,6,7} = 4 dense rows.
+  assert(compiled.instrumentRows.length === 4, `adapter: 4 dense instrument rows, saw ${compiled.instrumentRows.length}`);
+  assert(compiled.sampleSrcnBase === 0x18, 'adapter: fixed custom SRCN base 0x18 (normal, non-grassland mode)');
+  // Referenced samples: 0x18 (differs → carried) and 0x19 (matches the
+  // baseline but sits AT/above the custom base, so it can't be left as a
+  // resident reference inside buildMmlModule's remap window — carried too).
+  // The filler rows 5/6 (perc-contiguity only) are never selected, so their
+  // uninitialised SRCN does NOT trigger a spurious carry.
+  assert(compiled.samples.length === 2 && compiled.dirEntries.length === 2, `adapter: referenced samples carried, saw ${compiled.samples.length}`);
+  // $E0/$FA args remapped to dense indices (row 3 → 0, base 5 → 1).
+  let e0Arg: number | undefined, faArg: number | undefined;
+  for (const e of compiled.trackEvents[0]) {
+    if (e.kind === 'vcmd' && e.op === 0xe0) e0Arg = e.args[0];
+    if (e.kind === 'vcmd' && e.op === 0xfa) faArg = e.args[0];
+  }
+  assert(e0Arg === 0, `adapter: setInstrument 3 → dense row 0, saw ${e0Arg}`);
+  assert(faArg === 1, `adapter: percussion base 5 → dense row 1, saw ${faArg}`);
+  // Build (whole-set, no merge base) + apply + decode: note count preserved.
+  const built = buildMmlModule(compiled, [1], {});
+  const rebuilt = new Uint8Array(baseline);
+  applyUploadStream(rebuilt, built.stream);
+  const noteN = (s: ReturnType<typeof decodeSong>): number =>
+    [...s.tracks.values()].reduce((n, t) => n + t.events.filter((e) => e.kind === 'note' || e.kind === 'perc').length, 0);
+  assert(noteN(decodeSong(rebuilt, songSlotPtr(rebuilt, 1))) === noteN(decodeSong(aram, 0xd000)), 'adapter: rebuilt note count matches source');
+}
+
 // ── build-gated: identity over the retail modules ────────────────────────────
 try {
   const { rom, symbols } = loadDevCart();
@@ -210,6 +243,46 @@ try {
     const ok = cands.filter((c) => c.ok && c.aliasOf === undefined);
     assert(ok.length >= 8, `map-set spc yields ≥8 healthy distinct songs, saw ${ok.length}`);
     assert(cands.some((c) => c.aliasOf !== undefined), 'alias slots detected');
+  }
+
+  console.log('\n=== single-slot .spc merge keeps the module\'s other songs ===');
+  {
+    // Flower Garden's song adapted + merged into ONE worldmap slot; a DIFFERENT
+    // worldmap slot's song must stay byte-identical (merge appends, never
+    // clobbers), and the imported song must decode with its note count intact.
+    const src = composeSettingAram(rom, catalog, 0x00); // flower garden
+    const srcPtr = songSlotsOfSetting(rom, catalog, 0x00).get(1)!;
+    const targetBlock = 0x1c; // worldmap — 15 slots
+    const tSetting = 0x12;
+    const modStream = parseBlockFromRom(rom, catalog, targetBlock).stream;
+    const tSlots = [...songSlotsOfStream(modStream).keys()].sort((a, b) => a - b);
+    const importSlot = tSlots[1];
+    const keptSlot = tSlots[0];
+    const baseline = composeSettingAram(rom, catalog, tSetting, targetBlock).aram;
+    const layoutBlocks = catalog.settings[tSetting].blockIds
+      .filter((id) => SPC_BLOCKS.find((b) => b.blockId === id)!.kind === 'samples')
+      .flatMap((id) => parseBlockFromRom(rom, catalog, id).stream.blocks);
+    const { compiled } = spcSongToCompiledMml(src.aram, srcPtr, baseline, 'flower garden');
+    const built = buildMmlModule(compiled, [importSlot], {
+      downsampleToFit: true,
+      base: modStream,
+      layoutBase: { blocks: layoutBlocks, entry: 0x0400 }
+    });
+    const rebuilt = new Uint8Array(baseline);
+    applyUploadStream(rebuilt, built.stream);
+    const noteN = (s: ReturnType<typeof decodeSong>): number =>
+      [...s.tracks.values()].reduce((n, t) => n + t.events.filter((e) => e.kind === 'note' || e.kind === 'perc').length, 0);
+    assert(
+      noteN(decodeSong(rebuilt, songSlotPtr(rebuilt, importSlot))) === noteN(decodeSong(src.aram, srcPtr)),
+      'merge: imported song note count preserved'
+    );
+    const retail = composeSettingAram(rom, catalog, tSetting);
+    const keptRebuilt = decodeSong(rebuilt, songSlotPtr(rebuilt, keptSlot));
+    const keptRetail = decodeSong(retail.aram, songSlotPtr(retail.aram, keptSlot));
+    assert(
+      JSON.stringify([...keptRebuilt.tracks.values()]) === JSON.stringify([...keptRetail.tracks.values()]),
+      'merge: a kept slot decodes byte-identically to retail'
+    );
   }
 } catch (e) {
   if ((e as Error).message.includes('Missing build artifact')) {

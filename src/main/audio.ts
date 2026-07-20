@@ -84,6 +84,8 @@ import {
   SPC_BLOCK_SAMPLE_DIRS,
   SPC_BLOCKS,
   spcBlockById,
+  SpcMergeUnsupportedError,
+  spcSongToCompiledMml,
   stripEchoVcmds,
   TITLE_IMPORT_BLOB_FILE,
   TITLE_IMPORT_BLOCK_ID,
@@ -203,6 +205,7 @@ function loadCatalog(): { catalog: AudioCatalog; ui: AudioCatalogUi; rom: Uint8A
       songs: [...songSlotsOfSetting(rom, catalog, s.setting).keys()]
         .sort((a, b) => a - b)
         .map((slotId) => ({ slotId, name: songDisplayName(s.blockSetRow, slotId) })),
+      songBlockId,
       usedByLevels: s.setting <= 0x0f ? (byMusicSetting.get(s.setting) ?? []) : [],
       songModuleBytes:
         songBlockId !== undefined ? parseBlockFromRom(rom, catalog, songBlockId).byteLength : undefined
@@ -237,7 +240,28 @@ function loadCatalog(): { catalog: AudioCatalog; ui: AudioCatalogUi; rom: Uint8A
 
 export function getAudioCatalog(): AudioCatalogResult {
   try {
-    return { ok: true, catalog: loadCatalog().ui }
+    // Overlay the DRAFT per-song delete state (audio-edits.json) onto the
+    // ROM-derived catalog fresh each call — a delete changes audio-edits, not
+    // the ROM, so it can't ride the ROM-keyed catalog cache. Deleted slots
+    // stay listed (flagged) so the UI can offer Restore even after a build
+    // silenced them.
+    const ui = loadCatalog().ui
+    const songEdits = readAudioEditsMeta()?.songs
+    const settings = ui.settings.map((s) => {
+      const block = s.songBlockId !== undefined ? SPC_BLOCKS.find((b) => b.blockId === s.songBlockId) : undefined
+      const deleted = new Set(block ? (songEdits?.[songBlobFileOfLabel(block.label)]?.deletedSlots ?? []) : [])
+      if (deleted.size === 0) return s
+      const slotIds = [...new Set([...s.songs.map((g) => g.slotId), ...deleted])].sort((a, b) => a - b)
+      return {
+        ...s,
+        songs: slotIds.map((slotId) => ({
+          slotId,
+          name: songDisplayName(s.blockSetRow, slotId),
+          ...(deleted.has(slotId) ? { deleted: true } : {})
+        }))
+      }
+    })
+    return { ok: true, catalog: { ...ui, settings } }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
@@ -821,8 +845,9 @@ interface AudioEditsMeta {
     {
       baseBytes: number
       newBytes: number
-      source: string
-      sourceSlot: number
+      /** Import provenance — absent on a delete-only overlay (no imported song). */
+      source?: string
+      sourceSlot?: number
       targetBlockId: number
       /** Song slots the import repointed at the imported song — one entry for
        *  a slot-targeted merge, every module slot for a whole-module import.
@@ -834,6 +859,12 @@ interface AudioEditsMeta {
        *  whole-module import (the entire blob is the base for future
        *  merges); absent = a pre-layer-model import. */
       layers?: { slot: number; firstBlock: number; source?: string; title?: string }[]
+      /** Song slots the user deleted from this module — their sequence bytes
+       *  are omitted from the overlay blob and the slot's $FF8E pointer is set
+       *  to 0 (silence). Restore re-adds them from the pristine asset. The
+       *  overlay is always `extractSongModule(pristine, kept slots) ⊕ imported
+       *  layers ⊕ deleted→0` (applyModuleDeletion). */
+      deletedSlots?: number[]
     }
   >
 }
@@ -1449,6 +1480,129 @@ function decomposeForSlotMerge(
   }
 }
 
+/** Slot-merge layout context shared by the MML and single-slot .spc import
+ *  paths — everything buildMmlModule needs to lay a song out ALONGSIDE the
+ *  target module's kept songs (rather than replacing the whole module). */
+interface SlotMergeContext {
+  /** Dodge-only blocks (resident sample banks + map-resident reservation;
+   *  driver for title targets) — not copied into the output. */
+  layoutBase: UploadStream | undefined
+  /** The module decomposed into immutable base + kept per-slot layers (the
+   *  replaced slot dropped). Null for whole-module (targetSlotId === null). */
+  decomposed: ReturnType<typeof decomposeForSlotMerge> | null
+  /** Embedded base for buildMmlModule: base blocks + repacked kept layers. */
+  mergeBase: UploadStream | undefined
+  claimEchoRegion: boolean
+  /** Echo-delay ceiling (3 for jingle-free targets, else default). */
+  echoDelayLimit: number | undefined
+  warnings: string[]
+}
+
+/** Compute the slot-merge layout context (dodge-only banks, decomposed
+ *  base+kept layers, echo-region claim). Extracted from the MML import path so
+ *  the single-slot .spc path shares the exact same layout semantics. */
+function computeSlotMergeContext(
+  rom: Uint8Array,
+  catalog: AudioCatalog,
+  setting: number,
+  target: (typeof SPC_BLOCKS)[number],
+  targetBlockId: number,
+  isTitle: boolean,
+  blobFile: string,
+  targetSlotId: number | null,
+  noEcho: boolean
+): SlotMergeContext {
+  // Jingle-free targets (Ending, 1W-0 demo) may keep echo delay 3 — their
+  // context never reads the $264C jingle region the EDL-3 buffer covers.
+  const echoDelayLimit = JINGLE_FREE_SONG_MODULES.has(target.module) ? 3 : undefined
+  const warnings: string[] = []
+  // Dodge-only layout context. Title imports dodge the driver. Every other
+  // import dodges the target set's resident SAMPLE banks: their ARAM extent
+  // (the $B960+ add-on window; Bowser's $A480+; Ending's whole bank) and their
+  // $3C00-page directory entries must survive the import — the module's
+  // preserved songs AND every sibling set sharing the bank at the same
+  // block-row position play through them, and the positional-diff upload never
+  // re-sends an unchanged bank, so clobbering it persists across sets (a
+  // welcome-module import that spilled sequence data into $B960 corrupted the
+  // world map's mapcastlebank instruments until a different-bank set
+  // re-uploaded it). Level-set targets additionally dodge the map-resident
+  // $D000-$DC7E reservation (Score + Powerful Infant — requested in-level with
+  // no re-upload).
+  const layoutBase = isTitle
+    ? parseBlockFromRom(rom, catalog, targetBlockId).stream
+    : (() => {
+        const bankBlocks = [
+          ...(catalog.settings[setting]?.blockIds ?? [])
+            .filter((id) => spcBlockById(id).kind === 'samples')
+            .flatMap((id) => parseBlockFromRom(rom, catalog, id).stream.blocks),
+          ...mapResidentReservationBlocks(target.module)
+        ]
+        return bankBlocks.length > 0 ? { blocks: bankBlocks, entry: 0x0400 } : undefined
+      })()
+  // Merge base: the module's current content DECOMPOSED — immutable base
+  // (retail embed; empty for title, whose driver is dodge-only) + the kept
+  // per-slot layers, with the replaced slot's old layer dropped so a re-import
+  // doesn't accrete its orphaned data (audio-edits.json records the layer
+  // boundaries). Kept layers REPACK first-fit into the placement windows so the
+  // free space left for the incoming song stays contiguous (and layers
+  // imported before the map-resident reservation existed move out of it).
+  const decomposed =
+    targetSlotId !== null
+      ? decomposeForSlotMerge(rom, catalog, targetBlockId, isTitle, blobFile, targetSlotId)
+      : null
+  // "No echo" ($2C00-$3C00 claim): safe when every OTHER song playable in the
+  // module's context is echo-free — for slot merges that's the kept base+layers
+  // (plus the driver's own songs on the title target, which ride layoutBase); a
+  // whole-module replace repoints every slot at our (stripped) song, so it
+  // always qualifies.
+  let claimEchoRegion = false
+  if (noEcho) {
+    const contextSongBlocks = [
+      ...(isTitle ? layoutBase?.blocks ?? [] : []),
+      ...(decomposed ? [...decomposed.baseBlocks, ...decomposed.kept.flatMap((l) => l.blocks)] : [])
+    ]
+    if (targetSlotId !== null && moduleSongsUseEcho(contextSongBlocks)) {
+      warnings.push(
+        "echo space not claimed — the set's other songs use echo and would overwrite it; replace the entire set (or import them with No echo too) to claim the extra room"
+      )
+    } else {
+      claimEchoRegion = true
+    }
+    const pristine = pristineSongModuleStream(target, rom, catalog)
+    if (pristine && moduleSongsUseEcho(pristine.blocks)) {
+      warnings.push(
+        `this music set's original songs use echo — with No echo the level plays dry, including its sound effects (they inherit the music's reverb)`
+      )
+    }
+  }
+  const keptBlocks = decomposed
+    ? repackKeptLayers(
+        [...(layoutBase?.blocks ?? []), ...decomposed.baseBlocks],
+        decomposed.kept,
+        importPlacementWindows(echoDelayLimit, undefined, claimEchoRegion)
+      )
+    : null
+  const mergeBase: UploadStream | undefined = decomposed
+    ? { blocks: [...decomposed.baseBlocks, ...keptBlocks!.flat()], entry: 0x0400 }
+    : undefined
+  // Reverse guard: an echo-USING import merged into a module whose kept content
+  // sits in the echo region (a previous No-echo import). Layered content just
+  // repacked out of it above (claimEchoRegion false excludes the window);
+  // immutable base blocks (whole-module No-echo overlays decompose as all-base)
+  // can't move — refuse loudly.
+  if (!claimEchoRegion && mergeBase?.blocks.some((b) => b.dest < 0x3c00 && b.dest + b.data.length > 0x2c00)) {
+    throw new Error(
+      "the module's imported song claimed the echo space (No echo) — enable No echo for this import too, or Reset the module first"
+    )
+  }
+  if (decomposed?.unattributed) {
+    warnings.push(
+      'the previous import predates per-slot tracking and stays embedded whole — Reset the module and re-import each slot to reclaim its space'
+    )
+  }
+  return { layoutBase, decomposed, mergeBase, claimEchoRegion, echoDelayLimit, warnings }
+}
+
 function buildSongImportModule(
   rel: string,
   sourceSlot: number,
@@ -1506,95 +1660,8 @@ function buildSongImportModule(
     // set, when it becomes a target) must CARRY any referenced global-bank
     // samples; a resident SRCN there plays the set's own bank instead.
     const carryGlobalBank = !(catalog.settings[setting]?.blockIds.includes(GLOBAL_SAMPLES_BLOCK_ID) ?? true)
-    // Jingle-free targets (Ending, 1W-0 demo) may keep echo delay 3 — their
-    // context never reads the $264C jingle region the EDL-3 buffer covers.
-    const echoDelayLimit = JINGLE_FREE_SONG_MODULES.has(target.module) ? 3 : undefined
-    const targetWarnings: string[] = []
-    // Dodge-only layout context. Title imports dodge the driver. Every other
-    // import dodges the target set's resident SAMPLE banks: their ARAM
-    // extent (the $B960+ add-on window; Bowser's $A480+; Ending's whole
-    // bank) and their $3C00-page directory entries must survive the import —
-    // the module's preserved songs AND every sibling set sharing the bank at
-    // the same block-row position play through them, and the positional-diff
-    // upload never re-sends an unchanged bank, so clobbering it persists
-    // across sets (a welcome-module import that spilled sequence data into
-    // $B960 corrupted the world map's mapcastlebank instruments until a
-    // different-bank set re-uploaded it). Level-set targets additionally
-    // dodge the map-resident $D000-$DC7E reservation (Score + Powerful
-    // Infant — requested in-level with no re-upload).
-    const layoutBase = isTitle
-      ? parseBlockFromRom(rom, catalog, targetBlockId).stream
-      : (() => {
-          const bankBlocks = [
-            ...(catalog.settings[setting]?.blockIds ?? [])
-              .filter((id) => spcBlockById(id).kind === 'samples')
-              .flatMap((id) => parseBlockFromRom(rom, catalog, id).stream.blocks),
-            ...mapResidentReservationBlocks(target.module)
-          ]
-          return bankBlocks.length > 0 ? { blocks: bankBlocks, entry: 0x0400 } : undefined
-        })()
-    // Merge base: the module's current content DECOMPOSED — immutable base
-    // (retail embed; empty for title, whose driver is dodge-only) + the
-    // kept per-slot layers, with the replaced slot's old layer dropped so a
-    // re-import doesn't accrete its orphaned data (audio-edits.json records
-    // the layer boundaries). Kept layers REPACK first-fit into the placement
-    // windows so the free space left for the incoming song stays contiguous
-    // (and layers imported before the map-resident reservation existed move
-    // out of it).
-    const decomposed =
-      targetSlotId !== null
-        ? decomposeForSlotMerge(rom, catalog, targetBlockId, isTitle, common.blobFile, targetSlotId)
-        : null
-    // "No echo" ($2C00-$3C00 claim): safe when every OTHER song playable in
-    // the module's context is echo-free — for slot merges that's the kept
-    // base+layers (plus the driver's own songs on the title target, which
-    // ride layoutBase); a whole-module replace repoints every slot at our
-    // (stripped) song, so it always qualifies.
-    let claimEchoRegion = false
-    if (noEcho) {
-      const contextSongBlocks = [
-        ...(isTitle ? layoutBase?.blocks ?? [] : []),
-        ...(decomposed ? [...decomposed.baseBlocks, ...decomposed.kept.flatMap((l) => l.blocks)] : [])
-      ]
-      if (targetSlotId !== null && moduleSongsUseEcho(contextSongBlocks)) {
-        targetWarnings.push(
-          "echo space not claimed — the set's other songs use echo and would overwrite it; replace the entire set (or import them with No echo too) to claim the extra room"
-        )
-      } else {
-        claimEchoRegion = true
-      }
-      const pristine = pristineSongModuleStream(target, rom, catalog)
-      if (pristine && moduleSongsUseEcho(pristine.blocks)) {
-        targetWarnings.push(
-          `this music set's original songs use echo — with No echo the level plays dry, including its sound effects (they inherit the music's reverb)`
-        )
-      }
-    }
-    const keptBlocks = decomposed
-      ? repackKeptLayers(
-          [...(layoutBase?.blocks ?? []), ...decomposed.baseBlocks],
-          decomposed.kept,
-          importPlacementWindows(echoDelayLimit, undefined, claimEchoRegion)
-        )
-      : null
-    const mergeBase: UploadStream | undefined = decomposed
-      ? { blocks: [...decomposed.baseBlocks, ...keptBlocks!.flat()], entry: 0x0400 }
-      : undefined
-    // Reverse guard: an echo-USING import merged into a module whose kept
-    // content sits in the echo region (a previous No-echo import). Layered
-    // content just repacked out of it above (claimEchoRegion false excludes
-    // the window); immutable base blocks (whole-module No-echo overlays
-    // decompose as all-base) can't move — refuse loudly.
-    if (!claimEchoRegion && mergeBase?.blocks.some((b) => b.dest < 0x3c00 && b.dest + b.data.length > 0x2c00)) {
-      throw new Error(
-        "the module's imported song claimed the echo space (No echo) — enable No echo for this import too, or Reset the module first"
-      )
-    }
-    if (decomposed?.unattributed) {
-      targetWarnings.push(
-        'the previous import predates per-slot tracking and stays embedded whole — Reset the module and re-import each slot to reclaim its space'
-      )
-    }
+    const { layoutBase, decomposed, mergeBase, claimEchoRegion, echoDelayLimit, warnings: targetWarnings } =
+      computeSlotMergeContext(rom, catalog, setting, target, targetBlockId, isTitle, common.blobFile, targetSlotId, noEcho)
     // Resident mode on grassland sets, carry mode everywhere else.
     let grassland: boolean | null = carriesGrassland ? true : null
     let staccato = true
@@ -1674,16 +1741,61 @@ function buildSongImportModule(
     }
   }
 
-  if (targetSlotId !== null) {
-    // A .spc song keeps its source ARAM addresses (extractSongModule copies
-    // ranges verbatim) — merging alongside the module's existing songs
-    // would collide. MML compiles relocate freely, so only they merge.
-    throw new Error('single-slot import works for MML files only — .spc songs keep their source layout; pick "Replace entire set" instead')
-  }
   const parsed = parseSpcFile(new Uint8Array(readFileSync(full)))
   if (!verifyYiDriverAram(parsed.aram, parseBlockFromRom(rom, catalog, ENGINE_BLOCK_ID).stream).ok) {
     throw new Error('not a YI sound-driver snapshot')
   }
+  const name = rel.split('/').pop()!
+
+  if (targetSlotId !== null) {
+    // Single-slot .spc: MERGE the song alongside the module's kept songs by
+    // adapting the decoded song to a CompiledMml and running the SAME layout
+    // path as MML (buildMmlModule) — it relocates the sequence into free ARAM
+    // and appends this song's instrument rows + custom samples after the kept
+    // ones. (The whole-set path below stays verbatim: it repoints every slot,
+    // so nothing is kept and no relocation is needed.)
+    const ptr = songSlotPtr(parsed.aram, sourceSlot)
+    if (!ptr) throw new Error(`source slot 0x${sourceSlot.toString(16)} is empty`)
+    const { layoutBase, decomposed, mergeBase, claimEchoRegion, echoDelayLimit, warnings: targetWarnings } =
+      computeSlotMergeContext(rom, catalog, setting, target, targetBlockId, isTitle, common.blobFile, targetSlotId, noEcho)
+    const baseAram = composeSettingAram(rom, catalog, setting, targetBlockId).aram
+    let adapted: ReturnType<typeof spcSongToCompiledMml>
+    try {
+      adapted = spcSongToCompiledMml(parsed.aram, ptr, baseAram, parsed.title)
+    } catch (e) {
+      if (e instanceof SpcMergeUnsupportedError) {
+        throw new Error(`this .spc song can't merge into a single slot (${e.message}) — pick "Replace entire set" instead`)
+      }
+      throw e
+    }
+    const compiled = noEcho && claimEchoRegion ? stripEchoVcmds(adapted.compiled) : adapted.compiled
+    const built = buildMmlModule(compiled, targetSlots, {
+      downsampleToFit,
+      base: mergeBase,
+      layoutBase,
+      echoDelayLimit,
+      claimEchoRegion
+    })
+    let layers: BuiltImportModule['layers'] = []
+    if (decomposed) {
+      let at = decomposed.baseBlocks.length
+      for (const l of decomposed.kept) {
+        layers.push({ slot: l.slot, firstBlock: at, source: l.source, title: l.title })
+        at += l.blocks.length
+      }
+      layers.push({ slot: targetSlotId, firstBlock: mergeBase!.blocks.length, source: name, title: parsed.title ?? undefined })
+      layers = layers.sort((a, b) => a.firstBlock - b.firstBlock)
+    }
+    return {
+      ...common,
+      bytes: built.bytes,
+      stream: built.stream,
+      layers,
+      warnings: [...targetWarnings, ...adapted.warnings, ...built.warnings, ...multiSlotWarning],
+      sourceTitle: parsed.title
+    }
+  }
+
   const baseline = composeSettingAram(rom, catalog, setting, targetBlockId)
   const mod = extractSongModule(
     parsed.aram,
@@ -1852,6 +1964,11 @@ export function importSong(
     writeFileAtomicSync(dest, Buffer.from(m.bytes))
     const meta = readAudioEditsMetaFor(writable.projectId)
     meta.songs = meta.songs ?? {}
+    // Preserve any deleted-slot set already recorded for this module — the
+    // deleted→0 patches ride along in the embedded base, and future
+    // delete/restore needs the set (a slot merge decomposes the delete overlay
+    // as its base, so the import already sees the freed room).
+    const priorDeleted = meta.songs[m.blobFile]?.deletedSlots
     meta.songs[m.blobFile] = {
       baseBytes: m.target.retailBytes,
       newBytes: m.bytes.length,
@@ -1862,7 +1979,8 @@ export function importSong(
       // whole-module imports: every module slot (layers = []).
       targetSlots: m.layers.length > 0 ? m.layers.map((l) => l.slot).sort((a, b) => a - b) : m.targetSlots,
       title: m.sourceTitle ?? rel.split('/').pop()?.replace(/\.(spc|mml|txt)$/i, ''),
-      layers: m.layers
+      layers: m.layers,
+      ...(priorDeleted && priorDeleted.length > 0 ? { deletedSlots: priorDeleted } : {})
     }
     writeAudioEditsMeta(writable.projectId, meta)
     return {
@@ -1900,6 +2018,150 @@ export function revertSongImport(targetBlockId: number): AudioSongImportRunResul
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
+}
+
+// ── per-song delete / restore ───────────────────────────────────────────────
+// Free a multi-song module's ROM/ARAM space by dropping one of its songs (e.g.
+// to fit a bigger import into another of its slots), reversibly. A module's
+// overlay blob is ALWAYS `extractSongModule(pristine, kept retail slots) ⊕
+// imported layers ⊕ (deleted slots → $FF8E ptr 0)`. Delete adds a slot to the
+// deleted set, restore removes it — both recompute the blob here. The reduced
+// retail base comes from the PRISTINE asset (imports never touch it), so the
+// deleted song's sequence bytes are genuinely omitted (smaller blob → the
+// layout pass reclaims the ROM region on the next build, exactly like Reset),
+// and a subsequent slot import sees the freed room through decomposeForSlotMerge
+// reading this overlay. A deleted slot points at 0 (the driver's silent/safe
+// "no song" pointer — plan-audio-panel §1745). Exclusive bytes only: the shared
+// $3D00 instrument table rides along whole, so no sibling song loses an
+// instrument.
+
+/** Recompute a song module's overlay for a new deleted-slot set (preserving
+ *  any slot-merge import layers), or revert to pristine when nothing is
+ *  deleted or imported. */
+function applyModuleDeletion(targetBlockId: number, nextDeletedSlots: number[]): AudioSongImportRunResult {
+  const writable = requireWritableProject()
+  if (!writable.ok) return { ok: false, error: writable.error }
+  try {
+    const { catalog, rom } = loadCatalog()
+    const target = SPC_BLOCKS.find((b) => b.blockId === targetBlockId && b.kind === 'songs')
+    if (!target) throw new Error(`block 0x${targetBlockId.toString(16)} is not a song module`)
+    const blobFile = songBlobFileOfLabel(target.label)
+    const pristine = pristineSongModuleStream(target, rom, catalog)
+    if (!pristine) throw new Error('pristine module asset unreadable — re-extract the ROM')
+    const allSlots = [...songSlotsOfStream(pristine).keys()].sort((a, b) => a - b)
+    const deletedSet = new Set(nextDeletedSlots.filter((s) => allSlots.includes(s)))
+
+    const overlayPath = overlaySongBlobPath(writable.projectId, blobFile)
+    const meta = readAudioEditsMetaFor(writable.projectId)
+    const entry = meta.songs?.[blobFile]
+    // A whole-module import (import provenance, no per-slot layers) can't be
+    // per-song decomposed — the driver plays one song across every slot.
+    if (entry?.source && (!entry.layers || entry.layers.length === 0)) {
+      throw new Error("this module has a whole-set import — Reset it before deleting individual songs")
+    }
+    // Slot-merge import layers to preserve (minus any now-deleted slot).
+    let importLayers: { slot: number; blocks: UploadStream['blocks']; source?: string; title?: string }[] = []
+    if (existsSync(overlayPath) && entry?.layers && entry.layers.length > 0) {
+      const blocks = parseUploadStream(new Uint8Array(readFileSync(overlayPath))).stream.blocks
+      const sliced = sliceModuleLayers(blocks, entry.layers, -1)
+      const bySlot = new Map(entry.layers.map((l) => [l.slot, l]))
+      importLayers = sliced.kept
+        .map((l) => ({ ...l, source: bySlot.get(l.slot)?.source, title: bySlot.get(l.slot)?.title }))
+        .filter((l) => !deletedSet.has(l.slot))
+    }
+    const importedSlots = new Set(importLayers.map((l) => l.slot))
+    const liveRetail = allSlots.filter((s) => !deletedSet.has(s) && !importedSlots.has(s))
+    if (liveRetail.length === 0 && importLayers.length === 0) {
+      throw new Error('a module must keep at least one song — restore or import one before deleting the last')
+    }
+
+    // No edits left → revert to the pristine asset (drop the overlay + entry).
+    if (deletedSet.size === 0 && importLayers.length === 0) {
+      rmSync(overlayPath, { force: true })
+      if (meta.songs) delete meta.songs[blobFile]
+      writeAudioEditsMeta(writable.projectId, meta)
+      const layout = projectedAudioLayout(writable.projectId, null, null)
+      return { ok: true, moduleBytes: 0, targetRetailBytes: target.retailBytes, freeBytes: layout.freeBytes, warnings: [] }
+    }
+
+    // Reduced retail base = pristine songs for the live-retail slots only.
+    const setting = settingUploadingBlock(catalog, targetBlockId)
+    const baseline = composeSettingAram(rom, catalog, setting, targetBlockId).aram
+    const pristineAram = baseline.slice()
+    applyUploadStream(pristineAram, pristine)
+    const baseMod = extractSongModule(pristineAram, liveRetail.map((s) => ({ sourceSlot: s, targetSlot: s })), baseline)
+    const baseBlocks = baseMod.stream.blocks
+
+    // Repack imports into the gaps around the reduced base + resident banks.
+    const bankBlocks = (catalog.settings[setting]?.blockIds ?? [])
+      .filter((id) => spcBlockById(id).kind === 'samples')
+      .flatMap((id) => parseBlockFromRom(rom, catalog, id).stream.blocks)
+    const keptBlocks =
+      importLayers.length > 0
+        ? repackKeptLayers([...bankBlocks, ...baseBlocks], importLayers, importPlacementWindows(undefined, undefined, false))
+        : []
+    const deletedPatches = [...deletedSet]
+      .sort((a, b) => a - b)
+      .map((s) => ({ dest: SONG_TABLE_BASE + s * 2, data: new Uint8Array(2) }))
+    const stream: UploadStream = { blocks: [...baseBlocks, ...keptBlocks.flat(), ...deletedPatches], entry: 0x0400 }
+    const bytes = serializeUploadStream(stream)
+
+    const romVersion = readExtractionState(frameworkWorkRoot())?.romVersion
+    if (romVersion !== 'YI_U1' && bytes.length !== target.retailBytes) {
+      return { ok: false, error: 'deleting a song resizes the module — V1.0-only for now (V1.1 pins data after the audio region)' }
+    }
+    const layout = projectedAudioLayout(writable.projectId, blobFile, bytes.length)
+    if (layout.freeBytes < 0) {
+      return { ok: false, error: `Not enough room after the change: ${-layout.freeBytes} bytes over the audio-region budget.` }
+    }
+
+    // Layer boundaries for the new blob (base first, then each repacked import).
+    let at = baseBlocks.length
+    const newLayers = importLayers.map((l, i) => {
+      const firstBlock = at
+      at += keptBlocks[i].length
+      return { slot: l.slot, firstBlock, source: l.source, title: l.title }
+    })
+
+    const dest = overlaySongBlobPath(writable.projectId, blobFile)
+    mkdirSync(join(dest, '..'), { recursive: true })
+    writeFileAtomicSync(dest, Buffer.from(bytes))
+    meta.songs = meta.songs ?? {}
+    meta.songs[blobFile] = {
+      ...(entry ?? {}),
+      baseBytes: target.retailBytes,
+      newBytes: bytes.length,
+      targetBlockId,
+      deletedSlots: [...deletedSet].sort((a, b) => a - b),
+      layers: newLayers,
+      // Keep the import provenance only while imports remain in the module.
+      ...(importLayers.length === 0
+        ? { source: undefined, sourceSlot: undefined, title: undefined, targetSlots: undefined }
+        : { targetSlots: newLayers.map((l) => l.slot).sort((a, b) => a - b) })
+    }
+    writeAudioEditsMeta(writable.projectId, meta)
+    return { ok: true, moduleBytes: bytes.length, targetRetailBytes: target.retailBytes, freeBytes: layout.freeBytes, warnings: baseMod.warnings }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+/** Current deleted-slot set recorded for a song module. */
+function currentDeletedSlots(targetBlockId: number): number[] {
+  const target = spcBlockById(targetBlockId)
+  if (target.kind !== 'songs') return []
+  return readAudioEditsMeta()?.songs?.[songBlobFileOfLabel(target.label)]?.deletedSlots ?? []
+}
+
+/** Delete one song slot from a module (its bytes are freed; the slot plays
+ *  silence until restored or re-imported). */
+export function deleteSong(targetBlockId: number, slot: number): AudioSongImportRunResult {
+  return applyModuleDeletion(targetBlockId, [...new Set([...currentDeletedSlots(targetBlockId), slot])])
+}
+
+/** Restore a previously-deleted song slot from the pristine module asset. */
+export function restoreSong(targetBlockId: number, slot: number): AudioSongImportRunResult {
+  return applyModuleDeletion(targetBlockId, currentDeletedSlots(targetBlockId).filter((s) => s !== slot))
 }
 
 /** Read one exported .spc/.wav back for in-editor playback. `rel` must

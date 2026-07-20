@@ -14,7 +14,7 @@
 import { readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { app } from 'electron'
-import { renderYychrSheetRgba, yychrColName, yychrPalName } from 'snes-framework/gfx-yychr'
+import { buildColSidecar, renderYychrSheetRgba, yychrColName, yychrPalName } from 'snes-framework/gfx-yychr'
 import type {
   YychrProjectExportResult,
   YychrProjectFile,
@@ -95,7 +95,9 @@ export function buildYychrProjectState(): YychrProjectState {
       bpp: e.bpp,
       sizeBytes: e.sizeBytes,
       tileCount: Math.ceil(e.sizeBytes / displayTileBytes(e)),
-      unused: e.unused,
+      palRow: e.palRow,
+      palRowApprox: e.palRowApprox,
+      multiRow: e.multiRow,
       status: st.status,
       hash: st.hash
     }
@@ -202,8 +204,9 @@ export function yychrProjectThumbnails(files: string[]): YychrThumbnailEntry[] {
 }
 
 /** Render one sheet's ON-DISK bytes to a thumbnail (renderYychrSheetRgba), colored
- *  by its `.pal`/`.col` sidecars. Null for the $BD Mode-7 tilemap (not pixel art),
- *  a missing/unlisted file, or a renderer-supplied path that escapes the folder. */
+ *  by its `.pal`/`.col` sidecars. Null for the 8bpp Mode-7 sheets (no 8bpp
+ *  thumbnail decode), a missing/unlisted file, or a renderer-supplied path that
+ *  escapes the folder. */
 function yychrProjectThumbnail(file: string): YychrThumbnail | null {
   const id = getCurrentProjectId()
   if (!id) return null
@@ -222,10 +225,18 @@ function yychrProjectThumbnail(file: string): YychrThumbnail | null {
   }
   const sheet = read(file)
   if (!sheet) return null
+  // Per-char rows: from the on-disk .col when one ships; CPC sheets instead carry
+  // them as manifest `tileSub` (a .col beside a .gba sheet would make YY-CHR
+  // corrupt edits — gfx-yychr.ts header), so synthesize the equivalent col bytes
+  // here for the thumbnail only.
+  const col = read(yychrColName(file)) ??
+    (entry.tileSub && (bpp === 2 || bpp === 4) ? buildColSidecar(entry.tileSub, bpp, sheet.length) : null)
   return renderYychrSheetRgba(
     sheet,
-    { bpp, cpc: file.endsWith('.4bpp.gba'), sizeBytes: entry.sizeBytes, maxTiles: 256 },
+    // palRow: the sheet's in-game CGRAM group (manifest-stamped) — the .pal is
+    // raw CGRAM order, so the thumbnail picks the right colors from it.
+    { bpp, cpc: file.endsWith('.4bpp.gba'), sizeBytes: entry.sizeBytes, maxTiles: 256, palRow: entry.palRow },
     read(yychrPalName(file)),
-    read(yychrColName(file))
+    col
   )
 }

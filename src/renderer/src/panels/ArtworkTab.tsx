@@ -1,109 +1,94 @@
 import {memo, useCallback, useEffect, useMemo, useRef, useState, type JSX} from 'react'
-import type {YychrProjectFile, YychrProjectState, YychrThumbnail} from '../../../preload/api'
+import type {ArtworkFormat, GfxProjectFile, GfxProjectState, YychrThumbnail} from '../../../preload/api'
 import {blitRgba} from '../lib/blit'
 import {HoverPreview} from '../lib/hover-preview'
 import {persistedState} from '../lib/persisted-state'
-import {formatBytes as sizeLabel} from '../lib/format-bytes'
 import {DiscardChangesModal} from '../DiscardChangesModal'
 
 /**
- * The Graphics panel's YY-CHR tab: a browser over the project's fixed yychr export
- * folder (`<projectRoot>/yychr/`). Every sheet shows its on-disk thumbnail (so
- * edits saved in YY-CHR preview BEFORE import), details, and a change status from
- * the same checksum gate the import uses; changed sheets import per-file or all at
- * once, through the shared reconciler → live-preview path. Status refreshes when
- * the editor window regains focus (the alt-tab-back-from-YY-CHR moment), after
- * every action, and on the Refresh button — no fs watcher.
+ * The Graphics panel's "Misc Art" tab — the third fixed project-folder browser
+ * (YY-CHR tab: raw CHR sheets; M1TE Maps tab: `.M1` sessions; this: the
+ * PNG/Aseprite image surfaces; 'artwork' stays the internal tab/folder name).
+ * The four level-independent image tracks — world map, boot/story/title
+ * screens, the Raphael arena, the message
+ * font/pictures — export to `<projectRoot>/artwork/`, which this tab browses:
+ * per-file thumbnails decoded from the ON-DISK bytes (external edits preview
+ * before import), a change status from the same checksum gate the import uses,
+ * and per-file/all import. Status refreshes on window focus, after actions, and
+ * on Refresh — no fs watcher. The one option is the export format: PNG (any
+ * image editor, pixels only) or Aseprite (tilemap/layout-capable surfaces).
  *
- * The parent remounts this component per project (`key={projectScope}`), so state
- * never leaks across a project switch.
+ * The parent remounts this per project (`key={projectScope}`), so state never
+ * leaks across a project switch. (The level-DEPENDENT surfaces — BG regions,
+ * metasprites — stay on the Level BGs tab: they need the loaded level.)
  */
 
-/** Category folders in display order, with friendly headings. Unknown categories
- *  (a future export addition) land after these, alphabetically. */
+/** Category keys in display order, with friendly headings. */
 const CATEGORIES: [string, string][] = [
-    ['bg1-tileset', 'BG1 tilesets'],
-    ['bg2', 'BG2 backgrounds'],
-    ['bg3', 'BG3 backgrounds'],
-    ['sprites', 'Sprite sheets'],
-    ['hud', 'HUD / status'],
-    ['screens', 'Screens'],
-    ['advanced', 'Mode-7 / fonts'],
-    ['other', 'No known loads'],
-    ['gsu', 'GSU bitmap banks'],
-    ['raw', 'Raw animation / credits']
+    ['map', 'World Map'],
+    ['boot', 'Boot screen'],
+    ['title', 'Title screen'],
+    ['storybook', 'Storybook'],
+    ['bosses', 'Bosses'],
+    ['fonts', 'Message font / pictures']
 ]
 
+/** Per-category collapse state (persisted). ABSENCE = expanded (same as M1TE). */
+const COLLAPSED_STORE = persistedState<Record<string, boolean>>('shinyEgg.artworkCollapsed.v1', {})
+/** The export-format preference (persisted; aseprite = layout-capable). */
+const FORMAT_STORE = persistedState<{ format: ArtworkFormat }>('shinyEgg.artworkFormat.v1', {format: 'aseprite'})
 
-/** Per-category collapse state, persisted so the browser reopens the way it was
- *  left (categories are the same set in every project). ABSENCE = collapsed —
- *  every category starts collapsed; expanding one stores `false` for its key. */
-const COLLAPSED_STORE = persistedState<Record<string, boolean>>('shinyEgg.yychrCollapsed.v1', {})
+/** The hover popout's zoom box (screens are ≤512 px wide at thumbnail scale). */
+const PREVIEW_FIT = 512
 
-/** The hover popout's zoom box (lib/hover-preview.tsx): sheets are always 128 px
- *  wide (16 tiles), so 384 works out to a crisp 3× integer zoom. */
-const PREVIEW_FIT = 384
-
-/** Thumbnails keyed `${file}@${hash}` — content-addressed, so a refresh re-fetches
- *  only sheets whose bytes actually changed, and a tab switch (which unmounts the
- *  component) keeps the rendered previews. Pruned to the current export's keys on
- *  every refresh, so it never grows past ~one whole-cart export. */
+/** Thumbnails keyed `${file}@${hash}` — content-addressed (see YychrTab). */
 const thumbCache = new Map<string, YychrThumbnail | null>()
-const thumbKey = (f: YychrProjectFile): string => `${f.file}@${f.hash}`
+const thumbKey = (f: GfxProjectFile): string => `${f.file}@${f.hash}`
 
 interface Props {
-    yychrExe: string | null
-    /** Open one sheet in YY-CHR (the parent owns the locate-first flow). */
-    onOpenYychr: (dir: string, file: string) => Promise<void>
     /** After an import changed files: mark the build dirty + refresh the canvas. */
     onMutated: () => void
     /** Refresh the parent's "Changed graphics" list after an import. */
     onImported: () => Promise<void>
 }
 
-export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props): JSX.Element {
-    const [st, setSt] = useState<YychrProjectState | null>(null)
+export function ArtworkTab({onMutated, onImported}: Props): JSX.Element {
+    const [st, setSt] = useState<GfxProjectState | null>(null)
     const [busy, setBusy] = useState(false)
     const [log, setLog] = useState<{ lines: string[]; errors: string[]; warnings: string[] } | null>(null)
     const [pendingExport, setPendingExport] = useState(false)
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => COLLAPSED_STORE.load())
-    // Free-text sheet filter (ephemeral, not persisted): case-insensitive substring
-    // over the description + file path, so "f1C", "bandit", "pal" etc. all hit.
-    const [filter, setFilter] = useState('')
-    // The hovered row's thumbnail + cursor Y, for the magnified popout (see
-    // HoverPreview). Set on thumb mousemove, cleared on leave / refresh.
+    const [format, setFormat] = useState<ArtworkFormat>(() => FORMAT_STORE.load().format)
     const [preview, setPreview] = useState<{ img: YychrThumbnail; y: number } | null>(null)
-    const [, bumpThumbs] = useState(0) // re-render trigger as thumbnail fetches land
+    const [, bumpThumbs] = useState(0)
     const refreshing = useRef(false)
     const lastRefresh = useRef(0)
-    // The tab root — used to find the enclosing `.se-window` so the popout can
-    // pin itself to the panel's edge.
     const rootRef = useRef<HTMLDivElement>(null)
+    const dirRef = useRef('')
 
-    const dirRef = useRef('') // the export folder, for the stable per-row Open handler
+    const pickFormat = (f: ArtworkFormat): void => {
+        setFormat(f)
+        FORMAT_STORE.save({format: f})
+    }
 
     const refresh = useCallback(async (): Promise<void> => {
         if (refreshing.current) return
         refreshing.current = true
         try {
-            const s = await window.shinyEgg.editor.yychrProjectState()
+            const s = await window.shinyEgg.editor.artworkState()
             lastRefresh.current = Date.now()
             dirRef.current = s.dir
             setSt(s)
-            setPreview(null) // rows/thumbs may be replaced under the cursor
-            // Prune stale thumbnails, then fetch the missing ones in CHUNK-sized
-            // batches — one IPC round trip and ONE re-render per chunk, not per
-            // sheet. Content-addressed keys mean a focus refresh fetches nothing
-            // unless a sheet's bytes actually changed.
+            setPreview(null)
             const wanted = s.files.filter((f) => f.hash !== null)
             const keep = new Set(wanted.map(thumbKey))
             for (const k of thumbCache.keys()) if (!keep.has(k)) thumbCache.delete(k)
             const jobs = wanted.filter((f) => !thumbCache.has(thumbKey(f)))
-            const CHUNK = 12
+            const CHUNK = 8
             for (let i = 0; i < jobs.length; i += CHUNK) {
                 const chunk = jobs.slice(i, i + CHUNK)
                 try {
-                    const entries = await window.shinyEgg.editor.yychrThumbnails(chunk.map((f) => f.file))
+                    const entries = await window.shinyEgg.editor.artworkThumbnails(chunk.map((f) => f.file))
                     const byFile = new Map(entries.map((e) => [e.file, e.thumb]))
                     for (const f of chunk) thumbCache.set(thumbKey(f), byFile.get(f.file) ?? null)
                 } catch {
@@ -120,8 +105,7 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
         void refresh()
     }, [refresh])
 
-    // The alt-tab-back-from-YY-CHR moment: re-check statuses when the editor window
-    // regains focus (debounced — an action's own refresh already just ran).
+    // The alt-tab-back-from-the-image-editor moment: re-check statuses on focus.
     useEffect(() => {
         const onFocus = (): void => {
             if (Date.now() - lastRefresh.current > 1000) void refresh()
@@ -135,8 +119,8 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
         setBusy(true)
         setLog(null)
         try {
-            const r = await window.shinyEgg.editor.yychrExportProject()
-            if (r.ok) setLog({lines: [`Exported ${r.count} tile sheet${r.count === 1 ? '' : 's'}.`], errors: [], warnings: []})
+            const r = await window.shinyEgg.editor.artworkExport(format)
+            if (r.ok) setLog({lines: [`Exported ${r.count} file${r.count === 1 ? '' : 's'} (${format}).`], errors: [], warnings: []})
             else setLog({lines: [], errors: [`Export failed: ${r.error}`], warnings: []})
             await refresh()
         } finally {
@@ -144,8 +128,7 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
         }
     }
 
-    // Re-exporting overwrites the on-disk sheets — confirm when any still carry
-    // unimported YY-CHR edits.
+    // Re-exporting overwrites the on-disk files — confirm when any carry unimported edits.
     const onExport = (): void => {
         if ((st?.changedCount ?? 0) > 0) setPendingExport(true)
         else void doExport()
@@ -155,12 +138,12 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
         setBusy(true)
         setLog(null)
         try {
-            const r = await window.shinyEgg.editor.yychrImportProject(files)
+            const r = await window.shinyEgg.editor.artworkImport(files)
             if (!r.ok) {
                 setLog({lines: [], errors: [r.error], warnings: []})
                 return
             }
-            if (r.imported > 0) {
+            if (r.changed > 0) {
                 onMutated()
                 await onImported()
             }
@@ -173,53 +156,44 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
 
     const toggleCat = useCallback((cat: string): void => {
         setCollapsed((c) => {
-            const next = {...c, [cat]: !(c[cat] ?? true)} // absent = collapsed
+            const next = {...c, [cat]: !(c[cat] ?? false)} // absent = expanded
             COLLAPSED_STORE.save(next)
             return next
         })
     }, [])
 
-    // Stable per-row handlers, so the memo'd SheetRows skip re-rendering on the
-    // thumbnail bumps (only rows whose thumb/status props changed re-render).
     const importFile = useCallback((file: string): void => {
         void onImport([file])
     }, [onImport])
     const openFile = useCallback((file: string): void => {
-        void onOpenYychr(dirRef.current, file)
-    }, [onOpenYychr])
+        // shell.openPath on the absolute file — the OS default app (Aseprite for
+        // .aseprite when associated, the image viewer/editor for .png).
+        void window.shinyEgg.editor.openRegionFolder(`${dirRef.current}/${file}`)
+    }, [])
     const onPreview = useCallback((img: YychrThumbnail | null, y: number): void => {
         setPreview(img ? {img, y} : null)
     }, [])
 
-    // Group by category folder, in the fixed friendly order (unknowns appended) —
-    // recomputed only when a refresh replaces the state or the filter changes,
-    // not on thumbnail bumps.
-    const q = filter.trim().toLowerCase()
     const {groups, order} = useMemo(() => {
-        const groups = new Map<string, YychrProjectFile[]>()
+        const groups = new Map<string, GfxProjectFile[]>()
         for (const f of st?.files ?? []) {
-            if (q && !f.description.toLowerCase().includes(q) && !f.file.toLowerCase().includes(q)) continue
             (groups.get(f.category) ?? groups.set(f.category, []).get(f.category)!).push(f)
-        }
-        // Within a category, sort by file id (the export walks scenes, so manifest
-        // order is scene order); non-chr sheets (no fileId) sort by name at the end.
-        for (const files of groups.values()) {
-            files.sort((a, b) => (a.fileId ?? Infinity) - (b.fileId ?? Infinity) || a.file.localeCompare(b.file))
         }
         const order: [string, string][] = [
             ...CATEGORIES.filter(([k]) => groups.has(k)),
             ...[...groups.keys()].filter((k) => !CATEGORIES.some(([c]) => c === k)).sort().map((k): [string, string] => [k, k])
         ]
         return {groups, order}
-    }, [st, q])
+    }, [st])
 
     return (
         <div className="se-graphics__region" ref={rootRef}>
             <p className="se-graphics__desc">
-                Every tile sheet in the game, exported as raw files YY-CHR edits in
-                place. Save in YY-CHR and switch back: changed sheets light up for
-                import, and imported pixels preview on the canvas immediately. A sheet
-                already open in YY-CHR doesn’t see a re-export — reopen it.
+                The game’s fixed image surfaces — the world map, the boot / title /
+                storybook screens, Raphael’s arena, and the message font —
+                exported as {format === 'aseprite' ? 'Aseprite projects' : 'PNGs'}. Edit
+                them externally: changed files light up for import, and imported edits
+                preview on the canvas immediately.
             </p>
 
             <div className="se-graphics__row se-yychr__head">
@@ -227,17 +201,28 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
                     className="se-banks__act"
                     onClick={onExport}
                     disabled={busy || !st}
-                    title="Write every tile sheet into this project's yychr folder"
+                    title={`Write every artwork surface into this project's artwork folder as ${format === 'aseprite' ? 'Aseprite projects (pixels + layout where supported)' : 'PNGs (pixels only)'}`}
                 >
-                    {st?.exported ? 'Re-export all sheets' : 'Export all sheets'}
+                    {st?.exported ? 'Re-export all artwork' : 'Export all artwork'}
                 </button>
+                <label className="se-graphics__item-label" title="Aseprite projects carry tilemap layout (rearrange tiles); PNGs are pixels-only and open anywhere.">
+                    <select
+                        className="se-graphics__select"
+                        value={format}
+                        onChange={(e) => pickFormat(e.target.value as ArtworkFormat)}
+                        disabled={busy}
+                    >
+                        <option value="aseprite">Aseprite</option>
+                        <option value="png">PNG</option>
+                    </select>
+                </label>
                 {st?.exported && (
                     <>
                         <button
                             className="se-banks__act"
                             onClick={() => void onImport(null)}
                             disabled={busy || st.changedCount === 0}
-                            title="Import every sheet with unimported YY-CHR edits"
+                            title="Import every file with unimported edits"
                         >
                             Import all changed{st.changedCount > 0 ? ` (${st.changedCount})` : ''}
                         </button>
@@ -245,7 +230,7 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
                             className="se-banks__act"
                             onClick={() => void refresh()}
                             disabled={busy}
-                            title="Re-check which sheets changed on disk"
+                            title="Re-check which files changed on disk"
                         >
                             Refresh
                         </button>
@@ -256,23 +241,6 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
                         >
                             Open folder
                         </span>
-                        <input
-                            className="se-input se-yychr__filter"
-                            type="text"
-                            value={filter}
-                            onChange={(e) => setFilter(e.target.value)}
-                            placeholder="Filter sheets…"
-                            title="Show only sheets whose description or filename contains this text"
-                        />
-                        {q && (
-                            <button
-                                className="se-graphics__item-reset"
-                                onClick={() => setFilter('')}
-                                title="Clear the filter"
-                            >
-                                ✕
-                            </button>
-                        )}
                     </>
                 )}
             </div>
@@ -295,19 +263,15 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
                 <p className="se-graphics__changes-empty">Loading…</p>
             ) : !st.exported ? (
                 <p className="se-graphics__changes-empty">
-                    No YY-CHR export in this project yet — Export writes every sheet in the game
-                    into the project’s yychr folder, ready to open in YY-CHR.
+                    No artwork export in this project yet — Export writes the game’s fixed
+                    image surfaces into the project’s artwork folder, ready to edit in any
+                    image editor (PNG) or in Aseprite (with tile layout where supported).
                 </p>
             ) : (
                 <div className="se-yychr__browser">
-                    {q && order.length === 0 && (
-                        <p className="se-graphics__changes-empty">No sheets match “{filter.trim()}”.</p>
-                    )}
                     {order.map(([cat, label]) => {
                         const files = groups.get(cat)!
-                        // While filtering, matches must be visible — ignore collapse.
-                        const isCollapsed = q ? false : collapsed[cat] ?? true // absent = collapsed
-                        // Surface pending edits a collapse would otherwise hide.
+                        const isCollapsed = collapsed[cat] ?? false // absent = expanded
                         const changedN = isCollapsed ? files.filter((f) => f.status === 'changed').length : 0
                         return (
                             <div key={cat} className="se-yychr__group">
@@ -325,12 +289,11 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
                                 {!isCollapsed && (
                                     <ul className="se-graphics__list se-yychr__list">
                                         {files.map((f) => (
-                                            <SheetRow
+                                            <ArtworkRow
                                                 key={f.file}
                                                 f={f}
                                                 thumb={f.hash !== null ? thumbCache.get(thumbKey(f)) : null}
                                                 busy={busy}
-                                                yychrExe={yychrExe}
                                                 onImportFile={importFile}
                                                 onOpenFile={openFile}
                                                 onPreview={onPreview}
@@ -355,8 +318,8 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
 
             <DiscardChangesModal
                 open={pendingExport}
-                title="Re-export tile sheets"
-                body={`${st?.changedCount ?? 0} sheet${(st?.changedCount ?? 0) === 1 ? ' has' : 's have'} unimported YY-CHR edits — re-exporting overwrites them with the editor’s current graphics. Import them first to keep them.`}
+                title="Re-export artwork"
+                body={`${st?.changedCount ?? 0} file${(st?.changedCount ?? 0) === 1 ? ' has' : 's have'} unimported edits — re-exporting overwrites them with the editor’s current data. Import them first to keep them.`}
                 saving={busy}
                 confirmLabel="Re-export"
                 danger
@@ -367,20 +330,14 @@ export function YychrTab({yychrExe, onOpenYychr, onMutated, onImported}: Props):
     )
 }
 
-/** One sheet row: on-disk thumbnail, description + filename/format/size details,
- *  status badge, and per-file Import (changed only) / Open-in-YY-CHR actions.
- *  `thumb` undefined = fetch still in flight; null = no preview (missing file, or
- *  the Mode-7 tilemap sheet, which isn't pixel art). Memo'd: ~110 rows re-render
- *  per thumbnail-chunk bump otherwise — with stable handlers, only rows whose
- *  thumb/status actually changed do. */
-const SheetRow = memo(function SheetRow({f, thumb, busy, yychrExe, onImportFile, onOpenFile, onPreview}: {
-    f: YychrProjectFile
+/** One artwork row: on-disk thumbnail, description + filename, status badge, and
+ *  per-file Import (changed only) / Open actions. Memo'd like the sibling tabs. */
+const ArtworkRow = memo(function ArtworkRow({f, thumb, busy, onImportFile, onOpenFile, onPreview}: {
+    f: GfxProjectFile
     thumb: YychrThumbnail | null | undefined
     busy: boolean
-    yychrExe: string | null
     onImportFile: (file: string) => void
     onOpenFile: (file: string) => void
-    /** Hovering the thumb shows the magnified popout (null clears it). */
     onPreview: (img: YychrThumbnail | null, y: number) => void
 }): JSX.Element {
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -394,46 +351,24 @@ const SheetRow = memo(function SheetRow({f, thumb, busy, yychrExe, onImportFile,
                 <canvas
                     ref={canvasRef}
                     className="se-yychr__thumb"
-                    title={thumb.renderedTiles < thumb.totalTiles ? `Preview of the first ${thumb.renderedTiles} of ${thumb.totalTiles} tiles` : undefined}
                     onMouseMove={(e) => onPreview(thumb, e.clientY)}
                     onMouseLeave={() => onPreview(null, 0)}
                 />
             ) : (
                 <div className="se-yychr__thumb se-yychr__thumb--none">
-                    {f.bpp === 8 ? '8bpp' : f.status === 'missing' ? 'missing' : '…'}
+                    {f.status === 'missing' ? 'missing' : '…'}
                 </div>
             )}
             <div className="se-yychr__info">
                 <div className="se-yychr__toprow">
                     <span className="se-graphics__item-label" title={f.file}>{f.description}</span>
-                    {f.palRow !== undefined && (
-                        <span
-                            className="se-yychr__status"
-                            title={(f.bpp === 2
-                                ? 'The 4-color group this sheet draws with in-game — in YY-CHR click any cell of this group (first color = group × 4; the .pal is in raw CGRAM order)'
-                                : 'The palette row this sheet draws with in-game — select this row in YY-CHR\'s palette pane (the .pal is in raw CGRAM order)')
-                                + (f.palRowApprox
-                                    ? '\n~ approximate: this is the dominant/representative row — parts of the sheet may draw in other rows (sprite-assigned palettes, multi-row art).'
-                                    : '')}
-                        >
-                            {f.bpp === 2 ? 'pal group ' : 'pal row '}{f.palRowApprox ? '~' : ''}{f.palRow}
-                        </span>
-                    )}
-                    {f.multiRow && (
-                        <span
-                            className="se-yychr__status"
-                            title="Tiles in this sheet use different palette rows in-game — no single row applies. The thumbnail shows every tile in its true colors (and in YY-CHR the .col sidecar does the same, where one ships)."
-                        >
-                            multi-row
-                        </span>
-                    )}
                     {f.status === 'changed' && <span className="se-yychr__status se-yychr__status--changed">changed</span>}
                     {f.status === 'missing' && <span className="se-yychr__status se-yychr__status--missing">missing</span>}
                     <button
                         className="se-graphics__item-reset"
                         onClick={() => onImportFile(f.file)}
                         disabled={busy || f.status !== 'changed'}
-                        title={f.status === 'changed' ? 'Import this sheet’s YY-CHR edits' : 'Nothing to import — the sheet matches the last export/import'}
+                        title={f.status === 'changed' ? 'Import this file’s edits' : 'Nothing to import — the file matches the last export/import'}
                     >
                         Import
                     </button>
@@ -441,13 +376,13 @@ const SheetRow = memo(function SheetRow({f, thumb, busy, yychrExe, onImportFile,
                         className="se-graphics__item-reset"
                         onClick={() => onOpenFile(f.file)}
                         disabled={busy || f.status === 'missing'}
-                        title={yychrExe ? 'Open this sheet in YY-CHR' : 'Open in YY-CHR (you’ll be asked to locate it first)'}
+                        title="Open this file in its editor"
                     >
                         Open
                     </button>
                 </div>
                 <span className="se-yychr__meta" title={f.file}>
-                    {fname} · {f.format ?? f.kind} · {f.bpp}bpp · {sizeLabel(f.sizeBytes)} · {f.tileCount} tiles
+                    {fname}
                 </span>
             </div>
         </li>

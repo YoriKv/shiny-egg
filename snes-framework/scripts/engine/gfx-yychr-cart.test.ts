@@ -79,19 +79,22 @@ for (const e of entries) {
   if (eq(bytes, tiles)) exact++;
   else assert(false, `${e.format}/0x${e.fileId.toString(16)}: pad/strip round-trip not byte-exact`);
 
-  const cpr = e.bpp === 2 ? 4 : 16;
-  const pal = e.perTile ? buildPalFromRgbRows(e.perTile.subPalettesRgb, cpr) : buildPalFromCgram(cgram, e.paletteRow);
+  // The .pal ships as raw CGRAM order (2026-07-19 scheme); .col bytes are the
+  // tiles' REAL CGRAM groups (perTile.rows maps sub index → group).
+  const pal = buildPalFromCgram(cgram, 0);
   assert(pal.length === 512, `0x${e.fileId.toString(16)}: .pal is 512 bytes`);
   assert(pal.every((_, i) => i % 2 === 0 || (pal[i]! & 0x80) === 0), `0x${e.fileId.toString(16)}: .pal bit 15 clear everywhere`);
   if (e.perTile) {
-    const col = buildColSidecar(e.perTile.tileSub, e.bpp, padded.length);
+    const groups = e.perTile.tileSub.map((s) => e.perTile!.rows[s] ?? 0);
+    const col = buildColSidecar(groups, e.bpp, padded.length);
     assert(col.length === 256 + padded.length / 16, `0x${e.fileId.toString(16)}: .col sized to header + padded/16`);
     const tileBytes = e.bpp === 2 ? 16 : 32;
-    const nSubs = e.perTile.subPalettesRgb.length;
+    const bank = yychrBankBytes(e.bpp);
     for (let t = 0; t < e.perTile.tileSub.length; t++) {
-      const got = col[256 + (t * tileBytes) / 16]!;
-      if (got !== e.perTile.tileSub[t] || got >= nSubs) {
-        assert(false, `0x${e.fileId.toString(16)}: .col byte for tile ${t} = sub index in range`);
+      const off = t * tileBytes;
+      const got = col[256 + (Math.floor(off / bank) * bank) / 16 + (off % bank) / tileBytes]!;
+      if (got !== groups[t]) {
+        assert(false, `0x${e.fileId.toString(16)}: .col byte for tile ${t} = its CGRAM group`);
         break;
       }
     }
@@ -108,7 +111,11 @@ console.log('\n=== chunky ↔ planar bijective on the real GSU banks ===');
   // FuSoYa's AllGFX.bin output — ycompress-allgfx.md §3 / tmp/ycompress-verify.ts).
   const banks: [number, number][] = [
     [0x530000, 0x8000], [0x538000, 0x4000], [0x540000, 0x8000], [0x548000, 0x8000],
-    [0x550000, 0x8000], [0x558000, 0x8000], [0x560000, 0x8000]
+    [0x550000, 0x8000], [0x558000, 0x8000], [0x560000, 0x8000],
+    // $57:0000 — GSU-only bitmap data bank (added to the gsu/ export 2026-07-18;
+    // not the GSU program, and byte-disproven as a flip of $56 — see
+    // research/graphics-survey/11-vram-loading.md §4).
+    [0x570000, 0x3c00]
   ];
   let ok = 0;
   for (const [snes, size] of banks) {

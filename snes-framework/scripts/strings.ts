@@ -1,7 +1,10 @@
-// String-table editor backend — parse/serialize the level-name
-// strings in a `;@editable` region of `yi/SuperFX/Banks/Bank51.asm`. Built on
-// the reusable asm primitives in ./asm so future text tools (message box, item
-// names, …) reuse the same marker + literal + font-table machinery.
+// String-table editor backend — parse/serialize every `;@editable` text region:
+// level names + message text + the message pointer table (Bank51), the intro
+// storybook (Bank0F), the ending epilogue (Bank0D), and the credits staff roll
+// (Bank00 `dw` letter streams). Built on the reusable asm primitives in ./asm
+// (markers / text-literals / font-table / glyph-line / msg-markup /
+// credits-staff) so each region is a parse+serialize pair over one shared
+// region-table skeleton.
 //
 // Edit strategy: format-preserving in-place splice. We never re-emit the region
 // — we replace only the contents of the `"..."` literals the user edited. So
@@ -15,7 +18,7 @@
 // must be a structured control-record edit, not a text edit.
 
 import { findRegion, spliceRegion } from './asm/markers.ts'
-import { findQuotedLiterals, stripComment, applyEdits, type TextEdit } from './asm/text-literals.ts'
+import { escapeDefineBangs, findQuotedLiterals, stripComment, applyEdits, type TextEdit } from './asm/text-literals.ts'
 import {
   invalidChars,
   loadFontTable,
@@ -38,6 +41,7 @@ import {
   isTextLineArgs,
   parseDbArgs
 } from './asm/glyph-line.ts'
+import { decodeCreditsPage, encodeCreditsPage } from './asm/credits-staff.ts'
 import { snesToPC } from './engine/symbol-map.ts'
 import type {
   MarkupToken,
@@ -105,6 +109,138 @@ interface ParsedEntry {
 
 const LABEL_RE = /^([A-Za-z_.][\w.]*):/
 
+// ── Shared region-table skeleton ────────────────────────────────────────────
+// Every text region is edited the same way: locate the region in BOTH texts
+// (content = overlay-first, budget = pristine base), diff the model against the
+// parsed base entries, enforce the stale-model + byte-budget guards, then
+// splice only the changed spans. These helpers are that shared skeleton; each
+// region supplies its own entry parser + per-entry differ.
+
+/**
+ * The shared label-walk skeleton: split a region body into label-keyed entries.
+ * A label line begins an entry (or, when the current entry has no content yet,
+ * records a descriptive alias on it); every non-blank line — including the
+ * label line itself — is offered to `onLine`, which appends the region's own
+ * kind of content (quoted literals / text `db` directives / `dw` stream rows)
+ * to the current entry. Entries that end up with no content are dropped.
+ */
+function walkLabeledEntries<E extends { label: string; labels: string[] }>(
+  inner: string,
+  makeEntry: (label: string) => E,
+  hasContent: (e: E) => boolean,
+  onLine: (e: E, rawLine: string, code: string, lineStart: number) => void
+): E[] {
+  const entries: E[] = []
+  let cur: E | null = null
+  let offset = 0
+  for (const rawLine of inner.split('\n')) {
+    const lineStart = offset
+    offset += rawLine.length + 1 // account for the consumed '\n'
+    const code = stripComment(rawLine)
+    const trimmed = code.trim()
+    if (trimmed === '') continue
+    const label = LABEL_RE.exec(trimmed)?.[1]
+    if (label) {
+      if (!cur || hasContent(cur)) {
+        // Primary label (pointer-referenced — the save-match key) begins an entry.
+        cur = makeEntry(label)
+        entries.push(cur)
+      } else {
+        // An extra label line on the same body — a descriptive alias, kept for
+        // display-name choice; the key stays the primary.
+        cur.labels.push(label)
+      }
+    }
+    if (cur) onLine(cur, rawLine, code, lineStart)
+  }
+  return entries.filter(hasContent)
+}
+
+interface RegionPair {
+  region: NonNullable<ReturnType<typeof findRegion>>
+  budgetRegion: NonNullable<ReturnType<typeof findRegion>>
+}
+
+const missingMarkers = (id: string, base: boolean): string =>
+  `${base ? 'The base file' : 'The file'} is missing the ;@editable:${id} markers.`
+
+/** Locate a region in the content + budget texts, or an error string. */
+function findRegionPair(contentText: string, budgetText: string, id: string): RegionPair | string {
+  const region = findRegion(contentText, id)
+  if (!region) return missingMarkers(id, false)
+  const budgetRegion = findRegion(budgetText, id)
+  if (!budgetRegion) return missingMarkers(id, true)
+  return { region, budgetRegion }
+}
+
+/** Throwing variant for the parse side. */
+function requireRegionPair(contentText: string, budgetText: string, id: string): RegionPair {
+  const pair = findRegionPair(contentText, budgetText, id)
+  if (typeof pair === 'string') throw new Error(pair)
+  return pair
+}
+
+/** The stale-model guard: every model entry must still exist in the base. */
+function staleEntryError(entries: readonly { label: string }[], known: ReadonlySet<string>): string | null {
+  for (const e of entries) {
+    if (!known.has(e.label)) return `Entry "${e.label}" is not in the current base file (out of date?).`
+  }
+  return null
+}
+
+/** The longest of a body's labels — the most descriptive alias, for display. */
+const longestLabel = (labels: readonly string[]): string =>
+  labels.reduce((a, b) => (b.length > a.length ? b : a), labels[0])
+
+/** One region entry's serialize outcome: its byte cost + the in-place edits. */
+type EntryDiff = { cost: number; edits: TextEdit[] } | { error: string }
+
+/**
+ * The shared serialize skeleton: region pair → base entries → stale guard →
+ * per-entry diff (each region's `diffEntry` handles validation, the unchanged
+ * fast path, and its own edit spans) → budget gate → splice. `budgetNoun`
+ * flavors the overflow message ("character(s)" / "byte(s)" / "letter(s)").
+ */
+function serializeEntryTable<E extends { label: string }>(opts: {
+  contentText: string
+  budgetText: string
+  id: string
+  model: StringTableModel
+  parse: (inner: string) => E[]
+  totalCost: (entries: E[]) => number
+  diffEntry: (base: E, edited: StringTableEntry | undefined) => EntryDiff
+  budgetNoun: string
+  /** Divide the overflow byte count for the message (credits: 2 bytes/letter). */
+  budgetUnitBytes?: number
+}): SerializeResult {
+  const pair = findRegionPair(opts.contentText, opts.budgetText, opts.id)
+  if (typeof pair === 'string') return { ok: false, error: pair }
+
+  const base = opts.parse(pair.region.inner)
+  const stale = staleEntryError(opts.model.entries, new Set(base.map((e) => e.label)))
+  if (stale) return { ok: false, error: stale }
+  const budget = opts.totalCost(opts.parse(pair.budgetRegion.inner))
+
+  const edits: TextEdit[] = []
+  let newTotal = 0
+  for (const baseEntry of base) {
+    const d = opts.diffEntry(baseEntry, opts.model.entries.find((e) => e.label === baseEntry.label))
+    if ('error' in d) return { ok: false, error: d.error }
+    newTotal += d.cost
+    edits.push(...d.edits)
+  }
+
+  if (newTotal > budget) {
+    const over = Math.ceil((newTotal - budget) / (opts.budgetUnitBytes ?? 1))
+    return {
+      ok: false,
+      error: `The text uses ${newTotal} bytes but the budget is ${budget}. Shorten ${over} ${opts.budgetNoun}.`
+    }
+  }
+
+  return { ok: true, text: spliceRegion(opts.contentText, opts.id, applyEdits(pair.region.inner, edits)) }
+}
+
 /**
  * Walk a region body into entries. An entry = a label plus the `"..."` literals
  * that follow it (until the next label). Consecutive label lines with no
@@ -114,36 +250,16 @@ const LABEL_RE = /^([A-Za-z_.][\w.]*):/
  * in-place splice leaves their bytes untouched regardless.
  */
 function parseRegionEntries(inner: string): ParsedEntry[] {
-  const entries: ParsedEntry[] = []
-  let cur: ParsedEntry | null = null
-  let offset = 0
-  for (const rawLine of inner.split('\n')) {
-    const lineStart = offset
-    offset += rawLine.length + 1 // account for the consumed '\n'
-    const code = stripComment(rawLine)
-    const trimmed = code.trim()
-    if (trimmed === '') continue
-
-    const label = LABEL_RE.exec(trimmed)?.[1]
-    if (label) {
-      if (!cur || cur.lines.length > 0) {
-        // Primary label (pointer-referenced — the save-match key) begins an entry.
-        cur = { label, labels: [label], lines: [] }
-        entries.push(cur)
-      } else {
-        // An extra label line on the same body — a descriptive alias. Kept only
-        // to choose the display name (we prefer the longest); the key stays the
-        // primary.
-        cur.labels.push(label)
-      }
-    }
-    if (cur) {
+  return walkLabeledEntries<ParsedEntry>(
+    inner,
+    (label) => ({ label, labels: [label], lines: [] }),
+    (e) => e.lines.length > 0,
+    (e, rawLine, _code, lineStart) => {
       for (const lit of findQuotedLiterals(rawLine)) {
-        cur.lines.push({ text: lit.value, start: lineStart + lit.start, end: lineStart + lit.end })
+        e.lines.push({ text: lit.value, start: lineStart + lit.start, end: lineStart + lit.end })
       }
     }
-  }
-  return entries.filter((e) => e.lines.length > 0)
+  )
 }
 
 function totalChars(entries: ParsedEntry[]): number {
@@ -226,7 +342,7 @@ function entriesToModel(
   nameByLabel: Map<string, string>
 ): StringTableEntry[] {
   return entries.map((e) => {
-    const longest = e.labels.reduce((a, b) => (b.length > a.length ? b : a), e.labels[0])
+    const longest = longestLabel(e.labels)
     const friendly = nameByLabel.get(e.label)
     return {
       label: e.label,
@@ -250,10 +366,7 @@ function parseStringTableRegion(
   title: string,
   nameStrategy?: NameStrategy
 ): StringTableModel {
-  const contentRegion = findRegion(contentText, id)
-  if (!contentRegion) throw new Error(`Bank51 is missing the ;@editable:${id} markers.`)
-  const budgetRegion = findRegion(budgetText, id)
-  if (!budgetRegion) throw new Error(`Base Bank51 is missing the ;@editable:${id} markers.`)
+  const { region: contentRegion, budgetRegion } = requireRegionPair(contentText, budgetText, id)
   const entries = parseRegionEntries(contentRegion.inner)
   const nameByLabel = nameStrategy ? nameStrategy(entries, contentText) : new Map<string, string>()
   return {
@@ -331,41 +444,25 @@ function argsByteCount(args: ReturnType<typeof parseDbArgs>): number {
  * text lines are dropped.
  */
 function parseGlyphLineRegion(inner: string): GlyphParsedEntry[] {
-  const entries: GlyphParsedEntry[] = []
-  let cur: GlyphParsedEntry | null = null
-  let offset = 0
-  for (const rawLine of inner.split('\n')) {
-    const lineStart = offset
-    offset += rawLine.length + 1
-    const code = stripComment(rawLine)
-    const trimmed = code.trim()
-    if (trimmed === '') continue
-
-    const label = LABEL_RE.exec(trimmed)?.[1]
-    if (label) {
-      if (!cur || cur.lines.length > 0) {
-        cur = { label, labels: [label], lines: [] }
-        entries.push(cur)
-      } else {
-        cur.labels.push(label)
-      }
+  return walkLabeledEntries<GlyphParsedEntry>(
+    inner,
+    (label) => ({ label, labels: [label], lines: [] }),
+    (e) => e.lines.length > 0,
+    (e, _rawLine, code, lineStart) => {
+      const dbm = DB_DIRECTIVE_RE.exec(code)
+      if (!dbm) return
+      const argText = dbm[2].replace(/\s+$/, '') // drop trailing ws before any comment
+      const args = parseDbArgs(argText)
+      if (!isTextLineArgs(args)) return // control directive — leave untouched
+      const argStart = lineStart + dbm[1].length
+      e.lines.push({
+        markup: dbArgsToLine(args!),
+        argStart,
+        argEnd: argStart + argText.length,
+        bytes: argsByteCount(args)
+      })
     }
-    if (!cur) continue
-
-    const dbm = DB_DIRECTIVE_RE.exec(code)
-    if (!dbm) continue
-    const argText = dbm[2].replace(/\s+$/, '') // drop trailing ws before any comment
-    const args = parseDbArgs(argText)
-    if (!isTextLineArgs(args)) continue // control directive — leave untouched
-    const argStart = lineStart + dbm[1].length
-    cur.lines.push({
-      markup: dbArgsToLine(args!),
-      argStart,
-      argEnd: argStart + argText.length,
-      bytes: argsByteCount(args)
-    })
-  }
-  return entries.filter((e) => e.lines.length > 0)
+  )
 }
 
 function totalGlyphBytes(entries: GlyphParsedEntry[]): number {
@@ -385,10 +482,7 @@ function parseGlyphLineTable(
   title: string,
   namePrefix: string
 ): StringTableModel {
-  const region = findRegion(contentText, id)
-  if (!region) throw new Error(`Region is missing the ;@editable:${id} markers.`)
-  const budgetRegion = findRegion(budgetText, id)
-  if (!budgetRegion) throw new Error(`Base region is missing the ;@editable:${id} markers.`)
+  const { region, budgetRegion } = requireRegionPair(contentText, budgetText, id)
   const entries = parseGlyphLineRegion(region.inner)
   const nameByLabel = sequentialNames(entries, namePrefix)
   return {
@@ -399,7 +493,7 @@ function parseGlyphLineTable(
     glyphLines: true,
     markupGuide: GLYPH_GUIDE,
     entries: entries.map((e) => {
-      const longest = e.labels.reduce((a, b) => (b.length > a.length ? b : a), e.labels[0])
+      const longest = longestLabel(e.labels)
       const friendly = nameByLabel.get(e.label)
       return {
         label: e.label,
@@ -443,55 +537,38 @@ function serializeGlyphLineTable(
   ft: FontTable,
   id: string
 ): SerializeResult {
-  const region = findRegion(contentText, id)
-  if (!region) return { ok: false, error: `Region is missing the ;@editable:${id} markers.` }
-  const budgetRegion = findRegion(budgetText, id)
-  if (!budgetRegion) return { ok: false, error: `Base region is missing the ;@editable:${id} markers.` }
-
-  const base = parseGlyphLineRegion(region.inner)
-  const byLabel = new Map(base.map((e) => [e.label, e]))
-  const budget = totalGlyphBytes(parseGlyphLineRegion(budgetRegion.inner))
-
-  const edits: TextEdit[] = []
-  let newTotal = 0
-  for (const baseEntry of base) {
-    const edited = model.entries.find((e) => e.label === baseEntry.label)
-    const lines = edited ? edited.lines : baseEntry.lines.map((l) => l.markup)
-    if (edited && edited.lines.length !== baseEntry.lines.length) {
-      return {
-        ok: false,
-        error: `Entry "${baseEntry.label}" has ${edited.lines.length} line(s); the cart expects ${baseEntry.lines.length}.`
+  return serializeEntryTable({
+    contentText,
+    budgetText,
+    id,
+    model,
+    parse: parseGlyphLineRegion,
+    totalCost: totalGlyphBytes,
+    budgetNoun: 'byte(s)',
+    diffEntry: (baseEntry, edited) => {
+      const lines = edited ? edited.lines : baseEntry.lines.map((l) => l.markup)
+      if (edited && edited.lines.length !== baseEntry.lines.length) {
+        return {
+          error: `Entry "${baseEntry.label}" has ${edited.lines.length} line(s); the cart expects ${baseEntry.lines.length}.`
+        }
       }
-    }
-    for (let i = 0; i < baseEntry.lines.length; i++) {
-      const orig = baseEntry.lines[i]
-      const want = lines[i]
-      if (want === orig.markup) {
-        newTotal += orig.bytes
-        continue
+      const edits: TextEdit[] = []
+      let cost = 0
+      for (let i = 0; i < baseEntry.lines.length; i++) {
+        const orig = baseEntry.lines[i]
+        const want = lines[i]
+        if (want === orig.markup) {
+          cost += orig.bytes
+          continue
+        }
+        const enc = encodeLineToDbArgs(want, ft)
+        if (!enc.ok) return { error: `Entry "${baseEntry.label}": ${enc.error}` }
+        cost += enc.bytes
+        edits.push({ start: orig.argStart, end: orig.argEnd, replacement: enc.args })
       }
-      const enc = encodeLineToDbArgs(want, ft)
-      if (!enc.ok) return { ok: false, error: `Entry "${baseEntry.label}": ${enc.error}` }
-      newTotal += enc.bytes
-      edits.push({ start: orig.argStart, end: orig.argEnd, replacement: enc.args })
+      return { cost, edits }
     }
-  }
-
-  for (const e of model.entries) {
-    if (!byLabel.has(e.label)) {
-      return { ok: false, error: `Entry "${e.label}" is not in the current base file (out of date?).` }
-    }
-  }
-
-  if (newTotal > budget) {
-    return {
-      ok: false,
-      error: `Text uses ${newTotal} bytes but the budget is ${budget}. Shorten ${newTotal - budget} byte(s).`
-    }
-  }
-
-  const newInner = applyEdits(region.inner, edits)
-  return { ok: true, text: spliceRegion(contentText, id, newInner) }
+  })
 }
 
 /** Total message byte size of a message region (the shared byte budget). */
@@ -610,62 +687,40 @@ function serializeStringTable(
   ft: FontTable,
   id: string
 ): SerializeResult {
-  const region = findRegion(contentText, id)
-  if (!region) {
-    return { ok: false, error: `Bank51 is missing the ;@editable:${id} markers.` }
-  }
-  const budgetRegion = findRegion(budgetText, id)
-  if (!budgetRegion) {
-    return { ok: false, error: `Base Bank51 is missing the ;@editable:${id} markers.` }
-  }
-  const base = parseRegionEntries(region.inner)
-  const byLabel = new Map(base.map((e) => [e.label, e]))
-  const budget = totalChars(parseRegionEntries(budgetRegion.inner))
-
-  const edits: TextEdit[] = []
-  let newTotal = 0
-  for (const baseEntry of base) {
-    const edited = model.entries.find((e) => e.label === baseEntry.label)
-    const lines = edited ? edited.lines : baseEntry.lines.map((l) => l.text)
-    if (edited && edited.lines.length !== baseEntry.lines.length) {
-      return {
-        ok: false,
-        error: `Entry "${baseEntry.label}" has ${edited.lines.length} line(s); the cart expects ${baseEntry.lines.length}.`
-      }
-    }
-    for (let i = 0; i < baseEntry.lines.length; i++) {
-      const text = lines[i]
-      const bad = invalidChars(text, ft)
-      if (bad.length > 0) {
+  return serializeEntryTable({
+    contentText,
+    budgetText,
+    id,
+    model,
+    parse: parseRegionEntries,
+    totalCost: totalChars,
+    budgetNoun: 'character(s)',
+    diffEntry: (baseEntry, edited) => {
+      const lines = edited ? edited.lines : baseEntry.lines.map((l) => l.text)
+      if (edited && edited.lines.length !== baseEntry.lines.length) {
         return {
-          ok: false,
-          error: `Unsupported character(s) ${bad.map((c) => JSON.stringify(c)).join(', ')} in "${text}".`
+          error: `Entry "${baseEntry.label}" has ${edited.lines.length} line(s); the cart expects ${baseEntry.lines.length}.`
         }
       }
-      newTotal += [...text].length
-      const orig = baseEntry.lines[i]
-      if (text !== orig.text) {
-        edits.push({ start: orig.start, end: orig.end, replacement: text })
+      const edits: TextEdit[] = []
+      let cost = 0
+      for (let i = 0; i < baseEntry.lines.length; i++) {
+        const text = lines[i]
+        const bad = invalidChars(text, ft)
+        if (bad.length > 0) {
+          return {
+            error: `Unsupported character(s) ${bad.map((c) => JSON.stringify(c)).join(', ')} in "${text}".`
+          }
+        }
+        cost += [...text].length
+        const orig = baseEntry.lines[i]
+        if (text !== orig.text) {
+          edits.push({ start: orig.start, end: orig.end, replacement: escapeDefineBangs(text) })
+        }
       }
+      return { cost, edits }
     }
-  }
-
-  // Guard against a stale model referencing entries the base no longer has.
-  for (const e of model.entries) {
-    if (!byLabel.has(e.label)) {
-      return { ok: false, error: `Entry "${e.label}" is not in the current base file (out of date?).` }
-    }
-  }
-
-  if (newTotal > budget) {
-    return {
-      ok: false,
-      error: `Strings use ${newTotal} bytes but the budget is ${budget}. Shorten ${newTotal - budget} character(s).`
-    }
-  }
-
-  const newInner = applyEdits(region.inner, edits)
-  return { ok: true, text: spliceRegion(contentText, id, newInner) }
+  })
 }
 
 export function serializeLevelNameStrings(
@@ -695,6 +750,182 @@ export function serializeEndingText(
   return serializeGlyphLineTable(contentText, budgetText, model, ft, ENDING_TEXT_ID)
 }
 
+// ── Credits staff-roll text (Bank00 OAM letter streams) ────────────────────
+// Unlike every other region, the credits pages are raw `dw` word streams (OAM
+// letter records), not quoted text literals — decoded/encoded by the
+// asm/credits-staff codec. Each entry = one page body (label + `dw` rows); a
+// changed page's body is re-emitted whole (its label survives, so the symbolic
+// pointer table `DATA_00D2C2` — outside the region — re-resolves via asar).
+// Budget = the pristine base region's total stream bytes: the streams live
+// inside the boot-relocated WRAM code block, so growth is capped (shrinking is
+// fine — asar recomputes every following label).
+
+/** Marker id of the credits staff-roll letter-stream region in Bank00. */
+export const CREDITS_STAFF_ID = 'credits-staff'
+
+/** The symbolic per-page pointer table (outside the region; slot order = the
+ *  roll's page order — some slots share a body, e.g. the opening heading). */
+const CREDITS_PTR_TABLE_LABEL = 'DATA_00D2C2'
+
+interface CreditsParsedEntry {
+  label: string
+  labels: string[]
+  bytes: number[]
+  /** Char range of the entry's `dw` body within the region inner (splice target). */
+  bodyStart: number
+  bodyEnd: number
+}
+
+const DW_WORDS_RE = /^\s*dw\s+(\S.*)$/
+
+/** Walk the credits region body: a label begins an entry; `dw $XXXX,…` rows are
+ *  its stream words (2 bytes LE each). The body span covers the entry's dw rows
+ *  (label lines excluded), so a re-emit swaps only the data. */
+function parseCreditsRegion(inner: string): CreditsParsedEntry[] {
+  return walkLabeledEntries<CreditsParsedEntry>(
+    inner,
+    (label) => ({ label, labels: [label], bytes: [], bodyStart: -1, bodyEnd: -1 }),
+    (e) => e.bytes.length > 0,
+    (e, rawLine, code, lineStart) => {
+      const m = DW_WORDS_RE.exec(code)
+      if (!m) return
+      const rowBytes: number[] = []
+      for (const tok of m[1].split(',')) {
+        const w = /^\s*\$([0-9A-Fa-f]{1,4})\s*$/.exec(tok)
+        if (!w) return // symbolic dw (a pointer row) — not stream data
+        const v = parseInt(w[1], 16)
+        rowBytes.push(v & 0xff, (v >> 8) & 0xff)
+      }
+      if (e.bodyStart < 0) e.bodyStart = lineStart
+      e.bodyEnd = lineStart + rawLine.length
+      e.bytes.push(...rowBytes)
+    }
+  )
+}
+
+/** Total stream bytes across the region's page bodies (the credits budget). */
+const creditsStreamBytes = (entries: CreditsParsedEntry[]): number =>
+  entries.reduce((a, e) => a + e.bytes.length, 0)
+
+/** Per-page display names from the pointer table's slot order: "Page N" (or
+ *  "Pages N & M" for a shared body), with a text snippet from the first line. */
+function creditsPageNames(
+  fileText: string,
+  entries: CreditsParsedEntry[],
+  ft: FontTable
+): Map<string, string> {
+  const lines = fileText.split('\n')
+  const start = lines.findIndex((l) => stripComment(l).trim() === `${CREDITS_PTR_TABLE_LABEL}:`)
+  const slotsByLabel = new Map<string, number[]>()
+  if (start >= 0) {
+    let slot = 0
+    for (let i = start + 1; i < lines.length; i++) {
+      const code = stripComment(lines[i]).trim()
+      const m = /^dw\s+(\S.*)$/.exec(code)
+      if (!m) {
+        if (slot === 0) continue
+        break
+      }
+      for (const tok of m[1].split(',')) {
+        const label = tok.trim()
+        if (!/^[A-Za-z_.][\w.]*$/.test(label)) continue
+        const arr = slotsByLabel.get(label) ?? []
+        arr.push(slot)
+        slotsByLabel.set(label, arr)
+        slot++
+      }
+    }
+  }
+  const names = new Map<string, string>()
+  entries.forEach((e, i) => {
+    const slots = e.labels.flatMap((l) => slotsByLabel.get(l) ?? [])
+    const pageNo =
+      slots.length > 1
+        ? `Pages ${slots.map((s) => s + 1).join(' & ')}`
+        : `Page ${slots.length === 1 ? slots[0] + 1 : i + 1}`
+    const first = decodeCreditsPage(e.bytes, ft)[0]?.markup ?? ''
+    const snippet = first.length > 22 ? `${first.slice(0, 22)}…` : first
+    names.set(e.label, snippet ? `${pageNo} — ${snippet}` : pageNo)
+  })
+  return names
+}
+
+/** Parse the credits staff-roll region into the editor model — one entry per
+ *  page body, lines = decoded markup (text + `[glyph]`/`[$XX]` tokens). */
+export function parseCreditsStaff(
+  contentText: string,
+  budgetText: string,
+  ft: FontTable
+): StringTableModel {
+  const { region, budgetRegion } = requireRegionPair(contentText, budgetText, CREDITS_STAFF_ID)
+  const entries = parseCreditsRegion(region.inner)
+  const names = creditsPageNames(contentText, entries, ft)
+  return {
+    id: CREDITS_STAFF_ID,
+    title: 'Credits',
+    allowedChars: ft.chars,
+    budgetChars: creditsStreamBytes(parseCreditsRegion(budgetRegion.inner)),
+    glyphLines: true,
+    byteCost: 'credits-page',
+    markupGuide: GLYPH_GUIDE,
+    entries: entries.map((e) => ({
+      label: e.label,
+      name: names.get(e.label) ?? e.label,
+      lines: decodeCreditsPage(e.bytes, ft).map((l) => l.markup)
+    }))
+  }
+}
+
+/** Format a page's stream bytes as `dw` rows (8 words per row, original shape). */
+function creditsBytesToDwRows(bytes: readonly number[]): string {
+  const words: string[] = []
+  for (let i = 0; i + 1 < bytes.length; i += 2) {
+    words.push(`$${((bytes[i]! | (bytes[i + 1]! << 8)) >>> 0).toString(16).toUpperCase().padStart(4, '0')}`)
+  }
+  const rows: string[] = []
+  for (let i = 0; i < words.length; i += 8) rows.push(`\tdw ${words.slice(i, i + 8).join(',')}`)
+  return rows.join('\n')
+}
+
+/** Serialize edited credits pages: a changed page re-encodes (letters from the
+ *  markup, advances from the font width table, X re-centered, Y preserved from
+ *  the base page) and its `dw` body is re-emitted; unchanged pages stay
+ *  byte-for-byte. Budget: total stream bytes ≤ the pristine base total. */
+export function serializeCreditsStaff(
+  contentText: string,
+  budgetText: string,
+  model: StringTableModel,
+  ft: FontTable
+): SerializeResult {
+  return serializeEntryTable({
+    contentText,
+    budgetText,
+    id: CREDITS_STAFF_ID,
+    model,
+    parse: parseCreditsRegion,
+    totalCost: creditsStreamBytes,
+    budgetNoun: 'letter(s)',
+    budgetUnitBytes: 2,
+    diffEntry: (baseEntry, edited) => {
+      const baseLines = decodeCreditsPage(baseEntry.bytes, ft)
+      const lines = edited ? edited.lines : baseLines.map((l) => l.markup)
+      if (lines.length === baseLines.length && lines.every((l, i) => l === baseLines[i].markup)) {
+        return { cost: baseEntry.bytes.length, edits: [] }
+      }
+      const enc = encodeCreditsPage(
+        lines,
+        baseLines.map((l) => l.y),
+        ft
+      )
+      if (!enc.ok) return { error: `"${edited?.name ?? baseEntry.label}": ${enc.error}` }
+      return {
+        cost: enc.bytes.length,
+        edits: [{ start: baseEntry.bodyStart, end: baseEntry.bodyEnd, replacement: creditsBytesToDwRows(enc.bytes) }]
+      }
+    }
+  })
+}
+
 /**
  * Serialize the markup model back into the message region: re-emit only the
  * messages whose markup changed (encode markup → bytes → `dw`/`db` directives),
@@ -709,25 +940,14 @@ export function serializeMessageText(
   model: StringTableModel,
   ft: FontTable
 ): SerializeResult {
-  const region = findRegion(contentText, MESSAGE_TEXT_ID)
-  if (!region) {
-    return { ok: false, error: `Bank51 is missing the ;@editable:${MESSAGE_TEXT_ID} markers.` }
-  }
-  const budgetRegion = findRegion(budgetText, MESSAGE_TEXT_ID)
-  if (!budgetRegion) {
-    return { ok: false, error: `Base Bank51 is missing the ;@editable:${MESSAGE_TEXT_ID} markers.` }
-  }
+  const pair = findRegionPair(contentText, budgetText, MESSAGE_TEXT_ID)
+  if (typeof pair === 'string') return { ok: false, error: pair }
+  const { region, budgetRegion } = pair
   const fontMap = ft.byteToChar
   const byLabel = new Map(model.entries.map((e) => [e.label, e]))
   const contentEntries = splitMessageEntries(region.inner)
-  const contentLabels = new Set(contentEntries.map((e) => e.label))
-
-  // Guard a stale model referencing labels the content no longer has.
-  for (const e of model.entries) {
-    if (!contentLabels.has(e.label)) {
-      return { ok: false, error: `Message "${e.label}" is not in the current base file (out of date?).` }
-    }
-  }
+  const stale = staleEntryError(model.entries, new Set(contentEntries.map((e) => e.label)))
+  if (stale) return { ok: false, error: stale }
 
   const budget = messageRegionBytes(budgetRegion.inner, ft)
   const edits: TextEdit[] = []
@@ -831,13 +1051,12 @@ export function parseMessagePtrTable(
   ft: FontTable
 ): MessagePtrTableModel {
   const region = findRegion(contentText, MESSAGE_PTR_TABLE_ID)
-  if (!region) throw new Error(`Bank51 is missing the ;@editable:${MESSAGE_PTR_TABLE_ID} markers.`)
+  if (!region) throw new Error(missingMarkers(MESSAGE_PTR_TABLE_ID, false))
   const msgRegion = findRegion(contentText, MESSAGE_TEXT_ID)
-  if (!msgRegion) throw new Error(`Bank51 is missing the ;@editable:${MESSAGE_TEXT_ID} markers.`)
+  if (!msgRegion) throw new Error(missingMarkers(MESSAGE_TEXT_ID, false))
 
   const bodies = messageBodies(msgRegion.inner, ft)
-  const labelToPrimary = new Map<string, string>()
-  for (const b of bodies) for (const l of b.labels) labelToPrimary.set(l, b.primaryLabel)
+  const labelToPrimary = messageLabelIndex(msgRegion.inner, ft)
 
   const options: MessagePtrOption[] = bodies.map((b) => ({
     id: b.primaryLabel,
@@ -871,13 +1090,9 @@ export function serializeMessagePtrTable(
   ft: FontTable
 ): SerializeResult {
   const region = findRegion(contentText, MESSAGE_PTR_TABLE_ID)
-  if (!region) {
-    return { ok: false, error: `Bank51 is missing the ;@editable:${MESSAGE_PTR_TABLE_ID} markers.` }
-  }
+  if (!region) return { ok: false, error: missingMarkers(MESSAGE_PTR_TABLE_ID, false) }
   const msgRegion = findRegion(contentText, MESSAGE_TEXT_ID)
-  if (!msgRegion) {
-    return { ok: false, error: `Bank51 is missing the ;@editable:${MESSAGE_TEXT_ID} markers.` }
-  }
+  if (!msgRegion) return { ok: false, error: missingMarkers(MESSAGE_TEXT_ID, false) }
   const labelToPrimary = messageLabelIndex(msgRegion.inner, ft)
   const validIds = new Set(model.options.map((o) => o.id))
 

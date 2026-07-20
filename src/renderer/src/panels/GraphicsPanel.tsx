@@ -7,13 +7,14 @@ import {persistedState} from '../lib/persisted-state'
 import {formatBytes as sizeLabel} from '../lib/format-bytes'
 import {YychrTab} from './YychrTab'
 import {M1teMapsTab} from './M1teMapsTab'
+import {ArtworkTab} from './ArtworkTab'
 // The "Map16 Blocks" tab is removed from the UI for now: its structural edits (reassigning a
 // block's quadrant tiles / palette / flip) don't live-preview on the canvas — only a rebuild
 // shows them — and BG1 *pixel* edits already preview via the BG1-area editor. The implementation
 // is kept intact — `panels/Map16Panel.tsx` (`Map16Body`), the `editor.*Map16Block` IPC, and
 // `src/main/map16-edits.ts` all still work. To re-expose it, restore this import and add a
-// 'map16' member to `PanelTab` + a third `se-tab` button + render branch (the panel has a
-// tab strip again — Export / Import and YY-CHR):
+// 'map16' member to `PanelTab` + another `se-tab` button + render branch (the panel has a
+// tab strip — Level BGs / YY-CHR / M1TE / Misc Art):
 // import {Map16Body} from './Map16Panel'
 
 /** Sprite id → friendly name for every sprite num (0..0x1FF) — NAMES the exported
@@ -43,13 +44,10 @@ const changeSentence = (c: GfxEditChange): string => {
 /** Last path segment of a folder, for a compact list label (full path in title). */
 const folderName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
-/** Versioned localStorage key for the "Auto-Open Exports" preference (default on). */
-const AUTO_OPEN_KEY = 'shinyEgg.autoOpenExports.v1'
-
-/** The panel's tabs: the export/import body, and the per-project YY-CHR sheet
- *  browser (YychrTab.tsx). Active tab persisted per the localStorage convention
- *  (v2: the 'extract' member became 'export'). */
-type PanelTab = 'export' | 'yychr' | 'm1te'
+/** The panel's tabs: the Level BGs export/import body, and the three per-project
+ *  folder browsers. Active tab persisted per the localStorage convention
+ *  (v2: the 'extract' member became 'export'; 'export' now = the Level BGs tab). */
+type PanelTab = 'export' | 'artwork' | 'yychr' | 'm1te'
 const TAB_STORE = persistedState<{ tab: PanelTab }>('shinyEgg.graphicsPanel.v2', {tab: 'export'})
 
 /** What the export dropdown writes. `worldmap`/`systemscreens`/`metasprites` are
@@ -65,12 +63,12 @@ type ExportTarget = 'worldmap' | 'systemscreens' | 'bosses' | 'fonts' | 'metaspr
 const TARGETS: { value: ExportTarget; label: string }[] = [
     {value: 'bg1', label: 'BG1 area'},
     {value: 'bg2', label: 'BG2'},
-    {value: 'bg3', label: 'BG3'},
-    {value: 'worldmap', label: 'World Map'},
-    {value: 'systemscreens', label: 'Boot/Story/Title Screens'},
-    {value: 'bosses', label: 'Bosses'},
-    {value: 'fonts', label: 'Message Font / Pictures'}
+    {value: 'bg3', label: 'BG3'}
 ]
+// The level-INDEPENDENT image targets (worldmap / systemscreens / bosses / fonts)
+// moved to the Misc Art tab's fixed project folder (artwork-project.ts). Their
+// ExportTarget plumbing below is kept: legacy dialog-exported folders still
+// import via the generic folder import, and the target helpers gate that path.
 // (The whole-cart YY-CHR export moved off this dropdown to the panel's YY-CHR tab —
 // it now targets the project's fixed yychr folder; see YychrTab.tsx. Legacy
 // dialog-exported yychr folders still import via the generic folder import below.)
@@ -138,7 +136,7 @@ export function GraphicsBody({
     const [pendingReset, setPendingReset] = useState<GfxEditEntry | 'all' | 'palette' | null>(null)
     const [resetBusy, setResetBusy] = useState(false)
     const [resetError, setResetError] = useState<string | null>(null)
-    // Active panel tab: 'export' = the export/import body, 'yychr' = the
+    // Active panel tab: 'export' = the Level BGs body, 'yychr' = the
     // per-project YY-CHR browser. (A restored Map16 tab would slot back in here —
     // see the top-of-file note.)
     const [tab, setTab] = useState<PanelTab>(() => TAB_STORE.load().tab)
@@ -146,12 +144,11 @@ export function GraphicsBody({
         setTab(t)
         TAB_STORE.save({tab: t})
     }
-    // What the export dropdown targets, + the output format (PNG vs Aseprite — applies
-    // to the BG regions and the screens; ignored by other tracks). Format defaults to
-    // Aseprite once a tilemap-capable Aseprite is located (see the effect below); starts
-    // at PNG so the first paint (before the async probe) is valid.
+    // What the export dropdown targets, + the output format (M1TE2 vs Aseprite). PNG is
+    // no longer offered here — it's pixels-only, and every Level-BG target has a
+    // layout-capable format; M1TE2 is bundled, so it's the default and the fallback.
     const [target, setTarget] = useState<ExportTarget>('bg1')
-    const [exportFormat, setExportFormat] = useState<BgRegionFormat>('png')
+    const [exportFormat, setExportFormat] = useState<BgRegionFormat>('m1te2')
     // True once the user has picked a format by hand — suppresses the Aseprite auto-default
     // so it never overrides an explicit choice.
     const formatTouched = useRef(false)
@@ -175,14 +172,6 @@ export function GraphicsBody({
     // leaves tilemap export available (the file still exports; the user may open it
     // elsewhere or on a newer Aseprite).
     const tilemapTooOld = !!asepriteInfo && asepriteInfo.version !== null && !asepriteInfo.supportsTilemap
-    // "Auto-Open Exports": open a single-file region export in Aseprite (persisted; default on).
-    const [autoOpen, setAutoOpen] = useState<boolean>(() => {
-        try { return localStorage.getItem(AUTO_OPEN_KEY) !== 'false' } catch { return true }
-    })
-    const toggleAutoOpen = (v: boolean): void => {
-        setAutoOpen(v)
-        try { localStorage.setItem(AUTO_OPEN_KEY, v ? 'true' : 'false') } catch { /* ignore */ }
-    }
     const header = headerFromLevel(level)
     const isRegion = isRegionTarget(target)
     // Aseprite output is available for the BG regions and the screens (assembled
@@ -197,12 +186,12 @@ export function GraphicsBody({
     const m1te2Ok = isRegion || target === 'worldmap' || target === 'systemscreens'
     // The format that will actually be USED for the current target — drives BOTH the radio
     // selection and the export call, so exactly one radio is checked even when a stale
-    // selection lingers (e.g. an 'm1te2' pick after switching to a target that can't do it, or
-    // an 'aseprite' pick once the located Aseprite is found too old). Falls back to PNG.
+    // selection lingers (e.g. an 'aseprite' pick once the located Aseprite is found too
+    // old). Falls back to M1TE2 (bundled — always available for the BG targets).
     const effectiveFormat: BgRegionFormat =
         m1te2Ok && exportFormat === 'm1te2' ? 'm1te2'
             : asepriteOk && !tilemapTooOld && (exportFormat === 'aseprite' || exportFormat === 'aseprite-layout') ? exportFormat
-                : 'png'
+                : 'm1te2'
     // Aseprite export is PIXEL editing only: `aseprite` = the 8×8-CHR pixel tilemap (the
     // foundational pixel unit; a shared CHR is one tile). The 16×16-word PLACEMENT export
     // (`aseprite-layout`, BG2/BG3) is still supported by the backend but has NO UI for now —
@@ -261,29 +250,11 @@ export function GraphicsBody({
         setPanelLog(null)
     }, [projectScope, refreshEdits, refreshFolders])
 
-    // A pre-1.3 Aseprite can't open tilemap exports — fall the format back to PNG so a
+    // A pre-1.3 Aseprite can't open tilemap exports — fall the format back to M1TE2 so a
     // stale 'aseprite' selection can't reach the export call (the radio is disabled too).
-    // M1TE2 doesn't use Aseprite, so its selection is left alone.
     useEffect(() => {
-        if (tilemapTooOld && (exportFormat === 'aseprite' || exportFormat === 'aseprite-layout')) setExportFormat('png')
+        if (tilemapTooOld && (exportFormat === 'aseprite' || exportFormat === 'aseprite-layout')) setExportFormat('m1te2')
     }, [tilemapTooOld, exportFormat])
-
-    // M1TE2 export is BG2/BG3 only — drop a stale 'm1te2' selection when the target moves
-    // off the BG layers (so it can't reach the export call for BG1 / screens / metasprites).
-    useEffect(() => {
-        if (exportFormat === 'm1te2' && !m1te2Ok) setExportFormat('png')
-    }, [m1te2Ok, exportFormat])
-
-    // Pick the best default export format for the current target, until the user picks one by
-    // hand (formatTouched). Prefer M1TE2 wherever it's offered — it's bundled (no external app)
-    // and a single self-contained .M1 — then a located, tilemap-capable Aseprite, else PNG.
-    // Re-runs on target change (m1te2Ok) and when the async Aseprite probe lands.
-    useEffect(() => {
-        if (formatTouched.current) return
-        if (m1te2Ok) setExportFormat('m1te2')
-        else if (asepriteOk && asepritePath && !tilemapTooOld) setExportFormat('aseprite')
-        else setExportFormat('png')
-    }, [m1te2Ok, asepriteOk, asepritePath, tilemapTooOld])
 
     const onLocateAseprite = async (): Promise<void> => {
         setAsepriteError(null)
@@ -333,14 +304,6 @@ export function GraphicsBody({
             if (r.ok) {
                 setPanelLog({ dir: '', lines: [`Exported ${r.file} (${r.cells} editable cells) to ${folderName(r.dir)}`], errors: [], warnings: r.warning ? [r.warning] : [] })
                 await refreshFolders()
-                // Auto-open the export in its editor: M1TE for a .M1 (bundled — always
-                // available, opened straight to this BG layer); Aseprite otherwise (PNG /
-                // .aseprite), when located. The .M1 isn't an Aseprite file, so the two are
-                // mutually exclusive.
-                if (autoOpen) {
-                    if (fmt === 'm1te2') void window.shinyEgg.editor.openInM1te(r.dir, r.file, regionLayerOf(target))
-                    else if (asepritePath) void window.shinyEgg.editor.openInAseprite(r.dir, r.file)
-                }
             } else setPanelLog({ dir: '', lines: [], errors: [`Export failed: ${r.error}`], warnings: [] })
             return
         }
@@ -349,7 +312,7 @@ export function GraphicsBody({
         // The island's Aseprite is a COMBINED tilemap (pixels + placement + added tiles).
         const gfxFmt: 'png' | 'aseprite' | 'm1te2' =
             (target === 'worldmap' || target === 'systemscreens') && fmt === 'm1te2' ? 'm1te2'
-                : isAsepriteGfxTarget(target) && fmt !== 'png' ? 'aseprite'
+                : isAsepriteGfxTarget(target) ? 'aseprite'
                     : 'png'
         const r = await window.shinyEgg.editor.exportGfxPngs(header, {
             tracks: gfxTracksOf(target),
@@ -459,19 +422,6 @@ export function GraphicsBody({
                         Locate Aseprite…
                     </button>
                 )}
-                {(asepritePath || effectiveFormat === 'm1te2') && (
-                    <label
-                        className="se-graphics__radio"
-                        title={
-                            effectiveFormat === 'm1te2'
-                                ? 'After exporting, open the .M1 in M1TE automatically (straight to this BG layer)'
-                                : 'After exporting a single region file, open it in Aseprite automatically'
-                        }
-                    >
-                        <input type="checkbox" checked={autoOpen} onChange={(e) => toggleAutoOpen(e.target.checked)} />
-                        Auto-Open Exports
-                    </label>
-                )}
                 {asepriteError && <span className="se-graphics__log-error">⚠ {asepriteError}</span>}
             </div>
             <div className="se-graphics__aseprite">
@@ -495,15 +445,16 @@ export function GraphicsBody({
                 {yychrError && <span className="se-graphics__log-error">⚠ {yychrError}</span>}
             </div>
 
-            {/* Three tabs: the export/import body, the per-project YY-CHR sheet browser,
-                and the per-project M1TE map browser. (A restored Map16 tab — see the
-                top-of-file note — would be a fourth `se-tab` + branch here.) */}
+            {/* Four tabs: the (level-dependent) Level BGs body and the three fixed
+                project-folder browsers — YY-CHR sheets, M1TE maps, PNG/Aseprite misc art
+                (the 'artwork' tab key + folder keep the old internal name).
+                (A restored Map16 tab — see the top-of-file note — would slot in here.) */}
             <div className="se-tabs se-graphics__tabs">
                 <button
                     className={`se-tab${tab === 'export' ? ' is-active' : ''}`}
                     onClick={() => pickTab('export')}
                 >
-                    Export / Import
+                    Level BGs
                 </button>
                 <button
                     className={`se-tab${tab === 'yychr' ? ' is-active' : ''}`}
@@ -516,6 +467,12 @@ export function GraphicsBody({
                     onClick={() => pickTab('m1te')}
                 >
                     M1TE Maps
+                </button>
+                <button
+                    className={`se-tab${tab === 'artwork' ? ' is-active' : ''}`}
+                    onClick={() => pickTab('artwork')}
+                >
+                    Misc Art
                 </button>
             </div>
             {tab === 'yychr' ? (
@@ -533,19 +490,20 @@ export function GraphicsBody({
                     onMutated={onMutated}
                     onImported={refreshEdits}
                 />
+            ) : tab === 'artwork' ? (
+                <ArtworkTab
+                    key={projectScope ?? ''}
+                    onMutated={onMutated}
+                    onImported={refreshEdits}
+                />
             ) : (
             <div className="se-graphics__region">
                 <p className="se-graphics__desc">
-                    Export the level’s graphics to a folder, edit them in any image editor (or
-                    Aseprite), then import the folder back — only changed tiles are saved.
-                    Pick <strong>what</strong> to export below; <code>BG1 area</code> exports the
-                    rectangle you select on the canvas, the other <code>BG</code> layers the whole
-                    tilemap, <code>World Map</code> the overworld map graphics,{' '}
-                    <code>Boot/Story/Title Screens</code> the boot / title / storybook graphics, and{' '}
-                    <code>Message Font / Pictures</code> the message font + message-box pictures.
-                    The <code>BG</code> layers and the <code>World Map</code> can also export an{' '}
-                    <code>M1TE2</code> session (each BG layer as one <code>.M1</code>;
-                    the World Map as one <code>.M1</code> per world + a combined icons file). Import auto-detects everything in the folder.
+                    Export the loaded level’s background layers to a folder, edit them
+                    externally, then import the folder back — only changed tiles are saved.
+                    <code>BG1 area</code> exports the rectangle you select on the canvas;{' '}
+                    <code>BG2</code> / <code>BG3</code> export the whole layer. Import
+                    auto-detects everything in the folder.
                 </p>
 
                 <div className="se-graphics__row">
@@ -621,20 +579,11 @@ export function GraphicsBody({
                         />
                         Aseprite
                     </label>
-                    <label className="se-graphics__radio">
-                        <input
-                            type="radio"
-                            name="se-gfx-format"
-                            checked={effectiveFormat === 'png'}
-                            onChange={() => pickFormat('png')}
-                        />
-                        PNG
-                    </label>
                 </div>
                 {tilemapTooOld && (
                     <p className="se-graphics__log-error" title={asepritePath ?? undefined}>
                         ⚠ Aseprite {asepriteInfo?.version} can’t open tilemap exports (tilemaps were added in 1.3).
-                        Exporting as PNG — update Aseprite to use the tilemap format.
+                        Exporting as M1TE2 (.M1) — update Aseprite to use the Aseprite format.
                     </p>
                 )}
 

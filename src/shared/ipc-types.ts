@@ -142,8 +142,20 @@ export interface YychrProjectFile {
   sizeBytes: number
   /** Whole 8×8 tiles in the sheet (display metadata). */
   tileCount: number
-  /** Verified unused (manifest-stamped): edits round-trip but change nothing in-game. */
-  unused?: boolean
+  /** The CGRAM group the sheet draws with in-game (16-color rows for 4bpp,
+   *  4-color groups for 2bpp), when known. The exported `.pal` is raw CGRAM
+   *  order, so this is the row to select in YY-CHR's palette pane; the tab
+   *  shows it as a badge and the thumbnail renders with it. Absent = unknown
+   *  or per-tile (`.col`). */
+  palRow?: number
+  /** `palRow` is dominant/representative only — parts of the sheet may draw in
+   *  other rows (sprite-assigned OBJ palettes, multi-row BG art, sibling-scene
+   *  guesses). Badged `~N` with a caveat. */
+  palRowApprox?: boolean
+  /** Tiles use DIFFERENT rows in-game, each known per tile — no single badge
+   *  applies; the thumbnail (and YY-CHR via `.col` where shipped) shows every
+   *  tile's true colors. */
+  multiRow?: boolean
   status: YychrFileStatus
   /** sha256 of the CURRENT on-disk bytes (null when missing) — the renderer's
    *  thumbnail cache key, so a focus refresh re-fetches only re-edited sheets. */
@@ -207,10 +219,12 @@ export interface YychrThumbnailEntry {
 // loaded level; these are the cart-static map surfaces.)
 
 /** One exported `.M1` map session in the project's m1te folder (+ live status). */
-export interface M1teMapsFile {
+/** One file row in a fixed project-folder export browser (the M1TE Maps /
+ *  Misc Art tabs — the yychr-file twin). */
+export interface GfxProjectFile {
   /** Folder-relative path (e.g. `screens/map/overworld-w0.M1`). */
   file: string
-  /** Grouping key (`map` | `title` | `storybook` | `bonus`). */
+  /** Grouping key (tab-specific — e.g. `map` | `title` | `bonus` | `fonts`). */
   category: string
   description: string
   status: YychrFileStatus
@@ -218,21 +232,31 @@ export interface M1teMapsFile {
   hash: string | null
 }
 
-/** The M1TE Maps tab's whole view (the yychr-state twin). */
-export interface M1teMapsState {
+/** A fixed project-folder export browser's whole view (the yychr-state twin). */
+export interface GfxProjectState {
   exported: boolean
   dir: string
   changedCount: number
-  files: M1teMapsFile[]
+  files: GfxProjectFile[]
 }
 
-/** Result of exporting the `.M1` map surfaces into the project folder. */
-export type M1teMapsExportResult = { ok: true; count: number; dir: string } | { ok: false; error: string }
+/** Result of exporting a project-folder surface set. */
+export type GfxProjectExportResult = { ok: true; count: number; dir: string } | { ok: false; error: string }
 
-/** Result of a project-folder `.M1` import (one file or all changed). */
-export type M1teMapsImportResult =
+/** Result of a project-folder import (one file / a selection / all changed). */
+export type GfxProjectImportResult =
   | { ok: true; dir: string; changed: number; log: string[]; errors: string[]; warnings: string[] }
   | { ok: false; error: string }
+
+/** The M1TE Maps tab's shapes — the shared project-folder types. */
+export type M1teMapsFile = GfxProjectFile
+export type M1teMapsState = GfxProjectState
+export type M1teMapsExportResult = GfxProjectExportResult
+export type M1teMapsImportResult = GfxProjectImportResult
+
+/** The Misc Art tab's export format (PNG for any image editor, Aseprite for
+ *  tilemap-aware editing — the same choice the old dialog export offered). */
+export type ArtworkFormat = 'png' | 'aseprite'
 
 /** The located Aseprite, with the version probed from `<exe> --version`. The
  *  `.aseprite` format has NO version field (aseprite/docs/ase-file-specs.md — the
@@ -1655,8 +1679,13 @@ export interface AudioSettingUi {
   initSongId: number
   /** Songs playable from this setting's composed baseline (1-based slots,
    *  display names per the community OST track structure — see
-   *  snes-framework/scripts/audio/catalog.ts SONG_NAMES). */
-  songs: Array<{ slotId: number; name: string }>
+   *  snes-framework/scripts/audio/catalog.ts SONG_NAMES). `deleted` = the user
+   *  removed this slot's song from the module (freed its bytes; it plays
+   *  silence until restored or re-imported). */
+  songs: Array<{ slotId: number; name: string; deleted?: boolean }>
+  /** Block id of the setting's song module (for per-song delete/restore);
+   *  absent for engine-only rows. */
+  songBlockId?: number
   /** recordIds of backed level records whose header field 13 selects this
    *  setting (empty for non-header settings). */
   usedByLevels: number[]

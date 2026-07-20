@@ -109,6 +109,17 @@ function fillTileset1Marker(chr4: Uint8Array): void {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OVERWORLD — one .M1 per world (the full 64×32 screen, BG1+BG2+BG3 composited).
+//
+// Stray tiles outside the terrain band (audited 2026-07-19, prompted by
+// overworld-w3's BG2 bottom rows): the scattered words in BG2 rows 28-31, BG1
+// row 0 + a sparse column down rows 1-13, etc. are REAL cart data — w3's BG2
+// verified word-for-word identical (0/2048) to the live gm$22 VRAM capture
+// (../yi-shiny world-map-terrain). They are authoring leftovers, not designed
+// fringe: worlds 0-3 carry irregular smatterings while w4/w5 are perfectly
+// clean, and the walking view's constant BG2 vscroll ($80 — the visible window
+// wraps rows 16-31 then 0-11) parks them in the shoreline band behind BG1's
+// silhouette strip. Kept in the export on purpose — they're file bytes that
+// round-trip, so they can be cleaned up (painted to fill) through the .M1.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** One exported overworld `.M1` (a world's full 64×32 screen). */

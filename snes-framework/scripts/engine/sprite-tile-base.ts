@@ -74,7 +74,15 @@ const RENDER_SUPPRESSED = new Set<number>([0x07b, 0x07c, 0x026, 0x04d]);
  *   only differs at runtime (`init_roger` recolors it via a CGRAM load + spawns Roger), which the
  *   static render can't follow. So draw $034 as $0DA — the red/gold flower pot.
  */
-export const SPRITE_RENDER_ALIAS: ReadonlyMap<number, number> = new Map([[0x034, 0x0da]]);
+export const SPRITE_RENDER_ALIAS: ReadonlyMap<number, number> = new Map([
+  [0x034, 0x0da],
+  //   Ending/chasing Kamek $125 → cutscene Kamek $048. $125's own special_chr block is ONE frame of
+  //   dynamic-slot placeholder quads (the visible Kamek is GSU-rotozoom-streamed, Bank08); its old
+  //   restFrame=8 "worked" only by over-reading 280 bytes into $048's cel (same gfx file $6A) —
+  //   verified against the cart tables (block $4D:E20E is 35 bytes; next block $4D:E231 = $048/$053).
+  //   Alias to $048's real authored frame-0 pose instead of relying on the over-read.
+  [0x125, 0x048],
+]);
 /** Number of OBJ tiles in the lower OBJ name page (256). The spriteset (upper
  *  page) starts here, at name base + 256*32 bytes. */
 const OBJ_LOWER_PAGE_TILES = 256;
@@ -366,6 +374,10 @@ export function spriteTileRow(
   header: Pick<GfxHeader, 'spriteTileset' | 'spritesetOverride'>,
   spriteId: number
 ): number {
+  // Ambient ids ($1BA+) have no gfx-table entry (the table is u16 × 442, exactly
+  // $000..$1B9) — reading past it lands in the next table. Ambient cels draw from
+  // the common page (row 0).
+  if (spriteId >= AMBIENT_SPRITE_ID_BASE) return 0;
   // sprite-ID → required-gfx-file-id table (u16 × 442) = DATA_sprite_gfx_file_table ($0A:A716).
   const requiredFileId = u16le(rom, symbols.pc('DATA_sprite_gfx_file_table') + spriteId * 2);
   if (requiredFileId === 0) return 0;
@@ -503,15 +515,16 @@ export function isFormatAOnlySprite(rom: Uint8Array, symbols: SymbolMap, spriteI
  * is a trace that captures each sprite's settled `$7042` at rest (see
  * research/plan-editor-remaining.md SP4). Today it covers only:
  *
- *   0x065 Red Coin — `YI_NorSpr065_RedCoin_Init` ($0C:EA10) does
- *     `LDA $7042,x : AND #$FFF1 : ORA DATA_0CE9FE,y : STA $7042,x`, where (normal
- *     play, "show hidden items" off) y = 0, or y = 4 when the level's sprite-
- *     palette id == 2. The hidden-items branch (y += 2) is the *revealed* red tint,
- *     not the in-play look — YI red coins are disguised as ordinary yellow coins
- *     during play — so we read the non-revealing entries. The static seed is
- *     palette 0 (green CGRAM row 8); this yields palette 2 (gold row 10), or 7 in
- *     sprite-palette-2 levels. (0x115 "Coin" needs no override — its Init leaves
- *     `$7042` at the static seed, palette 2, which is already correct.)
+ *   0x065 Red Coin — `YI_NorSpr065_RedCoin_Init` ($0C:EA10) / Main ($0C:EA40) do
+ *     `LDA $7042,x : AND #$FFF1 : ORA DATA_0CE9FE,y : STA $7042,x`, where
+ *     y = (spritePalette==2 ? 4 : 0) + (ShowHiddenItemsFlag ? 2 : 0). In normal
+ *     play the flag is clear → palette 2 — pixel-identical to the yellow coin
+ *     (the disguise). The editor reads the flag-SET entries instead (palette 1,
+ *     or 6 in sprite-palette-2 levels): the game's own magnifying-glass "reveal
+ *     hidden items" presentation, so a placed red coin is distinguishable from a
+ *     $115/$1AF yellow coin (same editorial rationale as HIDDEN_REVEAL).
+ *     (0x115 "Coin" needs no override — its Init leaves `$7042` at the static
+ *     seed, palette 2, which is already correct.)
  */
 function spriteRuntimePaletteOverride(
   rom: Uint8Array,
@@ -522,7 +535,16 @@ function spriteRuntimePaletteOverride(
   if (spriteId === 0x065) {
     const tablePC = symbols.tryPc('DATA_0CE9FE');
     if (tablePC === undefined) return undefined; // no-build map without the table → leave as-is
-    const y = levelSpritePaletteId === 2 ? 4 : 0; // normal play (hidden-items off)
+    // init/main_red_coin (Bank0C $0C:EA06/$0C:EA40): y = (spritePalette==2 ? 4 : 0)
+    // + (ShowHiddenItemsFlag ? 2 : 0); $7042 pal = DATA_0CE9FE[y] = [$0004,$0002,$000E,$000C],
+    // re-applied EVERY frame by Main. The flag is STZ'd at level init and set only by
+    // CODE_magnifying_glass_item, so in normal play the red coin draws palette 2 —
+    // pixel-identical to the yellow coin (the disguise). The EDITOR deliberately renders
+    // the flag-SET branch (the game's own "reveal hidden items" presentation: palette 1,
+    // or 6 in spritePalette-2 levels): a placed $065 must be distinguishable from a
+    // $115/$1AF yellow coin, and the reveal palette is the asm-defined look for exactly
+    // that state — same editorial rationale as HIDDEN_REVEAL for hidden winged clouds.
+    const y = (levelSpritePaletteId === 2 ? 4 : 0) + 2;
     return (u16le(rom, tablePC + y) >>> 1) & 0x07;
   }
   return undefined;
@@ -797,7 +819,15 @@ export function resolveSpriteCel(
    *  apply). Mutually exclusive with PARITY_CEL_VARIANTS. Omit for frame 0. */
   restFrame?: number
 ): ResolvedSpriteCel | null {
-  // Ambient sprites (triggers / generators / VFX) are not level visuals.
+  // Ambient sprites (triggers / generators / commands) are not level visuals.
+  // ⚠ Do NOT be tempted by the Bank4D rows at ambient indices: char-id == sprite-id
+  // holds ONLY below AMBIENT_SPRITE_ID_BASE. The cel tables' $1BA+ rows are
+  // runtime EFFECT-CHAR slots (smoke, bubbles, sparkles — spawned by code with an
+  // explicit char), while the PLACED sprite ids $1BA+ are commands (gfx changers,
+  // scroll locks, autoscroll paths, generator stoppers). Rendering a same-numbered
+  // char row for a placed command looks plausible (it's real VFX art) but is wrong
+  // — e.g. $1D6 "Lock horizontal scroll" vs char row $1D6 BUBBR bubble-burst
+  // (see research/graphics-survey/README.md, the ys_ench.asm survey).
   if (spriteId >= AMBIENT_SPRITE_ID_BASE) return null;
   // Deliberately non-rendered sprites (spawned-only projectiles with no valid static gfx).
   if (RENDER_SUPPRESSED.has(spriteId)) return null;
@@ -856,7 +886,19 @@ export function resolveSpriteCel(
           v = v !== (((parity.flips?.[pIdx] ?? 0) & 0x80) !== 0);
         } else if (restFrame) {
           // v2-verified resting frame (the frame-0 cel is the wrong pose).
-          celPC += restFrame * count * CEL_FORMAT_B_RECORD_BYTES;
+          // Clamped to the sprite's own cel block: the cart walker (CODE_098B85) has
+          // no bounds check either, so a too-large frame silently reads a NEIGHBOUR
+          // sprite's cel data — coherent-looking but wrong (the $125 ending-Kamek
+          // case: restFrame=8 landed 280 bytes into $048's block; now aliased).
+          // Block end = the smallest table pointer greater than this sprite's.
+          let blockEnd = 0x10000;
+          for (let i = 0; i < 581; i++) {
+            const p = u16le(rom, tablePC + i * 2);
+            if (p > ptr && p < blockEnd) blockEnd = p;
+          }
+          const stride = count * CEL_FORMAT_B_RECORD_BYTES;
+          const maxFrames = stride > 0 ? Math.max(1, Math.floor((blockEnd - ptr) / stride)) : 1;
+          celPC += Math.min(restFrame, maxFrames - 1) * stride;
         }
         cel = applyCelFlip(decodeCelFormatB(rom, celPC, count), h, v);
       }

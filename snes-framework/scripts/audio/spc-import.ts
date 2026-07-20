@@ -28,7 +28,8 @@
 // an in-editor preview .spc.
 
 import { serializeUploadStream, type UploadStream, type UploadBlock } from './upload-stream.ts';
-import { decodeSong, type DecodedSong } from './sequence.ts';
+import { decodeSong, type DecodedSong, type TrackEvent } from './sequence.ts';
+import type { CompiledMml, MmlInstrumentRow, MmlSample } from './mml-compile.ts';
 import { ARAM_SIZE, applyUploadStream, aramWord, composeSettingAram, songSlotPtr } from './aram.ts';
 import { SONG_TABLE_BASE, type AudioCatalog } from './catalog.ts';
 import { buildSpcFile, findBootPortClearSites, patchBootPortClear, type SpcTags } from './spc.ts';
@@ -453,6 +454,271 @@ function slotPatchBlocks(slotPtrs: Map<number, number>): UploadBlock[] {
     });
     return { dest: SONG_TABLE_BASE + run[0] * 2, data };
   });
+}
+
+// ── .spc song → CompiledMml (single-slot merge) ──────────────────────────────
+// Whole-module .spc import copies the song VERBATIM at its source addresses
+// (extractSongModule). A SINGLE-SLOT import must instead MERGE alongside the
+// module's other songs: relocate the sequence into free ARAM, and APPEND the
+// song's instrument rows + custom samples after the ones the kept songs use
+// (the $3D00 table, $3C00 directory and sample bank are shared by every song
+// in a module). That is exactly what buildMmlModule already does for MML
+// imports, so instead of duplicating it we convert the decoded song into a
+// CompiledMml and route it through the same merge path (audio.ts).
+//
+// A decoded N-SPC song maps 1:1 onto CompiledMml — parts→patterns→tracks→
+// subroutines plus one terminal $FF "loop forever" (the only loop shape any
+// shipped song uses). Finite mid-song loops / multiple loop points can't be
+// represented and throw SpcMergeUnsupportedError; the caller falls back to
+// "Replace entire set" (which stays on the verbatim path).
+//
+// Two remaps make the merge safe:
+//  - instrument rows → dense 0-based indices (buildMmlModule appends them after
+//    the kept songs' rows and shifts every $E0/$FA arg by that base). $E0/$FA
+//    args are rewritten to the dense index; percussion NOTES keep their offset
+//    and rely on each $FA base's row range being laid out contiguously — so
+//    spcSongUsedRows fills every [base, base+maxPercIndex] range.
+//  - samples: a referenced sample is CARRIED (appended as a custom SRCN $18+)
+//    when it differs from the target baseline OR sits at SRCN ≥ $18; otherwise
+//    it's left referencing the resident bank (SRCN < $18). sampleSrcnBase is
+//    fixed at $18 so buildMmlModule stays in normal (non-grassland) mode and
+//    its custom-SRCN remap window never catches a resident reference.
+
+export class SpcMergeUnsupportedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SpcMergeUnsupportedError';
+  }
+}
+
+/** First custom SRCN — the AMK/YI convention buildMmlModule expects for
+ *  normal (non-grassland-resident) mode. Resident references must stay below
+ *  it so the custom-SRCN remap window can't catch them. */
+const MERGE_CUSTOM_SRCN_BASE = 0x18;
+/** $3D00..$3E20 holds at most 48 six-byte instrument records. */
+const INSTRUMENT_ROWS_MAX = (0x3e20 - INSTRUMENT_TABLE) / 6;
+
+/** Instrument rows a song touches.
+ *  `referenced` = rows actually selected (every setInstrument id and every
+ *  percussion base+index the song plays) — these decide which samples ride
+ *  along.
+ *  `filled` = `referenced` PLUS every [base, base+maxPercIndex] range filled
+ *  contiguously, so the dense remap keeps `base + offset` resolvable to a
+ *  contiguous dense block. The filler rows go into the table for that math but
+ *  are never selected, so their (possibly uninitialised) SRCN is left alone. */
+function spcSongRows(song: DecodedSong): { filled: number[]; referenced: Set<number> } {
+  const e0 = new Set<number>();
+  const bases = new Set<number>();
+  const percIdx = new Set<number>();
+  for (const t of song.tracks.values()) {
+    for (const ev of t.events) {
+      if (ev.kind === 'vcmd' && ev.op === 0xe0) e0.add(ev.args[0]);
+      else if (ev.kind === 'vcmd' && ev.op === 0xfa) bases.add(ev.args[0]);
+      else if (ev.kind === 'perc') percIdx.add(ev.index);
+    }
+  }
+  if (percIdx.size > 0 && bases.size === 0) bases.add(0); // boot zeroes $5F
+  const referenced = new Set<number>();
+  for (const id of e0) {
+    if (id < 0x80) referenced.add(id);
+    else for (const b of bases) referenced.add(id - 0xca + b);
+  }
+  for (const b of bases) for (const k of percIdx) referenced.add(b + k);
+  const filled = new Set(referenced);
+  const maxPercIdx = percIdx.size ? Math.max(...percIdx) : -1;
+  // Fill each base's contiguous range; `Math.max(0, …)` always adds base+0 so
+  // an $FA base with no percussion notes still maps to a dense row.
+  for (const b of bases) for (let k = 0; k <= Math.max(0, maxPercIdx); k++) filled.add(b + k);
+  return {
+    filled: [...filled].filter((r) => r >= 0).sort((a, b) => a - b),
+    referenced
+  };
+}
+
+/**
+ * Convert a decoded .spc song into a CompiledMml for a single-slot merge.
+ * `baseline` is the import TARGET's composed ARAM (which sample references are
+ * resident vs. must be carried is decided against it — same diff as
+ * extractSongModule). Throws SpcMergeUnsupportedError for the rare song shapes
+ * CompiledMml can't represent.
+ */
+export function spcSongToCompiledMml(
+  sourceAram: Uint8Array,
+  songPtr: number,
+  baseline: Uint8Array,
+  title: string | null = null
+): { compiled: CompiledMml; warnings: string[] } {
+  const warnings: string[] = [];
+  const song = decodeSong(sourceAram, songPtr);
+
+  // ── parts + single terminal loop ───────────────────────────────────────────
+  const patternIndexOf = new Map<number, number>();
+  const patternAddrs: number[] = [];
+  const parts: number[] = [];
+  const partPosOfAddr = new Map<number, number>();
+  let loopPartIndex: number | null = null;
+  let addr = song.songAddr;
+  for (const pt of song.parts) {
+    if (pt.kind === 'pattern') {
+      let idx = patternIndexOf.get(pt.addr);
+      if (idx === undefined) {
+        idx = patternAddrs.length;
+        patternIndexOf.set(pt.addr, idx);
+        patternAddrs.push(pt.addr);
+      }
+      partPosOfAddr.set(addr, parts.length);
+      parts.push(idx);
+      addr += 2;
+    } else if (pt.kind === 'loop') {
+      if (pt.count !== 0xff) throw new SpcMergeUnsupportedError('the song uses a finite mid-song loop');
+      if (loopPartIndex !== null) throw new SpcMergeUnsupportedError('the song has more than one loop point');
+      const pos = partPosOfAddr.get(pt.target);
+      if (pos === undefined) throw new SpcMergeUnsupportedError('the song loops to a non-pattern target');
+      loopPartIndex = pos;
+      addr += 4;
+    } else {
+      addr += 2; // end
+    }
+  }
+  if (parts.length === 0) throw new SpcMergeUnsupportedError('the song has no patterns');
+
+  // ── track / subroutine id assignment ───────────────────────────────────────
+  const trackIdOf = new Map<number, number>();
+  const trackAddrsInOrder: number[] = [];
+  const patterns: number[][] = patternAddrs.map((paddr) => {
+    const pat = song.patterns.get(paddr)!;
+    return pat.trackAddrs.map((taddr) => {
+      if (taddr === 0) return -1;
+      if (song.subroutineAddrs.has(taddr)) throw new SpcMergeUnsupportedError('a voice track doubles as a subroutine body');
+      let id = trackIdOf.get(taddr);
+      if (id === undefined) {
+        id = trackAddrsInOrder.length;
+        trackIdOf.set(taddr, id);
+        trackAddrsInOrder.push(taddr);
+      }
+      return id;
+    });
+  });
+  const subIdOf = new Map<number, number>();
+  const subAddrsInOrder: number[] = [];
+  for (const saddr of song.subroutineAddrs) {
+    if (!subIdOf.has(saddr)) {
+      subIdOf.set(saddr, subAddrsInOrder.length);
+      subAddrsInOrder.push(saddr);
+    }
+  }
+
+  // ── instrument rows → dense indices ─────────────────────────────────────────
+  const { filled: usedRows, referenced: referencedRows } = spcSongRows(song);
+  const overflow = usedRows.find((r) => r >= INSTRUMENT_ROWS_MAX);
+  if (overflow !== undefined) {
+    throw new SpcMergeUnsupportedError(`the song selects instrument row ${overflow}, past the ${INSTRUMENT_ROWS_MAX}-row table`);
+  }
+  const rowToDense = new Map<number, number>();
+  usedRows.forEach((r, i) => rowToDense.set(r, i));
+
+  // ── sample carry decision (diff vs baseline), per referenced SRCN ───────────
+  const carriedDirIndexOfSrcn = new Map<number, number>();
+  const samples: MmlSample[] = [];
+  const dirEntries: { sampleIndex: number }[] = [];
+  const decideSrcn = (srcn: number): void => {
+    if (carriedDirIndexOfSrcn.has(srcn)) return;
+    const dir = SAMPLE_DIR + srcn * 4;
+    if (srcn * 4 >= 0x100) {
+      warnings.push(`SRCN 0x${srcn.toString(16)} is beyond the $3C00 directory page — its sample is not carried`);
+      return;
+    }
+    let differs = false;
+    for (let i = 0; i < 4; i++) if (sourceAram[dir + i] !== baseline[dir + i]) differs = true;
+    const start = aramWord(sourceAram, dir);
+    const len = brrRunLength(sourceAram, start);
+    if (!differs && len !== null) {
+      for (let i = 0; i < len; i++) {
+        if (sourceAram[start + i] !== baseline[start + i]) { differs = true; break; }
+      }
+    }
+    // Resident (reference the target's bank in place) ONLY when it matches the
+    // baseline AND sits in the stock range below the custom base — otherwise
+    // carry it as a custom sample.
+    if (!differs && srcn < MERGE_CUSTOM_SRCN_BASE) return;
+    if (len === null) {
+      warnings.push(`SRCN 0x${srcn.toString(16)}: BRR run never ends — its sample is not carried`);
+      return;
+    }
+    const loop = aramWord(sourceAram, dir + 2);
+    const idx = samples.length;
+    samples.push({
+      name: `spc SRCN 0x${srcn.toString(16)}`,
+      data: sourceAram.slice(start, start + len),
+      loopOffset: Math.max(0, loop - start)
+    });
+    dirEntries.push({ sampleIndex: idx });
+    carriedDirIndexOfSrcn.set(srcn, idx);
+  };
+  for (const row of usedRows) {
+    if (!referencedRows.has(row)) continue; // filler rows are never selected
+    const b0 = sourceAram[INSTRUMENT_TABLE + row * 6];
+    if (!(b0 & 0x80)) decideSrcn(b0); // bit7 = noise → no sample
+  }
+
+  const instrumentRows: MmlInstrumentRow[] = usedRows.map((row) => {
+    const bytes = [...sourceAram.subarray(INSTRUMENT_TABLE + row * 6, INSTRUMENT_TABLE + row * 6 + 6)] as MmlInstrumentRow['bytes'];
+    if (!(bytes[0] & 0x80)) {
+      const dirIdx = carriedDirIndexOfSrcn.get(bytes[0]);
+      if (dirIdx !== undefined) bytes[0] = MERGE_CUSTOM_SRCN_BASE + dirIdx;
+    }
+    return { bytes, source: `spc instrument row 0x${row.toString(16)}` };
+  });
+
+  // ── event transform (dense instrument args, $EF → sub id) ───────────────────
+  const transform = (events: TrackEvent[]): TrackEvent[] => {
+    let percBase = 0;
+    return events.map((ev): TrackEvent => {
+      if (ev.kind === 'vcmd' && ev.op === 0xe0) {
+        const id = ev.args[0];
+        const srcRow = id < 0x80 ? id : id - 0xca + percBase;
+        const dense = rowToDense.get(srcRow);
+        if (dense === undefined) throw new SpcMergeUnsupportedError(`a setInstrument resolves to row ${srcRow}, outside the used set`);
+        return { ...ev, args: [dense] };
+      }
+      if (ev.kind === 'vcmd' && ev.op === 0xfa) {
+        percBase = ev.args[0];
+        const dense = rowToDense.get(percBase);
+        if (dense === undefined) throw new SpcMergeUnsupportedError(`percussion base row ${percBase} is outside the used set`);
+        return { ...ev, args: [dense] };
+      }
+      if (ev.kind === 'vcmd' && ev.op === 0xef) {
+        const subAddr = ev.args[0] | (ev.args[1] << 8);
+        const subId = subIdOf.get(subAddr);
+        if (subId === undefined) throw new SpcMergeUnsupportedError(`a subroutine call targets $${subAddr.toString(16)}, which wasn't decoded`);
+        return { ...ev, args: [subId & 0xff, subId >> 8, ev.args[2]] };
+      }
+      return ev;
+    });
+  };
+  const trackEvents = trackAddrsInOrder.map((a) => transform(song.tracks.get(a)!.events));
+  const subEvents = subAddrsInOrder.map((a) => transform(song.tracks.get(a)!.events));
+
+  const compiled: CompiledMml = {
+    dialect: 'amy',
+    meta: title ? { title } : {},
+    parts,
+    loopPartIndex,
+    patterns,
+    trackEvents,
+    subEvents,
+    continuations: [],
+    instrumentRows,
+    dirEntries,
+    samples,
+    sampleSrcnBase: MERGE_CUSTOM_SRCN_BASE,
+    usedGrasslandDrums: false,
+    usedLightStaccato: false,
+    usedSmwSamples: false,
+    usedPackagedSamples: false,
+    report: []
+  };
+  return { compiled, warnings };
 }
 
 // ── preview composition ──────────────────────────────────────────────────────

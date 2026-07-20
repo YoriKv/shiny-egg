@@ -100,8 +100,14 @@ import {
   diffStorybookSceneM1,
   diffBonusM1,
   diffBonusBackdropM1,
+  diffMiniBattleM1,
+  diffMiniBattlePlayfieldM1,
+  diffMiniBattleResultM1,
+  diffStorybookIntroM1,
   type ScreenPaletteEdit
 } from 'snes-framework/screen-m1te2'
+import { buildMiniBattleSceneContext, buildMiniBattleResultContext } from 'snes-framework/screen-minibattle'
+import { buildStorybookIntroContext } from 'snes-framework/screen-storybook-intro'
 import {
   buildMetaspriteContext,
   renderMetasprite,
@@ -1152,6 +1158,106 @@ export async function importGfxPngsFromDir(
           if (d.skippedTiles > 0) errors.push(`${e.file}: ${d.skippedTiles} edited tile(s)/cell(s) in runtime-drawn regions were ignored.`)
           accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
           if (changed) bonusImported++; else bonusSkipped++
+        } else if (e.kind === 'minibattle' && e.subMode !== undefined) {
+          // A mini-battle score screen (BG3, 8×8 tiles — CODE_118216 toggles
+          // off the scene row's 16×16; screen-minibattle.ts). Word edits join
+          // the shared merged-save map (each screen has its own file, so no
+          // cross-file clobber risk; the merge just reuses the
+          // one-save-per-file flush below).
+          const ctx = buildMiniBattleSceneContext(rom, symbols, e.subMode, { gfxOverride: gfxLiveEdits() })
+          foldLivePaletteIntoScene(ctx.cgram, ctx.provenance)
+          const d = diffMiniBattleM1(ctx, bytes)
+          let changed = false
+          if (d.chrEdits.length > 0) {
+            reconciler.registerManifest(ctx.manifest)
+            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, ce.bytes.length, e.file, 'Mini-battle score-screen char')
+            changed = true
+          }
+          for (const w of d.wordEdits) {
+            const m = bonusWords.get(w.fileId) ?? bonusWords.set(w.fileId, new Map()).get(w.fileId)!
+            m.set(w.fileOffset, w.word)
+            changed = true
+          }
+          const mbTm = ctx.manifest.find((mf) => mf.format === 'lz2' && mf.fileId === ctx.bg3TmFileId)
+          if (mbTm) bonusTmSize.set(ctx.bg3TmFileId, mbTm.sizeBytes)
+          if (d.skippedTiles > 0) errors.push(`${e.file}: ${d.skippedTiles} edited tile(s)/cell(s) in runtime-drawn regions were ignored.`)
+          accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
+          if (changed) sceneImported++; else sceneSkipped++
+        } else if (e.kind === 'minibattle-playfield' && e.subMode !== undefined) {
+          // A mini-battle gameplay playfield (BG1 $D000 + BG2 upper $7000, 8×8
+          // tiles; screen-minibattle.ts). BG1 file $96 serves two scenes —
+          // edits through either .M1 land in the same file via the merged
+          // per-file save (last-wins per word).
+          const ctx = buildMiniBattleSceneContext(rom, symbols, e.subMode, { gfxOverride: gfxLiveEdits() })
+          foldLivePaletteIntoScene(ctx.cgram, ctx.provenance)
+          const d = diffMiniBattlePlayfieldM1(ctx, bytes)
+          let changed = false
+          if (d.chrEdits.length > 0) {
+            reconciler.registerManifest(ctx.manifest)
+            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, ce.bytes.length, e.file, 'Mini-battle playfield char')
+            changed = true
+          }
+          for (const w of d.wordEdits) {
+            const m = bonusWords.get(w.fileId) ?? bonusWords.set(w.fileId, new Map()).get(w.fileId)!
+            m.set(w.fileOffset, w.word)
+            changed = true
+          }
+          for (const fid of [ctx.bg1TmFileId, ctx.bg2TmFileId]) {
+            const f = ctx.manifest.find((mf) => mf.format === 'lz2' && mf.fileId === fid)
+            if (f) bonusTmSize.set(fid, f.sizeBytes)
+          }
+          if (d.skippedTiles > 0) errors.push(`${e.file}: ${d.skippedTiles} edited tile(s)/cell(s) in runtime-drawn regions were ignored.`)
+          accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
+          if (changed) sceneImported++; else sceneSkipped++
+        } else if (e.kind === 'minibattle-result' && e.result !== undefined) {
+          // A mini-battle battle-end result screen ($9D/$9E — BG2 curtain
+          // backdrop at byte $7800, 8×8 tiles; screen-minibattle.ts). Same
+          // merged-save routing as the score screens.
+          const ctx = buildMiniBattleResultContext(rom, symbols, e.result, { gfxOverride: gfxLiveEdits() })
+          foldLivePaletteIntoScene(ctx.cgram, ctx.provenance)
+          const d = diffMiniBattleResultM1(ctx, bytes)
+          let changed = false
+          if (d.chrEdits.length > 0) {
+            reconciler.registerManifest(ctx.manifest)
+            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, ce.bytes.length, e.file, 'Mini-battle result-screen char')
+            changed = true
+          }
+          for (const w of d.wordEdits) {
+            const m = bonusWords.get(w.fileId) ?? bonusWords.set(w.fileId, new Map()).get(w.fileId)!
+            m.set(w.fileOffset, w.word)
+            changed = true
+          }
+          const resTm = ctx.manifest.find((mf) => mf.format === 'lz2' && mf.fileId === ctx.resultTmFileId)
+          if (resTm) bonusTmSize.set(ctx.resultTmFileId, resTm.sizeBytes)
+          if (d.skippedTiles > 0) errors.push(`${e.file}: ${d.skippedTiles} edited tile(s)/cell(s) in runtime-drawn regions were ignored.`)
+          accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
+          if (changed) sceneImported++; else sceneSkipped++
+        } else if (e.kind === 'storybook-intro') {
+          // The gm$38 prologue screens — BG2 story frame ($A8) + BG3 backdrop
+          // ($A9) in one .M1 (screen-storybook-intro.ts). Word edits join the
+          // shared merged-save map; palette edits are fully blob-backed
+          // (DATA_5FEC4A/DATA_5FED4A).
+          const ctx = buildStorybookIntroContext(rom, symbols, { gfxOverride: gfxLiveEdits() })
+          foldLivePaletteIntoScene(ctx.cgram, ctx.provenance)
+          const d = diffStorybookIntroM1(ctx, bytes)
+          let changed = false
+          if (d.chrEdits.length > 0) {
+            reconciler.registerManifest(ctx.manifest)
+            for (const ce of d.chrEdits) reconciler.chrTile(ce.format, ce.fileId, ce.fileTile, ce.bytes, ce.bytes.length, e.file, 'Storybook-intro screen char')
+            changed = true
+          }
+          for (const w of d.wordEdits) {
+            const m = bonusWords.get(w.fileId) ?? bonusWords.set(w.fileId, new Map()).get(w.fileId)!
+            m.set(w.fileOffset, w.word)
+            changed = true
+          }
+          for (const fid of [ctx.bg2TmFileId, ctx.bg3TmFileId]) {
+            const f = ctx.manifest.find((mf) => mf.format === 'lz2' && mf.fileId === fid)
+            if (f) bonusTmSize.set(fid, f.sizeBytes)
+          }
+          if (d.skippedTiles > 0) errors.push(`${e.file}: ${d.skippedTiles} edited tile(s)/cell(s) in runtime-drawn regions were ignored.`)
+          accumScreenM1Palette(d.paletteEdits, ctx.provenance, e.file)
+          if (changed) sceneImported++; else sceneSkipped++
         } else if (e.kind === 'island') {
           const ctx = buildTitleIslandContext(rom, symbols, gfxLiveEdits())
           foldLivePaletteIntoScene(ctx.cgram, ctx.provenance) // diff palette vs base ⊕ edits (see note)

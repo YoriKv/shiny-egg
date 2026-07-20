@@ -17,6 +17,7 @@
 
 import { SPECIAL_GLYPHS } from './msg-markup.ts'
 import { invalidChars, type FontTable } from './font-table.ts'
+import { escapeDefineBangs, unescapeDefineBangs } from './text-literals.ts'
 
 const GLYPHS_BY_LEN = [...SPECIAL_GLYPHS].sort((a, b) => b.bytes.length - a.bytes.length)
 const GLYPH_BY_TOKEN = new Map(SPECIAL_GLYPHS.map((g) => [g.token.toLowerCase(), g]))
@@ -53,7 +54,7 @@ export function parseDbArgs(argText: string): DbArg[] | null {
     const t = r.trim()
     const str = /^"(.*)"$/.exec(t)
     if (str) {
-      args.push({ kind: 'text', value: str[1] })
+      args.push({ kind: 'text', value: unescapeDefineBangs(str[1]) })
       continue
     }
     const byte = /^\$([0-9A-Fa-f]{1,2})$/.exec(t)
@@ -164,7 +165,7 @@ export function encodeLineToDbArgs(line: string, ft: FontTable): EncodeLineResul
           error: `Unsupported character(s) ${bad.map((c) => JSON.stringify(c)).join(', ')} in "${p.text}".`
         }
       }
-      args.push(`"${p.text}"`)
+      args.push(`"${escapeDefineBangs(p.text)}"`)
       byteCount += [...p.text].length
     } else {
       if (args.length === 0) args.push('""') // ensure a leading quoted segment

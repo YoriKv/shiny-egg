@@ -1043,6 +1043,9 @@ export default function App(): JSX.Element {
   // level dropdown, so plain markRomDirty (not the catalog-refreshing variant).
   const introStory = useStringsEditor('intro-story', 'Intro Story', projectScope, markRomDirty, docHistory)
   const endingText = useStringsEditor('ending-text', 'Ending Text', projectScope, markRomDirty, docHistory)
+  // Credits staff-roll (Bank00 OAM letter streams) — same glyph-line editor
+  // shape; the codec re-encodes letters/advances/centering on save.
+  const creditsStaff = useStringsEditor('credits-staff', 'Credits', projectScope, markRomDirty, docHistory)
   // Palette color-edit document — its `draft` is fed to the canvas as a live
   // render override; its Save (or the global Save / Test Level) persists the
   // delta to the overlay before a build.
@@ -1852,7 +1855,8 @@ export default function App(): JSX.Element {
                     { kind: 'strings', editor: messageStrings },
                     { kind: 'ptr-table', editor: messagePtrs },
                     { kind: 'strings', editor: introStory },
-                    { kind: 'strings', editor: endingText }
+                    { kind: 'strings', editor: endingText },
+                    { kind: 'strings', editor: creditsStaff }
                   ]}
                 />
               ) : w.kind === 'world-map' ? (

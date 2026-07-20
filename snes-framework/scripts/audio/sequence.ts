@@ -12,7 +12,8 @@
 //      hi == 0, lo != 0 → loop control: lo = count, NEXT word = target addr.
 //                         $42 is the counter: first pass reloads it from lo,
 //                         then the jump repeats until it hits 0 (count $FF ≈
-//                         "loop long/forever" in practice).
+//                         "loop long/forever" in practice — decodeSong treats
+//                         it as terminal; see the walk).
 //      word == $0000    → end of song (stop + unmute SFX channels).
 //  - Pattern (CODE_music_voice_header_apply): 16 bytes = 8 LE track pointers
 //    (voice 1..8); 0 = voice silent this pattern.
@@ -270,10 +271,23 @@ export function decodeSong(aram: Uint8Array, songAddr: number): DecodedSong {
     if ((w & 0xff00) === 0) {
       const target = aramWord(aram, p);
       p += 2;
-      parts.push({ kind: 'loop', count: w & 0xff, target });
-      // A full-count loop never falls through in-engine unless the counter
-      // exhausts; the walk continues past it either way (the engine does too
-      // when $42 hits 0).
+      const count = w & 0xff;
+      parts.push({ kind: 'loop', count, target });
+      // A finite loop (count 1-254) eventually exhausts and the engine falls
+      // through to the next phrase word, so the walk continues past it (the
+      // engine does too when $42 hits 0). Count $FF is the "loop forever"
+      // terminal (see the song-structure note above): it never falls through
+      // in practice, so it ENDS the phrase list. Retail songs place a $0000
+      // right after it (all 50 shipped $FF loops — none has a played part
+      // after; tmp/scan-ff-loops.ts), so the old always-continue happened to
+      // stop there. AddMusicY omits that $0000 and packs the next pattern's
+      // bytes there, so continuing walked them as bogus phrases and aborted on
+      // an invalid opcode — the "song won't decode / import" bug. Emit a
+      // synthetic end so the parts shape matches the retail loop+$0000 case.
+      if (count === 0xff) {
+        parts.push({ kind: 'end' });
+        break;
+      }
       continue;
     }
     parts.push({ kind: 'pattern', addr: w });

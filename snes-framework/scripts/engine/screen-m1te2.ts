@@ -30,6 +30,13 @@ import {
 } from './screen-title-island.ts';
 import { chrWindow, sameBytes, fileForVramByteBpp, diffM1tePalette, type M1tePaletteEdit } from './m1te2-util.ts';
 import { buildBonusSceneContext, BONUS_GAME_COUNT, type BonusSceneContext } from './screen-bonus.ts';
+import {
+  buildMiniBattleSceneContext, buildMiniBattleResultContext, miniBattleBg3TmFileId,
+  miniBattleDistinctPlayfields,
+  MINI_BATTLE_SUB_MODES, MINI_BATTLE_RESULT_FILES, MB_RESULT_TM_BYTE,
+  type MiniBattleSceneContext, type MiniBattleResultContext
+} from './screen-minibattle.ts';
+import { buildStorybookIntroContext, type StorybookIntroContext } from './screen-storybook-intro.ts';
 import { decode4bppTile, encode4bppTile } from './tile.ts';
 import { u16le } from './rom-read.ts';
 import { type SymbolMap } from './symbol-map.ts';
@@ -146,7 +153,15 @@ export function diffTitleIslandM1(ctx: TitleIslandContext, m1Bytes: Uint8Array):
 // overworld terrain. See screen-bonus.ts for the trace.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BONUS_BG12_ROWS = 64; // BG1/BG2 SC size 2 = 32×64 cells
+// BG1/BG2 SC size 2 = 32×64 cells. The files really are $1000 bytes = all 64
+// rows; the LOWER 32 rows are authored blank fill (word $0000 / blank char 0 —
+// plus one stray priority-flagged blank in each BG1) but they ARE displayed:
+// the gm$2A prepare starts Layer1/2YPos at $0100 (the window fully inside the
+// lower half) and CODE_10A4EC/CODE_10A549 scroll the board in from above with
+// a bounce ("BonusGameBoardFalls"). Content painted there flashes on-screen
+// during that drop-in, so the export keeps the full 64 rows (audited
+// 2026-07-19 — "is the empty lower half unused?": no).
+const BONUS_BG12_ROWS = 64;
 const BONUS_BG3_ROWS = 32;
 const BONUS_COLS = 32;
 
@@ -194,11 +209,15 @@ export interface BonusM1Diff {
   skippedTiles: number;
 }
 
+/** The scene fields the shared diff core needs (bonus + mini-battle contexts
+ *  both satisfy this structurally). */
+interface SceneParts { vram: Uint8Array; cgram: Uint8Array; manifest: BonusSceneContext['manifest'] }
+
 /** Shared diff core: CHR windows + tilemap slots vs the scene, each gated to the
  *  backing file (the decompressed blob lands 1:1 in its VRAM region, so
  *  fileOffset = distance from the file's dest). */
 function diffBonusParts(
-  ctx: BonusSceneContext,
+  ctx: SceneParts,
   doc: ReturnType<typeof parseM1te2>,
   chrParts: { chr: Uint8Array; charAddr: number; tileBytes: 16 | 32 }[],
   slotParts: { slot: 0 | 1 | 2; tmAddr: number; rows: number; fileId: number }[]
@@ -254,13 +273,161 @@ export function diffBonusBackdropM1(ctx: BonusSceneContext, m1Bytes: Uint8Array)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MINI-BATTLE SCORE SCREENS (gm$2E/$30) — the six distinct BG3 in-battle
+// score/HUD overlays ($A2-$A7), each shared by the sub-modes whose DATA_11820A
+// entry names it. BG3 32×32, 2bpp char $4000 (scene $2A regs), but in 8×8-tile
+// mode — CODE_118216 toggles BGMODE bit 6 off the row's 16×16 default when it
+// draws the screen. See screen-minibattle.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The six distinct score screens as `(bg3TmFileId, representative sub-mode)`
+ *  pairs — the first sub-mode using each file, in file order. */
+export function miniBattleDistinctScreens(rom: Uint8Array, symbols: SymbolMap): { fileId: number; subMode: number }[] {
+  const seen = new Map<number, number>();
+  for (let v = 0; v < MINI_BATTLE_SUB_MODES; v++) {
+    const id = miniBattleBg3TmFileId(rom, symbols, v);
+    if (!seen.has(id)) seen.set(id, v);
+  }
+  return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([fileId, subMode]) => ({ fileId, subMode }));
+}
+
+/** One mini-battle score screen (BG3, 8×8 tiles — see the section header) as
+ *  an .M1. */
+export function buildMiniBattleM1(ctx: MiniBattleSceneContext): Uint8Array {
+  const { vram, regs } = ctx;
+  return encodeM1te2({
+    mapWidth: BONUS_COLS, mapHeight: BONUS_BG3_ROWS, tileSize: 8, palette: ctx.cgram.slice(0, 256),
+    maps: [EMPTY_MAP(), EMPTY_MAP(), readBonusMap(vram, regs.bg3TilemapAddr, BONUS_BG3_ROWS)],
+    chr4bpp: new Uint8Array(0),
+    chr2bpp: chrWindow(vram, regs.bg3CharAddr, TILE2)
+  });
+}
+
+/** Diff an edited mini-battle score `.M1` → 2bpp CHR edits + BG3 word edits
+ *  (→ that screen's own LZ2 tilemap file). */
+export function diffMiniBattleM1(ctx: MiniBattleSceneContext, m1Bytes: Uint8Array): BonusM1Diff {
+  const doc = parseM1te2(m1Bytes);
+  return diffBonusParts(
+    ctx, doc,
+    [{ chr: doc.chr2bpp, charAddr: ctx.regs.bg3CharAddr, tileBytes: TILE2 }],
+    [{ slot: 2, tmAddr: ctx.regs.bg3TilemapAddr, rows: BONUS_BG3_ROWS, fileId: ctx.bg3TmFileId }]
+  );
+}
+
+/** The 32-row playfield map height — the mini-battle BG1/BG2 tilemap files are
+ *  $800 bytes = the upper 32×32 of their 32×64 screens (BG2's lower half is
+ *  the result screens' home; BG1's is never loaded). */
+const MB_PLAYFIELD_ROWS = 32;
+
+/** One mini-battle gameplay playfield (BG1 $D000 + BG2 upper half $7000, 8×8
+ *  tiles, shared 4bpp char base $E000 — the bonus-game shape at 32 rows) as an
+ *  .M1. The BG3 score screen ships as its own .M1 — not duplicated here. */
+export function buildMiniBattlePlayfieldM1(ctx: MiniBattleSceneContext): Uint8Array {
+  const { vram, regs } = ctx;
+  return encodeM1te2({
+    mapWidth: BONUS_COLS, mapHeight: MB_PLAYFIELD_ROWS, tileSize: 8, palette: ctx.cgram.slice(0, 256),
+    maps: [
+      readBonusMap(vram, regs.bg1TilemapAddr, MB_PLAYFIELD_ROWS),
+      readBonusMap(vram, regs.bg2TilemapAddr, MB_PLAYFIELD_ROWS),
+      EMPTY_MAP()
+    ],
+    chr4bpp: chrWindow(vram, regs.bg1CharAddr, TILE4),
+    chr2bpp: new Uint8Array(0)
+  });
+}
+
+/** Diff an edited playfield `.M1` → 4bpp CHR edits (per owning scene file) +
+ *  BG1/BG2 word edits (each layer's own LZ2 file). BG1 file $96 serves TWO
+ *  scenes (different char sets) — an edit through either .M1 lands in the same
+ *  file; the merged per-file save resolves overlaps last-wins per word. */
+export function diffMiniBattlePlayfieldM1(ctx: MiniBattleSceneContext, m1Bytes: Uint8Array): BonusM1Diff {
+  const doc = parseM1te2(m1Bytes);
+  return diffBonusParts(
+    ctx, doc,
+    [{ chr: doc.chr4bpp, charAddr: ctx.regs.bg1CharAddr, tileBytes: TILE4 }],
+    [
+      { slot: 0, tmAddr: ctx.regs.bg1TilemapAddr, rows: MB_PLAYFIELD_ROWS, fileId: ctx.bg1TmFileId },
+      { slot: 1, tmAddr: ctx.regs.bg2TilemapAddr, rows: MB_PLAYFIELD_ROWS, fileId: ctx.bg2TmFileId }
+    ]
+  );
+}
+
+/** One mini-battle battle-end result screen ($9D/$9E — BG2 repointed to the
+ *  32×32 map at byte $7800, 8×8 tiles, 4bpp chars at the scene char base) as
+ *  an .M1. The WINNER/LOSER text is OAM — the file is the curtain backdrop. */
+export function buildMiniBattleResultM1(ctx: MiniBattleResultContext): Uint8Array {
+  const { vram, regs } = ctx;
+  return encodeM1te2({
+    mapWidth: BONUS_COLS, mapHeight: BONUS_BG3_ROWS, tileSize: 8, palette: ctx.cgram.slice(0, 256),
+    maps: [EMPTY_MAP(), readBonusMap(vram, MB_RESULT_TM_BYTE, BONUS_BG3_ROWS), EMPTY_MAP()],
+    chr4bpp: chrWindow(vram, regs.bg2CharAddr, TILE4),
+    chr2bpp: new Uint8Array(0)
+  });
+}
+
+/** Diff an edited result `.M1` → 4bpp CHR edits (per owning scene file — the
+ *  motif chars wrap past $FFFF into the $25/$26 files) + word edits → that
+ *  result's own LZ2 tilemap file ($9D/$9E). */
+export function diffMiniBattleResultM1(ctx: MiniBattleResultContext, m1Bytes: Uint8Array): BonusM1Diff {
+  const doc = parseM1te2(m1Bytes);
+  return diffBonusParts(
+    ctx, doc,
+    [{ chr: doc.chr4bpp, charAddr: ctx.regs.bg2CharAddr, tileBytes: TILE4 }],
+    [{ slot: 1, tmAddr: MB_RESULT_TM_BYTE, rows: BONUS_BG3_ROWS, fileId: ctx.resultTmFileId }]
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STORYBOOK INTRO (gm$38) — the "Once upon a time…" prologue's BG2 story frame
+// ($A8, 32×64) + BG3 backdrop ($A9, 32×32) in ONE .M1: both layers are 16×16
+// tiles (scene $04), so slot 1 renders from the 4bpp char window ($E000) and
+// slot 2 from the 2bpp window ($4000). BG1 is the prologue level's own decoded
+// layout — level data, not part of this screen. See screen-storybook-intro.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const INTRO_BG2_ROWS = 64; // BG2 SC size 2 = 32×64 cells ($A8 decompresses to exactly $1000 bytes)
+const INTRO_BG3_ROWS = 32;
+
+/** The storybook-intro screen (BG2 + BG3, 16×16 tiles) as an .M1. */
+export function buildStorybookIntroM1(ctx: StorybookIntroContext): Uint8Array {
+  const { vram, regs } = ctx;
+  return encodeM1te2({
+    mapWidth: BONUS_COLS, mapHeight: INTRO_BG2_ROWS, tileSize: 16, palette: ctx.cgram.slice(0, 256),
+    maps: [EMPTY_MAP(), readBonusMap(vram, regs.bg2TilemapAddr, INTRO_BG2_ROWS), readBonusMap(vram, regs.bg3TilemapAddr, INTRO_BG3_ROWS)],
+    chr4bpp: chrWindow(vram, regs.bg2CharAddr, TILE4),
+    chr2bpp: chrWindow(vram, regs.bg3CharAddr, TILE2)
+  });
+}
+
+/** Diff an edited storybook-intro `.M1` → 4bpp+2bpp CHR edits (per owning scene
+ *  file) + BG2 ($A8) / BG3 ($A9) tilemap word edits. */
+export function diffStorybookIntroM1(ctx: StorybookIntroContext, m1Bytes: Uint8Array): BonusM1Diff {
+  const doc = parseM1te2(m1Bytes);
+  return diffBonusParts(
+    ctx, doc,
+    [
+      { chr: doc.chr4bpp, charAddr: ctx.regs.bg2CharAddr, tileBytes: TILE4 },
+      { chr: doc.chr2bpp, charAddr: ctx.regs.bg3CharAddr, tileBytes: TILE2 }
+    ],
+    [
+      { slot: 1, tmAddr: ctx.regs.bg2TilemapAddr, rows: INTRO_BG2_ROWS, fileId: ctx.bg2TmFileId },
+      { slot: 2, tmAddr: ctx.regs.bg3TilemapAddr, rows: INTRO_BG3_ROWS, fileId: ctx.bg3TmFileId }
+    ]
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** One exported system-screen `.M1`, shaped for the manifest + the export driver. */
 export interface ScreenM1File {
   file: string;
-  kind: 'island' | 'storybook-scene' | 'bonus-game' | 'bonus-backdrop';
+  kind: 'island' | 'storybook-scene' | 'storybook-intro' | 'bonus-game' | 'bonus-backdrop' | 'minibattle' | 'minibattle-playfield' | 'minibattle-result';
   /** bonus-game only: the game index 0-5 (re-derives the scene on import). */
   game?: number;
+  /** minibattle only: the representative sub-mode 0-11 (re-derives the scene). */
+  subMode?: number;
+  /** minibattle-result only: 0 ($9D) or 1 ($9E) (re-derives the scene). */
+  result?: number;
   bytes: Uint8Array;
 }
 
@@ -271,12 +438,39 @@ export function exportScreenM1(rom: Uint8Array, symbols: SymbolMap): ScreenM1Fil
   return [
     { file: 'screens/title/island.M1', kind: 'island', bytes: buildTitleIslandM1(buildTitleIslandContext(rom, symbols)) },
     { file: 'screens/storybook/scene.M1', kind: 'storybook-scene', bytes: buildStorybookSceneM1(buildStorybookSceneContext(rom, symbols)) },
+    // The gm$38 playable-prologue screens ($A8 BG2 story frame + $A9 BG3 backdrop).
+    { file: 'screens/storybook/intro.M1', kind: 'storybook-intro', bytes: buildStorybookIntroM1(buildStorybookIntroContext(rom, symbols)) },
     ...Array.from({ length: BONUS_GAME_COUNT }, (_, g): ScreenM1File => ({
       file: `screens/bonus/bonus-game-${g}.M1`,
       kind: 'bonus-game',
       game: g,
       bytes: buildBonusM1(buildBonusSceneContext(rom, symbols, g))
     })),
-    { file: 'screens/bonus/backdrop.M1', kind: 'bonus-backdrop', bytes: buildBonusBackdropM1(buildBonusSceneContext(rom, symbols, 0)) }
+    { file: 'screens/bonus/backdrop.M1', kind: 'bonus-backdrop', bytes: buildBonusBackdropM1(buildBonusSceneContext(rom, symbols, 0)) },
+    // The six distinct mini-battle score screens ($A2-$A7); each .M1 is shared
+    // by every sub-mode whose DATA_11820A entry names its tilemap file.
+    ...miniBattleDistinctScreens(rom, symbols).map(({ fileId, subMode }): ScreenM1File => ({
+      file: `screens/minibattle/score-${fileId.toString(16)}.M1`,
+      kind: 'minibattle',
+      subMode,
+      bytes: buildMiniBattleM1(buildMiniBattleSceneContext(rom, symbols, subMode))
+    })),
+    // The seven distinct gameplay playfields (BG1 + BG2 upper half), keyed by
+    // the (chars, bg1, bg2) scene tuple; named by the bg1+bg2 file pair (bg1
+    // $96 alone is ambiguous — it serves two scenes).
+    ...miniBattleDistinctPlayfields(rom, symbols).map(({ bg1TmFileId, bg2TmFileId, subMode }): ScreenM1File => ({
+      file: `screens/minibattle/playfield-${bg1TmFileId.toString(16)}-${bg2TmFileId.toString(16)}.M1`,
+      kind: 'minibattle-playfield',
+      subMode,
+      bytes: buildMiniBattlePlayfieldM1(buildMiniBattleSceneContext(rom, symbols, subMode))
+    })),
+    // The two battle-end result screens ($9D result 0 / $9E otherwise) — the
+    // full-screen BG2 curtain backdrops; the WINNER/LOSER text is OAM.
+    ...MINI_BATTLE_RESULT_FILES.map((fileId, result): ScreenM1File => ({
+      file: `screens/minibattle/result-${fileId.toString(16)}.M1`,
+      kind: 'minibattle-result',
+      result,
+      bytes: buildMiniBattleResultM1(buildMiniBattleResultContext(rom, symbols, result))
+    }))
   ];
 }

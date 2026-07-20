@@ -6,8 +6,8 @@
 //     BG tilemaps).
 //   - lz16 sheets need their decompressed size up front. Level-loaded ones are
 //     sized by the level-gfx size registry (`gfxSizeRegistry`, a walk of every
-//     level's gfx manifest); the 55 of 187 no level loads (storybook / intro /
-//     ending-era sheets) are sized by probing the base extract's blob byte
+//     level's gfx manifest); the 55 of 187 no level loads (mini-battle / bonus /
+//     boss / ending-cutscene sheets) are sized by probing the base extract's blob byte
 //     length (`diffUnsizedLz16Gfx` → `probeLz16RowCount` — rowCount is a
 //     property of the decoded size, so the base-derived count is valid for the
 //     foreign stream too). Row counts for all 187 are pinned against the
@@ -23,6 +23,7 @@ import { snesToPC, type SymbolMap } from 'snes-framework/symbol-map'
 import { lz2 } from 'snes-framework/decompress'
 import { diffUnsizedLz16Gfx } from 'snes-framework/import'
 import { parseGfxPtrTable, GFX_ARENA } from 'snes-framework/gfx-reinsert'
+import { RAW_GFX_PC_RANGE } from 'snes-framework/gfx-file-catalog'
 import { decodeGfxFile } from './gfx-import-utils'
 import { gfxSizeRegistry } from './resources'
 import { frameworkWorkRoot } from './framework-paths'
@@ -204,10 +205,13 @@ export interface RawGfxDiffResult {
   files: number
 }
 
-/** Raw-CHR gfx banks the importer covers — SuperFX-mapped $52–$56 (PC range).
- *  Excludes $57 (the SuperFX program/asset bank) and everything else. */
-const RAW_GFX_LO = 0x120000
-const RAW_GFX_HI = 0x170000
+/** Raw-CHR gfx banks the importer covers — SuperFX-mapped $52–$57:3BFF (PC
+ *  range, from the catalog). $57:0000–$3BFF (DATA_570000.bin) is GSU-only
+ *  bitmap data — NOT the GSU program (that lives in banks $08–$0B; corrected in
+ *  research/graphics-survey/11-vram-loading.md §4, and the "H-flip mirror of
+ *  $56" theory is byte-disproven — the bank is independent art, so it imports
+ *  like any other raw GSU bank). */
+const [RAW_GFX_LO, RAW_GFX_HI] = RAW_GFX_PC_RANGE
 
 /**
  * Diff a foreign cart's raw-CHR graphics (banks $52–$56) against base. Enumerates

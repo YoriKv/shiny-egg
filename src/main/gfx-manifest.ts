@@ -274,9 +274,13 @@ export interface MapM1Manifest {
  *  with the wrong palette base in M1TE; edit it via PNG/Aseprite.) */
 export interface ScreenM1ManifestEntry {
   file: string
-  kind: 'island' | 'storybook-scene' | 'bonus-game' | 'bonus-backdrop'
+  kind: 'island' | 'storybook-scene' | 'storybook-intro' | 'bonus-game' | 'bonus-backdrop' | 'minibattle' | 'minibattle-playfield' | 'minibattle-result'
   /** bonus-game only: game index 0-5. */
   game?: number
+  /** minibattle only: representative sub-mode 0-11 (re-derives the scene). */
+  subMode?: number
+  /** minibattle-result only: 0 ($9D) or 1 ($9E) (re-derives the scene). */
+  result?: number
 }
 
 /** One 1bpp Bank09 sheet PNG (the message font / message-box pictures) — a raw
@@ -336,10 +340,23 @@ export interface YychrManifestEntry {
   glyphW?: number
   glyphH?: number
   cols?: number
-  /** Verified unused: nothing in-game reads this sheet (leftover data), so edits
-   *  round-trip but change no visuals. Producer-stamped (gfx-yychr-io
-   *  `VERIFIED_UNUSED_LZ2`); the YY-CHR tab shows it as a badge. */
-  unused?: boolean
+  /** The CGRAM group the sheet draws with, when known (16-color rows for 4bpp,
+   *  4-color groups for 2bpp). The `.pal` is raw CGRAM order — this drives the
+   *  in-app thumbnail row + the tab's row badge. Absent = unknown or per-tile. */
+  palRow?: number
+  /** `palRow` is dominant/representative, NOT whole-sheet-true — parts of the
+   *  sheet may draw in other rows (sprite-assigned OBJ palettes, multi-row BG
+   *  art, sibling-scene guesses). The tab badges it `~N` with a caveat. */
+  palRowApprox?: boolean
+  /** The sheet's tiles use DIFFERENT rows in-game, each known per tile (a `.col`
+   *  sidecar or manifest `tileSub` carries them) — no single badge applies; the
+   *  thumbnail (and YY-CHR's Col mode where a `.col` ships) shows true colors. */
+  multiRow?: boolean
+  /** Per-char CGRAM groups for CPC (`.gba`) sheets whose chars draw in several
+   *  rows at once (the Raphael arena pair). Thumbnail-only — deliberately NOT
+   *  exported as a `.col`, which would make YY-CHR corrupt Col-mode edits of a
+   *  `.gba` sheet (gfx-yychr.ts header). */
+  tileSub?: number[]
 }
 
 /** A folder's gfx-manifest.json narrowed to its yychr view: the sheet rows + the

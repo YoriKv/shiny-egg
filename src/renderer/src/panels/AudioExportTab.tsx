@@ -277,7 +277,7 @@ export function AudioExportTab({
    *  .spc songs keep their source layout. */
   const slotPickOf = useCallback(
     (file: AudioImportSongFileUi, targetId: number): number | null => {
-      if (file.kind !== 'mml') return null
+      if (file.kind !== 'mml' && file.kind !== 'spc') return null
       const sel = importSlotSel[file.rel] ?? -1
       const target = importTargets.find((t) => t.blockId === targetId)
       if (sel >= 0 && target?.slots.includes(sel)) return sel
@@ -576,7 +576,7 @@ export function AudioExportTab({
                       ))}
                     </select>
                   )}
-                  {f.ok && f.kind === 'mml' && (() => {
+                  {f.ok && (f.kind === 'mml' || f.kind === 'spc') && (() => {
                     const target = importTargets.find((t) => t.blockId === (importTargetSel[f.rel] ?? DEFAULT_IMPORT_TARGET))
                     if (!target || target.slots.length === 0) return null
                     return (
@@ -599,7 +599,7 @@ export function AudioExportTab({
                     )
                   })()}
                 </div>
-                {f.ok && f.kind === 'mml' && budget && (
+                {f.ok && (f.kind === 'mml' || f.kind === 'spc') && budget && (
                   <div
                     className="se-audio__import-budget"
                     title={

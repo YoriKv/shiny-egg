@@ -87,6 +87,26 @@ console.log('\n=== track grammar (synthetic) ===');
   eq(s.patterns.get(pattern)?.trackAddrs, [0x2000, 0, 0, 0, 0, 0, 0, 0], '8 track pointers');
   assert(s.tracks.has(0x2000) && s.tracks.has(0x3000), 'top-level + subroutine tracks decoded');
   assert(s.subroutineAddrs.has(0x3000) && !s.subroutineAddrs.has(0x2000), 'subroutine classified');
+
+  // A count-$FF "loop forever" ENDS the phrase walk. AddMusicY packs the next
+  // pattern's bytes right after it (no trailing $0000), so continuing the walk
+  // read them as bogus phrases and aborted on an invalid opcode — the "song
+  // won't decode / can't be imported" bug (real case: wildlands.spc slot 1).
+  const song2 = 0x5200;
+  const pat2 = 0x5300;
+  // phrase list: pattern $5300, loop $FF → $5200, then a DECOY pattern ptr
+  // ($5400) standing in for the trailing bytes AddMusicY leaves there.
+  aram.set([0x00, 0x53, /*loop $ff:*/ 0xff, 0x00, 0x00, 0x52, /*decoy:*/ 0x00, 0x54], song2);
+  const tp2 = new Uint8Array(16);
+  tp2.set([0x00, 0x20], 0); // voice 1 → $2000
+  aram.set(tp2, pat2);
+  const s2 = decodeSong(aram, song2);
+  eq(s2.parts, [
+    { kind: 'pattern', addr: pat2 },
+    { kind: 'loop', count: 0xff, target: song2 },
+    { kind: 'end' },
+  ], 'song walk: $FF loop-forever is terminal');
+  assert(!s2.patterns.has(0x5400), '$FF loop stops the walk — trailing decoy phrase is not decoded');
 }
 
 // --- Build-gated: full-ROM sweep with pinned counts -----------------------

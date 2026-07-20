@@ -17,7 +17,7 @@ import {DiscardChangesModal} from '../DiscardChangesModal'
  *
  * The parent remounts this per project (`key={projectScope}`), so state never
  * leaks across a project switch. (Per-LEVEL BG-layer `.M1`s stay on the
- * Export/Import tab — they need a loaded level.)
+ * Level BGs tab — they need a loaded level.)
  */
 
 /** Category keys in display order, with friendly headings. */
@@ -178,10 +178,10 @@ export function M1teMapsTab({onMutated, onImported}: Props): JSX.Element {
         <div className="se-graphics__region" ref={rootRef}>
             <p className="se-graphics__desc">
                 Every fixed map in the game — the overworlds, the level icons, and the
-                tilemap-based screens — exported into this project as M1TE sessions
-                (tilemap + tiles + palette in one .M1). Save in M1TE and switch back here:
-                changed maps light up for import, and imported edits preview on the canvas
-                immediately. A file already open in M1TE doesn’t see a re-export — reopen it.
+                tilemap-based screens — exported as M1TE sessions (one .M1 each). Save in
+                M1TE and switch back: changed maps light up for import, and imported
+                edits preview on the canvas immediately. A file already open in M1TE
+                doesn’t see a re-export — reopen it.
             </p>
 
             <div className="se-graphics__row se-yychr__head">

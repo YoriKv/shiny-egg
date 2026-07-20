@@ -7,9 +7,27 @@
 // Comment- and string-aware so a `;` inside a quoted literal isn't mistaken for
 // a comment, and a `"` inside a comment isn't mistaken for a literal.
 
+// asar expands `!name` defines even inside `db "…"` string literals, so a `!`
+// followed by a define-name character assembles as a define reference
+// (`db "GREEN COINS !They"` → "Define 'They' wasn't found" — hit by a ROM
+// import). `\!` is asar's in-string escape for a literal `!` (and respects the
+// active character table). Every writer of literal contents must escape, and
+// every reader unescape, through this pair. Define names are [A-Za-z0-9_],
+// plus `{` for the `!{name}` expansion form; a `!` before anything else (space,
+// punctuation, end of string) is safe and left readable.
+export function escapeDefineBangs(s: string): string {
+  return s.replace(/!(?=[A-Za-z0-9_{])/g, '\\!')
+}
+
+export function unescapeDefineBangs(s: string): string {
+  return s.replaceAll('\\!', '!')
+}
+
 /** A `"..."` literal located in some asm text. `start`/`end` are character
  *  offsets of the INNER text (between the quotes) in the scanned string, so a
- *  splice over `[start, end)` replaces the literal's contents and nothing else. */
+ *  splice over `[start, end)` replaces the literal's contents and nothing else.
+ *  `value` is the DECODED content (`\!` unescaped) — it can be shorter than the
+ *  `[start, end)` span; splices must re-escape via `escapeDefineBangs`. */
 export interface QuotedLiteral {
   value: string
   start: number
@@ -31,7 +49,7 @@ export function findQuotedLiterals(text: string): QuotedLiteral[] {
     const c = text[i]
     if (inString) {
       if (c === '"') {
-        out.push({ value: text.slice(strInner, i), start: strInner, end: i })
+        out.push({ value: unescapeDefineBangs(text.slice(strInner, i)), start: strInner, end: i })
         inString = false
       }
     } else if (inComment) {

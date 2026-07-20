@@ -1,8 +1,9 @@
 // Unsized-lz16 graphics diff for the ROM importer. lz16 streams don't
 // self-terminate, so diffing one needs its row count up front. The app layer
 // sizes the level-loaded files from its scene walk (`gfxSizeRegistry`), but 55
-// of the 187 lz16 files load from no level scene (storybook / intro / ending
-// era sheets) and were invisible to the graphics diff. This module covers
+// of the 187 lz16 files load from no level scene (mini-battle / bonus / boss /
+// ending-cutscene sheets — see research/graphics-survey/11-vram-loading.md for
+// the closed attribution) and were invisible to the graphics diff. This module covers
 // them: the BASE extract's blob byte length is exact (the cart pointer table
 // defines each blob's range), so `probeLz16RowCount` recovers the row count —
 // and a row count is a property of the file's DECODED size (its VRAM

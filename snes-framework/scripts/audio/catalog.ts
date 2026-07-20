@@ -208,10 +208,18 @@ export const SPC_BLOCK_DISPLAY_NAMES: Readonly<Record<number, string>> = {
  *  jingles (slot 3 "level intro" = Game Start, slot 8 "toadies" = Mario
  *  Kidnapped). */
 export const SONG_NAMES: Readonly<Record<string, string>> = {
-  // Title context (engine-only row)
-  '0:1': 'Welcome To Yoshi\'s Island',
-  '0:2': 'Title', // (≈) the remaining title-context song; weak fingerprint
-  '0:3': 'Yoshi\'s Island',
+  // Title context (engine-only row) — the driver's 3 songs. Roles verified
+  // against the 65816 source (asm-analysis), not the OST track titles:
+  //  0:1 title-screen theme — gm_load_title_screen ($09) plays slot 1
+  //      (Bank17 CODE_1785FC: LDA #$01 → PlayMusicLo).
+  //  0:2 opening story cutscene ("Once upon a time…") — gm05_load_cutscene
+  //      queues MusicID02 = slot 2 (Bank0F CODE_gm05_load_cutscene).
+  //  0:3 title-screen theme, post-final-world variant — the SAME title routine
+  //      does INC:INC → 3 when !RAM_YI_Level_FinalWorldUnlockedFlag is set; its
+  //      sequence data is a subset of 0:1 (the shared title melody).
+  '0:1': 'Title Screen',
+  '0:2': 'Storybook',
+  '0:3': 'Title Screen (Final World)',
   // Intro / practice (1W-0)
   '1:1': 'Yoshi\'s Start Demo',
   '1:2': 'Practice Course',

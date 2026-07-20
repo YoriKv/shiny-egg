@@ -1,6 +1,6 @@
 // The per-project M1TE maps pathway (the Graphics panel's "M1TE Maps" tab) — the
 // M1TE twin of gfx-yychr-project.ts. The cart-static `.M1` map surfaces (6 overworlds
-// + the combined icons grid + the 9 tilemap-based system screens) export to ONE fixed
+// + the combined icons grid + the tilemap-based system screens) export to ONE fixed
 // folder inside the active project — `<projectRoot>/m1te/` — which the tab browses
 // in-editor: per-file details + change status (the same sha256 gate the import uses) +
 // thumbnails composed from the ON-DISK `.M1` bytes (so external M1TE edits preview
@@ -23,20 +23,16 @@ import type {
   YychrThumbnailEntry
 } from '../shared/ipc-types'
 import { exportGfxPngsToDir } from './gfx-png-export'
-import { importGfxPngsFromDir } from './gfx-png-import'
-import { gfxResultToLog } from './graphics-folder-io'
-import { FileHashCache, fileChecksum } from './gfx-import-conflict'
-import { GfxImportReconciler } from './gfx-import-reconcile'
+import { importProjectFolder } from './gfx-project-folder'
+import { FileHashCache } from './gfx-import-conflict'
 import {
   MANIFEST,
-  updateManifestChecksums,
   type GfxManifestChecksums,
   type MapM1Manifest,
   type ScreenM1ManifestEntry
 } from './gfx-manifest'
 import { getCurrentProjectId } from './projects'
 import { projectRoot } from './framework-paths'
-import { loadRomAndSymbols } from './render/rom-cache'
 
 /** The active project's dedicated m1te export folder. */
 export function m1teMapsDir(projectId: string): string {
@@ -72,7 +68,11 @@ function manifestFiles(m: M1teManifestView): { file: string; category: string; d
   for (const s of m.screenM1 ?? []) {
     if (s.kind === 'island') out.push({ file: s.file, category: 'title', description: 'Title screen — the floating island (Mode-7)' })
     else if (s.kind === 'storybook-scene') out.push({ file: s.file, category: 'storybook', description: 'Storybook first scene (BG3 frame — pixels only; the frame layout is runtime-streamed)' })
-    else if (s.kind === 'bonus-game') out.push({ file: s.file, category: 'bonus', description: `Bonus game ${(s.game ?? 0) + 1} — BG1 + BG2 screens` })
+    else if (s.kind === 'storybook-intro') out.push({ file: s.file, category: 'storybook', description: 'Storybook intro (gm$38 prologue) — BG2 story frame + BG3 backdrop (black in the preview = transparency over the in-game level layer; the BG2 top half is an authored blank fill)' })
+    else if (s.kind === 'bonus-game') out.push({ file: s.file, category: 'bonus', description: `Bonus game ${(s.game ?? 0) + 1} — BG1 + BG2 screens (the blank lower half IS shown during the board drop-in intro)` })
+    else if (s.kind === 'minibattle') out.push({ file: s.file, category: 'bonus', description: 'Mini-battle score screen (BG3 HUD overlay — shared by every sub-mode using this tilemap)' })
+    else if (s.kind === 'minibattle-playfield') out.push({ file: s.file, category: 'bonus', description: 'Mini-battle playfield (BG1 + BG2 upper half — shared by every sub-mode using this scene)' })
+    else if (s.kind === 'minibattle-result') out.push({ file: s.file, category: 'bonus', description: `Mini-battle result screen — the ${s.result === 0 ? 'Yoshi' : 'Bandit'}-wins wallpaper (the result text is sprites)` })
     else out.push({ file: s.file, category: 'bonus', description: 'Shared bonus-game backdrop (BG3, 16×16 tiles — edits show in all six games)' })
   }
   return out
@@ -109,13 +109,8 @@ export function exportM1teMapsProject(): M1teMapsExportResult {
   }
 }
 
-/**
- * Import edited `.M1`s from the project folder — `files` = folder-relative paths for a
- * per-file import, null = everything changed. The standard folder importer does the
- * work (checksum gate + the `only` filter); afterwards the stored checksum advances
- * for every requested file that imported cleanly (not named in an error), so its
- * status clears — conservative on failures, and a re-import is idempotent either way.
- */
+/** Import edited `.M1`s from the project folder — the shared project-folder
+ *  import (checksum gate + `only` filter + checksum write-back). */
 export async function importM1teMapsProject(files: string[] | null): Promise<M1teMapsImportResult> {
   const id = getCurrentProjectId()
   if (!id) return { ok: false, error: 'No active project.' }
@@ -123,48 +118,7 @@ export async function importM1teMapsProject(files: string[] | null): Promise<M1t
   const manifest = readM1teManifest(dir)
   const rows = manifest ? manifestFiles(manifest) : []
   if (!manifest || rows.length === 0) return { ok: false, error: 'No M1TE export in this project yet — export first.' }
-  const known = new Set(rows.map((r) => r.file))
-  if (files) {
-    const unknown = files.filter((f) => !known.has(f))
-    if (unknown.length > 0) return { ok: false, error: `Not in this export's manifest: ${unknown.join(', ')}` }
-  }
-  try {
-    const reconciler = new GfxImportReconciler()
-    const counts = await importGfxPngsFromDir(dir, reconciler, { only: files ? new Set(files) : known })
-    const { rom, symbols } = loadRomAndSymbols()
-    const applyRes = await reconciler.apply(rom, symbols)
-
-    const g = gfxResultToLog(counts)
-    const log = [...g.log]
-    if (applyRes.applied + applyRes.paletteChanged + applyRes.rawApplied > 0) {
-      log.push(`Saved ${applyRes.applied} gfx file${applyRes.applied === 1 ? '' : 's'}, ${applyRes.paletteChanged} palette color${applyRes.paletteChanged === 1 ? '' : 's'}, ${applyRes.rawApplied} raw sheet${applyRes.rawApplied === 1 ? '' : 's'}.`)
-    }
-    const errors = [...g.errors]
-    if (applyRes.conflicts.length > 0) {
-      errors.push(`${applyRes.conflicts.length} edit${applyRes.conflicts.length === 1 ? '' : 's'} skipped — two files changed the same data differently:`, ...applyRes.conflicts.map((c) => `  ${c}`))
-    }
-    const warnings = [...g.warnings]
-    const changed = g.changed + applyRes.applied + applyRes.paletteChanged + applyRes.rawApplied
-
-    // Checksum write-back: advance the stored hash for every requested file that wasn't
-    // named in an error, so its status clears (imported OR proved unchanged). A file an
-    // error mentions keeps its old hash — it stays 'changed' for a fix-and-re-import.
-    const wanted = files ?? [...known]
-    const updates: Record<string, string> = {}
-    for (const f of wanted) {
-      if (errors.some((e) => e.includes(f))) continue
-      try {
-        updates[f] = fileChecksum(readFileSync(join(dir, f)))
-      } catch { /* missing on disk → keep the old hash (stays 'missing') */ }
-    }
-    if (!updateManifestChecksums(dir, updates)) {
-      warnings.push('Couldn’t update the export manifest — imported files will still show as changed.')
-    }
-
-    return { ok: true, dir, changed, log, errors, warnings }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
-  }
+  return importProjectFolder(dir, new Set(rows.map((r) => r.file)), files)
 }
 
 /** Batch thumbnail render from the ON-DISK `.M1` bytes (external M1TE edits preview

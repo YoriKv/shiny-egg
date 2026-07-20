@@ -13,6 +13,7 @@ import {
   composeSongSpc,
   decodeSfxTimeline,
   decodeSongTimeline,
+  deleteSong,
   exportAllAudio,
   getAudioAramUsage,
   getAudioCatalog,
@@ -23,6 +24,7 @@ import {
   openAudioExportFolder,
   previewSongImport,
   readExportedSpc,
+  restoreSong,
   revertSongImport
 } from '../audio'
 import type {
@@ -102,5 +104,15 @@ export function registerAudioIpc(): void {
   ipcMain.handle(
     'audio:revertSongImport',
     async (_e, targetBlockId: number): Promise<AudioSongImportRunResult> => revertSongImport(targetBlockId)
+  )
+
+  ipcMain.handle(
+    'audio:deleteSong',
+    async (_e, targetBlockId: number, slot: number): Promise<AudioSongImportRunResult> => deleteSong(targetBlockId, slot)
+  )
+
+  ipcMain.handle(
+    'audio:restoreSong',
+    async (_e, targetBlockId: number, slot: number): Promise<AudioSongImportRunResult> => restoreSong(targetBlockId, slot)
   )
 }

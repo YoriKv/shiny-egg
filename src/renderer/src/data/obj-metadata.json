@@ -7743,7 +7743,7 @@
     "0x004": {
       "name": "Item from Star Mario block",
       "category": "item",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x005": {
@@ -7768,7 +7768,7 @@
     "0x006": {
       "name": "Ice Breath",
       "category": "item",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x007": {
@@ -7825,7 +7825,9 @@
     "0x00B": {
       "name": "Kaboomba's cannonball",
       "category": "hazard",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x4A"
+      ],
       "spawnedOnly": true
     },
     "0x00C": {
@@ -7898,7 +7900,7 @@
     "0x015": {
       "name": "Torpedo of Yoshi Submarine",
       "category": "item",
-      "spritesetFiles": null
+      "spritesetFiles": []
     },
     "0x016": {
       "name": "Bigger Boo",
@@ -7929,7 +7931,7 @@
     "0x018": {
       "name": "Fire breath",
       "category": "item",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x019": {
@@ -8108,7 +8110,9 @@
     "0x02E": {
       "name": "Salvo the Slime's eyes",
       "category": "boss",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x45"
+      ],
       "spawnedOnly": true
     },
     "0x02F": {
@@ -8338,13 +8342,13 @@
     "0x04A": {
       "name": "Fire of Thunder Lakitu",
       "category": "hazard",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x04B": {
       "name": "Hypocenter of the thunder",
       "category": "hazard",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x04C": {
@@ -8522,7 +8526,9 @@
     "0x05A": {
       "name": "Spark of Raphael the Raven",
       "category": "boss",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x1B"
+      ],
       "spawnedOnly": true
     },
     "0x05B": {
@@ -8540,7 +8546,7 @@
     "0x05D": {
       "name": "Unused sprite ID (crash)",
       "category": "unknown",
-      "spritesetFiles": null
+      "spritesetFiles": []
     },
     "0x05E": {
       "name": "Plank, tilts (BG3)",
@@ -9008,7 +9014,7 @@
     "0x09C": {
       "name": "Mace",
       "category": "hazard",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x09D": {
@@ -9042,7 +9048,9 @@
     "0x0A2": {
       "name": "Fireball of Thunder Lakitu",
       "category": "hazard",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x4B"
+      ],
       "spawnedOnly": true
     },
     "0x0A3": {
@@ -9144,7 +9152,7 @@
     "0x0AC": {
       "name": "Falling rock warning arrow and shadow",
       "category": "decoration",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x0AD": {
@@ -9401,7 +9409,9 @@
     "0x0D3": {
       "name": "Giant Milde",
       "category": "enemy",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x6F"
+      ],
       "spawnedOnly": true
     },
     "0x0D4": {
@@ -10068,7 +10078,9 @@
     "0x129": {
       "name": "Fuzzy",
       "category": "enemy",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x52"
+      ],
       "spawnedOnly": true
     },
     "0x12A": {
@@ -10091,7 +10103,9 @@
     "0x12D": {
       "name": "Yoshi, in the intro scene",
       "category": "decoration",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0xAB"
+      ],
       "spawnedOnly": true
     },
     "0x12E": {
@@ -10249,7 +10263,9 @@
     "0x13B": {
       "name": "Prince Froggy's Stomach Acid",
       "category": "boss",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x70"
+      ],
       "spawnedOnly": true
     },
     "0x13C": {
@@ -11194,12 +11210,12 @@
     "0x195": {
       "name": "Rock spire, small platform, unstable",
       "category": "platform",
-      "spritesetFiles": null
+      "spritesetFiles": []
     },
     "0x196": {
       "name": "Rock spire, large platform, unstable",
       "category": "platform",
-      "spritesetFiles": null
+      "spritesetFiles": []
     },
     "0x197": {
       "name": "Arrow sign cardinal, up / right / left / down",
@@ -11498,7 +11514,9 @@
     "0x1AE": {
       "name": "Kamek's magic",
       "category": "boss",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x67"
+      ],
       "spawnedOnly": true
     },
     "0x1AF": {
@@ -11515,7 +11533,7 @@
     "0x1B1": {
       "name": "Coin Cannon for Mini Battle",
       "category": "item",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x1B2": {
@@ -11527,19 +11545,23 @@
     "0x1B3": {
       "name": "Bandit for Mini Battle",
       "category": "enemy",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x4E"
+      ],
       "spawnedOnly": true
     },
     "0x1B4": {
       "name": "Checkered Platform for Mini Battle",
       "category": "platform",
-      "spritesetFiles": null,
+      "spritesetFiles": [],
       "spawnedOnly": true
     },
     "0x1B5": {
       "name": "Bandit for Mini Battle",
       "category": "enemy",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x4E"
+      ],
       "spawnedOnly": true
     },
     "0x1B6": {
@@ -11551,7 +11573,9 @@
     "0x1B7": {
       "name": "Bandit for Mini Battle",
       "category": "enemy",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x4E"
+      ],
       "spawnedOnly": true
     },
     "0x1B8": {
@@ -11563,100 +11587,125 @@
     "0x1B9": {
       "name": "possibly Bandit for Mini Battle?",
       "category": "unknown",
-      "spritesetFiles": null,
+      "spritesetFiles": [
+        "0x4E"
+      ],
       "spawnedOnly": true
     },
     "0x1BA": {
       "name": "Graphic / Palette Changer 00",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1BB": {
       "name": "Graphic / Palette Changer 01",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1BC": {
       "name": "Graphic / Palette Changer 02",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1BD": {
       "name": "Graphic / Palette Changer 03",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1BE": {
       "name": "Graphic / Palette Changer 04",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1BF": {
       "name": "Graphic / Palette Changer 05",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C0": {
       "name": "Graphic / Palette Changer 06",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C1": {
       "name": "Graphic / Palette Changer 07",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C2": {
       "name": "Graphic / Palette Changer 08",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C3": {
       "name": "Graphic / Palette Changer 09",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C4": {
       "name": "Graphic / Palette Changer 0A",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C5": {
       "name": "Graphic / Palette Changer 0B",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C6": {
       "name": "Graphic / Palette Changer 0C",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C7": {
       "name": "Graphic / Palette Changer 0D",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C8": {
       "name": "Graphic / Palette Changer 0E",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1C9": {
       "name": "Graphic / Palette Changer 0F",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1CA": {
       "name": "Autoscroll path 0x00",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1CB": {
       "name": "Autoscroll path 0x01",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1CC": {
       "name": "Autoscroll path 0x02",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1CD": {
       "name": "Autoscroll path 0x03",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1CE": {
       "name": "Autoscroll path 0x04",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1CF": {
       "name": "Autoscroll path 0x05",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1D0": {
       "name": "Autoscroll path 0x06",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1D1": {
       "name": "Autoscroll path 0x07",
@@ -11664,59 +11713,73 @@
     },
     "0x1D2": {
       "name": "Autoscroll path 0x08",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1D3": {
       "name": "Autoscroll path 0x09",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1D4": {
       "name": "Autoscroll path 0x0A",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1D5": {
       "name": "Boo Balloon stopper",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1D6": {
       "name": "Lock horizontal scroll",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1D7": {
       "name": "Gusty generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1D8": {
       "name": "Gusty generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1D9": {
       "name": "Lakitu stopper",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1DA": {
       "name": "Fuzzy generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1DB": {
       "name": "Poochy stopper",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1DC": {
       "name": "Fang generator, from right",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1DD": {
       "name": "Fang generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1DE": {
       "name": "Fang generator, from both sides",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1DF": {
       "name": "Fang generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1E0": {
       "name": "Wall Lakitu generator",
@@ -11736,75 +11799,93 @@
           ],
           "collisionNote": "lakitu wall-hole tile — the generator spawns Wall Lakitus ($157) only at cells whose tile is $0010"
         }
-      ]
+      ],
+      "spritesetFiles": []
     },
     "0x1E1": {
       "name": "Wall Lakitu generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1E2": {
       "name": "Dancing Spear Guy trigger",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1E3": {
       "name": "Dancing Spear Guy stopper",
-      "category": "command"
+      "category": "command",
+      "spritesetFiles": []
     },
     "0x1E4": {
       "name": "Thunder Lakitu stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1E5": {
       "name": "Flutter generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1E6": {
       "name": "Flutter generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1E7": {
       "name": "Nipper Spore generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1E8": {
       "name": "Nipper Spore generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1E9": {
       "name": "Baron Von Zeppelin with Needlenose generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1EA": {
       "name": "Baron Von Zeppelin with Needlenose generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1EB": {
       "name": "Baron Von Zeppelin with Bomb generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1EC": {
       "name": "Baron Von Zeppelin with Bomb generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1ED": {
       "name": "Balloon generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1EE": {
       "name": "Balloon generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1EF": {
       "name": "Four yellow line guided Flatbed Ferries generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1F0": {
       "name": "Lemon Drop generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1F1": {
       "name": "Lemon Drop generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1F2": {
       "name": "Turn off dizzy effect",
@@ -11812,11 +11893,13 @@
     },
     "0x1F3": {
       "name": "Goonie generator stopper",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     },
     "0x1F4": {
       "name": "Fuzzy generator",
-      "category": "generator"
+      "category": "generator",
+      "spritesetFiles": []
     }
   }
 }

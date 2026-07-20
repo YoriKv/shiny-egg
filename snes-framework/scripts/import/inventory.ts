@@ -16,6 +16,7 @@
 // (the caller gates on the resolved anchors, like palette/name import).
 
 import { vendoredV10SymbolMap, type SymbolMap } from '../engine/symbol-map.ts';
+import { RAW_GFX_PC_RANGE } from '../engine/gfx-file-catalog.ts';
 import type { InventoryCategory, RomImportInventory } from '../types.ts';
 
 /** Category key → display label + whether a semantic import already covers it. */
@@ -35,7 +36,7 @@ const CATEGORY_DEFS: Record<string, { label: string; imported: boolean }> = {
   map16: { label: 'Map16 page tables', imported: false },
   collision: { label: 'Collision / type tables', imported: false },
   graphics: { label: 'Compressed graphics (LZ2 / LZ16)', imported: true },
-  'graphics-raw': { label: 'Raw graphics CHR (banks $52–$56)', imported: true },
+  'graphics-raw': { label: 'Raw graphics CHR (banks $52–$57)', imported: true },
   tilemaps: { label: 'Compressed BG tilemaps', imported: true },
   superfx: { label: 'SuperFX program', imported: false },
   music: { label: 'Music / sound (SPC)', imported: false },
@@ -78,8 +79,9 @@ interface Interval {
 
 /**
  * Known-region interval table (tiers 1 + 2). Bands cover the Bank57 asset file
- * (`$57:3C00`+ — see that bank's header map): SuperFX program, LZ2 graphics,
- * tilemap blobs, LZ16 graphics, the palette blob, then the `$5F` tail tables.
+ * (`$57:3C00`+ — see that bank's header map): LZ2 graphics, tilemap blobs,
+ * LZ16 graphics, the palette blob, then the `$5F` tail tables. ($57:0000–$3BFF
+ * is GSU bitmap data, folded into the raw-CHR band — not the GSU program.)
  * The strings band is Bank51's message-ptr-table → name-region tail
  * (`$51:10DB`–`$51:5348`); level blobs inside it are claimed first by the
  * higher-priority level extents.
@@ -127,9 +129,11 @@ function buildIntervals(levelExtents: Array<[number, number]>): Interval[] {
     { start: yoshiPc, end: yoshiPc + 72, key: 'yoshi-colors', priority: 2 },
     // Raw-CHR graphics banks $52–$56 (animation tiles, world-map icons, sprite /
     // dynamic-body gfx, world-map char base) — imported via the raw-CHR path.
-    { start: 0x120000, end: 0x170000, key: 'graphics-raw', priority: 1 },
+    // $52–$57:3BFF incl. DATA_570000.bin — GSU bitmap data, not the GSU program
+    // (corrected: research/graphics-survey/11-vram-loading.md §4; the program is
+    // banks $08–$0B, and the "$57 = H-flip mirror of $56" theory is byte-disproven).
+    { start: RAW_GFX_PC_RANGE[0], end: RAW_GFX_PC_RANGE[1], key: 'graphics-raw', priority: 1 },
     // Bank57 asset bands (file offsets, from the bank's documented layout).
-    { start: 0x170000, end: 0x173c00, key: 'superfx', priority: 1 },
     { start: 0x173c00, end: 0x1b0000, key: 'graphics', priority: 1 },
     { start: 0x1b0000, end: 0x1d0000, key: 'tilemaps', priority: 1 },
     { start: 0x1d0000, end: 0x1fa000, key: 'graphics', priority: 1 },

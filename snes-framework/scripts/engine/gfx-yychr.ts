@@ -22,6 +22,18 @@
 //    char at file offset B is read at B/16 + 256 (ColSetData.GetBankPaletteSetAddr),
 //    after a 256-byte header. So with the .pal packed as one sub-palette per
 //    ColorNum-color group, colByte = the file's per-tile sub-palette index directly.
+//  • NEVER pair a .col with a ".gba" (4BPP GBA) sheet — YY-CHR CORRUPTS Col-mode
+//    edits there. Col mode is active whenever a .col is loaded (ColSetData.IsColMode
+//    = data != null), display ADDS colByte×ColorNum to every bytemap pixel
+//    (AddPalSet) and saving has NO inverse: ConvertBytemapToFile feeds the offset
+//    bytemap straight to the format encoder. Bitplane encoders (_4bppSNES, _2bppGB)
+//    extract bits 0-3 individually so the offset masks off — .col is safe there —
+//    but _4bppGBA.ConvertChrToMem packs `low | high << 4` with NO 4-bit mask, so
+//    the even pixel's offset bits (colByte×16) OR into the odd pixel's stored
+//    nibble (p_odd |= colByte; the high pixel's own offset shifts past bit 7 and
+//    truncates away). One pen stroke re-encodes the whole displayed bank, silently
+//    damaging every char with colByte ≥ 1. Per-char rows for CPC sheets therefore
+//    ride the export manifest (tileSub, thumbnail-only) instead of a .col.
 //  • Copier-header autodetect is ON by default (header = fileSize % 2048) and files
 //    smaller than one bank (128×128 px view) get buffer-padded + a save prompt —
 //    both dodged by zero-padding every export to a whole number of banks.
@@ -100,15 +112,22 @@ export function buildPalFromCgram(cgram: Uint8Array, primaryRow: number): Uint8A
 
 /** Build the .col sidecar for a (bank-padded) file: 256-byte header (zeros; offset
  *  128 feeds YY-CHR's NES-DAT view, unused for SNES) + one byte per char at
- *  `charFileOffset/16 + 256` (so 4bpp banks stride 512 with the upper 256 unused;
- *  2bpp banks pack contiguously). `tileSub[t]` = the char's sub-palette group in the
- *  companion `buildPalFromRgbRows` .pal; chars past the end (padding) read group 0. */
+ *  `bankBase/16 + charIdx + 256` (ColSetData.cs: the /16 scales the display
+ *  window's BASE address; the char index within the 256-char window is DENSE).
+ *  So 4bpp banks stride 512 col entries with only the first 256 used; 2bpp banks
+ *  pack contiguously. (Fixed 2026-07-19: the old code scaled the per-char offset
+ *  too — `fileOffset/16` = 2·charIdx for 4bpp — leaving every odd char reading
+ *  group 0; in-app symptom: odd tile columns in a solid wrong color.)
+ *  `tileSub[t]` = the char's sub-palette group in the companion
+ *  `buildPalFromRgbRows` .pal; chars past the end (padding) read group 0. */
 export function buildColSidecar(tileSub: readonly number[], bpp: 2 | 4, paddedBytes: number): Uint8Array {
   const tileBytes = bpp === 4 ? 32 : 16;
+  const bank = yychrBankBytes(bpp);
   const out = new Uint8Array(256 + paddedBytes / 16);
   const tiles = paddedBytes / tileBytes;
   for (let t = 0; t < tiles; t++) {
-    out[256 + (t * tileBytes) / 16] = (tileSub[t] ?? 0) & 0xff;
+    const fileOff = t * tileBytes;
+    out[256 + (Math.floor(fileOff / bank) * bank) / 16 + (fileOff % bank) / tileBytes] = (tileSub[t] ?? 0) & 0xff;
   }
   return out;
 }
@@ -332,12 +351,12 @@ export interface YychrSheetRender {
  */
 export function renderYychrSheetRgba(
   sheetBytes: Uint8Array,
-  opts: { bpp: 1 | 2 | 4; cpc?: boolean; sizeBytes: number; tilesWide?: number; maxTiles?: number },
+  opts: { bpp: 1 | 2 | 4 | 8; cpc?: boolean; sizeBytes: number; tilesWide?: number; maxTiles?: number; palRow?: number },
   palBytes?: Uint8Array | null,
   colBytes?: Uint8Array | null
 ): YychrSheetRender {
-  const tileBytes = opts.cpc ? 32 : opts.bpp === 4 ? 32 : opts.bpp === 2 ? 16 : 8;
-  const colors = opts.bpp === 2 ? 4 : opts.bpp === 1 ? 2 : 16;
+  const tileBytes = opts.cpc ? 32 : opts.bpp === 8 ? 64 : opts.bpp === 4 ? 32 : opts.bpp === 2 ? 16 : 8;
+  const colors = opts.bpp === 8 ? 256 : opts.bpp === 2 ? 4 : opts.bpp === 1 ? 2 : 16;
   const totalTiles = Math.ceil(opts.sizeBytes / tileBytes);
   const renderedTiles = Math.min(totalTiles, opts.maxTiles ?? 256, Math.floor(sheetBytes.length / tileBytes));
   const tilesWide = opts.tilesWide ?? 16;
@@ -370,6 +389,10 @@ export function renderYychrSheetRgba(
           idx[r * 8 + b * 2 + 1] = (v >> 4) & 0xf;
         }
       }
+    } else if (opts.bpp === 8) {
+      // 8bpp raw Mode-7-style chars: 1 byte per pixel, row-major (64 B/tile).
+      // (No current sheet uses this — the boss Mode-7 sets turned out to be CPC.)
+      for (let p = 0; p < 64; p++) idx[p] = sheetBytes[off + p] ?? 0;
     } else if (opts.bpp === 4) {
       decode4bppTile(sheetBytes, off, false, false, idx, 0);
     } else if (opts.bpp === 2) {
@@ -381,8 +404,14 @@ export function renderYychrSheetRgba(
         for (let c = 0; c < 8; c++) idx[r * 8 + c] = (v >> (7 - c)) & 1;
       }
     }
-    // .col: the char at file offset B reads its group byte at B/16 + 256 (2/4bpp only).
-    const group = colBytes && opts.bpp !== 1 ? (colBytes[256 + off / 16] ?? 0) : 0;
+    // .col: index = bankBase/16 + charIdx + 256 — dense char index within the
+    // 256-char bank window (must mirror buildColSidecar; both fixed 2026-07-19).
+    // Without a .col, `opts.palRow` (the sheet's CGRAM group from the manifest)
+    // picks the group — the .pal is raw CGRAM order.
+    const colBank = yychrBankBytes(opts.bpp);
+    const group = colBytes && opts.bpp !== 1
+      ? (colBytes[256 + (Math.floor(off / colBank) * colBank) / 16 + (off % colBank) / tileBytes] ?? 0)
+      : (opts.palRow ?? 0);
     const base = group * colors;
     const tx = (t % tilesWide) * 8;
     const ty = Math.floor(t / tilesWide) * 8;
