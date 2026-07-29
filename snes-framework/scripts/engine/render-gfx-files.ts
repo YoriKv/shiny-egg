@@ -39,8 +39,8 @@ import { loadSceneRegs } from './scene-regs.ts';
 import { loadBg2Tilemap, loadBg3Tilemap } from './load-bg-tilemaps.ts';
 import { type SymbolMap } from './symbol-map.ts';
 import { u24le } from './rom-read.ts';
-import { encodePng } from './png.ts';
-import { gfxToImage, lz16Layout, lz2Layout, type GfxImageLayout } from './gfx-png.ts';
+import { encodeIndexedPng } from './png.ts';
+import { gfxToImage, lz16Layout, lz2Layout, rgbaToRgbInts } from './gfx-png.ts';
 import { gfxFileAseprite } from './gfx-aseprite.ts';
 // GfxFileBlock + GfxFilesResult live in `../types.ts` (Node-free, so the
 // renderer-facing contract can re-export them); imported for local use and
@@ -421,8 +421,8 @@ function classifyGfxRole(entry: GfxFileEntry, layer: string): GfxRole {
 
 /** Per-tile palette fidelity for a BG2/BG3 file, carried on the export entry (and
  *  copied into the gfx manifest) so import decodes each tile against its OWN
- *  palette row — see gfx-png.ts. A global swatch can't disambiguate the rows (they
- *  share colors at different positions); decode must be per-tile. Used for both
+ *  palette row — see gfx-png.ts. One flat color→index map can't disambiguate the rows
+ *  (they share colors at different positions); decode must be per-tile. Used for both
  *  BG3 (2bpp, 4-color rows) and BG2 (4bpp, 16-color rows). */
 export interface PerTilePalette {
   /** Per file-tile palette index (0..subPalettes.length-1); 0 = the layer's
@@ -458,9 +458,14 @@ export interface GfxPngEntry {
   /** Index 0 was rendered transparent (sprite + BG2/BG3 gfx) — import needs this
    *  to treat transparent pixels as unchanged only where the base was index 0. */
   index0Transparent: boolean;
-  /** Present for BG2/BG3 files: per-tile palette fidelity (the swatch is a
-   *  reference grid; import decodes per-tile via this, not the swatch). */
+  /** Present for BG2/BG3 files: per-tile palette fidelity (each tile is colored — and
+   *  indexed — in its OWN sub-palette; the PNG's PLTE is the sub-palettes concatenated,
+   *  and import decodes per-tile via this). */
   perTilePalette?: PerTilePalette;
+  /** The single palette the sheet was exported with, as RGB ints (index i = color i) —
+   *  absent when `perTilePalette` supplies it instead. Carried in the manifest so an
+   *  import can match colors even if the artist saved a non-indexed PNG. */
+  palette?: number[];
   png: Uint8Array;
   /** Present when `opts.format === 'aseprite'`: the file's tiles as an indexed
    *  Aseprite tileset (sheet-grid tilemap). The single render palette row colors
@@ -654,9 +659,9 @@ function computePerTilePalette(
 }
 
 /**
- * Render every chunk-list gfx file used by `header`'s scene to a PNG — the tiles
- * colored by the level's real palette (index 0 transparent for sprites) plus a
- * self-describing swatch (see `gfx-png.ts`). Deduped by (format, fileId) so a
+ * Render every chunk-list gfx file used by `header`'s scene to an INDEXED PNG — the
+ * tiles colored by the level's real palette (index 0 transparent for sprites), which
+ * travels in the PNG's own PLTE (see `gfx-png.ts`). Deduped by (format, fileId) so a
  * file loaded into multiple slots exports once. Animated tiles are skipped (they
  * aren't single saveGfxEdit-able blobs). The companion import is
  * `imageToGfx(decodePng(png), layout)` → `saveGfxEdit`.
@@ -702,9 +707,10 @@ export function exportLevelGfxPngs(
     const baseLayout = entry.format === 'lz16' ? lz16Layout(rowCount!) : lz2Layout(entry.sizeBytes, params.bpp);
 
     // BG2/BG3 → per-tile palette fidelity: color each tile in the palette row its
-    // tilemap cells use (not all in the layer's base row), with a reference swatch
-    // of the exposed rows. Import decodes per-tile (a global swatch can't
-    // disambiguate rows that share colors). BG3 = 2bpp/4-color, BG2 = 4bpp/16.
+    // tilemap cells use (not all in the layer's base row). The exported PLTE is every
+    // exposed row concatenated, and a tile's pixels index into ITS row's block, so the
+    // import decodes per-tile (one flat color→index map can't disambiguate rows that
+    // share colors). BG3 = 2bpp/4-color, BG2 = 4bpp/16.
     const perTile =
       params.layer === 'BG3'
         ? (bg3Ctx ??= computePerTilePalette(rom, symbols, header, cgram, {
@@ -724,14 +730,10 @@ export function exportLevelGfxPngs(
         const vramByte = (entry.vramByteOffset + t * perTile.tileBytes) & 0xffff;
         tileSub.push(perTile.subByVramByte.get(vramByte) ?? 0);
       }
-      const swatch = new Uint8Array(perTile.subPalettesRgba.length * cpr * 4);
-      perTile.subPalettesRgba.forEach((sp, i) => swatch.set(sp, i * cpr * 4));
-      const layout: GfxImageLayout = { ...baseLayout, swatchColors: perTile.subPalettesRgba.length * cpr };
-      const png = encodePng(
-        gfxToImage(tileData, layout, swatch, {
-          tilePaletteRgba: (t) => perTile.subPalettesRgba[tileSub[t] ?? 0]!
-        })
-      );
+      // One PLTE spanning every exposed row: tile t's pixel v → index tileSub[t]*cpr + v.
+      const fullPal = new Uint8Array(perTile.subPalettesRgba.length * cpr * 4);
+      perTile.subPalettesRgba.forEach((sp, i) => fullPal.set(sp, i * cpr * 4));
+      const png = encodeIndexedPng(gfxToImage(tileData, baseLayout, fullPal, { tileSub: (t) => tileSub[t] ?? 0 }));
       out.push({
         fileId: entry.fileId,
         format: entry.format,
@@ -758,7 +760,7 @@ export function exportLevelGfxPngs(
       palRgba[i * 4 + 2] = (v >> 16) & 0xff;
       palRgba[i * 4 + 3] = (v >> 24) & 0xff;
     }
-    const png = encodePng(gfxToImage(tileData, baseLayout, palRgba));
+    const png = encodeIndexedPng(gfxToImage(tileData, baseLayout, palRgba));
     out.push({
       fileId: entry.fileId,
       format: entry.format,
@@ -768,6 +770,7 @@ export function exportLevelGfxPngs(
       rowCount,
       addr,
       index0Transparent: isSprite,
+      palette: rgbaToRgbInts(palRgba),
       png: new Uint8Array(png),
       aseprite: makeAse ? makeAse(tileData, params.bpp, paletteRow, isSprite) : undefined
     });

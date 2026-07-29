@@ -16,7 +16,7 @@
 //
 // BG vs OBJ palette: BG1 index 0 is an OPAQUE color (the backdrop the cart shows
 // through in-game, but a real editable index here), unlike a sprite's transparent
-// index 0 — so the canvas + swatch are fully opaque (matches the faithful
+// index 0 — so the canvas + its palette are fully opaque (matches the faithful
 // bg1-tileset/ export's index0Transparent=false).
 
 import { loadLevelGfx, fileForVramByte, type GfxHeader, type GfxFileEntry } from './load-graphics.ts';
@@ -24,7 +24,7 @@ import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
 import { loadMap16Tables, decodeMap16, type Map16Tables, type Map16SubTile } from './map16.ts';
 import { loadSceneRegs } from './scene-regs.ts';
 import { decode4bppTile, encode4bppTile } from './tile.ts';
-import { buildPaletteRow, paletteIndexOf } from './color.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
 import type { SymbolMap } from './symbol-map.ts';
 
 const TILE_BYTES_4BPP = 32;
@@ -62,7 +62,7 @@ export interface MetatileCanvas {
   height: number;
   /** The 4 quadrants (TL, TR, BL, BR); `null` = non-editable (anim/miss/unmapped). */
   units: (MetatileUnit | null)[];
-  /** BG palette rows the block uses (for the swatch). */
+  /** BG palette rows the block uses (the exported palette). */
   paletteRowsUsed: number[];
   /** Every quadrant maps to a BG1 file AND slices back byte-exact → safe to edit. */
   faithful: boolean;
@@ -141,8 +141,9 @@ function sliceQuadrant(
   vflip: boolean,
   palette: Uint32Array,
   baseBytes: Uint8Array,
-  /** Optional miss counter: bumped for each opaque pixel whose color is in no
-   *  slot of this row's palette (a wrong-row / off-palette paint, clamped to 0). */
+  /** Optional miss counter: bumped for each pixel whose color is in no slot of this
+   *  row's palette (a wrong-row / off-palette paint) and so was matched to the NEAREST
+   *  color — an approximation the import surfaces as a warning. */
   miss?: { n: number }
 ): Uint8Array {
   const baseIdx = new Uint8Array(64);
@@ -157,8 +158,9 @@ function sliceQuadrant(
       let r: number;
       if (u === palette[bIdx]) r = bIdx;
       else {
-        r = paletteIndexOf(palette, u, 16);
-        if (miss && r === 0 && u !== palette[0]) miss.n++;
+        r = nearestPaletteIndex(palette, u, 16);
+        // No exact slot in this row → approximated to the nearest color; count it.
+        if (miss && u !== palette[r]) miss.n++;
       }
       rawIdx[trow * 8 + tcol] = r;
     }

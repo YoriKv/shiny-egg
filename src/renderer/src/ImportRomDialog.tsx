@@ -405,8 +405,16 @@ function ReportView({
               <span className="se-import__catinfo">
                 {report.names.changed} changed
                 {report.names.skipped > 0 ? ` · ${report.names.skipped} skipped` : ''}
+                {report.names.spillBytes > 0 && (
+                  <span
+                    className="se-import__tag"
+                    title={`The imported names are ${report.names.spillBytes} bytes longer than the vanilla ones, so the build grows the region into bank $51's free space. ${report.names.spillFreeBytes} bytes of that space remain for names (already net of the message text, relocated level data, and asm patches).`}
+                  >
+                    +{report.names.spillBytes} B free space
+                  </span>
+                )}
                 {report.names.overBudget && (
-                  <span className="se-import__tag se-import__tag--blocked" title="The imported names don't fit the cart's fixed name byte budget.">
+                  <span className="se-import__tag se-import__tag--blocked" title="The imported names don't fit the name region even after growing it into bank $51's free space — the free space is spoken for (message text / relocated level data / asm patches).">
                     over budget
                   </span>
                 )}
@@ -440,8 +448,16 @@ function ReportView({
                 {report.messages.blanked > 0 ? ` · ${report.messages.blanked} blanked` : ''}
                 {report.messages.duplicates > 0 ? ` · ${report.messages.duplicates} dup ignored` : ''}
                 {report.messages.skipped > 0 ? ` · ${report.messages.skipped} skipped` : ''}
+                {report.messages.spillBytes > 0 && (
+                  <span
+                    className="se-import__tag"
+                    title={`The imported text is ${report.messages.spillBytes} bytes longer than the vanilla message region, so the build grows it into bank $51's free space — the same thing the hack did in its own ROM. ${report.messages.spillFreeBytes} bytes of that free space remain (shared with relocated level data).`}
+                  >
+                    +{report.messages.spillBytes} B free space
+                  </span>
+                )}
                 {report.messages.overBudget && (
-                  <span className="se-import__tag se-import__tag--blocked" title="The imported messages don't fit the cart's fixed message byte budget, even after deduping shared messages.">
+                  <span className="se-import__tag se-import__tag--blocked" title="The imported messages don't fit the message region even after growing it into bank $51's free space and deduping shared messages — the free space is spoken for (relocated level data / asm patches).">
                     over budget
                   </span>
                 )}

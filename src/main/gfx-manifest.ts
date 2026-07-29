@@ -66,9 +66,15 @@ export interface GfxManifestEntry {
   sizeBytes: number
   rowCount?: number
   index0Transparent: boolean
-  /** BG2/BG3 only: per-tile palette fidelity. Import decodes each tile against its
-   *  own palette row via this (the swatch is a reference grid). */
+  /** BG2/BG3 only: per-tile palette fidelity. Each tile is colored — and indexed — in
+   *  its OWN palette row (the PNG's PLTE is the rows concatenated), so import decodes
+   *  each tile against its own row via this. */
   perTilePalette?: PerTilePalette
+  /** The single palette the PNG was exported (and indexed) with, as RGB ints — absent
+   *  when `perTilePalette` supplies it instead, and on pre-indexed-PNG exports (those
+   *  carried a swatch strip in the image, which the import still reads back). Lets the
+   *  import color-match a PNG the artist re-saved without its palette. */
+  palette?: number[]
   /** Screens only: the PNG is just this tile-region of the file (e.g. the boot
    *  logo). Import maps edits back into the full file by these coords. */
   region?: TileRegion
@@ -78,8 +84,8 @@ export interface GfxManifestEntry {
 }
 
 /** One reconstructed-metasprite PNG (the editable "meta" view of a sprite). The
- *  PNG is the assembled character (`width`×`height`) + an OBJ-palette swatch;
- *  import reads only the canvas region. `faithful` ones (under metasprite/) write
+ *  PNG is the assembled character (`width`×`height`), color-indexed in its OBJ palette
+ *  rows; import reads the canvas region. `faithful` ones (under metasprite/) write
  *  edits back to the sprite sheets; previews (metasprite/preview/) are view-only. */
 export interface MetaspriteManifestEntry {
   file: string

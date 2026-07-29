@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.2 - 2026-07-29
+
+- Message text and level names can now extend beyond byte limit by using freespace
+- Importing a ROM text that extended beyond vanilla byte limit import correctly
+
 ## v0.7.1 - 2026-07-19
 
 - Lots of fixes and improvements to the graphics editing pipeline

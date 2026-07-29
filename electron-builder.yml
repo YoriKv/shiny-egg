@@ -9,6 +9,9 @@ files:
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.renderer.json}'
+  # Gitignored dev-scratch trees — never part of the app bundle
+  - '!tmp/**'
+  - '!research/**'
   - '!snes-framework/**'
   # `snes-framework` is a workspace dep symlinked into node_modules, so
   # electron-builder would otherwise drag the WHOLE package in (and unpack it,

@@ -11,7 +11,7 @@
 
 import { encodeAseprite, encodeAsepriteImage, encodeAsepriteMultiTilemap, type AsepriteCell, type AsepriteTilemapLayerSpec } from './aseprite.ts';
 import { decode2bppTile, decode4bppTile, encode2bppTile, encode4bppTile } from './tile.ts';
-import { buildPaletteRow, paletteIndexOf, imageDataU32ToBgr15 } from './color.ts';
+import { buildPaletteRow, nearestPaletteIndex, imageDataU32ToBgr15 } from './color.ts';
 import type { PaletteEdit } from '../types.ts';
 
 const TILE_PX = 8;
@@ -159,7 +159,7 @@ function buildAsepriteTileset(args: {
   let transparentIndex: number;
   if (index0Transparent) {
     // Each used row's local-0 composites transparent (alpha-0 entry, matching the
-    // PNG swatch); collapse every row's local-0 to the single index 0.
+    // PNG palette); collapse every row's local-0 to the single index 0.
     palette = new Uint32Array(Math.max(1, usedRows.length * cpr));
     usedRows.forEach((r, k) => {
       const row = buildPaletteRow(cgram, r, true, 'expand', cpr, stride);
@@ -250,12 +250,12 @@ export function tilesAsepriteMulti(args: {
 
 /**
  * A "single image with palette" `.aseprite` (no tileset/tilemap) from an assembled RGBA
- * view + the meaningful CGRAM palette colors (the same the PNG swatch shows) — for the
+ * view + the meaningful CGRAM palette colors (the same the PNG's palette holds) — for the
  * non-tilemap exports (world/level icons, title scenery, metasprites, metatiles). Each
  * pixel is reverse-mapped to its palette index by EXACT color (transparent pixels → the
  * transparent index), so `decodeAsepriteImage` reproduces the RGBA byte-for-byte and the
  * existing RGBA base-aware slicers consume it unchanged — the import contract is the
- * render, exactly like the PNG path (no swatch needed; the palette is embedded).
+ * render, exactly like the PNG path (both carry the palette in-file).
  * `index0Transparent` matches the owner's index-0 semantics: sprites/scenery transparent-0
  * (alpha-0 pixels → index 0); BG icons/metatiles opaque-0 ⇒ a trailing transparent slot
  * covers any alpha-0 pixel. Off-palette opaque pixels are appended so the flatten stays
@@ -370,7 +370,7 @@ export function diffGfxFileAseprite(args: {
       for (let x = 0; x < TILE_PX; x++) {
         const u = u32[(cy + y) * width + cx + x]!;
         const bIdx = baseIdx[y * TILE_PX + x]!;
-        rawIdx[y * TILE_PX + x] = u === palette[bIdx] ? bIdx : paletteIndexOf(palette, u, cpr);
+        rawIdx[y * TILE_PX + x] = u === palette[bIdx] ? bIdx : nearestPaletteIndex(palette, u, cpr);
       }
     }
     const bytes = new Uint8Array(tileBytes);

@@ -28,8 +28,11 @@ const baseOf = (rom: Uint8Array, e: GfxPngEntry): Uint8Array => {
   if (e.format === 'lz16') lz16(rom, snesToPC(e.addr), out, 0, e.rowCount!); else lz2(rom, snesToPC(e.addr), out, 0);
   return out;
 };
-const palOf = (e: FidEntry) => (t: number): readonly number[] =>
-  e.perTilePalette.subPalettes[e.perTilePalette.tileSub[t] ?? 0] ?? e.perTilePalette.subPalettes[0]!;
+/** The per-tile decode args every import site passes (manifest sub-palettes + tileSub). */
+const perTileOpts = (e: FidEntry): { subPalettes: readonly (readonly number[])[]; tileSub: (t: number) => number } => ({
+  subPalettes: e.perTilePalette.subPalettes,
+  tileSub: (t: number) => e.perTilePalette.tileSub[t] ?? 0
+});
 
 const { rom, symbols } = loadDevCart();
 const h = loadLevel({ workRoot: FRAMEWORK_ROOT, levelRecordId: 0x02 }).header;
@@ -55,15 +58,17 @@ const all = [...bg3, ...bg2];
 for (const e of all) {
   const img = decodePng(Buffer.from(e.png));
   const base = baseOf(rom, e);
-  const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: true, tilePalette: palOf(e) }).subarray(0, e.sizeBytes);
+  const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: true, ...perTileOpts(e) }).subarray(0, e.sizeBytes);
   if (eq(round, base)) exact++;
   else assert(false, `${e.role.category} 0x${e.addr.toString(16)} unedited per-tile round-trip byte-exact`);
 }
 assert(exact === all.length, `all ${all.length} BG2/BG3 files round-trip byte-exact`);
 
-// (3) 1-pixel edit on tile 0: change pixel (0,0) to another color of ITS row →
-// that tile's bytes change to the right index, others untouched. Run for a 2bpp
-// (BG3) and a 4bpp (BG2) file.
+// (3) 1-pixel edit on tile 0 → that tile's bytes change to the right index, others
+// untouched. Run BOTH import matchers: the artist repainted the INDEX (an indexed
+// editor) and the artist repainted the COLOR (a flattened save). Both must land on the
+// same index — the color path resolves within tile 0's OWN sub-palette. 2bpp (BG3) +
+// 4bpp (BG2).
 function pixelEditCheck(e: FidEntry, label: string): void {
   const tileBytes = e.bpp === 4 ? 32 : 16;
   const N = e.bpp === 4 ? 16 : 4;
@@ -80,15 +85,23 @@ function pixelEditCheck(e: FidEntry, label: string): void {
     if (pal.filter((c) => c === pal[cand]).length === 1) { k = cand; break; }
   }
   if (k < 0) { console.log(`  (skipped ${label} 1-pixel edit: tile 0 row has no unique alternate color)`); return; }
-  const img = decodePng(Buffer.from(e.png));
   const col = pal[k]!;
-  img.rgba[0] = (col >> 16) & 0xff; img.rgba[1] = (col >> 8) & 0xff; img.rgba[2] = col & 0xff; img.rgba[3] = k === 0 ? 0 : 255;
-  const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: true, tilePalette: palOf(e) }).subarray(0, e.sizeBytes);
   const exp = new Uint8Array(tileBytes);
   const ei = idx0.slice(); ei[0] = k;
   encode(ei, 0, exp, 0);
-  assert(eq(round.subarray(0, tileBytes), exp), `${label} 1-pixel edit: tile 0 byte = expected (index ${bi}→${k})`);
-  assert(eq(round.subarray(tileBytes), base.subarray(tileBytes)), `${label} 1-pixel edit: every other tile byte-identical`);
+  const sub0 = e.perTilePalette.tileSub[0] ?? 0;
+  for (const mode of ['index', 'color'] as const) {
+    const img = decodePng(Buffer.from(e.png));
+    if (mode === 'index') img.indices![0] = sub0 * N + k; // tile 0's sub-palette block
+    else {
+      delete img.indices; // a flattened (non-indexed) save → the color matcher
+      delete img.palette;
+    }
+    img.rgba[0] = (col >> 16) & 0xff; img.rgba[1] = (col >> 8) & 0xff; img.rgba[2] = col & 0xff; img.rgba[3] = k === 0 ? 0 : 255;
+    const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: true, ...perTileOpts(e) }).subarray(0, e.sizeBytes);
+    assert(eq(round.subarray(0, tileBytes), exp), `${label} 1-pixel ${mode} edit: tile 0 byte = expected (index ${bi}→${k})`);
+    assert(eq(round.subarray(tileBytes), base.subarray(tileBytes)), `${label} 1-pixel ${mode} edit: every other tile byte-identical`);
+  }
 }
 pixelEditCheck(bg3[0]!, 'BG3 (2bpp)');
 pixelEditCheck(bg2.find((e) => new Set(e.perTilePalette.tileSub).size > 1) ?? bg2[0]!, 'BG2 (4bpp)');

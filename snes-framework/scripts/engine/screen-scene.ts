@@ -7,8 +7,8 @@
 //
 // (Was the monolithic screen-gfx.ts.) Original header:
 // System-screen graphics export — the boot ("Nintendo Presents"), title (rotating
-// island) and overworld-map screens, as editable PNGs (tiles + a palette-row
-// swatch), round-tripping through the SAME `saveGfxEdit` path as the per-level gfx
+// island) and overworld-map screens, as editable color-indexed PNGs (the tile grid,
+// its palette row in the PLTE), round-tripping through the SAME `saveGfxEdit` path as the per-level gfx
 // files (a screen file and a level file with the same id ARE the same compressed
 // blob — `DATA_lz{2,16}_compressed_gfx_ptrs`).
 //
@@ -92,7 +92,7 @@
 //           tilemap-placement-import.md pattern) → round-trips to `$7c`/`$7d`; pixels
 //           edit via the shared `$74`/`$75`/`$4C` char. NB `mapGfx` below currently
 //           mis-indexes `DATA_00B3F4` (uses `world`, not `world*2`) — fix before use.
-// bpp/row only affect preview legibility + the swatch — the import is base-aware,
+// bpp/row only affect preview legibility + the exported palette — the import is base-aware,
 // so an unedited file round-trips byte-exact regardless, and edits map to the
 // shown row's colors.
 
@@ -100,9 +100,9 @@ import { loadSceneGfx, type GfxFileEntry, type SceneGfx } from './load-graphics.
 import { loadSceneRegsByIndex, type SceneRegs } from './scene-regs.ts';
 import { loadScenePalettes, type ScenePalette } from './load-palettes.ts';
 import { storybookFileClass, storybookTileRow, type StorybookFileClass } from './storybook-palette-facts.ts';
-import { buildPaletteRow, paletteIndexOf } from './color.ts';
-import { gfxToImage, lz16Layout, lz2Layout, type GfxImageLayout } from './gfx-png.ts';
-import { encodePng, type ImageData } from './png.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
+import { gfxToImage, lz16Layout, lz2Layout, rgbaToRgbInts, type GfxImageLayout } from './gfx-png.ts';
+import { canvasIndexedPng, encodeIndexedPng, type ImageData } from './png.ts';
 import { decode2bppTile, encode2bppTile } from './tile.ts';
 import { u16le, u24le } from './rom-read.ts';
 import { type SymbolMap } from './symbol-map.ts';
@@ -213,6 +213,10 @@ export interface ScreenGfxPng {
    *  0/3/6/7, not one tint). Import decodes per-tile via this (the same mechanism
    *  the level BG2/BG3 export uses). */
   perTilePalette?: PerTilePalette;
+  /** The single palette the sheet was exported (and indexed) with, as RGB ints —
+   *  absent when `perTilePalette` supplies it instead. Manifest-carried so the import
+   *  can color-match a PNG the artist saved without its palette. */
+  palette?: number[];
   png: Uint8Array;
   /** A cropped screen REGION (e.g. the boot logo) as a single-image (no-tilemap)
    *  `.aseprite` — built only when requested. Import slices it via diffGfxFileAseprite
@@ -226,7 +230,7 @@ export interface ScreenGfxPng {
 /** Per-file render parameters, fixed by the scene-layout entry (see file header). */
 interface FileClass {
   bpp: 2 | 4;
-  /** CGRAM palette row to color the preview + emit as the swatch. */
+  /** CGRAM palette row to color the preview (and index the PNG against). */
   paletteRow: number;
   /** Export only this tile-region of the file (see {@link TileRegion}). */
   region?: TileRegion;
@@ -485,11 +489,12 @@ function renderMapBgFile(
   const tileData = vram.subarray(entry.vramByteOffset, entry.vramByteOffset + entry.sizeBytes);
   const rowCount = entry.format === 'lz16' ? entry.sizeBytes / 512 : undefined;
   const baseLayout = entry.format === 'lz16' ? lz16Layout(rowCount!) : lz2Layout(entry.sizeBytes, 4);
-  const swatch = new Uint8Array(subRgba.length * 16 * 4);
-  subRgba.forEach((sp, i) => swatch.set(sp, i * 16 * 4));
-  const layout: GfxImageLayout = { ...baseLayout, swatchColors: subRgba.length * 16 };
-  const image = gfxToImage(tileData, layout, swatch, { tilePaletteRgba: (t) => subRgba[tileSub[t] ?? 0]! });
-  const png = encodePng(image);
+  // One PLTE spanning every exposed row: tile t's pixel v → index tileSub[t]*16 + v.
+  const fullPal = new Uint8Array(subRgba.length * 16 * 4);
+  subRgba.forEach((sp, i) => fullPal.set(sp, i * 16 * 4));
+  const layout = baseLayout;
+  const image = gfxToImage(tileData, layout, fullPal, { tileSub: (t) => tileSub[t] ?? 0 });
+  const png = encodeIndexedPng(image);
   const ase = opts.aseprite
     ? perTileSheetAseprite({ image, layout, subRgba, colors: 16, index0Transparent: false, layerName: `map-f${entry.fileId.toString(16)}`, cgramRows: exposeRows, provenance })
     : undefined;
@@ -576,12 +581,11 @@ function renderStorybookCharFile(
   const tileData = vram.subarray(entry.vramByteOffset, entry.vramByteOffset + entry.sizeBytes);
   const rowCount = entry.format === 'lz16' ? entry.sizeBytes / 512 : undefined;
   const baseLayout = entry.format === 'lz16' ? lz16Layout(rowCount!) : lz2Layout(entry.sizeBytes, bpp);
-  const swatch = new Uint8Array(subRgba.length * colors * 4);
-  subRgba.forEach((sp, i) => swatch.set(sp, i * colors * 4));
-  const tilePaletteRgba = (t: number): Uint8Array => subRgba[tileSub[t] ?? 0]!;
-  const layout: GfxImageLayout = { ...baseLayout, swatchColors: subRgba.length * colors };
-  const image = gfxToImage(tileData, layout, swatch, { tilePaletteRgba });
-  const png = encodePng(image);
+  const fullPal = new Uint8Array(subRgba.length * colors * 4);
+  subRgba.forEach((sp, i) => fullPal.set(sp, i * colors * 4));
+  const layout = baseLayout;
+  const image = gfxToImage(tileData, layout, fullPal, { tileSub: (t) => tileSub[t] ?? 0 });
+  const png = encodeIndexedPng(image);
   // Optional single-image `.aseprite`. It carries the (multi-row) palette IN-FILE, so it OMITS
   // the reference swatch the PNG appends to the right — `perTileSheetAseprite` crops the bare
   // tile grid out of the rendered image. The import (decodeAsepriteImage → imageToGfx with the
@@ -781,28 +785,12 @@ export function diffStorybookSceneTiles(
   return { edits, conflicts };
 }
 
-/** Encode the scene canvas to a PNG: the assembled BG3 layout (opaque) + a 2bpp swatch
- *  column (4 colors) per used sub-palette row, to the right. Import reads only the
- *  top-left `width×height`. */
+/** Encode the scene canvas to an INDEXED PNG: the assembled BG3 layout with its used
+ *  2bpp sub-palette rows (4 colors each) concatenated as the PNG's palette — the colors
+ *  ride in the file, so no swatch column is stitched beside the picture. */
 export function storybookScenePng(ctx: StorybookSceneContext, canvas: StorybookSceneCanvas): Uint8Array {
-  const rows = canvas.paletteRowsUsed;
-  const swatchW = rows.length * TILE_PX;
-  const width = canvas.width + swatchW;
-  const height = Math.max(canvas.height, rows.length ? STORYBOOK_SCENE_BG3_COLORS * TILE_PX : 0);
-  const rgba = new Uint8Array(width * height * 4);
-  for (let y = 0; y < canvas.height; y++) {
-    rgba.set(canvas.rgba.subarray(y * canvas.width * 4, (y + 1) * canvas.width * 4), y * width * 4);
-  }
-  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  rows.forEach((row, ri) => {
-    const palette = sceneBg3PalFor(ctx, row);
-    const x0 = canvas.width + ri * TILE_PX;
-    for (let i = 0; i < STORYBOOK_SCENE_BG3_COLORS; i++) {
-      const color = palette[i]!;
-      for (let dy = 0; dy < TILE_PX; dy++) for (let dx = 0; dx < TILE_PX; dx++) u32[(i * TILE_PX + dy) * width + (x0 + dx)] = color;
-    }
-  });
-  return new Uint8Array(encodePng({ width, height, rgba }));
+  const rows = canvas.paletteRowsUsed.map((row) => sceneBg3PalFor(ctx, row).subarray(0, STORYBOOK_SCENE_BG3_COLORS));
+  return canvasIndexedPng(canvas.rgba, canvas.width, canvas.height, rows.length ? rows : [sceneBg3PalFor(ctx, 0).subarray(0, STORYBOOK_SCENE_BG3_COLORS)]);
 }
 
 /** The scene as a real Aseprite **tilemap** (tileset of distinct (char, palRow) 2bpp
@@ -1011,9 +999,9 @@ function renderFile(
     layout = entry.format === 'lz16' ? lz16Layout(rowCount!) : lz2Layout(entry.sizeBytes, cls.bpp);
   }
   const image = gfxToImage(tileData, layout, palRgba);
-  const png = encodePng(image);
+  const png = encodeIndexedPng(image);
   // A cropped region (the boot logo) → a single-image `.aseprite` (no tilemap): the
-  // region crop (swatch dropped) + the row palette as the indexed palette. The image is
+  // rendered pixels + the row palette as the indexed palette. The image is
   // opaque (paletteRowRgba index 0 is a real color), matching the PNG render, so the
   // flatten reproduces it and diffGfxFileAseprite round-trips. Region-only by design.
   let aseprite: Uint8Array | undefined;
@@ -1043,6 +1031,7 @@ function renderFile(
     region: cls.region,
     paletteRow: cls.paletteRow,
     cgram,
+    palette: rgbaToRgbInts(palRgba),
     png: new Uint8Array(png),
     aseprite,
     paletteOffsets
@@ -1303,7 +1292,7 @@ function slice2bppCell(
       const destRow = vflip ? 7 - trow : trow;
       const u = rgbaU32[(cellY + destRow) * canvasW + (cellX + destCol)]!;
       const bIdx = baseIdx[trow * 8 + tcol]!;
-      rawIdx[trow * 8 + tcol] = u === palette[bIdx] ? bIdx : paletteIndexOf(palette, u, colors);
+      rawIdx[trow * 8 + tcol] = u === palette[bIdx] ? bIdx : nearestPaletteIndex(palette, u, colors);
     }
   }
   const out = new Uint8Array(TILE_BYTES_2BPP);
@@ -1410,28 +1399,11 @@ export function diffTitleLogoTiles(
   return { edits, conflicts };
 }
 
-/** Encode the logo canvas to a PNG: the 256×112 logo (opaque) + a self-describing
- *  2bpp swatch column (4 colors) per used sub-palette row, to the right. Import
- *  reads only the top-left `width×height`. */
+/** Encode the logo canvas to an INDEXED PNG: the 256×112 logo with its used 2bpp
+ *  sub-palette rows (4 colors each) concatenated as the PNG's own palette. */
 export function titleLogoPng(ctx: TitleLogoContext, canvas: TitleLogoCanvas): Uint8Array {
-  const rows = canvas.paletteRowsUsed;
-  const swatchW = rows.length * TILE_PX;
-  const width = canvas.width + swatchW;
-  const height = Math.max(canvas.height, rows.length ? LOGO_COLORS * TILE_PX : 0);
-  const rgba = new Uint8Array(width * height * 4);
-  for (let y = 0; y < canvas.height; y++) {
-    rgba.set(canvas.rgba.subarray(y * canvas.width * 4, (y + 1) * canvas.width * 4), y * width * 4);
-  }
-  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  rows.forEach((row, ri) => {
-    const palette = logoPalFor(ctx, row);
-    const x0 = canvas.width + ri * TILE_PX;
-    for (let i = 0; i < LOGO_COLORS; i++) {
-      const color = palette[i]!;
-      for (let dy = 0; dy < TILE_PX; dy++) for (let dx = 0; dx < TILE_PX; dx++) u32[(i * TILE_PX + dy) * width + (x0 + dx)] = color;
-    }
-  });
-  return new Uint8Array(encodePng({ width, height, rgba }));
+  const rows = canvas.paletteRowsUsed.map((row) => logoPalFor(ctx, row).subarray(0, LOGO_COLORS));
+  return canvasIndexedPng(canvas.rgba, canvas.width, canvas.height, rows.length ? rows : [logoPalFor(ctx, 0).subarray(0, LOGO_COLORS)]);
 }
 
 /** The title logo as a real Aseprite **tilemap** (the full ROM-ordered char tileset, 2bpp

@@ -14,14 +14,13 @@
 
 import { DYNAMIC_BODY_SOURCES, DYNAMIC_GFX_ANCHOR_SYMBOL, RIGID_GLYPH_SPRITES } from './sprite-dynamic-gfx.ts';
 import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
-import { buildPaletteRow } from './color.ts';
-import { encodePng, type ImageData } from './png.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
+import { encodeIndexedPng } from './png.ts';
 import type { SymbolMap } from './symbol-map.ts';
 
 /** SNES base the per-sprite deltas are measured from (`DATA_gfx_bank54_part2`). */
 const ANCHOR_SNES = 0x548000;
 const ROW_STRIDE = 0x100;
-const SWATCH_PX = 8;
 
 /** The 4 raw glyph `.bin`s (bank $54/$55), each 0x8000 bytes, by SNES base. */
 const GLYPH_BINS: { baseSnes: number; file: string }[] = [
@@ -84,28 +83,17 @@ function glyphPalette(cgram: Uint8Array, row: number): Uint32Array {
   return buildPaletteRow(cgram, 8 + row, true);
 }
 
-const paletteIndexOf = (palette: Uint32Array, u: number): number => {
-  for (let i = 1; i < 16; i++) if (palette[i] === u) return i;
-  return 0;
-};
+/** Exact color, else the CLOSEST palette color (index 0 = the transparent slot). */
+const paletteIndexOf = (palette: Uint32Array, u: number): number => nearestPaletteIndex(palette, u, 16);
 
-/** Render a glyph (w×h indices) + a full-row OBJ swatch → PNG. */
+/** Render a glyph (w×h indices) as an INDEXED PNG — the glyph's nibbles ARE the PNG's
+ *  pixel indices, and the OBJ palette row (index 0 transparent) is its PLTE, so the
+ *  colors travel in the file instead of in a swatch beside the art. */
 function glyphPng(indices: Uint8Array, w: number, h: number, palette: Uint32Array): Uint8Array {
-  const width = w + SWATCH_PX;
-  const height = Math.max(h, 16 * SWATCH_PX);
-  const rgba = new Uint8Array(width * height * 4);
-  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const idx = indices[y * w + x]!;
-    if (idx !== 0) u32[y * width + x] = palette[idx]!;
-  }
-  for (let i = 0; i < 16; i++) {
-    const c = palette[i]!;
-    if (c === 0) continue;
-    for (let dy = 0; dy < SWATCH_PX; dy++) for (let dx = 0; dx < SWATCH_PX; dx++) u32[(i * SWATCH_PX + dy) * width + (w + dx)] = c;
-  }
-  const image: ImageData = { width, height, rgba };
-  return new Uint8Array(encodePng(image));
+  const rgba = new Uint8Array(w * h * 4);
+  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, w * h);
+  for (let i = 0; i < u32.length; i++) u32[i] = palette[indices[i]!]!;
+  return new Uint8Array(encodeIndexedPng({ rgba, width: w, height: h, indices, palette }));
 }
 
 export interface GlyphPngEntry {
@@ -117,8 +105,8 @@ export interface GlyphPngEntry {
   png: Uint8Array;
 }
 
-/** Export every byte-validated dynamic-sprite glyph as a PNG (colored by the
- *  level's OBJ palette + a swatch). The bytes are global; the coloring is the
+/** Export every byte-validated dynamic-sprite glyph as an indexed PNG (colored by the
+ *  level's OBJ palette, which rides in the PNG's palette). The bytes are global; the coloring is the
  *  level's (the slice maps colors → indices, so the edit is palette-independent). */
 export function exportSpriteGlyphs(rom: Uint8Array, symbols: SymbolMap, header: PaletteHeader): GlyphPngEntry[] {
   const cgram = new Uint8Array(512);

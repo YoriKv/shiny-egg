@@ -15,8 +15,10 @@
 // All addresses are cart PC offsets; only meaningful on a V1.0-derived cart
 // (the caller gates on the resolved anchors, like palette/name import).
 
-import { vendoredV10SymbolMap, type SymbolMap } from '../engine/symbol-map.ts';
+import { snesToPC, vendoredV10SymbolMap, type SymbolMap } from '../engine/symbol-map.ts';
 import { RAW_GFX_PC_RANGE } from '../engine/gfx-file-catalog.ts';
+import { LEVEL_NAME_PTR_COUNT } from '../levels-catalog.ts';
+import { MESSAGE_PTR_COUNT, MESSAGE_PTR_TABLE_SNES } from '../strings.ts';
 import type { InventoryCategory, RomImportInventory } from '../types.ts';
 
 /** Category key → display label + whether a semantic import already covers it. */
@@ -77,6 +79,15 @@ interface Interval {
   priority: number;
 }
 
+/** Vanilla's populated string region: the message pointer table ($51:10DB) through
+ *  the last level-name byte ($51:5348, just past the garbage sentinel). */
+const STRINGS_REGION_PC: readonly [number, number] = [snesToPC(MESSAGE_PTR_TABLE_SNES), 0x115348];
+
+/** Bank $51 as PC bounds. Both string pointer tables hold bank-local 16-bit words,
+ *  so every message body / level-name string the game can address lives in this
+ *  bank — which is also the only place a hack can put new ones. */
+const STRINGS_BANK_PC: readonly [number, number] = [snesToPC(0x510000), snesToPC(0x520000)];
+
 /**
  * Known-region interval table (tiers 1 + 2). Bands cover the Bank57 asset file
  * (`$57:3C00`+ — see that bank's header map): LZ2 graphics, tilemap blobs,
@@ -109,8 +120,10 @@ function buildIntervals(levelExtents: Array<[number, number]>): Interval[] {
     { start: idxPc, end: ptrsPc, key: 'world-map', priority: 2 },
     { start: ptrsPc, end: ptrsPc + 222 * 6, key: 'level-ptrs', priority: 2 },
     // $51:10DB (message ptr table) … $51:5348 (the bank's free tail) — message
-    // bodies + level-name strings; PC = (bank-$40)<<16 | offset.
-    { start: 0x1110db, end: 0x115348, key: 'strings', priority: 2 },
+    // bodies + level-name strings; PC = (bank-$40)<<16 | offset. A hack that
+    // outgrows the region spills into the free tail past this end; those bytes are
+    // reclaimed by `stringSpillBlocks`.
+    { start: STRINGS_REGION_PC[0], end: STRINGS_REGION_PC[1], key: 'strings', priority: 2 },
     { start: palettePc, end: palettePc + 0x2000, key: 'palette', priority: 2 },
     // Compressed-gfx pointer tables (LZ2 then LZ16, contiguous) — followed by the
     // graphics import; the build re-points them when placing relocated blobs.
@@ -183,7 +196,7 @@ export interface InventoryOptions {
    *  free-space block — the maximal vanilla-filler span containing it — and the
    *  whole block is attributed to level data, since a `Ptrs` pointer into
    *  vanilla free space IS the hack repacking level data there. See
-   *  `relocationBlocks`. */
+   *  `fillerBlocks`. */
   levelPtrTargets?: number[];
   /** Full base-build symbol map (main + superfx merged) for tier-3 label
    *  attribution; absent ⇒ leftovers fall to coarse bank classification. */
@@ -195,28 +208,70 @@ export interface InventoryOptions {
 const isFiller = (b: number): boolean => b === 0x00 || b === 0xff;
 
 /**
- * Relocation free-space blocks (tier 1.5): for each foreign `Ptrs` stream target
- * whose BASE byte is filler — i.e. the hack pointed a level stream into vanilla
- * free space — return the maximal contiguous run of base filler that contains it.
- * Diff bytes inside such a block are the level-data relocation footprint (the
- * stream plus its zero-fill padding), NOT a data table. Targets that land on real
+ * Free-space blocks a foreign pointer table targets (tier 1.5): for each target
+ * whose BASE byte is filler — i.e. the hack pointed something into vanilla free
+ * space — return the maximal contiguous run of base filler that contains it,
+ * optionally clamped to `bounds`. Diff bytes inside such a block belong to
+ * whatever that table addresses (a relocated level stream plus its zero-fill
+ * padding; an extended string table), NOT a data table. Targets that land on real
  * base data (an in-place edit, not a relocation) produce no block, so genuine
  * engine-table edits are untouched. Returned spans may be merged (two targets in
  * one filler run yield one block) and are scanned at most once each.
  */
-function relocationBlocks(base: Buffer, targets: number[]): Array<[number, number]> {
+function fillerBlocks(
+  base: Buffer,
+  targets: number[],
+  bounds?: readonly [number, number]
+): Array<[number, number]> {
+  const lo = Math.max(0, bounds ? bounds[0] : 0);
+  const hi = Math.min(base.length, bounds ? bounds[1] : base.length);
   const blocks: Array<[number, number]> = [];
   let coveredTo = -1;
   for (const t of [...new Set(targets)].sort((a, b) => a - b)) {
-    if (t <= coveredTo || t < 0 || t >= base.length || !isFiller(base[t])) continue;
+    if (t <= coveredTo || t < lo || t >= hi || !isFiller(base[t])) continue;
     let s = t;
     let e = t;
-    while (s > 0 && isFiller(base[s - 1])) s--;
-    while (e < base.length && isFiller(base[e])) e++;
+    while (s > lo && isFiller(base[s - 1])) s--;
+    while (e < hi && isFiller(base[e])) e++;
     blocks.push([s, e]);
     coveredTo = e - 1;
   }
   return blocks;
+}
+
+/**
+ * Bank $51 free-tail blocks the foreign cart's string tables spill into (tier 1.5,
+ * the strings analogue of the relocated-level-data rule above). Vanilla's string
+ * region ends at $51:5348 and the rest of the bank is untouched filler; a hack
+ * whose message / level-name text outgrows the region repoints slots into that
+ * tail. Both readers FOLLOW the foreign pointer tables
+ * (`readForeignMessages` / `readForeignLevelNames`), so the spilled text IS
+ * imported — without this it lands just past `DATA_level_name_garbage_sentinel`
+ * (the region's last byte) with no containing band or later label, and reports as
+ * not-imported "Other data tables" (the EGGCELLENT extended-string-table case).
+ *
+ * Evidence-driven like `fillerBlocks`' level-data use: only a tail a foreign
+ * string pointer actually targets is claimed, so a hack that parks unrelated data
+ * in bank $51 still reports it honestly. Clamped to bank $51 because a bank-local
+ * 16-bit pointer cannot reach further — and the vanilla filler run does bleed two
+ * bytes into the bank $52 raw-CHR band.
+ */
+function stringSpillBlocks(foreign: Buffer, base: Buffer): Array<[number, number]> {
+  const sym = vendoredV10SymbolMap();
+  const targets: number[] = [];
+  const collect = (tablePc: number, count: number): void => {
+    for (let i = 0; i < count; i++) {
+      const off = tablePc + i * 2;
+      if (off + 2 > foreign.length) break;
+      const word = foreign[off] | (foreign[off + 1] << 8);
+      if (word === 0) continue; // slot the hack deleted
+      const pc = snesToPC(0x510000 | word);
+      if (pc >= STRINGS_REGION_PC[1]) targets.push(pc); // only the spill past vanilla's end
+    }
+  };
+  collect(STRINGS_REGION_PC[0], MESSAGE_PTR_COUNT);
+  collect(sym.pc('DATA_level_name_string_ptrs'), LEVEL_NAME_PTR_COUNT);
+  return fillerBlocks(base, targets, STRINGS_BANK_PC);
 }
 
 /**
@@ -231,8 +286,14 @@ export function diffInventory(
   const intervals = buildIntervals(opts.levelExtents);
   // Relocated-level-data free-space blocks (Ptrs target sitting in vanilla
   // filler) override the coarse bands + data-other fallback, like a level extent.
-  for (const [start, end] of relocationBlocks(base, opts.levelPtrTargets ?? [])) {
+  for (const [start, end] of fillerBlocks(base, opts.levelPtrTargets ?? [])) {
     intervals.push({ start, end, key: 'level-data', priority: 3 });
+  }
+  // Extended string tables spilling into bank $51's free tail — same band
+  // priority as the vanilla string region it continues (so a level stream
+  // relocated into the same tail still wins at priority 3).
+  for (const [start, end] of stringSpillBlocks(foreign, base)) {
+    intervals.push({ start, end, key: 'strings', priority: 2 });
   }
   const tallies = new Map<string, Tally>();
   const tally = (key: string): Tally => {

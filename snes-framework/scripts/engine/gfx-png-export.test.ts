@@ -1,9 +1,8 @@
 // Real-data smoke test: exportLevelGfxPngs against the dev cart. Catches palette
 // byte-order / layout / rowCount / truncation bugs the synthetic gfx-png test
-// can't. For every exported gfx file: the PNG decodes at the expected size, and
-// the round-trip (PNG → tile bytes) is BYTE-EXACT vs the base blob whenever the
-// file's swatch palette has no duplicate colors (a duplicate maps to the lowest
-// index — visually identical, byte-different, which is expected/allowed).
+// can't. For every exported gfx file: the PNG is INDEXED, decodes at the bare
+// tile-grid size, and the round-trip (PNG → tile bytes) is BYTE-EXACT vs the base
+// blob — by index, so even a palette with duplicate colors round-trips exactly.
 //
 // Run: node --experimental-strip-types snes-framework/scripts/engine/gfx-png-export.test.ts
 
@@ -36,7 +35,8 @@ for (const e of entries) {
   const layout: GfxImageLayout = e.format === 'lz16' ? lz16Layout(e.rowCount!) : lz2Layout(e.sizeBytes, e.bpp);
   let img;
   try { img = decodePng(Buffer.from(e.png)); } catch (err) { assert(false, `0x${e.addr.toString(16)}: decode threw ${err}`); continue; }
-  assert(img.width === layout.tilesWide * 8 + 2 + 8, `0x${e.addr.toString(16)}: PNG width matches layout + swatch`);
+  assert(img.width === layout.tilesWide * 8, `0x${e.addr.toString(16)}: PNG width = bare tile grid (no swatch)`);
+  assert(img.indices !== undefined, `0x${e.addr.toString(16)}: PNG is color-indexed (palette in the file)`);
 
   const base = new Uint8Array(e.sizeBytes);
   const srcPC = snesToPC(e.addr);
@@ -46,11 +46,13 @@ for (const e of entries) {
   // Base-aware import: an UNEDITED file must round-trip BYTE-EXACT even when its
   // palette has duplicate colors (this is what keeps the build byte-identical).
   // BG2/BG3 decode each tile against its own palette row (per-tile fidelity).
-  const tilePalette = e.perTilePalette
-    ? (t: number): readonly number[] =>
-        e.perTilePalette!.subPalettes[e.perTilePalette!.tileSub[t] ?? 0] ?? e.perTilePalette!.subPalettes[0]!
-    : undefined;
-  const round = imageToGfx(img, layout, { base, index0Transparent: e.index0Transparent, tilePalette }).subarray(0, e.sizeBytes);
+  const round = imageToGfx(img, layout, {
+    base,
+    index0Transparent: e.index0Transparent,
+    palette: e.palette,
+    subPalettes: e.perTilePalette?.subPalettes,
+    tileSub: e.perTilePalette ? (t: number): number => e.perTilePalette!.tileSub[t] ?? 0 : undefined
+  }).subarray(0, e.sizeBytes);
   if (eq(round, base)) exact++;
   else assert(false, `0x${e.addr.toString(16)} (${e.format}): base-aware unedited round-trip not byte-exact`);
 }

@@ -21,14 +21,14 @@ import {
   type MetatileContext, type MetatileCanvas, type MetatileHeader, type MetatileTileEdit
 } from './object-metatile.ts';
 import { decode2bppTile, decode4bppTile, encode2bppTile, encode4bppTile } from './tile.ts';
-import { buildPaletteRow, paletteIndexOf } from './color.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
 import { loadLevelGfx, fileForVramByte, type GfxFileEntry } from './load-graphics.ts';
 import { loadLevelPalettes } from './load-palettes.ts';
 import { loadBg2Tilemap, loadBg3Tilemap } from './load-bg-tilemaps.ts';
 import { loadSceneRegs, type SceneRegs } from './scene-regs.ts';
 import { deriveDescriptors } from './bg-layers-compose.ts';
 import { resolveCellMap16 } from './cell-grid.ts';
-import { encodePng } from './png.ts';
+import { canvasIndexedPng } from './png.ts';
 import { encodeAseprite, type AsepriteCell, type AsepriteStructural } from './aseprite.ts';
 import { encodeM1te2, parseM1te2, MAP_STRIDE } from './m1te2.ts';
 import { diffM1tePalette, type M1tePaletteEdit } from './m1te2-util.ts';
@@ -107,7 +107,7 @@ export interface Bg1RegionResult {
   width: number;
   height: number;
   cells: Bg1RegionCell[];
-  /** BG palette rows the region's cells use (for the swatch). */
+  /** BG palette rows the region's cells use (the exported PNG's palette). */
   paletteRowsUsed: number[];
 }
 
@@ -420,10 +420,11 @@ export function diffBgRegionTiles(
         let r: number;
         if (u === palette[bIdx]) r = bIdx;
         else {
-          r = paletteIndexOf(palette, u, colorsPerRow);
-          // index 0 is this layer's transparent slot; an opaque color that lands
-          // there (and isn't palette[0]) is in no slot of the cell's row → mismatch.
-          if (r === 0 && u !== palette[0] && (u >>> 24) !== 0) mismatches++;
+          r = nearestPaletteIndex(palette, u, colorsPerRow);
+          // The color is in NO slot of this cell's row (wrong palette row, or paint
+          // outside the palette): it was APPROXIMATED to the nearest entry — report it
+          // so the import can warn instead of silently shifting the color.
+          if ((u >>> 24) !== 0 && u !== palette[r]) mismatches++;
         }
         rawIdx[trow * 8 + tcol] = r;
       }
@@ -437,10 +438,13 @@ export function diffBgRegionTiles(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PNG composition (region + palette swatch), shared by both layer kinds.
+// PNG composition (indexed region), shared by both layer kinds.
 
-/** Compose a region RGBA + a self-describing palette swatch (one column block per
- *  used row) to the right → PNG bytes. Import reads only the top-left region. */
+/** Compose a region RGBA → INDEXED PNG bytes: the region exactly as rendered, with the
+ *  used palette rows concatenated (row k's color i at `k * colorsPerRow + i`) as the
+ *  PNG's own palette. That order IS the sidecar's palette order (`buildSidecarPalette`)
+ *  and the `.aseprite` palette order, so the import reads recolored entries straight
+ *  out of the PLTE — the job the stitched-on swatch column used to do. */
 export function bgRegionPng(
   cgram: Uint8Array,
   rgba: Uint8Array,
@@ -451,26 +455,10 @@ export function bgRegionPng(
   transparentZero: boolean
 ): Uint8Array {
   const colorsPerRow = bpp === 4 ? 16 : 4;
-  const swatchW = paletteRowsUsed.length * TILE_PX;
-  const swatchH = paletteRowsUsed.length ? colorsPerRow * TILE_PX : 0;
-  const outW = width + swatchW;
-  const outH = Math.max(height, swatchH);
-  const out = new Uint8Array(outW * outH * 4);
-  for (let y = 0; y < height; y++) {
-    out.set(rgba.subarray(y * width * 4, (y + 1) * width * 4), y * outW * 4);
-  }
-  const u32 = new Uint32Array(out.buffer, out.byteOffset, outW * outH);
-  paletteRowsUsed.forEach((row, ri) => {
-    const palette = buildPaletteRow(cgram, row, transparentZero, 'expand', colorsPerRow);
-    const x0 = width + ri * TILE_PX;
-    for (let i = 0; i < colorsPerRow; i++) {
-      const color = palette[i]!;
-      for (let dy = 0; dy < TILE_PX; dy++) {
-        for (let dx = 0; dx < TILE_PX; dx++) u32[(i * TILE_PX + dy) * outW + x0 + dx] = color;
-      }
-    }
-  });
-  return new Uint8Array(encodePng({ width: outW, height: outH, rgba: out }));
+  const rows = (paletteRowsUsed.length ? paletteRowsUsed : [0]).map((row) =>
+    buildPaletteRow(cgram, row, transparentZero, 'expand', colorsPerRow)
+  );
+  return canvasIndexedPng(rgba, width, height, rows);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

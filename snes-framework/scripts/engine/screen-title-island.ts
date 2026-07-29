@@ -4,8 +4,8 @@
 
 import { loadSceneGfx } from './load-graphics.ts';
 import { loadScenePalettes } from './load-palettes.ts';
-import { buildPaletteRow, paletteIndexOf } from './color.ts';
-import { encodePng } from './png.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
+import { canvasIndexedPng } from './png.ts';
 import { snesToPC, type SymbolMap } from './symbol-map.ts';
 import { tilesAseprite, tilesetPaletteOffsets, type TilesetTile } from './gfx-aseprite.ts';
 import { type AsepriteCell, type AsepriteStructural } from './aseprite.ts';
@@ -152,7 +152,7 @@ export function diffTitleIslandTiles(
       for (let x = 0; x < TILE_PX; x++) {
         const col = eu32[(u.cellY + y) * canvas.width + (u.cellX + x)]!;
         const bIdx = u.basePx[y * 8 + x]!;
-        const idx = col === ctx.palette[bIdx] ? bIdx : paletteIndexOf(ctx.palette, col, ISLAND_COLORS);
+        const idx = col === ctx.palette[bIdx] ? bIdx : nearestPaletteIndex(ctx.palette, col, ISLAND_COLORS);
         px[y * 8 + x] = idx;
         if (idx !== bIdx) changed = true;
       }
@@ -170,16 +170,10 @@ export function diffTitleIslandTiles(
   return { edits: [...byChar].map(([char, bytes]) => ({ char, bytes })), conflicts, sharedCells };
 }
 
-/** Encode the island canvas to a PNG: the 256×256 island (opaque) + a 16-color
- *  swatch column to the right. Import reads only the top-left `width×height`. */
+/** Encode the island canvas to an INDEXED PNG: the 256×256 island with its 16-color
+ *  Mode-7 palette as the PNG's own palette (no swatch column — the file carries it). */
 export function titleIslandPng(ctx: TitleIslandContext, canvas: TitleIslandCanvas): Uint8Array {
-  const width = canvas.width + TILE_PX;
-  const height = Math.max(canvas.height, ISLAND_COLORS * TILE_PX);
-  const rgba = new Uint8Array(width * height * 4);
-  for (let y = 0; y < canvas.height; y++) rgba.set(canvas.rgba.subarray(y * canvas.width * 4, (y + 1) * canvas.width * 4), y * width * 4);
-  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  for (let i = 0; i < ISLAND_COLORS; i++) for (let dy = 0; dy < TILE_PX; dy++) for (let dx = 0; dx < TILE_PX; dx++) u32[(i * TILE_PX + dy) * width + (canvas.width + dx)] = ctx.palette[i]!;
-  return new Uint8Array(encodePng({ width, height, rgba }));
+  return canvasIndexedPng(canvas.rgba, canvas.width, canvas.height, [ctx.palette.subarray(0, ISLAND_COLORS)]);
 }
 
 /** The title island as a real Aseprite **tilemap** (tileset of distinct CPC char

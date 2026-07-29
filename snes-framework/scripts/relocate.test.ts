@@ -15,7 +15,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildPoolMap, carvePatchPool, migratable, patchPoolGeometry, poolLevels, PATCH_POOL_MAX_BYTES } from './pool-map.ts';
+import { buildPoolMap, carvePatchPool, migratable, patchPoolGeometry, poolLevels, shiftRegionHead, PATCH_POOL_MAX_BYTES } from './pool-map.ts';
 import type { LevelPool, PoolMap } from './pool-map.ts';
 import {
   deleteIncbin,
@@ -24,6 +24,7 @@ import {
   repointPtr,
   repointPtrRowOccurrence,
   reservePatchPool,
+  shiftRegionStart,
   planLayout,
   applyLevelDataLayout
 } from './relocate.ts';
@@ -114,6 +115,52 @@ const check = (cond: boolean, msg: string): void => {
   let threw = false;
   try { reservePatchPool('\t; no free bytes here\n', region, PATCH_POOL_MAX_BYTES); } catch { threw = true; }
   check(threw, 'reservePatchPool throws when the region macro is missing');
+}
+
+{
+  // String spill: a grown Bank51 message-text region claims FreeRegion51's HEAD.
+  // The region is claimed from both ends (head = text, tail = patch pool) and the
+  // three splices must compose in the build's order: shift → carve → append.
+  const region = { id: 'FreeRegion51', bankFile: 'Banks/Bank51.asm', boundary: 0x515348, capacityBytes: 44216 };
+  const bank = '\t%FREE_BYTES($515348, 44216, $FF)\t\t\t; V1.0: ~44 KB free tail\n';
+  const SPILL = 700;
+
+  const shiftedText = shiftRegionStart(bank, region, SPILL);
+  check(
+    shiftedText.includes('%FREE_BYTES($515604, 43516, $FF)'),
+    `shiftRegionStart moves the boundary + shrinks the fill, got:\n${shiftedText}`
+  );
+  check(shiftedText.includes('; V1.0: ~44 KB free tail'), 'shiftRegionStart preserves the trailing comment');
+  check(shiftRegionStart(bank, region, 0) === bank, 'zero spill is a no-op (byte-exact base)');
+
+  // The map shrinks the same way, so planLayout/appends see the real room left.
+  const map = { romVersion: 'YI_U1', pools: [], poolByFile: new Map(), freeRegions: [region] } as unknown as PoolMap;
+  const shiftedMap = shiftRegionHead(map, SPILL);
+  const sr = shiftedMap.freeRegions[0]!;
+  check(sr.boundary === 0x515348 + SPILL, `shiftRegionHead advances the boundary, got $${sr.boundary.toString(16)}`);
+  check(sr.capacityBytes === 44216 - SPILL, `shiftRegionHead shrinks capacity, got ${sr.capacityBytes}`);
+  check(shiftRegionHead(map, 0).freeRegions[0]!.boundary === 0x515348, 'zero spill leaves the map alone');
+
+  // Head + tail claims are independent: the pool still lands at the region's END.
+  const geoAfterShift = patchPoolGeometry(sr, PATCH_POOL_MAX_BYTES);
+  check(
+    geoAfterShift.fillBoundarySnes === 0x51e000 && geoAfterShift.loromStart === 0x23e000,
+    'the patch pool keeps its addresses when the head shifts (both measure the fixed end)'
+  );
+  const carved = reservePatchPool(shiftedText, sr, PATCH_POOL_MAX_BYTES);
+  check(carved.includes('%FREE_BYTES($515604, 35324, $FF)'), `carve after shift, got:\n${carved}`);
+  check(carved.includes('%FREE_BYTES($51E000, 8192, $FF)'), 'carve after shift still reserves the pool at the end');
+  const appended = appendRegionBlobs(
+    carved,
+    { ...sr, capacityBytes: geoAfterShift.migrationCapacity },
+    [{ label: 'DATA_level_7D_obj', file: 'DATA_level_7D_obj.bin', bytes: 366 }]
+  );
+  check(appended.includes('\t%InsertMacroAtXPosition($515604)\n'), 'append after shift orgs past the spilled text');
+  check(appended.includes('%FREE_BYTES($515772, 34958, $FF)'), `append after shift+carve, got:\n${appended}`);
+
+  let over = false;
+  try { shiftRegionStart(bank, region, 44217); } catch { over = true; }
+  check(over, 'shiftRegionStart throws when the spill exceeds the region (fail loud, not a negative fill)');
 }
 
 {
@@ -541,6 +588,40 @@ try {
   check(!b4cR.includes('DATA_level_01_obj:') && !b4cR.includes('DATA_level_01_spr:'), 'removed Bank4C should drop both 0x01 incbins');
   const remB = (0x4cfeb7 - (obj01 + spr01)).toString(16).toUpperCase().padStart(6, '0');
   check(b4cR.includes(`%FREE_BYTES($${remB}, ${329 + obj01 + spr01}, $FF)`), 'removed Bank4C boundary should pull back by the freed bytes');
+
+  // (h2) string spill: a grown Bank51 message region pushes the free region's
+  //      head, and a concurrent migration + patch pool still compose around it
+  //      (text at the front, migrated blobs after it, pool at the fixed end).
+  const SPILL = 700;
+  applyLevelDataLayout(yiRoot, null, tmp, map, {
+    migrated: new Set([0x01]),
+    decoupled: new Set(),
+    sizeOf: baseSizeOf,
+    patchPoolBytes: PATCH_POOL_MAX_BYTES,
+    stringSpillBytes: SPILL
+  });
+  const b51spill = fs.readFileSync(path.join(tmp, 'Banks/Bank51.asm'), 'utf8');
+  const spillStart = (0x515348 + SPILL).toString(16).toUpperCase().padStart(6, '0');
+  check(
+    b51spill.includes(`%InsertMacroAtXPosition($${spillStart})`),
+    `spilled Bank51 should org migration past the grown text, got:\n${b51spill.slice(-400)}`
+  );
+  check(b51spill.includes('%FREE_BYTES($51E000, 8192, $FF)'), 'spill + carve still reserves the pool at the fixed end');
+  const spillFill = 36024 - SPILL - (obj01 + spr01);
+  const spillBoundary = (0x515348 + SPILL + obj01 + spr01).toString(16).toUpperCase().padStart(6, '0');
+  check(
+    b51spill.includes(`%FREE_BYTES($${spillBoundary}, ${spillFill}, $FF)`),
+    `spill should come off the migration fill, want $${spillBoundary}/${spillFill}`
+  );
+  // Spill=0 restores base exactly — the byte-identity invariant is unaffected.
+  applyLevelDataLayout(yiRoot, null, tmp, map, {
+    migrated: new Set(), decoupled: new Set(), sizeOf: baseSizeOf, stringSpillBytes: 0
+  });
+  check(
+    fs.readFileSync(path.join(tmp, 'Banks/Bank51.asm'), 'utf8') ===
+      fs.readFileSync(path.join(yiRoot, 'Banks/Bank51.asm'), 'utf8'),
+    'stringSpillBytes=0 should leave Bank51 byte-identical to base'
+  );
 
   // (h) empty re-apply clears the removal (idempotent reconcile-from-base).
   applyLevelDataLayout(yiRoot, null, tmp, map, { migrated: new Set(), decoupled: new Set(), sizeOf: baseSizeOf });

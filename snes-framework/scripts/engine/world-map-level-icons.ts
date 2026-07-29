@@ -33,8 +33,8 @@
 
 import { loadScenePalettes } from './load-palettes.ts';
 import { mapPalette } from './screen-gfx.ts';
-import { buildPaletteRow } from './color.ts';
-import { encodePng, type ImageData } from './png.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
+import { encodeIndexedPng } from './png.ts';
 import { encodeAsepriteImage } from './aseprite.ts';
 import { imagePaletteOffsets } from './gfx-aseprite.ts';
 import { snesToPC, type SymbolMap } from './symbol-map.ts';
@@ -51,7 +51,6 @@ import { snesToPC, type SymbolMap } from './symbol-map.ts';
 const ICON_W = 24;
 const ICON_H = 24;
 const ROW_STRIDE = 0x100; // chunky 256-byte stride
-const SWATCH_PX = 8;
 const LEVELS_PER_WORLD = 12;
 /** 3-byte descriptors (→ bank-$53 chunky source), indexed by the global level
  *  index `R3 = world*12 + slot`. The cart's own icon-source table. */
@@ -125,10 +124,8 @@ export function buildLevelIconContext(rom: Uint8Array, symbols: SymbolMap, world
 
 /** OBJ palette row as ARGB, index 0 transparent (the icon's background). */
 const iconPalette = (cgram: Uint8Array, row: number): Uint32Array => buildPaletteRow(cgram, 8 + row, true);
-const paletteIndexOf = (palette: Uint32Array, u: number): number => {
-  for (let i = 1; i < 16; i++) if (palette[i] === u) return i;
-  return 0;
-};
+/** Exact color, else the CLOSEST palette color (index 0 = the transparent slot). */
+const paletteIndexOf = (palette: Uint32Array, u: number): number => nearestPaletteIndex(palette, u, 16);
 
 /** The chunky source nibble for one byte — high (column B) or low (column A). */
 const nibbleOf = (byte: number, high: boolean): number => (high ? (byte >> 4) : byte) & 0x0f;
@@ -171,16 +168,16 @@ export function renderWorldMapLevelIcon(ctx: LevelIconContext, slot: number): Le
   };
 }
 
-/** PNG: the 24×24 icon (index 0 transparent) + a full-row OBJ swatch on the right. */
+/** INDEXED PNG: the 24×24 icon, its chunky nibbles used verbatim as the PNG's pixel
+ *  indices, with the icon's OBJ palette row (index 0 transparent) as the PLTE — so the
+ *  palette is IN the file instead of stitched beside it, and an untouched export
+ *  round-trips exactly. */
 export function levelIconPng(ctx: LevelIconContext, canvas: LevelIconCanvas): Uint8Array {
-  const pal = iconPalette(ctx.cgram, canvas.paletteRow);
-  const w = ICON_W, h = ICON_H, width = w + SWATCH_PX, height = Math.max(h, 16 * SWATCH_PX);
-  const rgba = new Uint8Array(width * height * 4);
-  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const idx = canvas.indices[y * w + x]!; if (idx !== 0) u32[y * width + x] = pal[idx]!; }
-  for (let i = 0; i < 16; i++) { const c = pal[i]!; if (c === 0) continue; for (let dy = 0; dy < SWATCH_PX; dy++) for (let dx = 0; dx < SWATCH_PX; dx++) u32[(i * SWATCH_PX + dy) * width + (w + dx)] = c; }
-  const image: ImageData = { width, height, rgba };
-  return new Uint8Array(encodePng(image));
+  const palette = iconPalette(ctx.cgram, canvas.paletteRow);
+  const rgba = new Uint8Array(ICON_W * ICON_H * 4);
+  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, ICON_W * ICON_H);
+  for (let i = 0; i < u32.length; i++) u32[i] = palette[canvas.indices[i]!]!;
+  return new Uint8Array(encodeIndexedPng({ rgba, width: ICON_W, height: ICON_H, indices: canvas.indices, palette }));
 }
 
 /** One raw-CHR write (the shape `saveRawChrEdit` consumes). */

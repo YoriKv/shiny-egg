@@ -4,8 +4,8 @@
 
 import { loadSceneGfx, type GfxFileEntry } from './load-graphics.ts';
 import { loadScenePalettes } from './load-palettes.ts';
-import { buildPaletteRow, paletteIndexOf } from './color.ts';
-import { encodePng, type ImageData } from './png.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
+import { canvasIndexedPng } from './png.ts';
 import { decode4bppTile, encode4bppTile } from './tile.ts';
 import { u16le } from './rom-read.ts';
 import { type SymbolMap } from './symbol-map.ts';
@@ -126,7 +126,7 @@ function sliceIconCell(
       const destRow = vflip ? 7 - trow : trow;
       const u = rgbaU32[(cellY + destRow) * ICON_PX + (cellX + destCol)]!;
       const bIdx = baseIdx[trow * 8 + tcol]!;
-      rawIdx[trow * 8 + tcol] = u === palette[bIdx] ? bIdx : paletteIndexOf(palette, u, 16);
+      rawIdx[trow * 8 + tcol] = u === palette[bIdx] ? bIdx : nearestPaletteIndex(palette, u, 16);
     }
   }
   const out = new Uint8Array(TILE_BYTES_4BPP);
@@ -228,29 +228,12 @@ export function diffWorldMapIconTiles(
   return { edits, conflicts };
 }
 
-/** Encode an icon canvas to a PNG: the 24×24 icon (opaque) + a self-describing
- *  BG-palette swatch column per used row (full 16-color, opaque), to the right.
- *  Import reads only the top-left `width×height`. */
+/** Encode an icon canvas to an INDEXED PNG: the 24×24 icon exactly as rendered, with
+ *  its used BG palette rows (16 opaque colors each) as the PNG's own palette — the
+ *  colors travel in the file, not in a swatch beside it. */
 export function worldMapIconPng(ctx: WorldMapIconContext, canvas: WorldMapIconCanvas): Uint8Array {
-  const rows = canvas.paletteRowsUsed;
-  const swatchW = rows.length * TILE_PX;
-  const width = canvas.width + swatchW;
-  const height = Math.max(canvas.height, rows.length ? 16 * TILE_PX : 0);
-  const rgba = new Uint8Array(width * height * 4);
-  for (let y = 0; y < canvas.height; y++) {
-    rgba.set(canvas.rgba.subarray(y * canvas.width * 4, (y + 1) * canvas.width * 4), y * width * 4);
-  }
-  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  rows.forEach((row, ri) => {
-    const palette = iconPalFor(ctx, row);
-    const x0 = canvas.width + ri * TILE_PX;
-    for (let i = 0; i < 16; i++) {
-      const color = palette[i]!;
-      for (let dy = 0; dy < TILE_PX; dy++) for (let dx = 0; dx < TILE_PX; dx++) u32[(i * TILE_PX + dy) * width + (x0 + dx)] = color;
-    }
-  });
-  const image: ImageData = { width, height, rgba };
-  return new Uint8Array(encodePng(image));
+  const rows = canvas.paletteRowsUsed.map((row) => iconPalFor(ctx, row));
+  return canvasIndexedPng(canvas.rgba, canvas.width, canvas.height, rows.length ? rows : [iconPalFor(ctx, 0)]);
 }
 
 /** The assembled icon as a "single image with palette" `.aseprite` (no tilemap): the

@@ -121,7 +121,7 @@ for (const rec of LEVELS) {
         // An off-palette color (R=1 isn't a 5-bit SNES channel) → reported mismatch.
         const off = region.rgba.slice();
         new Uint32Array(off.buffer, off.byteOffset, off.length >>> 2)[(cell.r * 16) * region.width + cell.c * 16] = 0xff030201 >>> 0;
-        assert(diffBg1Region(ctx, region, off).mismatches >= 1, `BG1 off-palette pixel flagged as mismatch`);
+        assert(diffBg1Region(ctx, region, off).mismatches >= 1, `BG1 off-palette pixel flagged as mismatch (nearest-matched)`);
       }
 
       // 3. Aseprite PIXEL export (tiles = 8×8 CHR, honest sharing) flattens BYTE-EXACT to
@@ -203,7 +203,7 @@ for (const rec of LEVELS) {
       }
       const off = region.rgba.slice();
       new Uint32Array(off.buffer, off.byteOffset, off.length >>> 2)[sc.pxY * region.width + sc.pxX] = 0xff030201 >>> 0;
-      assert(diffBgRegionTiles(bgCtx, region, off).mismatches >= 1, `BG${layer} off-palette pixel flagged as mismatch`);
+      assert(diffBgRegionTiles(bgCtx, region, off).mismatches >= 1, `BG${layer} off-palette pixel flagged as mismatch (nearest-matched)`);
     }
 
     // 3. Aseprite tilemap export (tiles = CHR tiles, un-flipped + per-cell flip)
@@ -213,15 +213,15 @@ for (const rec of LEVELS) {
       `BG${layer} aseprite flattens byte-exact (${region.bpp}bpp, flips)`);
     assert(diffBgRegionTiles(bgCtx, region, flat.rgba).edits.length === 0,
       `BG${layer} aseprite round-trips through the slicer (0 edits)`);
-    // The aseprite palette must match the PNG swatch — each row's color 0 is
+    // The aseprite palette must match the PNG's palette — each row's color 0 is
     // transparent on these layers (NOT an opaque color the artist could mis-use).
     let palMatch = true;
     const cprPal = region.bpp === 4 ? 16 : 4;
     region.paletteRowsUsed.forEach((row, k) => {
-      const swatch = buildPaletteRow(bgCtx.cgram, row, true, 'expand', cprPal);
-      for (let i = 0; i < cprPal; i++) if ((flat.palette[k * cprPal + i] ?? 0) !== swatch[i]) palMatch = false;
+      const rowPal = buildPaletteRow(bgCtx.cgram, row, true, 'expand', cprPal);
+      for (let i = 0; i < cprPal; i++) if ((flat.palette[k * cprPal + i] ?? 0) !== rowPal[i]) palMatch = false;
     });
-    assert(palMatch, `BG${layer} aseprite palette matches the PNG swatch (per-row color 0 transparent)`);
+    assert(palMatch, `BG${layer} aseprite palette matches the PNG palette (per-row color 0 transparent)`);
 
     // 4. PLACEMENT round-trip on REAL data, at the BG's NATIVE tile size (16×16 for
     //    YI BG2/BG3 — one Aseprite tile = one tilemap word). Unedited → 0 word edits;

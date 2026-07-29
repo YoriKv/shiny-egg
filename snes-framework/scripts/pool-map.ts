@@ -514,6 +514,43 @@ export function carvePatchPool(map: PoolMap, patchPoolBytes: number): PoolMap {
   };
 }
 
+/** The free region whose HEAD bank $51's growable text regions (message bodies +
+ *  level-name strings) grow into. Same region as the patch-pool host — text
+ *  claims its start, patches its end. */
+export const STRING_SPILL_REGION_ID = 'FreeRegion51';
+
+/**
+ * Return a copy of the pool map with the string-spill host region's HEAD given up
+ * to bank $51's grown text: boundary moves FORWARD by `spillBytes`, capacity
+ * shrinks by the same. The tail END is unchanged, so `patchPoolGeometry` (which
+ * measures back from the end) is unaffected and the two claims compose in either
+ * order.
+ *
+ * Why the head: the text regions are the data immediately BEFORE this region's
+ * `%FREE_BYTES`, so growing them consumes the tail from the front. Everything that
+ * addresses a bank $51 body does so by label, and asar re-resolves — the only
+ * hard stop is the macro's `assert pc() <= boundary`, which relocate.ts moves by
+ * the same amount. Migration then plans against what's left, so the pre-build
+ * budget gate and the build agree (same rule as `carvePatchPool`).
+ */
+export function shiftRegionHead(map: PoolMap, spillBytes: number): PoolMap {
+  if (spillBytes <= 0) return map;
+  const host = map.freeRegions.find((r) => r.id === STRING_SPILL_REGION_ID);
+  if (!host) return map;
+  return {
+    ...map,
+    freeRegions: map.freeRegions.map((r) =>
+      r.id === host.id
+        ? {
+            ...r,
+            boundary: r.boundary + spillBytes,
+            capacityBytes: Math.max(0, r.capacityBytes - spillBytes),
+          }
+        : r
+    ),
+  };
+}
+
 /** A level record id as 2 uppercase hex digits (no prefix), matching
  *  `PoolBlob.level`. */
 export const levelHex = (n: number): string => hex(n, 2);

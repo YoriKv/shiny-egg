@@ -61,6 +61,12 @@ export interface StringsEditorState {
    *  model the encoded byte size (markupByteSize) — NOT the raw char count. */
   usedBytes: number
   budgetBytes: number
+  /** Extra bytes available beyond `budgetBytes` from ROM free space (0 on a
+   *  fixed-size region) — see StringTableModel.headroomBytes. */
+  headroomBytes: number
+  /** How much of that headroom the current text spends (`used − budget`, ≥ 0). */
+  spillBytes: number
+  /** True only when the text overruns budget AND headroom. */
   overBudget: boolean
   hasInvalid: boolean
   allowed: ReadonlySet<string>
@@ -120,9 +126,14 @@ export function useStringsEditor(
   }, [draft, allowed])
 
   const budgetBytes = draft?.budgetChars ?? 0
+  // A growable region (message text) may run past its base size into ROM free
+  // space; the build moves bank $51's free-tail boundary to make room. Mirrors
+  // serializeMessageText's `baseBytes + headroom` gate exactly.
+  const headroomBytes = draft?.headroomBytes ?? 0
+  const spillBytes = Math.max(0, usedBytes - budgetBytes)
   // Both models can now be measured exactly client-side (markupByteSize mirrors
   // the encoder), so block Save when over — matching the on-save enforcement.
-  const overBudget = !!draft && usedBytes > budgetBytes
+  const overBudget = !!draft && usedBytes > budgetBytes + headroomBytes
 
   // One undo step per committed line edit (blur/Enter) — `doc.commit` snapshots
   // before/after onto the unified history.
@@ -169,6 +180,8 @@ export function useStringsEditor(
     dirty: doc.dirty,
     usedBytes,
     budgetBytes,
+    headroomBytes,
+    spillBytes,
     overBudget,
     hasInvalid,
     allowed,
@@ -496,6 +509,58 @@ function useGlyphPreviews(enabled: boolean): ReadonlyMap<string, string> {
   return map
 }
 
+const num = (n: number): string => n.toLocaleString('en-US')
+
+/**
+ * The region's byte budget, in the panel footer next to Save. A fixed region
+ * shows just `used / budget`. A GROWABLE one (message text) counts the free space
+ * into the budget and reports how much of it the text has spent: past the base
+ * size the text spills into bank $51's `$FF` tail, which the build claims by
+ * moving that tail's boundary — so the user can see how much extra ROM the edit
+ * consumes and how much is left before the region (shared with relocated level
+ * data) is full. Renders bare spans so it sits inline in the footer row.
+ */
+function BudgetBar({
+  used,
+  budget,
+  headroom,
+  spill,
+  headroomLabel,
+  over
+}: {
+  used: number
+  budget: number
+  headroom: number
+  spill: number
+  headroomLabel?: string
+  over: boolean
+}): JSX.Element {
+  const growable = !!headroomLabel
+  return (
+    <>
+      <span className={`se-strings__budget${over ? ' is-over' : ''}`}>
+        {num(used)} / {num(budget + (growable ? headroom : 0))} bytes
+      </span>
+      {growable &&
+        (spill > 0 ? (
+          <span
+            className="se-strings__spill"
+            title={`The text is ${num(spill)} bytes past the region's original ${num(budget)}. The build claims that much of ${headroomLabel} — space it shares with relocated level data.`}
+          >
+            +{num(spill)} B of {headroomLabel} · {num(Math.max(0, headroom - spill))} B left
+          </span>
+        ) : (
+          <span
+            className="se-strings__spill"
+            title={`Room to grow past the original ${num(budget)} bytes, taken from ${headroomLabel} (shared with relocated level data).`}
+          >
+            {num(headroom)} B of {headroomLabel} spare
+          </span>
+        ))}
+    </>
+  )
+}
+
 function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Element {
   const {
     model,
@@ -506,6 +571,8 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
     dirty,
     usedBytes,
     budgetBytes,
+    headroomBytes,
+    spillBytes,
     overBudget,
     hasInvalid,
     allowed,
@@ -616,9 +683,14 @@ function StringTableView({ editor }: { editor: StringsEditorState }): JSX.Elemen
         </div>
       </div>
       <div className="se-strings__footer">
-        <span className={`se-strings__budget${overBudget ? ' is-over' : ''}`}>
-          {usedBytes} / {budgetBytes} bytes
-        </span>
+        <BudgetBar
+          used={usedBytes}
+          budget={budgetBytes}
+          headroom={headroomBytes}
+          spill={spillBytes}
+          headroomLabel={model.headroomLabel}
+          over={overBudget}
+        />
         {q && (
           <span className="se-strings__count">
             {visible.length} of {model.entries.length}

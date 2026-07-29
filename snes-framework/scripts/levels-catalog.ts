@@ -37,7 +37,7 @@ import type {
 export type { LevelCatalogEntry, LevelCatalogGroup, LevelsCatalog } from './types.ts';
 
 /** Number of `dw` entries in the pointer table — one per translevel ID 0..0x47. */
-const POINTER_COUNT = 72;
+export const LEVEL_NAME_PTR_COUNT = 72;
 
 /** Bank where both the pointer table and target name strings live. */
 const NAME_STRING_BANK = 0x51;
@@ -72,7 +72,7 @@ export function parseLevelNamesFromCart(
   const placeholderPtr = symbols.pc('DATA_level_name_garbage_sentinel') & 0xffff;
 
   const byId = new Map<number, string>();
-  for (let id = 0; id < POINTER_COUNT; id++) {
+  for (let id = 0; id < LEVEL_NAME_PTR_COUNT; id++) {
     const ptr = u16le(cart, tablePC + id * 2);
     if (ptr === placeholderPtr) continue;
     const namePC = snesToPC((NAME_STRING_BANK << 16) | ptr);
@@ -143,7 +143,7 @@ export function readForeignLevelNames(
   const tablePC = symbols.pc('DATA_level_name_string_ptrs');
   const placeholderPtr = symbols.pc('DATA_level_name_garbage_sentinel') & 0xffff;
   const out = new Map<number, ForeignLevelName>();
-  for (let id = 0; id < POINTER_COUNT; id++) {
+  for (let id = 0; id < LEVEL_NAME_PTR_COUNT; id++) {
     const ptr = u16le(cart, tablePC + id * 2);
     if (ptr === placeholderPtr) continue; // unused slot — no name
     const namePC = snesToPC((NAME_STRING_BANK << 16) | ptr);

@@ -55,7 +55,7 @@ function quantizeU32(u: number): number {
 }
 
 /** One exported palette entry, in used-rows compact order = the Aseprite palette
- *  index AND the PNG swatch cell — so import can detect a recolored entry and
+ *  index AND the exported PNG's palette entry — so import can detect a recolor and
  *  write it back to the master palette blob. */
 interface SidecarPaletteEntry {
   cgramIndex: number
@@ -346,11 +346,15 @@ export function exportBgRegionToDir(
   }
 }
 
-/** PNG swatch cell color for palette entry `idx` — bgRegionPng draws used-row
- *  blocks as columns (each `cpr` colors tall) starting at x0 (= region width);
- *  read the 8×8 cell's centre pixel. Undefined if off-image. */
-function swatchColorAt(img: ImageData, x0: number, cpr: number, idx: number): number | undefined {
-  const x = x0 + Math.floor(idx / cpr) * 8 + 4
+/** The imported PNG's palette entry `idx` — the indexed export's PLTE, whose order is
+ *  the sidecar's (used rows concatenated). Undefined when the artist saved a
+ *  NON-indexed PNG (no palette in the file): color edits can't be detected then, only
+ *  pixel edits (which still resolve by closest color). `legacySwatch` covers exports
+ *  written before the indexed switch, which carried a swatch column to the right of the
+ *  region — read the cell's centre pixel there. */
+function importedPaletteColorAt(img: ImageData, x0: number, cpr: number, idx: number): number | undefined {
+  if (img.palette) return idx < img.palette.length ? img.palette[idx]! : undefined
+  const x = x0 + Math.floor(idx / cpr) * 8 + 4 // legacy swatch column
   const y = (idx % cpr) * 8 + 4
   if (x >= img.width || y >= img.height) return undefined
   const o = (y * img.width + x) * 4
@@ -561,14 +565,14 @@ export async function importBgRegionFromDir(dir: string, reconciler: GfxImportRe
         const img = decodePng(readFileSync(pngPath))
         edited = canvasRegion(img, sc.width, sc.height)
         source = 'png'
-        importedPaletteAt = (idx) => swatchColorAt(img, sc.width, cpr, idx)
+        importedPaletteAt = (idx) => importedPaletteColorAt(img, sc.width, cpr, idx)
       } else {
         errors.push(`${scFile}: missing PNG/Aseprite`)
         continue
       }
       const mh = toMetatileHeader(sc.header)
 
-      // Palette color edits (recolored Aseprite-palette / PNG-swatch entries) →
+      // Palette color edits (recolored Aseprite-palette / PNG-palette entries) →
       // master-blob write-back + an effective CGRAM so pixels showing the new color
       // still match (and don't read as off-palette).
       let effective = new Map<number, number>()

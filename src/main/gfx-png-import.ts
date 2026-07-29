@@ -307,7 +307,7 @@ export interface ImportGfxResult {
   paletteImported: number
   errors: string[]
   /** Advisory notices (shown amber): the newer-shiny-egg export stamp, and PNG pixels
-   *  painted with a color outside the swatch (flattened to color 0). */
+   *  painted with a color outside the file's palette (matched to the nearest one). */
   warnings: string[]
 }
 
@@ -397,9 +397,9 @@ export async function importGfxPngsFromDir(
   if (isNewerAppVersion(exportedBy, app.getVersion())) {
     warnings.push(newerExportWarning('This export folder', exportedBy!, app.getVersion()))
   }
-  /** Off-palette paint advisory (imageToGfx stats): the paint reached the ROM as color 0. */
+  /** Off-palette paint advisory (imageToGfx stats): the paint was approximated. */
   const offPaletteWarning = (file: string, n: number): string =>
-    `${file}: ${n} pixel${n === 1 ? '' : 's'} used a color not in the palette swatch — flattened to color 0 (anti-aliasing or off-palette paint?).`
+    `${file}: ${n} pixel${n === 1 ? '' : 's'} used a color not in the file's palette — matched to the nearest palette color (anti-aliasing or off-palette paint?).`
   // The CHECKSUM GATE (gfx-import-reconcile.ts): an artifact whose bytes still match its
   // export-time sha256 is skipped — the user didn't touch it, so it contributes nothing and
   // can't revert a newer edit (the anti-thrash fix). A pre-checksum export (no `checksums`)
@@ -496,7 +496,7 @@ export async function importGfxPngsFromDir(
         let editedRegion: Uint8Array
         if (e.file.endsWith('.aseprite')) {
           // Single-image region .aseprite: base-aware slice of its embedded-palette
-          // flatten over the region's flat tile grid (diffGfxFileAseprite — no swatch).
+          // flatten over the region's flat tile grid (diffGfxFileAseprite, embedded palette).
           const dec = decodeAsepriteImage(readFileSync(p))
           const edits = diffGfxFileAseprite({ palette: dec.palette, bpp: e.bpp, baseTileData: baseRegion, flatten: dec.rgba, width: dec.width })
           if (edits.length === 0) { skipped++; continue } // unchanged → no overlay
@@ -505,9 +505,9 @@ export async function importGfxPngsFromDir(
         } else {
           const img = decodePng(readFileSync(p))
           const stats = { offPalette: 0 }
-          editedRegion = imageToGfx(img, { tilesWide: w, tilesTall: h, bpp: e.bpp }, { base: baseRegion, index0Transparent: e.index0Transparent, stats })
-          // Warn BEFORE the unchanged gate: off-palette paint over an index-0 pixel flattens
-          // back to 0 (byte-identical → skipped), which is exactly the silently-dropped case.
+          editedRegion = imageToGfx(img, { tilesWide: w, tilesTall: h, bpp: e.bpp }, { palette: e.palette, base: baseRegion, index0Transparent: e.index0Transparent, stats })
+          // Warn BEFORE the unchanged gate: an off-palette paint can approximate back to the
+          // pixel's original index (byte-identical → skipped), which is the case to surface.
           if (stats.offPalette > 0) warnings.push(offPaletteWarning(e.file, stats.offPalette))
           if (eq(editedRegion, baseRegion)) { skipped++; continue } // unchanged → no overlay
         }
@@ -536,14 +536,19 @@ export async function importGfxPngsFromDir(
       // flatten reproduces the rendered RGBA byte-for-byte, so both take the SAME path.
       const img = e.file.endsWith('.aseprite') ? decodeAsepriteImage(readFileSync(p)) : decodePng(readFileSync(p))
       const layout = e.format === 'lz16' ? lz16Layout(e.rowCount!) : lz2Layout(e.sizeBytes, e.bpp)
-      // BG2/BG3 + storybook decode each tile against its own palette row (the swatch
-      // can't disambiguate rows that share colors); other layers use the swatch.
-      const tilePalette = e.perTilePalette
-        ? (t: number): readonly number[] =>
-            e.perTilePalette!.subPalettes[e.perTilePalette!.tileSub[t] ?? 0] ?? e.perTilePalette!.subPalettes[0]!
-        : undefined
+      // BG2/BG3 + storybook decode each tile against its OWN palette row (one flat
+      // color→index map can't disambiguate rows that share colors, and the indexed PNG's
+      // per-tile index base is `tileSub * colorsPerRow`); other layers use the single
+      // exported palette (`e.palette`, or a legacy export's swatch strip).
       const stats = { offPalette: 0 }
-      const tiles = imageToGfx(img, layout, { base, index0Transparent: e.index0Transparent, tilePalette, stats }).subarray(0, e.sizeBytes)
+      const tiles = imageToGfx(img, layout, {
+        palette: e.palette,
+        subPalettes: e.perTilePalette?.subPalettes,
+        tileSub: e.perTilePalette ? (t: number): number => e.perTilePalette!.tileSub[t] ?? 0 : undefined,
+        base,
+        index0Transparent: e.index0Transparent,
+        stats
+      }).subarray(0, e.sizeBytes)
       // Warn BEFORE the no-op gate (see the region path above — dropped paint is the point).
       if (stats.offPalette > 0) warnings.push(offPaletteWarning(e.file, stats.offPalette))
       if (eq(tiles, base)) { skipped++; continue } // checksum changed but pixels identical → no-op
@@ -911,7 +916,7 @@ export async function importGfxPngsFromDir(
               for (const ed of diffAsepritePalette(struct.palette, titleLogo.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, titleLogo.file); paletteImported++ }
             }
           } else {
-            // PNG: pixels only (a flat sheet carries no tilemap). Crop off the swatch column.
+            // PNG: pixels only (a flat sheet carries no tilemap).
             pixelEdits = diffTitleLogoTiles(ctx, canvas, canvasRegion(decodePng(readFileSync(p)), canvas.width, canvas.height)).edits
           }
           if (pixelEdits.length > 0) {
@@ -982,8 +987,8 @@ export async function importGfxPngsFromDir(
               for (const ed of diffAsepritePalette(struct.palette, titleIsland.paletteOffsets, effectiveBlobWords())) { reconciler.paletteWord(ed.offset, ed.value, titleIsland.file); paletteImported++ }
             }
           } else {
-            // PNG: pixels only (a flat PNG carries no tilemap/placement). The PNG has a
-            // swatch column, so crop to the canvas region, then slice back to $B1 chars.
+            // PNG: pixels only (a flat PNG carries no tilemap/placement) — read the
+            // canvas region, then slice it back to $B1 chars.
             const edited = canvasRegion(decodePng(readFileSync(p)), canvas.width, canvas.height)
             const { edits, sharedCells } = diffTitleIslandTiles(ctx, canvas, edited)
             if (edits.length === 0) { islandSkipped++ }

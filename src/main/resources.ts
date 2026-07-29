@@ -34,9 +34,12 @@ import {
   carvePatchPool,
   newSlotRows,
   patchPoolGeometry,
+  shiftRegionHead,
   PATCH_POOL_REGION_ID,
+  STRING_SPILL_REGION_ID,
   type FreeRegion,
-  type PatchPoolGeometry
+  type PatchPoolGeometry,
+  type PoolMap
 } from 'snes-framework/pool-map'
 import { outputSfcName } from 'snes-framework/rom-versions'
 import { readExtractionState } from 'snes-framework/state'
@@ -76,7 +79,11 @@ import { loadRomAndSymbols } from './render/rom-cache'
 import type { GfxFileEntry } from 'snes-framework/types'
 import {
   levelNameSlotLabels,
+  levelNameSpillBytes,
   loadFontTable,
+  messageSpillBytes,
+  LEVEL_NAME_STRINGS_ID,
+  MESSAGE_TEXT_ID,
   parseCreditsStaff,
   parseEndingText,
   parseIntroStory,
@@ -158,19 +165,34 @@ interface AsmRegionDef {
   ) => SerializeResult
 }
 
+/** The Bank51 SuperFX source: level names + message bodies + the message pointer
+ *  table all live in this one file (three sibling `;@editable` regions). */
+const MESSAGE_BANK_FILE = 'yi/SuperFX/Banks/Bank51.asm'
+
 const ASM_REGIONS: Record<string, AsmRegionDef> = {
-  'level-name-strings': {
-    file: 'yi/SuperFX/Banks/Bank51.asm',
-    parse: parseLevelNameStrings,
-    serialize: (c, b, m, ft) => serializeLevelNameStrings(c, b, m as StringTableModel, ft)
+  // The two GROWABLE regions: each one's budget is its base size plus whatever
+  // bank $51's free tail still has (stringHeadroomBytes, which nets out the
+  // sibling's claim), and the build moves the tail's boundary by their total.
+  [LEVEL_NAME_STRINGS_ID]: {
+    file: MESSAGE_BANK_FILE,
+    parse: (c, b, ft) =>
+      parseLevelNameStrings(c, b, ft, { headroomBytes: stringHeadroomBytes(LEVEL_NAME_STRINGS_ID) }),
+    serialize: (c, b, m, ft) =>
+      serializeLevelNameStrings(c, b, m as StringTableModel, ft, {
+        headroomBytes: stringHeadroomBytes(LEVEL_NAME_STRINGS_ID)
+      })
   },
-  'message-box-text': {
-    file: 'yi/SuperFX/Banks/Bank51.asm',
-    parse: parseMessageText,
-    serialize: (c, b, m, ft) => serializeMessageText(c, b, m as StringTableModel, ft)
+  [MESSAGE_TEXT_ID]: {
+    file: MESSAGE_BANK_FILE,
+    parse: (c, b, ft) =>
+      parseMessageText(c, b, ft, { headroomBytes: stringHeadroomBytes(MESSAGE_TEXT_ID) }),
+    serialize: (c, b, m, ft) =>
+      serializeMessageText(c, b, m as StringTableModel, ft, {
+        headroomBytes: stringHeadroomBytes(MESSAGE_TEXT_ID)
+      })
   },
   'message-box-text-ptrs': {
-    file: 'yi/SuperFX/Banks/Bank51.asm',
+    file: MESSAGE_BANK_FILE,
     parse: parseMessagePtrTable,
     serialize: (c, b, m, ft) => serializeMessagePtrTable(c, b, m as MessagePtrTableModel, ft)
   },
@@ -1123,6 +1145,95 @@ function activePatchPoolBytes(): number {
   return getPatchPoolBytes(id)
 }
 
+/**
+ * Bytes each of bank $51's two growable text regions has grown past the pristine
+ * base in the active project's SAVED overlay — their claim on FreeRegion51's HEAD
+ * (the build pushes that region's `%FREE_BYTES` boundary forward by the total,
+ * see relocate.ts `shiftRegionStart`). Reads the saved overlay only: an unsaved
+ * draft can't be in a build, and the pre-build `saveAll` flush means Test Level /
+ * Launch always sees the committed text. Zeroes when nothing is saved / the
+ * regions can't be parsed — never guess a claim we can't back up with bytes on
+ * disk.
+ *
+ * Memoized on the project + the overlay's mtime: every budget view calls this
+ * (the Banks panel, and the per-level budget on each level edit), and the miss
+ * path re-reads ~90 KB of asm and re-assembles 81 message bodies.
+ */
+function activeStringSpill(): { message: number; levelName: number; total: number } {
+  const none = { message: 0, levelName: 0, total: 0 }
+  try {
+    const projectId = getCurrentProjectId()
+    const overlay = projectId ? path.join(overlayRoot(projectId), MESSAGE_BANK_FILE) : null
+    let stamp = `${projectId ?? ''}:base`
+    if (overlay) {
+      try {
+        const st = statSync(overlay)
+        stamp = `${projectId}:${st.mtimeMs}:${st.size}`
+      } catch {
+        /* no overlay copy → pristine base, no spill */
+      }
+    }
+    if (spillCache?.stamp === stamp) return spillCache.spill
+    const { contentText, baseText } = readOverlayFirst(MESSAGE_BANK_FILE)
+    let spill = none
+    if (contentText !== baseText) {
+      const ft = loadFontTable(frameworkWorkRoot())
+      const message = messageSpillBytes(contentText, baseText, ft)
+      const levelName = levelNameSpillBytes(contentText, baseText)
+      spill = { message, levelName, total: message + levelName }
+    }
+    spillCache = { stamp, spill }
+    return spill
+  } catch {
+    return none
+  }
+}
+
+let spillCache: { stamp: string; spill: { message: number; levelName: number; total: number } } | null =
+  null
+
+/** Total bytes the bank $51 text regions claim from the free tail (what the build
+ *  shifts the boundary by). */
+function activeStringSpillBytes(): number {
+  return activeStringSpill().total
+}
+
+/** The free-region map every budget view + the build plan against: FreeRegion51
+ *  narrowed from BOTH ends — head to the grown text regions, tail to the
+ *  asm-patch pool. Mirrors `applyLevelDataLayout`'s own composition exactly, so
+ *  the pre-build gate never green-lights a plan the build can't place. (Like the
+ *  patch carve, this silently reduces the region's reported capacity — that IS
+ *  the room left for level data.) */
+function activeEffectiveMap(map: PoolMap): PoolMap {
+  return carvePatchPool(shiftRegionHead(map, activeStringSpillBytes()), activePatchPoolBytes())
+}
+
+/**
+ * Bytes a growable bank $51 text region may claim on top of its base size: what's
+ * left of FreeRegion51 after the asm-patch reservation, everything migration
+ * places there, and **the sibling region's current spill** — the two share one
+ * tail, so each one's ceiling has to exclude what the other already took, or they
+ * both promise the same bytes and the second save wins.
+ *
+ * A region's OWN spill is deliberately not subtracted: this is its maximum total
+ * (the editor's `budgetChars + headroomBytes` ceiling), not the slack left on top
+ * of it — otherwise saving an edit would shrink the budget under the user's feet.
+ */
+export function stringHeadroomBytes(regionId: string): number {
+  const pm = activePoolMap()
+  if (!pm) return 0
+  const map = carvePatchPool(pm.map, activePatchPoolBytes())
+  const regions = computeFreeRegionsOverview(
+    map,
+    diskSizeOf(getCurrentProjectId()),
+    activeLayoutCtx()
+  )
+  const free = regions.find((r) => r.id === STRING_SPILL_REGION_ID)?.freeBytes ?? 0
+  const spill = activeStringSpill()
+  const sibling = regionId === MESSAGE_TEXT_ID ? spill.levelName : spill.message
+  return Math.max(0, free - sibling)
+}
+
 /** Current on-disk size of a blob `.bin`: overlay (active project) if it's been
  *  saved there, else the pristine base. */
 function diskSizeOf(projectId: string | null): (file: string) => number {
@@ -1179,9 +1290,9 @@ export function activeLevelBudget(levelRecordId: number, level: LevelData): Pool
   if (level.empty || level.special) return null
   const baseMap = poolMapFor(level.romVersion)
   if (!baseMap) return null
-  // Plan against the same patch-pool-carved free space the build reserves, so the
+  // Plan against the same narrowed free space the build reserves, so the
   // per-level "relocates to / can relocate" signal can't promise room the build lacks.
-  const map = carvePatchPool(baseMap, activePatchPoolBytes())
+  const map = activeEffectiveMap(baseMap)
   const live = liveStreamSizes(levelRecordId, level)
   if (!live) return null
   return computeLevelBudget(
@@ -1209,9 +1320,10 @@ export function activePoolOverview(
   const pm = activePoolMap()
   if (!pm) return null
   const { romVersion } = pm
-  // Carve the patch-pool slice so the Banks panel's "Free space" totals show the
-  // room migration actually has (matches the build + the budget gate).
-  const map = carvePatchPool(pm.map, activePatchPoolBytes())
+  // Narrow the region the same way the build does (message-text spill + the
+  // patch-pool slice) so the Banks panel's "Free space" totals show the room
+  // migration actually has (matches the build + the budget gate).
+  const map = activeEffectiveMap(pm.map)
   const disk = diskSizeOf(getCurrentProjectId())
   const live =
     activeLevel && activeLevelRecordId != null
@@ -1237,10 +1349,10 @@ export function activePoolOverview(
 export function checkActivePoolBudgets(): PoolViolation[] {
   const pm = activePoolMap()
   if (!pm) return []
-  // Carve the asm-patch slice so the gate plans against the SAME free-region
-  // capacity the build reserves — otherwise it green-lights a relocation plan the
-  // carved build can't place, and asar dies with a cryptic bank-border assert.
-  const map = carvePatchPool(pm.map, activePatchPoolBytes())
+  // Narrow the free regions exactly as the build does — otherwise the gate
+  // green-lights a relocation plan the build can't place, and asar dies with a
+  // cryptic bank-border assert.
+  const map = activeEffectiveMap(pm.map)
   return checkAllPools(map, diskSizeOf(getCurrentProjectId()), activeLayoutCtx())
 }
 
@@ -1261,7 +1373,7 @@ export function autoMigrateImportedLevels(
   const pm = activePoolMap()
   const projectId = getCurrentProjectId()
   if (!pm || !projectId || candidateIds.length === 0) return null
-  const map = carvePatchPool(pm.map, activePatchPoolBytes())
+  const map = activeEffectiveMap(pm.map)
   const plan = planAutoMigration(
     map,
     diskSizeOf(projectId),
@@ -1352,7 +1464,7 @@ export function activeLayoutPlanInputs(): {
   const pm = activePoolMap()
   if (!pm) return null
   return {
-    map: carvePatchPool(pm.map, activePatchPoolBytes()),
+    map: activeEffectiveMap(pm.map),
     sizeOf: diskSizeOf(getCurrentProjectId()),
     ctx: activeLayoutCtx()
   }
@@ -1385,7 +1497,12 @@ export function applyActiveLevelDataLayout(
     id ? path.join(overlayRoot(id), 'yi') : null,
     path.join(treeRoot, 'yi'),
     map,
-    { ...activeLayoutCtx(), sizeOf: diskSizeOf(id), patchPoolBytes }
+    {
+      ...activeLayoutCtx(),
+      sizeOf: diskSizeOf(id),
+      patchPoolBytes,
+      stringSpillBytes: activeStringSpillBytes()
+    }
   )
 }
 

@@ -17,8 +17,8 @@ export type AseEditMode = 'image' | 'region'
 
 /** Decode an edited graphics file to RGBA, cropped to the `w`×`h` canvas — the one gate
  *  every assembled-view importer shares. A `.aseprite` flattens per `aseMode`; a `.png`
- *  has the self-describing swatch to the right of the canvas, so it's cropped via
- *  `canvasRegion`. Reads the file once. Throws propagate to the caller's try/catch. */
+ *  goes through `canvasRegion` (an indexed export IS the canvas; a legacy export had a
+ *  palette swatch beside it). Reads the file once. Throws propagate to the caller. */
 export function decodeEditedToRgba(path: string, aseMode: AseEditMode, w: number, h: number): Uint8Array {
   const bytes = readFileSync(path)
   if (path.endsWith('.aseprite')) {
@@ -27,9 +27,10 @@ export function decodeEditedToRgba(path: string, aseMode: AseEditMode, w: number
   return canvasRegion(decodePng(bytes), w, h)
 }
 
-/** The top-left `w`×`h` RGBA region of an exported PNG (the self-describing swatch
- *  sits to its right, so import reads only this corner). Throws if the artist
- *  resized the image below the expected canvas. */
+/** The top-left `w`×`h` RGBA region of an exported PNG. Current exports are exactly the
+ *  canvas (the palette rides in the PNG's own palette chunk), so this is usually a
+ *  straight copy; it still crops legacy exports, which stitched a palette swatch to the
+ *  right. Throws if the artist resized the image below the expected canvas. */
 export function canvasRegion(img: ImageData, w: number, h: number): Uint8Array {
   if (img.width < w || img.height < h) {
     throw new Error(`image is ${img.width}×${img.height}, expected ≥ ${w}×${h} (was it resized?)`)

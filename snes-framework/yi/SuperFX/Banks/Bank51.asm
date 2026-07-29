@@ -432,8 +432,11 @@ DATA_message_box_text_ptrs:              ; message-ID -> message-text pointer (c
 ; editor skips — only quoted `"..."` text is mutable. Each line is
 ; `dw $XXFF : db "text"` with optional inline glyph bytes ($F6,$F7,$D4,…) that
 ; are preserved. Messages are pointer-referenced (DATA_5110DB) so they relocate
-; freely; total text bytes must not grow past the original (shared bank budget,
-; enforced by the editor).
+; freely, and the region MAY grow past its original size: everything after it in
+; the bank (the level-name table + strings) is label-addressed, so asar re-resolves,
+; and the host build pushes the bank's closing %FREE_BYTES boundary forward by the
+; growth (Banks/Bank51.asm's ~44 KB $FF tail). The editor caps that growth at
+; whatever the tail still has after relocated level data + the asm-patch pool.
 DATA_511333:
 DATA_msg_intro_paradise:                    ; "This paradise is Yoshi's Island..." -- intro cutscene
 	dw $05FF : db "This paradise is"

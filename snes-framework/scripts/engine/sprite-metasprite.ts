@@ -30,9 +30,9 @@ import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
 import { resolveSpriteCel, AMBIENT_SPRITE_ID_BASE } from './sprite-tile-base.ts';
 import { renderSpriteCel } from './sprite-cel.ts';
 import { decode4bppTile, encode4bppTile } from './tile.ts';
-import { buildPaletteRow } from './color.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
 import { u16le } from './rom-read.ts';
-import { encodePng, type ImageData } from './png.ts';
+import { canvasIndexedPng } from './png.ts';
 import { imageAseprite } from './gfx-aseprite.ts';
 import type { SymbolMap } from './symbol-map.ts';
 
@@ -158,11 +158,9 @@ function spriteLoadable(ctx: MetaspriteContext, spriteId: number, spriteset: num
   return requiredFileId === 0 || spriteset.includes(requiredFileId & 0xff);
 }
 
-/** Linear palette lookup (indices 1..15; transparent/0 default). */
-function paletteIndexOf(palette: Uint32Array, u: number): number {
-  for (let i = 1; i < 16; i++) if (palette[i] === u) return i;
-  return 0;
-}
+/** Palette lookup for an edited pixel: exact color, else the CLOSEST palette color
+ *  (index 0 is the transparent slot, so an erase lands there and paint never does). */
+const paletteIndexOf = (palette: Uint32Array, u: number): number => nearestPaletteIndex(palette, u, 16);
 
 /**
  * Slice one 8×8 sheet tile back out of the canvas — the inverse of a blit.
@@ -393,38 +391,13 @@ export interface MetaspritePngEntry {
   aseprite?: Uint8Array;
 }
 
-/** Encode a metasprite canvas to a PNG: the assembled character (index 0
- *  transparent) + a self-describing OBJ-palette swatch column per palette row
- *  used (full 16-color row; index 0 transparent), placed to the right. Import
- *  reads only the top-left `width×height` region. */
+/** Encode a metasprite canvas to an INDEXED PNG: the assembled character exactly as
+ *  rendered, with its OBJ palette rows (16 colors each, index 0 transparent) as the
+ *  PNG's own palette — so the colors are in the file rather than stitched beside the
+ *  art as a swatch. Import reads the top-left `width×height` region. */
 export function metaspritePng(ctx: MetaspriteContext, canvas: MetaspriteCanvas): Uint8Array {
-  const rows = canvas.paletteRowsUsed;
-  const swatchW = rows.length * TILE_PX;
-  const swatchH = rows.length ? 16 * TILE_PX : 0;
-  const width = canvas.width + swatchW;
-  const height = Math.max(canvas.height, swatchH);
-  const rgba = new Uint8Array(width * height * 4);
-  // Canvas (top-left).
-  for (let y = 0; y < canvas.height; y++) {
-    rgba.set(canvas.rgba.subarray(y * canvas.width * 4, (y + 1) * canvas.width * 4), (y * width) * 4);
-  }
-  // Swatch columns.
-  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  rows.forEach((row, ri) => {
-    const palette = palFor(ctx, row);
-    const x0 = canvas.width + ri * TILE_PX;
-    for (let i = 0; i < 16; i++) {
-      const color = palette[i]!;
-      if (color === 0) continue; // index 0 transparent — leave clear
-      for (let dy = 0; dy < TILE_PX; dy++) {
-        for (let dx = 0; dx < TILE_PX; dx++) {
-          u32[(i * TILE_PX + dy) * width + (x0 + dx)] = color;
-        }
-      }
-    }
-  });
-  const image: ImageData = { width, height, rgba };
-  return new Uint8Array(encodePng(image));
+  const rows = canvas.paletteRowsUsed.map((row) => palFor(ctx, row));
+  return canvasIndexedPng(canvas.rgba, canvas.width, canvas.height, rows.length ? rows : [palFor(ctx, 0)]);
 }
 
 /**

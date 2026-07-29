@@ -30,7 +30,9 @@ import {
   ptrRowExpr,
   repointMigrations,
   sentinelRowExpr,
+  shiftRegionHead,
   PATCH_POOL_REGION_ID,
+  STRING_SPILL_REGION_ID,
 } from './pool-map.ts';
 import { rewriteFreeBytesText, snes6, type BoundaryMove } from './boundary-move.ts';
 
@@ -153,6 +155,37 @@ export function appendRegionBlobs(
       `${block}\n` +
       `${indent}%FREE_BYTES($${newBoundary}, ${newFill}, $FF)${trailing}`
   );
+}
+
+/**
+ * Move a free region's HEAD out of the way of a grown asm region that sits
+ * immediately before it: rewrite `%FREE_BYTES($A, F, $FF)` → `%FREE_BYTES($A+G,
+ * F−G, $FF)`. Same edit as a movable pool's boundary move, and byte-safe for the
+ * same reason — the macro is `assert pc() <= A` + `org A` + fill, so pushing A
+ * forward by exactly the growth keeps the assert satisfied, the `org` a no-op,
+ * and the tail ending at the unchanged A+F.
+ *
+ * Today's only caller is bank $51's growable text (`stringSpillBytes` — the
+ * message bodies + level-name strings, summed). Must run BEFORE
+ * `reservePatchPool` / `appendRegionBlobs`, which then match on the SHIFTED region
+ * literal (`shiftRegionHead`'s map). Throws if the region's `%FREE_BYTES` isn't
+ * found — a silent miss would let the assert fire on a grown build.
+ */
+export function shiftRegionStart(text: string, region: FreeRegion, spillBytes: number): string {
+  if (spillBytes <= 0) return text;
+  if (spillBytes > region.capacityBytes) {
+    throw new Error(
+      `relocate: string spill of ${spillBytes} B exceeds ${region.id}'s ${region.capacityBytes} B ` +
+        '(the editor budget gate should have rejected the edit).'
+    );
+  }
+  return rewriteFreeBytesText(text, {
+    bankFile: region.bankFile,
+    poolId: region.id,
+    boundary: region.boundary,
+    fillSize: region.capacityBytes,
+    growth: spillBytes,
+  });
 }
 
 /**
@@ -337,6 +370,12 @@ export interface LayoutOptions {
    *  Set when the project has enabled asm patches, so migration's capacity is
    *  shrunk to match the carve and never first-fits into the patch slice. */
   patchPoolBytes?: number;
+  /** Bytes the project's edited Bank51 text regions (message bodies + level-name
+   *  strings) have grown past base, combined (0 = none). Claims FreeRegion51's
+   *  HEAD: the build pushes that region's `%FREE_BYTES` boundary forward by this
+   *  much and migration plans against what's left. See pool-map `shiftRegionHead`
+   *  + strings.ts `bank51SpillBytes`. */
+  stringSpillBytes?: number;
 }
 
 function pushTo<K, V>(m: Map<K, V[]>, k: K, v: V): void {
@@ -620,16 +659,25 @@ export function applyLevelDataLayout(
   map: PoolMap,
   opts: LayoutOptions
 ): LayoutPlan {
-  // Asm-patch pool: carve a fixed slice off FreeRegion51's tail and shrink that
-  // region's capacity so migration plans + appends respect the reservation. The
-  // ORIGINAL region (full capacity) drives the carve splice's regex (reservePatchPool
-  // below); the SHRUNK map (carvePatchPool — the SAME helper the budget gate uses,
-  // so gate and build agree) drives planLayout + appendRegionBlobs. patchPoolBytes=0
-  // ⇒ no carve ⇒ the region reconciles to its clean source ⇒ byte-exact base preserved.
+  // FreeRegion51 is claimed from BOTH ends before migration sees it:
+  //   • HEAD — the grown Bank51 message-text region (spillBytes), which is the
+  //     data immediately before the region's `%FREE_BYTES`.
+  //   • TAIL — the asm-patch pool slice (poolBytes).
+  // Each splice matches the literal its predecessor left behind, so the text
+  // rewrites run head-then-tail while the MAP is shrunk in the same order. The
+  // shrunk map (the SAME helpers the budget gates use, so gate and build agree)
+  // drives planLayout + appendRegionBlobs. Both zero ⇒ no rewrite ⇒ the region
+  // reconciles to its clean source ⇒ byte-exact base preserved.
+  const spillBytes = opts.stringSpillBytes ?? 0;
   const poolBytes = opts.patchPoolBytes ?? 0;
+  const spillRegion =
+    spillBytes > 0 ? map.freeRegions.find((r) => r.id === STRING_SPILL_REGION_ID) ?? null : null;
+  const shiftedMap = shiftRegionHead(map, spillBytes);
   const hostRegion =
-    poolBytes > 0 ? map.freeRegions.find((r) => r.id === PATCH_POOL_REGION_ID) ?? null : null;
-  const effectiveMap = carvePatchPool(map, poolBytes);
+    poolBytes > 0
+      ? shiftedMap.freeRegions.find((r) => r.id === PATCH_POOL_REGION_ID) ?? null
+      : null;
+  const effectiveMap = carvePatchPool(shiftedMap, poolBytes);
 
   const plan = planLayout(effectiveMap, opts);
 
@@ -638,8 +686,12 @@ export function applyLevelDataLayout(
     const src = overlaid && fs.existsSync(overlaid) ? overlaid : path.join(baseYiRoot, bankFile);
     let text = fs.readFileSync(src, 'utf8');
 
-    // Carve FIRST (rewrites the full-capacity %FREE_BYTES into shrunk-migration +
-    // pool), so the deletions/appends below act on the shrunk region.
+    // Head shift FIRST (the message region's growth pushes the boundary), then
+    // the patch-pool carve off the shifted region's tail, so the deletions/
+    // appends below act on the twice-narrowed region.
+    if (spillRegion && bankFile === spillRegion.bankFile) {
+      text = shiftRegionStart(text, spillRegion, spillBytes);
+    }
     if (hostRegion && bankFile === hostRegion.bankFile) {
       text = reservePatchPool(text, hostRegion, poolBytes);
     }

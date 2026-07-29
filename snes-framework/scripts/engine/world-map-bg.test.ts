@@ -59,8 +59,10 @@ for (const s of map) {
   const img = decodePng(Buffer.from(s.png));
   const layout = s.format === 'lz16' ? lz16Layout(s.rowCount!) : lz2Layout(s.sizeBytes, s.bpp);
   const ptp = s.perTilePalette;
-  const tilePalette = (t: number): readonly number[] => ptp.subPalettes[ptp.tileSub[t] ?? 0] ?? ptp.subPalettes[0]!;
-  const tiles = imageToGfx(img, layout, { base, index0Transparent: s.index0Transparent, tilePalette }).subarray(0, s.sizeBytes);
+  const tiles = imageToGfx(img, layout, {
+    base, index0Transparent: s.index0Transparent,
+    subPalettes: ptp.subPalettes, tileSub: (t: number) => ptp.tileSub[t] ?? 0
+  }).subarray(0, s.sizeBytes);
   if (!(tiles.length === base.length && tiles.every((v, i) => v === base[i]))) { rtFail++; console.error(`    mismatch: ${s.file}`); }
 }
 assert(rtCount >= 2 && rtFail === 0, `per-tile map BG round-trips byte-exact (${rtCount} files, ${rtFail} failed)`);

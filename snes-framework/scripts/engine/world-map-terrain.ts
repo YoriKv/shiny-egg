@@ -37,7 +37,7 @@ import { lz2 } from './decompress/index.ts';
 import { snesToPC, type SymbolMap } from './symbol-map.ts';
 import { u24le } from './rom-read.ts';
 import { decode4bppTile, decode2bppTile, encode4bppTile } from './tile.ts';
-import { buildPaletteRow, paletteIndexOf } from './color.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
 import { encodePng } from './png.ts';
 import { tilesAseprite, tilesAsepriteMulti, tilesetPaletteOffsets, type TilesetTile } from './gfx-aseprite.ts';
 import { type AsepriteCell, type AsepriteStructural } from './aseprite.ts';
@@ -320,7 +320,7 @@ export function diffWorldMapTerrainPixels(
       // Base-aware: unchanged pixel (same color as base) keeps its base local index;
       // else map the painted color to a local index within THIS tile's palette row.
       if (palette[flat] === rowColors[bLocal]) { rawIdx[p] = bLocal; }
-      else { rawIdx[p] = paletteIndexOf(rowColors, palette[flat]!, 16); edited = true; }
+      else { rawIdx[p] = nearestPaletteIndex(rowColors, palette[flat]!, 16); edited = true; }
     }
     if (!edited) continue;
     const bytes = new Uint8Array(TILE_BYTES_4BPP);

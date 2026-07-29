@@ -369,8 +369,23 @@ export function readAudioCatalog(rom: Uint8Array, symbols: SymbolMap): AudioCata
   }
 
   // DATA_spc_block_set_indexes: byte 0 is a sentinel; setting s → byte s+1,
-  // holding the row's *byte offset* (row*4). DATA_item_denial_table and
-  // DATA_01B24B are 1-based on the setting the same way.
+  // holding the row's *byte offset* (row*4).
+  //
+  // It is the ODD ONE OUT of the three tables keyed off this setting -- the
+  // other two resolve to entry[setting], not entry[setting+1], so all three are
+  // read below with a plain `+ setting`:
+  //
+  //   DATA_item_denial_table     LDA.l DATA_item_denial_table,x   X = setting
+  //     (Bank00 CODE_upload_music_data reads it BEFORE the INX)   → [setting]
+  //   DATA_spc_block_set_indexes LDA.l DATA_spc_block_set_indexes,x  X = setting+1
+  //     (read AFTER the INX, label not biased)                    → [setting+1]
+  //   DATA_01B24B                LDA.l DATA_01B24B-$01,x          X = setting+1
+  //     (Bank01 CODE_01B25E, X from $0203; label pre-biased -1)    → [setting]
+  //
+  // The INX is not an indexing decision -- it biases the $0203 "already loaded"
+  // cache so a zeroed $0203 cannot false-match setting $00. Only
+  // DATA_spc_block_set_indexes reuses the incremented X without a compensating
+  // -1 in the label, which is why it alone carries a dummy byte at index 0.
   const setIdxPc = symbols.pc('DATA_spc_block_set_indexes');
   const denialPc = symbols.pc('DATA_item_denial_table');
   const initPc = symbols.pc('DATA_01B24B');

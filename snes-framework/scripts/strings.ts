@@ -80,6 +80,33 @@ export const MESSAGE_TEXT_ID = 'message-box-text'
  *  message body). */
 export const MESSAGE_PTR_TABLE_ID = 'message-box-text-ptrs'
 
+/**
+ * Free-space headroom for a growable region — extra bytes it may claim BEYOND
+ * the pristine-base region size.
+ *
+ * Bank $51's two text regions are growable: the message bodies and, after them,
+ * the level-name strings (the bank's last data). Both are addressed by symbolic
+ * pointer tables (`DATA_message_box_text_ptrs` / `DATA_level_name_string_ptrs`)
+ * and everything downstream of them is label-addressed, so asar re-resolves every
+ * address when a body grows; the only hard stop is the bank's closing
+ * `%FREE_BYTES($515348, 44216, $FF)` — an `assert pc() <= $515348` then `org`.
+ * The build moves that boundary forward by their COMBINED growth
+ * (`bank51SpillBytes` → relocate.ts `shiftRegionHead`), so they simply eat into
+ * the bank's 44 KB `$FF` tail. That one tail is also shared with level-data
+ * migration + the asm-patch pool, so the caller computes each region's headroom
+ * from what those — and the sibling region — leave free: see
+ * src/main/resources.ts `stringHeadroomBytes`.
+ *
+ * Absent / 0 ⇒ the classic fixed budget (every region outside bank $51).
+ */
+export interface RegionBudgetOptions {
+  headroomBytes?: number
+}
+
+/** Where a bank $51 region's overflow goes — named in the editor's budget
+ *  readout and in the over-budget error. */
+const FREE_TAIL_LABEL = 'bank $51 free space'
+
 /** Marker id of the intro-cutscene storybook text region in Bank0F ("A long,
  *  long time ago …"). One `DATA_0F<addr>` body per cutscene screen; the bodies
  *  are addressed by the symbolic `dw` sequence table at `DATA_0FCEDB`, so asar
@@ -212,6 +239,11 @@ function serializeEntryTable<E extends { label: string }>(opts: {
   budgetNoun: string
   /** Divide the overflow byte count for the message (credits: 2 bytes/letter). */
   budgetUnitBytes?: number
+  /** Extra bytes past the base region size (growable regions only — see
+   *  `RegionBudgetOptions`). Absent/0 = the classic fixed budget. */
+  headroomBytes?: number
+  /** Names the headroom's source in the overflow message ("bank $51 free space"). */
+  headroomLabel?: string
 }): SerializeResult {
   const pair = findRegionPair(opts.contentText, opts.budgetText, opts.id)
   if (typeof pair === 'string') return { ok: false, error: pair }
@@ -219,7 +251,9 @@ function serializeEntryTable<E extends { label: string }>(opts: {
   const base = opts.parse(pair.region.inner)
   const stale = staleEntryError(opts.model.entries, new Set(base.map((e) => e.label)))
   if (stale) return { ok: false, error: stale }
-  const budget = opts.totalCost(opts.parse(pair.budgetRegion.inner))
+  const baseBytes = opts.totalCost(opts.parse(pair.budgetRegion.inner))
+  const headroom = Math.max(0, opts.headroomBytes ?? 0)
+  const budget = baseBytes + headroom
 
   const edits: TextEdit[] = []
   let newTotal = 0
@@ -232,9 +266,10 @@ function serializeEntryTable<E extends { label: string }>(opts: {
 
   if (newTotal > budget) {
     const over = Math.ceil((newTotal - budget) / (opts.budgetUnitBytes ?? 1))
+    const room = headroom > 0 ? ` (${baseBytes} + ${headroom} of ${opts.headroomLabel})` : ''
     return {
       ok: false,
-      error: `The text uses ${newTotal} bytes but the budget is ${budget}. Shorten ${over} ${opts.budgetNoun}.`
+      error: `The text uses ${newTotal} bytes but the budget is ${budget}${room}. Shorten ${over} ${opts.budgetNoun}.`
     }
   }
 
@@ -364,7 +399,8 @@ function parseStringTableRegion(
   ft: FontTable,
   id: string,
   title: string,
-  nameStrategy?: NameStrategy
+  nameStrategy?: NameStrategy,
+  opts: RegionBudgetOptions = {}
 ): StringTableModel {
   const { region: contentRegion, budgetRegion } = requireRegionPair(contentText, budgetText, id)
   const entries = parseRegionEntries(contentRegion.inner)
@@ -374,6 +410,8 @@ function parseStringTableRegion(
     title,
     allowedChars: ft.chars,
     budgetChars: totalChars(parseRegionEntries(budgetRegion.inner)),
+    ...(opts.headroomBytes ? { headroomBytes: opts.headroomBytes } : {}),
+    ...(id === LEVEL_NAME_STRINGS_ID ? { headroomLabel: FREE_TAIL_LABEL } : {}),
     entries: entriesToModel(entries, nameByLabel)
   }
 }
@@ -387,7 +425,8 @@ function parseStringTableRegion(
 export function parseLevelNameStrings(
   contentText: string,
   budgetText: string,
-  ft: FontTable
+  ft: FontTable,
+  opts: RegionBudgetOptions = {}
 ): StringTableModel {
   return parseStringTableRegion(
     contentText,
@@ -395,7 +434,8 @@ export function parseLevelNameStrings(
     ft,
     LEVEL_NAME_STRINGS_ID,
     'Level Names',
-    (_entries, text) => buildNameMap(text)
+    (_entries, text) => buildNameMap(text),
+    opts
   )
 }
 
@@ -644,7 +684,8 @@ function messageBodies(inner: string, ft: FontTable): MessageBody[] {
 export function parseMessageText(
   contentText: string,
   budgetText: string,
-  ft: FontTable
+  ft: FontTable,
+  opts: RegionBudgetOptions = {}
 ): StringTableModel {
   const region = findRegion(contentText, MESSAGE_TEXT_ID)
   if (!region) throw new Error(`Bank51 is missing the ;@editable:${MESSAGE_TEXT_ID} markers.`)
@@ -662,11 +703,14 @@ export function parseMessageText(
     title: 'Message Text',
     allowedChars: ft.chars,
     budgetChars: messageRegionBytes(budgetRegion.inner, ft),
+    ...(opts.headroomBytes ? { headroomBytes: opts.headroomBytes } : {}),
+    headroomLabel: FREE_TAIL_LABEL,
     entries,
     markup: true,
     markupGuide: MARKUP_GUIDE
   }
 }
+
 
 export type SerializeResult =
   | { ok: true; text: string }
@@ -685,7 +729,8 @@ function serializeStringTable(
   budgetText: string,
   model: StringTableModel,
   ft: FontTable,
-  id: string
+  id: string,
+  budget: RegionBudgetOptions = {}
 ): SerializeResult {
   return serializeEntryTable({
     contentText,
@@ -695,6 +740,8 @@ function serializeStringTable(
     parse: parseRegionEntries,
     totalCost: totalChars,
     budgetNoun: 'character(s)',
+    ...(budget.headroomBytes ? { headroomBytes: budget.headroomBytes } : {}),
+    headroomLabel: FREE_TAIL_LABEL,
     diffEntry: (baseEntry, edited) => {
       const lines = edited ? edited.lines : baseEntry.lines.map((l) => l.text)
       if (edited && edited.lines.length !== baseEntry.lines.length) {
@@ -727,9 +774,10 @@ export function serializeLevelNameStrings(
   contentText: string,
   budgetText: string,
   model: StringTableModel,
-  ft: FontTable
+  ft: FontTable,
+  opts: RegionBudgetOptions = {}
 ): SerializeResult {
-  return serializeStringTable(contentText, budgetText, model, ft, LEVEL_NAME_STRINGS_ID)
+  return serializeStringTable(contentText, budgetText, model, ft, LEVEL_NAME_STRINGS_ID, opts)
 }
 
 export function serializeIntroStory(
@@ -938,7 +986,8 @@ export function serializeMessageText(
   contentText: string,
   budgetText: string,
   model: StringTableModel,
-  ft: FontTable
+  ft: FontTable,
+  opts: RegionBudgetOptions = {}
 ): SerializeResult {
   const pair = findRegionPair(contentText, budgetText, MESSAGE_TEXT_ID)
   if (typeof pair === 'string') return { ok: false, error: pair }
@@ -949,7 +998,9 @@ export function serializeMessageText(
   const stale = staleEntryError(model.entries, new Set(contentEntries.map((e) => e.label)))
   if (stale) return { ok: false, error: stale }
 
-  const budget = messageRegionBytes(budgetRegion.inner, ft)
+  const baseBytes = messageRegionBytes(budgetRegion.inner, ft)
+  const headroom = Math.max(0, opts.headroomBytes ?? 0)
+  const budget = baseBytes + headroom
   const edits: TextEdit[] = []
   let newTotal = 0
   for (const e of contentEntries) {
@@ -973,13 +1024,63 @@ export function serializeMessageText(
   }
 
   if (newTotal > budget) {
+    const room = headroom > 0 ? ` (${baseBytes} + ${headroom} of ${FREE_TAIL_LABEL})` : ''
     return {
       ok: false,
-      error: `Messages use ${newTotal} bytes but the budget is ${budget}. Shorten ${newTotal - budget} byte(s).`
+      error: `Messages use ${newTotal} bytes but the budget is ${budget}${room}. Shorten ${newTotal - budget} byte(s).`
     }
   }
 
   return { ok: true, text: spliceRegion(contentText, MESSAGE_TEXT_ID, applyEdits(region.inner, edits)) }
+}
+
+/**
+ * How far the message region in `contentText` (overlay-first) has grown past the
+ * pristine base — the bytes it claims from bank $51's `$FF` tail. The build
+ * feeds this (summed with its sibling, see `bank51SpillBytes`) to the free-region
+ * head shift so the tail's `%FREE_BYTES` boundary moves out of the way; it is
+ * also what the Strings panel reports as free space used.
+ *
+ * Exact, not an estimate: `messageRegionBytes` sums the region's assembled body
+ * bytes, and in the base it equals the region's span ($51:1333–$51:49BC = 13961),
+ * so the delta IS the number of bytes everything after the region shifts by.
+ * Never negative — a region that shrank leaves `$FF` behind (asar re-fills it),
+ * it doesn't pull the boundary back.
+ */
+export function messageSpillBytes(contentText: string, baseText: string, ft: FontTable): number {
+  const region = findRegion(contentText, MESSAGE_TEXT_ID)
+  const baseRegion = findRegion(baseText, MESSAGE_TEXT_ID)
+  if (!region || !baseRegion) return 0
+  return Math.max(0, messageRegionBytes(region.inner, ft) - messageRegionBytes(baseRegion.inner, ft))
+}
+
+/**
+ * The level-name region's counterpart to {@link messageSpillBytes}. Its budget is
+ * counted in CHARACTERS, but the splice only ever rewrites `"…"` literal contents
+ * (every control byte is preserved), and the font encodes one byte per char — so
+ * the char delta IS the byte delta, and the region grows by exactly that much.
+ * The name strings are the LAST data in the bank before the `$FF` tail, so this
+ * adds straight onto the message region's spill.
+ */
+export function levelNameSpillBytes(contentText: string, baseText: string): number {
+  const region = findRegion(contentText, LEVEL_NAME_STRINGS_ID)
+  const baseRegion = findRegion(baseText, LEVEL_NAME_STRINGS_ID)
+  if (!region || !baseRegion) return 0
+  return Math.max(
+    0,
+    totalChars(parseRegionEntries(region.inner)) - totalChars(parseRegionEntries(baseRegion.inner))
+  )
+}
+
+/**
+ * Total bytes bank $51's two growable text regions claim from its `$FF` tail —
+ * what the build shifts the tail's `%FREE_BYTES` boundary by (relocate.ts
+ * `stringSpillBytes`). They share one tail and both sit immediately before it
+ * (messages → name pointer table → name strings → tail), so their growth simply
+ * adds: everything downstream is label-addressed and asar re-resolves it.
+ */
+export function bank51SpillBytes(contentText: string, baseText: string, ft: FontTable): number {
+  return messageSpillBytes(contentText, baseText, ft) + levelNameSpillBytes(contentText, baseText)
 }
 
 // ── Message-pointer table (DATA_message_box_text_ptrs) ──────────────────────
@@ -1135,9 +1236,9 @@ export interface ForeignMessage {
 }
 
 /** `DATA_message_box_text_ptrs` — message-ID → 16-bit `$51:xxxx` low word. */
-const MESSAGE_PTR_TABLE_SNES = 0x5110db
+export const MESSAGE_PTR_TABLE_SNES = 0x5110db
 /** Slot count: the table runs $51:10DB up to the first payload at $51:1333. */
-const MESSAGE_PTR_COUNT = (0x1333 - 0x10db) / 2
+export const MESSAGE_PTR_COUNT = (0x1333 - 0x10db) / 2
 
 /**
  * Decode a target cart's message bodies, keyed by base asm label, by FOLLOWING

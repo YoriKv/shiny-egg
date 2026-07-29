@@ -38,7 +38,7 @@ import { exportSpriteGlyphs } from 'snes-framework/sprite-glyph'
 import { decodeFontSheet, FONT_SHEETS } from 'snes-framework/msg-font'
 import { imageAseprite } from 'snes-framework/gfx-aseprite'
 import { app } from 'electron'
-import { encodePng } from 'snes-framework/png'
+import { canvasIndexedPng } from 'snes-framework/png'
 import { collectYychrExport, yychrReadme } from './gfx-yychr-io'
 import type { RenderHeaderRequest, ExportGfxOptions, GfxExportTrack } from '../shared/ipc-types'
 import { loadRomAndSymbols } from './render/rom-cache'
@@ -211,7 +211,7 @@ export function exportGfxPngsToDir(
   // screens/{boot,title,storybook}/, map sheets under screens/map/) — plus their own
   // dedicated helpers below (title logo/island/scenery + storybook scene for system;
   // icons/terrain/ground for the map). They reuse the gfx-file manifest shape (single-row
-  // swatch, no perTilePalette), so the import loop handles them with no extra code — a
+  // palette, no perTilePalette), so the import loop handles them with no extra code — a
   // screen file and a level file with the same id are the same compressed blob,
   // round-tripped via saveGfxEdit. `format:'aseprite'` writes the cropped boot-logo region
   // as a single-image `.aseprite`.
@@ -248,6 +248,7 @@ export function exportGfxPngsToDir(
       index0Transparent: e.index0Transparent,
       region: e.region, // cropped screens (e.g. boot logo); undefined otherwise
       perTilePalette: e.perTilePalette, // flat-map BG (f74/f75) per-tile palette; undefined otherwise
+      palette: e.palette, // the PNG's PLTE as RGB ints (single-palette sheets); undefined when perTilePalette carries it
       paletteOffsets: useAse ? e.paletteOffsets : undefined // region .aseprite color write-back map
     })
   }
@@ -420,9 +421,12 @@ export function exportGfxPngsToDir(
       if (!spec) continue
       const img = decodeFontSheet(readRawChrOverlayFirst(binFile), spec.glyphW, spec.glyphH, spec.cols)
       const file = rebase(`fonts/${key}.${aseFmt ? 'aseprite' : 'png'}`)
+      // Both forms are 2-color INDEXED (0 = off/black, 1 = on/white) — the PNG carries
+      // that palette in its PLTE, so the sheet opens as a 1-bit image in any editor.
+      const twoColor = Uint32Array.of(0xff000000, 0xffffffff)
       const bytes = aseFmt
-        ? imageAseprite({ rgba: img.rgba, width: img.width, height: img.height, palette: Uint32Array.of(0xff000000, 0xffffffff), index0Transparent: false, layerName: key })
-        : encodePng(img)
+        ? imageAseprite({ rgba: img.rgba, width: img.width, height: img.height, palette: twoColor, index0Transparent: false, layerName: key })
+        : canvasIndexedPng(img.rgba, img.width, img.height, [twoColor])
       emit(file, bytes)
       fontManifest.push({
         file,
@@ -533,8 +537,9 @@ function readmeText(): string {
     '-----------------',
     'Pixels   The tile art. Tiles are often reused, so editing one pixel changes that',
     '         tile everywhere it appears.',
-    'Palette  The colors themselves — Aseprite extracts only. A PNG includes a color',
-    '         swatch to paint FROM, but editing the swatch doesn\'t change the palette.',
+    'Palette  The colors themselves — Aseprite extracts only. A PNG is written as a',
+    '         color-indexed image, so its palette shows up in your editor to paint',
+    '         FROM; editing those colors doesn\'t change the game palette.',
     'Layout   Which tile sits in each cell (rearranging the picture) — Aseprite extracts',
     '         only, and only where noted below.',
     '',

@@ -48,7 +48,7 @@ import { decodePng } from './png.ts';
 import { decodeAsepriteRegion, decodeAsepriteStructural, decodeAsepriteImage } from './aseprite.ts';
 import { diffGfxFileAseprite, diffAsepritePalette } from './gfx-aseprite.ts';
 import { imageDataU32ToBgr15 } from './color.ts';
-import { imageToGfx, lz16Layout, lz2Layout, readSwatchPalette, type GfxImageLayout } from './gfx-png.ts';
+import { imageToGfx, lz16Layout, lz2Layout, type GfxImageLayout } from './gfx-png.ts';
 import { decode2bppTile, decode4bppTile, encode2bppTile, encode4bppTile } from './tile.ts';
 import { lz2, lz16 } from './decompress/index.ts';
 import { snesToPC } from './symbol-map.ts';
@@ -110,12 +110,16 @@ const decodeBase = (e: ScreenGfxPng): Uint8Array => {
   }
   return out;
 };
-// Per-tile palette decoder for fidelity entries (map BG f74/f75) — each tile decodes
-// against its own row; the swatch is ignored (same as the import).
-const tilePaletteOf = (e: ScreenGfxPng): ((t: number) => readonly number[]) | undefined =>
+// The palette args the import passes for an entry: per-tile sub-palettes + tileSub for
+// a fidelity entry (map BG f74/f75), else the single exported palette.
+const paletteOptsOf = (e: ScreenGfxPng): {
+  palette?: number[];
+  subPalettes?: readonly (readonly number[])[];
+  tileSub?: (t: number) => number;
+} =>
   e.perTilePalette
-    ? (t) => e.perTilePalette!.subPalettes[e.perTilePalette!.tileSub[t] ?? 0] ?? e.perTilePalette!.subPalettes[0]!
-    : undefined;
+    ? { subPalettes: e.perTilePalette.subPalettes, tileSub: (t) => e.perTilePalette!.tileSub[t] ?? 0 }
+    : { palette: e.palette };
 
 // (1) folder shapes.
 const has = (re: RegExp): boolean => entries.some((e) => re.test(e.file));
@@ -195,7 +199,7 @@ let exact = 0;
 for (const e of entries) {
   const img = decodePng(Buffer.from(e.png));
   const base = decodeBase(e);
-  const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: e.index0Transparent, tilePalette: tilePaletteOf(e) }).subarray(0, base.length);
+  const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: e.index0Transparent, ...paletteOptsOf(e) }).subarray(0, base.length);
   if (eq(round, base)) exact++;
   else assert(false, `${e.file} unedited round-trip byte-exact`);
 }
@@ -216,7 +220,7 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
     // PIXELS: the multi-row .aseprite must round-trip byte-exact through the per-tile import
     // path (decodeAsepriteImage → imageToGfx with the per-tile palette) — same as the PNG.
     const base = decodeBase(e);
-    const round = imageToGfx(aimg, layoutOf(e), { base, index0Transparent: e.index0Transparent, tilePalette: tilePaletteOf(e) }).subarray(0, base.length);
+    const round = imageToGfx(aimg, layoutOf(e), { base, index0Transparent: e.index0Transparent, ...paletteOptsOf(e) }).subarray(0, base.length);
     assert(eq(round, base), `${e.file}: per-tile .aseprite pixel round-trip byte-exact`);
     // COLORS: paletteOffsets parallels the embedded multi-row palette; self-consistent blob
     // words (each blob-backed entry's current color at its offset) → unedited 0, flip → 1.
@@ -246,7 +250,7 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
     const live = exp(new Map([[key, edited]]));
     assert(!eq(live.png, plain.png), 'an edited gfxOverride changes the exported file (export reflects the unbuilt edit)');
     // Re-import the live export against the live baseline (decodeBase = the edit) → 0 change.
-    const round = imageToGfx(decodePng(Buffer.from(live.png)), layoutOf(live), { base: edited, index0Transparent: live.index0Transparent, tilePalette: tilePaletteOf(live) }).subarray(0, edited.length);
+    const round = imageToGfx(decodePng(Buffer.from(live.png)), layoutOf(live), { base: edited, index0Transparent: live.index0Transparent, ...paletteOptsOf(live) }).subarray(0, edited.length);
     assert(eq(round, edited), 'the live-edited export re-imports to the edit (no pixel revert across a pre-rebuild cycle)');
   }
 }
@@ -290,22 +294,22 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
   assert(f88.index0Transparent === false, 'storybook BG char f88 has opaque index 0');
 }
 
-// (3c) STORYBOOK f88 Aseprite output (single-image, per-tile-colored; the palette lives
-// in-file so the `.aseprite` omits the swatch the PNG appends — the bare tile grid). The
-// flatten reproduces the PNG's tile-grid region byte-for-byte.
+// (3c) STORYBOOK f88 Aseprite output (single-image, per-tile-colored). Both forms carry
+// the palette in-file and show the same bare tile grid, so the `.aseprite` flatten
+// reproduces the PNG byte-for-byte.
 {
   const sbookAse = exportScreenGfxPngs(rom, symbols, { aseprite: true }).filter((e) => /^screens\/storybook\//.test(e.file));
   assert(sbookAse.length === 1 && sbookAse.every((e) => !!e.aseprite), 'storybook f88 builds an .aseprite when requested');
   for (const e of sbookAse) {
     const png = decodePng(Buffer.from(e.png));
     const dec = decodeAsepriteImage(e.aseprite!);
-    assert(dec.width < png.width && dec.height <= png.height,
-      `storybook ${e.file} .aseprite drops the swatch (${dec.width}×${dec.height} vs png ${png.width}×${png.height})`);
+    assert(dec.width === png.width && dec.height === png.height,
+      `storybook ${e.file} .aseprite matches the PNG tile grid (${dec.width}×${dec.height} vs png ${png.width}×${png.height})`);
     let match = true;
     for (let y = 0; y < dec.height && match; y++)
       match = eq(dec.rgba.subarray(y * dec.width * 4, (y + 1) * dec.width * 4),
                  png.rgba.subarray(y * png.width * 4, (y * png.width + dec.width) * 4));
-    assert(match, `storybook ${e.file} .aseprite flatten == the PNG tile grid (swatch excluded)`);
+    assert(match, `storybook ${e.file} .aseprite flatten == the PNG tile grid`);
   }
 }
 
@@ -368,15 +372,19 @@ assert(entries.some((e) => /^screens\/map\//.test(e.file) && e.perTilePalette !=
   assertPaletteRoundTrip('storybook', sceneAse.palette, sceneAseFull.paletteOffsets, blobWordsFrom(ctx.provenance, ctx.cgram));
 }
 
-// (4) 1-pixel edit on tile 0: change pixel (0,0) to another (unique) swatch color
-// → that tile's bytes change to the right index, others untouched.
+// (4) 1-pixel edit on tile 0: repaint pixel (0,0) with another (unique) palette color
+// → that tile's bytes change to the right index, others untouched. Driven through the
+// COLOR matcher (the artist flattened the indexing away) — the index matcher is pinned
+// by gfx-png.test.ts + gfx-bgtile-palette.test.ts.
 function pixelEditCheck(e: ScreenGfxPng, label: string): void {
   const tileBytes = tileBytesOf(e);
   const decode = e.bpp === 4 ? decode4bppTile : decode2bppTile;
   const encode = e.bpp === 4 ? encode4bppTile : encode2bppTile;
   const base = decodeBase(e);
   const img = decodePng(Buffer.from(e.png));
-  const pal = readSwatchPalette(img, layoutOf(e));
+  const pal = e.palette!;
+  delete img.indices; // flattened save → match by color
+  delete img.palette;
   const idx0 = new Uint8Array(64);
   decode(base, 0, false, false, idx0, 0);
   const bi = idx0[0]!;
@@ -388,14 +396,14 @@ function pixelEditCheck(e: ScreenGfxPng, label: string): void {
   if (k < 0) { console.log(`  (skipped ${label} 1-pixel edit: tile 0 row has no unique alternate color)`); return; }
   const col = pal[k]!;
   img.rgba[0] = (col >> 16) & 0xff; img.rgba[1] = (col >> 8) & 0xff; img.rgba[2] = col & 0xff; img.rgba[3] = k === 0 ? 0 : 255;
-  const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: e.index0Transparent }).subarray(0, base.length);
+  const round = imageToGfx(img, layoutOf(e), { base, index0Transparent: e.index0Transparent, palette: pal }).subarray(0, base.length);
   const ei = idx0.slice(); ei[0] = k;
   const exp = new Uint8Array(tileBytes);
   encode(ei, 0, exp, 0);
   assert(eq(round.subarray(0, tileBytes), exp), `${label} 1-pixel edit: tile 0 byte = expected (index ${bi}→${k})`);
   assert(eq(round.subarray(tileBytes), base.subarray(tileBytes)), `${label} 1-pixel edit: every other tile byte-identical`);
 }
-// pixelEditCheck reads a single-row swatch, so it only applies to NON-per-tile entries.
+// pixelEditCheck uses a single exported palette, so it only applies to NON-per-tile entries.
 // The map's only 4bpp sheets now are the per-tile f74/f75 (covered by the round-trip
 // above); the OBJ-marker chrome (single-palette sheets) is no longer exported. So the
 // boot region is the remaining swatch-based pixel-edit case here.

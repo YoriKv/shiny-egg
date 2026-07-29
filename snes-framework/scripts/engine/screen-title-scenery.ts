@@ -3,8 +3,8 @@
 // screen-gfx.ts; shares the scene core (titleVariant + tile geometry).
 
 import { loadScenePalettes } from './load-palettes.ts';
-import { buildPaletteRow, paletteIndexOf } from './color.ts';
-import { encodePng } from './png.ts';
+import { buildPaletteRow, nearestPaletteIndex } from './color.ts';
+import { canvasIndexedPng } from './png.ts';
 import { type SymbolMap } from './symbol-map.ts';
 import { imageAseprite, imagePaletteOffsets } from './gfx-aseprite.ts';
 import { TILE_PX, titleVariant } from './screen-scene.ts';
@@ -97,27 +97,17 @@ export function diffTitleScenery(
   for (let i = 0; i < SCENERY_BYTES; i++) {
     const bIdx = ctx.base[i]! & 0x0f;
     const col = eu32[i]!;
-    const idx = col === ctx.palette[bIdx] ? bIdx : paletteIndexOf(ctx.palette, col, SCENERY_COLORS);
+    const idx = col === ctx.palette[bIdx] ? bIdx : nearestPaletteIndex(ctx.palette, col, SCENERY_COLORS);
     if (idx !== bIdx) { region[i] = (ctx.base[i]! & 0xf0) | idx; changed++; }
   }
   return { region, changed };
 }
 
-/** Encode the scenery canvas to a PNG: the 256×96 atlas (index 0 transparent) + a
- *  16-color swatch column (opaque, so color 0 is visible). Import reads only the
- *  top-left `width×height`. */
+/** Encode the scenery canvas to an INDEXED PNG: the 256×96 atlas with its 16-color
+ *  OBJ row as the PNG's palette (index 0 transparent, via tRNS — an editor still shows
+ *  the color, so it stays pickable without the old swatch column). */
 export function titleSceneryPng(ctx: TitleSceneryContext, canvas: TitleSceneryCanvas): Uint8Array {
-  const width = canvas.width + TILE_PX;
-  const height = Math.max(canvas.height, SCENERY_COLORS * TILE_PX);
-  const rgba = new Uint8Array(width * height * 4);
-  for (let y = 0; y < canvas.height; y++) rgba.set(canvas.rgba.subarray(y * canvas.width * 4, (y + 1) * canvas.width * 4), y * width * 4);
-  const u32 = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
-  // Swatch: opaque (force alpha) so the transparent color 0 is still visible.
-  for (let i = 0; i < SCENERY_COLORS; i++) {
-    const c = (ctx.palette[i]! & 0x00ffffff) | 0xff000000;
-    for (let dy = 0; dy < TILE_PX; dy++) for (let dx = 0; dx < TILE_PX; dx++) u32[(i * TILE_PX + dy) * width + (canvas.width + dx)] = c;
-  }
-  return new Uint8Array(encodePng({ width, height, rgba }));
+  return canvasIndexedPng(canvas.rgba, canvas.width, canvas.height, [ctx.palette.subarray(0, SCENERY_COLORS)]);
 }
 
 /** The scenery atlas as a single-image (no-tilemap) `.aseprite`: the 256×96 indexed

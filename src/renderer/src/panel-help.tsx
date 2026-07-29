@@ -356,10 +356,12 @@ export const PANEL_HELP: PanelHelp = {
         (used to check it can open tilemap exports).
       </p>
       <p>
-        <b>Palette rows.</b> Each background tile uses a single color row. If you paint
-        a pixel with a color that isn&rsquo;t in that tile&rsquo;s own row, the import
-        reports it and snaps the pixel to color&nbsp;0 (the transparent / backdrop
-        entry) &mdash; stick to the tile&rsquo;s row.
+        <b>Palette rows.</b> PNG exports are color-indexed &mdash; the palette comes
+        with the file, so your editor lists exactly the colors the game can show, and
+        painting with one of them round-trips exactly. Each background tile uses a
+        single color row: if you paint a pixel with a color that isn&rsquo;t in that
+        tile&rsquo;s own row, the import reports it and matches the pixel to the closest
+        color in the row &mdash; stick to the tile&rsquo;s row.
       </p>
       <p>
         The three folder tabs need no dialogs &mdash; each exports to its own fixed

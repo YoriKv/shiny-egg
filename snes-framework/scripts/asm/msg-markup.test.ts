@@ -12,6 +12,9 @@ import {
   parseEndingText,
   parseIntroStory,
   parseLevelNameStrings,
+  bank51SpillBytes,
+  levelNameSpillBytes,
+  messageSpillBytes,
   parseMessageText,
   serializeEndingText,
   serializeIntroStory,
@@ -19,6 +22,7 @@ import {
   serializeMessageText
 } from '../strings.ts';
 import { snesToPC } from '../engine/symbol-map.ts';
+import type { StringTableModel } from '../types.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) {
@@ -146,6 +150,139 @@ console.log('=== strings: a markup edit re-emits only that message ===');
         if (i === idx) assert(re.entries[i].markup === after, 'edited message updated');
         else assert(re.entries[i].markup === baseModel.entries[i].markup, `message ${i} unchanged`);
       }
+    }
+  }
+}
+
+// The message region is the one GROWABLE region: past its base size the text
+// spills into bank $51's `$FF` tail, which the build claims by moving that tail's
+// `%FREE_BYTES` boundary (relocate.ts `shiftRegionStart`). Pins the three things
+// that has to get right: the fixed budget still bites with no headroom, headroom
+// admits exactly that many extra bytes, and `messageSpillBytes` reports exactly
+// what the build must shift by — an under-report would fire asar's
+// `assert pc() <= $515348`.
+console.log('\n=== strings: message-text free-tail headroom + spill accounting ===');
+{
+  const model = parseMessageText(bank51, bank51, ft);
+  const base = model.budgetChars;
+  const idx = model.entries.findIndex((e) => (e.markup ?? '').length > 20);
+  assert(idx >= 0, 'found a message to grow');
+  const GROW = 700;
+  const grow = (n: number): StringTableModel => ({
+    ...model,
+    entries: model.entries.map((e, i) =>
+      i === idx ? { ...e, markup: (e.markup ?? '') + 'A'.repeat(n) } : e
+    )
+  });
+
+  assert(messageSpillBytes(bank51, bank51, ft) === 0, 'unedited region spills nothing');
+
+  const noRoom = serializeMessageText(bank51, bank51, grow(GROW), ft);
+  assert(!noRoom.ok, 'without headroom the fixed budget still rejects growth');
+
+  const withRoom = serializeMessageText(bank51, bank51, grow(GROW), ft, { headroomBytes: GROW });
+  assert(withRoom.ok, `headroom admits the growth${withRoom.ok ? '' : ': ' + withRoom.error}`);
+  if (withRoom.ok) {
+    const spill = messageSpillBytes(withRoom.text, bank51, ft);
+    assert(spill === GROW, `spill is exactly the grown bytes (got ${spill}, want ${GROW})`);
+    assert(
+      parseMessageText(withRoom.text, bank51, ft, { headroomBytes: GROW }).budgetChars === base,
+      'budgetChars stays the BASE region size — headroom is reported separately'
+    );
+    assert(
+      parseMessageText(withRoom.text, bank51, ft, { headroomBytes: GROW }).headroomBytes === GROW,
+      'the model carries the headroom for the editor readout'
+    );
+  }
+
+  // One byte past the headroom is still rejected, and the error names the split.
+  const tooMuch = serializeMessageText(bank51, bank51, grow(GROW + 1), ft, { headroomBytes: GROW });
+  assert(!tooMuch.ok, 'one byte past base+headroom is rejected');
+  assert(
+    !tooMuch.ok && tooMuch.error.includes('free space'),
+    `over-budget error mentions the free space${tooMuch.ok ? '' : ': ' + tooMuch.error}`
+  );
+
+  // A SHRUNK region never reports a negative spill (the boundary only moves
+  // forward; asar re-fills the slack).
+  // (Trim inside a run of plain letters — slicing the tail could cut a `[token]`
+  // in half and fail the codec for an unrelated reason.)
+  const si = model.entries.findIndex((e) => /[A-Za-z]{6}/.test(e.markup ?? ''))
+  assert(si >= 0, 'found a message to shrink');
+  const shrunk = {
+    ...model,
+    entries: model.entries.map((e, i) =>
+      i === si ? { ...e, markup: (e.markup ?? '').replace(/[A-Za-z]{6}/, '') } : e
+    )
+  };
+  const sr = serializeMessageText(bank51, bank51, shrunk, ft);
+  assert(sr.ok, `shrinking a message serializes${sr.ok ? '' : ': ' + sr.error}`);
+  if (sr.ok) assert(messageSpillBytes(sr.text, bank51, ft) === 0, 'a shrunk region spills nothing');
+}
+
+// Level names are the SECOND growable bank $51 region — the bank's last data
+// before the `$FF` tail, so its growth adds straight onto the message region's.
+// Its budget is counted in CHARACTERS, but the splice only rewrites `"…"` contents
+// and the font is one byte per char, so the char delta IS the byte delta the build
+// must shift the tail boundary by.
+console.log('\n=== strings: level-name free-tail headroom + combined bank $51 spill ===');
+{
+  const names = parseLevelNameStrings(bank51, bank51, ft);
+  const ni = names.entries.findIndex((e) => e.lines.some((l) => l.length >= 3));
+  assert(ni >= 0, 'found a level name to grow');
+  const li = names.entries[ni].lines.findIndex((l) => l.length >= 3);
+  const GROW = 40;
+  const grown = {
+    ...names,
+    entries: names.entries.map((e, i) =>
+      i === ni ? { ...e, lines: e.lines.map((l, j) => (j === li ? l + 'A'.repeat(GROW) : l)) } : e
+    )
+  };
+
+  assert(levelNameSpillBytes(bank51, bank51) === 0, 'unedited name region spills nothing');
+
+  const noRoom = serializeLevelNameStrings(bank51, bank51, grown, ft);
+  assert(!noRoom.ok, 'without headroom the fixed char budget still rejects growth');
+
+  const withRoom = serializeLevelNameStrings(bank51, bank51, grown, ft, { headroomBytes: GROW });
+  assert(withRoom.ok, `headroom admits the longer name${withRoom.ok ? '' : ': ' + withRoom.error}`);
+  if (withRoom.ok) {
+    assert(
+      levelNameSpillBytes(withRoom.text, bank51) === GROW,
+      `name spill is exactly the added chars (got ${levelNameSpillBytes(withRoom.text, bank51)})`
+    );
+    assert(
+      parseLevelNameStrings(withRoom.text, bank51, ft, { headroomBytes: GROW }).headroomLabel ===
+        'bank $51 free space',
+      'the name model carries the headroom label for the editor readout'
+    );
+
+    // Both regions grown in the SAME file: the bank's total claim is their sum —
+    // this is what the build shifts the free-tail boundary by.
+    const msgs = parseMessageText(withRoom.text, bank51, ft, { headroomBytes: 500 });
+    const mi = msgs.entries.findIndex((e) => (e.markup ?? '').length > 20);
+    const both = serializeMessageText(
+      withRoom.text,
+      bank51,
+      {
+        ...msgs,
+        entries: msgs.entries.map((e, i) =>
+          i === mi ? { ...e, markup: (e.markup ?? '') + 'B'.repeat(500) } : e
+        )
+      },
+      ft,
+      { headroomBytes: 500 }
+    );
+    assert(both.ok, `both regions grown serializes${both.ok ? '' : ': ' + both.error}`);
+    if (both.ok) {
+      assert(
+        levelNameSpillBytes(both.text, bank51) === GROW,
+        'the name edit survives the sibling message save'
+      );
+      assert(
+        bank51SpillBytes(both.text, bank51, ft) === GROW + 500,
+        `combined spill is both regions' growth (got ${bank51SpillBytes(both.text, bank51, ft)}, want ${GROW + 500})`
+      );
     }
   }
 }

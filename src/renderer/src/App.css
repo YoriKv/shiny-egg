@@ -2661,6 +2661,12 @@ h3 { margin: 0; }
   color: var(--danger);
 }
 
+/* Free-space usage beside the budget (growable regions only — see BudgetBar). */
+.se-strings__spill {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+}
+
 .se-strings__count {
   color: var(--ink-3);
   font-family: var(--font-mono);

@@ -38,7 +38,11 @@ import {
   ENDING_TEXT_ID,
   INTRO_STORY_ID,
   levelNameSlotLabels,
+  levelNameSpillBytes,
   loadFontTable,
+  messageSpillBytes,
+  LEVEL_NAME_STRINGS_ID,
+  MESSAGE_TEXT_ID,
   parseEndingText,
   parseIntroStory,
   parseLevelNameStrings,
@@ -103,7 +107,8 @@ import {
   saveLogoTilemap,
   savePaletteEdits,
   saveWorldMapResource,
-  saveYoshiColorsResource
+  saveYoshiColorsResource,
+  stringHeadroomBytes
 } from './resources'
 
 const LEVEL_DATA_REL = path.join('assets', 'yi', 'LevelData')
@@ -199,7 +204,9 @@ function analyzeNames(foreign: Buffer, base: Buffer, projectId: string | null): 
     changed: 0,
     skipped: 0,
     overBudget: false,
-    hasConflict: false
+    hasConflict: false,
+    spillBytes: 0,
+    spillFreeBytes: 0
   }
   try {
     const workRoot = frameworkWorkRoot()
@@ -210,13 +217,17 @@ function analyzeNames(foreign: Buffer, base: Buffer, projectId: string | null): 
     // import layers on top of them.
     const contentText = hasConflict ? readFileSync(overlayPath!, 'utf8') : baseText
     const ft = loadFontTable(workRoot)
+    // Longer names than vanilla are fine now — the region grows into bank $51's
+    // free tail, same as the message text (stringHeadroomBytes nets out what the
+    // message region already claims, so the two can't promise the same bytes).
+    const budget = { headroomBytes: stringHeadroomBytes(LEVEL_NAME_STRINGS_ID) }
     const fontMap = loadFontMap(workRoot)
     const sym = vendoredV10SymbolMap()
 
     const foreignNames = readForeignLevelNames(foreign, sym, fontMap)
     const baseNames = readForeignLevelNames(base, sym, fontMap)
     const slotLabels = levelNameSlotLabels(baseText)
-    const model = parseLevelNameStrings(contentText, baseText, ft)
+    const model = parseLevelNameStrings(contentText, baseText, ft, budget)
     const byLabel = new Map(model.entries.map((e) => [e.label, e]))
 
     let changed = 0
@@ -241,11 +252,17 @@ function analyzeNames(foreign: Buffer, base: Buffer, projectId: string | null): 
     if (changed === 0) return { ...empty, skipped, hasConflict }
 
     // Pre-flight the budget + charset by serializing; if it won't apply, surface it.
-    const res = serializeLevelNameStrings(contentText, baseText, model, ft)
-    if (!res.ok) {
-      return { model: null, changed, skipped, overBudget: true, hasConflict }
+    const res = serializeLevelNameStrings(contentText, baseText, model, ft, budget)
+    const spillBytes = res.ok ? levelNameSpillBytes(res.text, baseText) : 0
+    const counts = {
+      changed,
+      skipped,
+      hasConflict,
+      spillBytes,
+      spillFreeBytes: Math.max(0, budget.headroomBytes - spillBytes)
     }
-    return { model, changed, skipped, overBudget: false, hasConflict }
+    if (!res.ok) return { ...counts, model: null, overBudget: true }
+    return { ...counts, model, overBudget: false }
   } catch {
     return empty
   }
@@ -328,7 +345,9 @@ function analyzeMessages(foreign: Buffer, base: Buffer, projectId: string | null
     blanked: 0,
     skipped: 0,
     overBudget: false,
-    hasConflict: false
+    hasConflict: false,
+    spillBytes: 0,
+    spillFreeBytes: 0
   }
   try {
     const workRoot = frameworkWorkRoot()
@@ -338,29 +357,40 @@ function analyzeMessages(foreign: Buffer, base: Buffer, projectId: string | null
     // Load overlay-first so existing message edits are preserved + import layers on top.
     const contentText = hasConflict ? readFileSync(overlayPath!, 'utf8') : baseText
     const ft = loadFontTable(workRoot)
+    // A hack that outgrew the vanilla message region moved its text into bank
+    // $51's free tail (EGGCELLENT does exactly this). Our editor can do the same,
+    // so give the import the same headroom the Strings panel gets — otherwise a
+    // faithfully-decoded text set is rejected purely for being longer than vanilla.
+    const budget = { headroomBytes: stringHeadroomBytes(MESSAGE_TEXT_ID) }
 
     const foreignMsgs = readForeignMessages(foreign, base, baseText, ft)
     const baseMsgs = readForeignMessages(base, base, baseText, ft)
 
     // Pass 1: full import (no dedup), blanking deleted slots.
-    let model = parseMessageText(contentText, baseText, ft)
+    let model = parseMessageText(contentText, baseText, ft, budget)
     let counts = applyForeignMessages(model, foreignMsgs, baseMsgs, false)
     if (counts.changed === 0 && counts.blanked === 0) {
       return { ...empty, skipped: counts.skipped, hasConflict }
     }
-    let res = serializeMessageText(contentText, baseText, model, ft)
+    let res = serializeMessageText(contentText, baseText, model, ft, budget)
     if (!res.ok) {
-      // Pass 2: still over budget → retry deduping shared foreign messages.
-      model = parseMessageText(contentText, baseText, ft)
+      // Pass 2: over budget even WITH the free tail → retry deduping shared
+      // foreign messages (our build keeps the base pointer table, so it can't
+      // share bodies the way the hack does).
+      model = parseMessageText(contentText, baseText, ft, budget)
       counts = applyForeignMessages(model, foreignMsgs, baseMsgs, true)
-      res = serializeMessageText(contentText, baseText, model, ft)
+      res = serializeMessageText(contentText, baseText, model, ft, budget)
     }
+    // What the accepted text will claim from the free tail at build time.
+    const spillBytes = res.ok ? messageSpillBytes(res.text, baseText, ft) : 0
     const result = {
       changed: counts.changed,
       duplicates: counts.duplicates,
       blanked: counts.blanked,
       skipped: counts.skipped,
-      hasConflict
+      hasConflict,
+      spillBytes,
+      spillFreeBytes: Math.max(0, budget.headroomBytes - spillBytes)
     }
     if (!res.ok) return { ...result, model: null, overBudget: true }
     return { ...result, model, overBudget: false }
@@ -779,14 +809,23 @@ export function analyzeRom(foreignPath: string): RomImportReport {
   // Palette + level-name diffs are global (not per-level) and only meaningful on a
   // V1.0-derived cart (their tables sit at fixed vanilla addresses).
   const palette: RomImportPalette = { changedWords: 0, conflicts: 0 }
-  const names: RomImportNames = { changed: 0, skipped: 0, overBudget: false, hasConflict: false }
+  const names: RomImportNames = {
+    changed: 0,
+    skipped: 0,
+    overBudget: false,
+    hasConflict: false,
+    spillBytes: 0,
+    spillFreeBytes: 0
+  }
   const messages: RomImportMessages = {
     changed: 0,
     duplicates: 0,
     blanked: 0,
     skipped: 0,
     overBudget: false,
-    hasConflict: false
+    hasConflict: false,
+    spillBytes: 0,
+    spillFreeBytes: 0
   }
   const worldMap: RomImportWorldMap = {
     entrances: 0,
@@ -835,6 +874,8 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     names.skipped = n.skipped
     names.overBudget = n.overBudget
     names.hasConflict = n.hasConflict
+    names.spillBytes = n.spillBytes
+    names.spillFreeBytes = n.spillFreeBytes
     const msg = analyzeMessages(foreign, base, projectId)
     messageModel = msg.model
     messageChanges = msg.changed
@@ -845,6 +886,8 @@ export function analyzeRom(foreignPath: string): RomImportReport {
     messages.skipped = msg.skipped
     messages.overBudget = msg.overBudget
     messages.hasConflict = msg.hasConflict
+    messages.spillBytes = msg.spillBytes
+    messages.spillFreeBytes = msg.spillFreeBytes
     const wm = analyzeWorldMap(foreign, base, projectId)
     worldMapModel = wm.model
     worldMapEntrances = wm.entrances
@@ -1120,25 +1163,6 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
     else rawOnly++
   }
 
-  // Migration awareness: the hack relocated these records' streams into ITS
-  // free space; now that their (possibly grown) sizes are on disk, mark the
-  // ones that no longer fit their home pools as migrated so OUR build places
-  // them in the free regions too. Need-based — see autoMigrateImportedLevels.
-  const migration = { applied: 0, recordIds: [] as number[], warning: undefined as string | undefined }
-  // New slots aren't migration candidates — their placement is the newSlots
-  // layout path, not the migrated set (they have no home pool to overflow).
-  const migrationCandidates = applied.filter((id) => relocatedIds.has(id) && !newSlotIds.has(id))
-  if (migrationCandidates.length > 0) {
-    const m = autoMigrateImportedLevels(migrationCandidates)
-    if (m) {
-      migration.applied = m.migrated.length
-      migration.recordIds = m.migrated
-      if (m.violations.length > 0) {
-        migration.warning = poolViolationMessage(m.violations)
-      }
-    }
-  }
-
   const palette = { applied: false, words: 0, error: undefined as string | undefined }
   if (sel.palette && cached.paletteEdits.length > 0) {
     const merged = mergeOffsetEdits(loadPaletteEdits(), cached.paletteEdits)
@@ -1178,6 +1202,31 @@ export async function applyRomImport(sel: RomImportSelection): Promise<RomImport
       messages.blanked = cached.messageBlanked
     } else {
       messages.error = r.error
+    }
+  }
+
+  // Migration awareness: the hack relocated these records' streams into ITS
+  // free space; now that their (possibly grown) sizes are on disk, mark the
+  // ones that no longer fit their home pools as migrated so OUR build places
+  // them in the free regions too. Need-based — see autoMigrateImportedLevels.
+  //
+  // Runs AFTER the message save, because both claim bank $51's free tail and the
+  // planner reads the message region's spill off the saved overlay. Text first is
+  // the right precedence: an over-budget message save has no fallback (the text
+  // is simply not imported, silently losing what the report promised), while a
+  // migration that no longer fits reports `violations` the user can act on.
+  const migration = { applied: 0, recordIds: [] as number[], warning: undefined as string | undefined }
+  // New slots aren't migration candidates — their placement is the newSlots
+  // layout path, not the migrated set (they have no home pool to overflow).
+  const migrationCandidates = applied.filter((id) => relocatedIds.has(id) && !newSlotIds.has(id))
+  if (migrationCandidates.length > 0) {
+    const m = autoMigrateImportedLevels(migrationCandidates)
+    if (m) {
+      migration.applied = m.migrated.length
+      migration.recordIds = m.migrated
+      if (m.violations.length > 0) {
+        migration.warning = poolViolationMessage(m.violations)
+      }
     }
   }
 

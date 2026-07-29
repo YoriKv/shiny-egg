@@ -1375,11 +1375,18 @@ export interface RomImportNames {
   /** Foreign names skipped — garbage/clobbered, a line-count mismatch, or a slot
    *  with no editable base entry. */
   skipped: number
-  /** The changed names don't fit the asm region's fixed byte budget (or use an
-   *  unsupported glyph) — can't apply. */
+  /** The changed text doesn't fit the asm region's budget even after growing it
+   *  into bank $51's free tail (or it uses an unsupported glyph) — can't apply. */
   overBudget: boolean
   /** The project already has name edits that importing would rebuild over. */
   hasConflict: boolean
+  /** Bytes the imported text runs past the vanilla region — claimed from bank
+   *  $51's free tail at build time, exactly as the hack did in its own ROM.
+   *  0 when it fits the vanilla region. */
+  spillBytes: number
+  /** Free-tail bytes still available to THIS region after that spill (already net
+   *  of relocated level data, the asm-patch pool, and the sibling text region). */
+  spillFreeBytes: number
 }
 
 /** Message-box text changes detected in the foreign cart. Like {@link RomImportNames}
@@ -1388,7 +1395,8 @@ export interface RomImportNames {
  *  (pointer `$0000`) that we blank to match (`blanked`). */
 export interface RomImportMessages extends RomImportNames {
   /** Shared foreign messages imported once instead of duplicated (dedup fallback,
-   *  only when the full import would overflow the fixed message budget). */
+   *  only when the full import would overflow the message budget even with free
+   *  space). */
   duplicates: number
   /** Slots the hack deleted (pointer `$0000`) that we blanked to match its layout. */
   blanked: number

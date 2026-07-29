@@ -608,9 +608,18 @@ export interface StringTableModel {
   title: string;
   /** Characters the font table can encode — the legal input set. */
   allowedChars: string[];
-  /** Max total editable characters (= bytes) for the region; edits that push
-   *  the total above this are rejected (would overflow the fixed asm budget). */
+  /** Max total editable characters (= bytes) the region holds at its pristine-base
+   *  size; edits that push the total above this spend `headroomBytes` (and are
+   *  rejected once that runs out too). */
   budgetChars: number;
+  /** Extra bytes the region may grow by, on top of `budgetChars`, by claiming ROM
+   *  free space — see strings.ts `RegionBudgetOptions`. Only the message-text
+   *  region is growable (bank $51's `$FF` tail, shared with level-data migration,
+   *  so this shrinks as levels are relocated). Absent/0 = a fixed-size region. */
+  headroomBytes?: number;
+  /** Where that headroom comes from, for the editor's readout ("bank $51 free
+   *  space"). Present on growable regions even when the headroom is currently 0. */
+  headroomLabel?: string;
   entries: StringTableEntry[];
   /** True when entries use the markup model (`entry.markup`) rather than the
    *  per-line model (`entry.lines`) — i.e. the message-text region. The editor

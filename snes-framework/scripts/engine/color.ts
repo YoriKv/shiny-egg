@@ -170,3 +170,46 @@ export function paletteIndexOf(palette: Uint32Array, u: number, maxIdx: number):
   for (let i = 0; i < maxIdx; i++) if (palette[i] === u) return i;
   return 0;
 }
+
+/**
+ * The palette index for an ImageData-packed color `u`, matching EXACTLY where possible
+ * and otherwise by CLOSEST COLOR — the import half of "paint in any editor". A pixel
+ * the artist painted with a color that isn't in the tile's palette (anti-aliasing, a
+ * brush picked outside the palette, a resave through a lossy tool) resolves to the
+ * nearest palette entry instead of collapsing to index 0, which is what the old exact-
+ * only match did (silently erasing the paint).
+ *
+ * Rules:
+ *  - exact match (color AND alpha) wins, lowest index first — so an unedited pixel is
+ *    never re-mapped, and a palette with duplicate colors stays stable;
+ *  - a fully TRANSPARENT pixel is an erase: it takes the palette's transparent slot
+ *    (the first entry with alpha 0), else index 0;
+ *  - anything else takes the nearest OPAQUE entry. The transparent slot is excluded so
+ *    painting can't accidentally punch a hole — erase for that.
+ *
+ * Distance is the "redmean" low-cost perceptual approximation (a weighted RGB Euclidean
+ * whose red/blue weights shift with the mean red level) — cheap, no color-space
+ * conversion, and markedly better than flat RGB distance on the saturated SNES palettes.
+ * (YY-CHR, the reference PNG-editing workflow, sidesteps this by REFUSING non-indexed
+ * images outright — it only ever matches by index.)
+ */
+export function nearestPaletteIndex(palette: Uint32Array, u: number, maxIdx: number): number {
+  const n = Math.min(maxIdx, palette.length);
+  for (let i = 0; i < n; i++) if (palette[i] === u) return i;
+  if ((u >>> 24) === 0) { // erased → the transparent slot
+    for (let i = 0; i < n; i++) if ((palette[i]! >>> 24) === 0) return i;
+    return 0;
+  }
+  const r = u & 0xff, g = (u >>> 8) & 0xff, b = (u >>> 16) & 0xff;
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < n; i++) {
+    const c = palette[i]!;
+    if ((c >>> 24) === 0) continue; // never resolve painted pixels to the transparent slot
+    const dr = r - (c & 0xff), dg = g - ((c >>> 8) & 0xff), db = b - ((c >>> 16) & 0xff);
+    const rmean = (r + (c & 0xff)) >> 1;
+    const d = (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (((767 - rmean) * db * db) >> 8);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
