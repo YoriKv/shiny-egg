@@ -22,6 +22,32 @@ export type PerCellHandler = (state: DecodeState) => void;
  *  via `walkerSetupTrampoline(state, handler)`. */
 export type InitHandler = (state: DecodeState) => void;
 
+/**
+ * Per-decode replacement of object handlers, keyed by object id.
+ *
+ * The registry in `handlers/index.ts` is a module-level singleton holding OUR
+ * cart's (retail V1.0) handler set — correct for every level the editor edits.
+ * These overrides exist for decoding streams authored against a DIFFERENT
+ * object table: the source leak's pre-release generations reuse the same ids
+ * for entirely different objects (e.g. std $21-$30 are a soap-bubble family in
+ * the oldest dispatch table and the jungle family in the retail one), so the
+ * retail handler draws confidently-wrong geometry for them.
+ *
+ * Scoped to one `decodeLevel` call, so a research renderer can swap in an era's
+ * handlers without touching the global registry the editor depends on.
+ *
+ * A `null` VALUE means "explicitly draw nothing" — distinct from an ABSENT key,
+ * which falls through to the globally-registered handler. Use it when the era's
+ * object is known to differ but hasn't been ported: drawing nothing is honest,
+ * drawing the retail object is not.
+ */
+export interface ObjectHandlerOverrides {
+  /** Standard-object id → handler (or null for "draw nothing"). */
+  std?: ReadonlyMap<number, InitHandler | null>;
+  /** Extended-object id → handler (or null for "draw nothing"). */
+  ext?: ReadonlyMap<number, InitHandler | null>;
+}
+
 /** A parsed exit record (5 bytes on disk; we store the decoded fields). */
 export interface DecodedScreenExit {
   /** Source screen index (0..127) — the page byte from the stream. */
@@ -134,6 +160,11 @@ export class DecodeState {
   lastLruPage = 0;
   /** "Rewound" flag (cart `$9B`) — non-zero = walker wrapped to new screen. */
   rewound = 0;
+
+  /** Per-decode object-handler replacement (see `ObjectHandlerOverrides`).
+   *  Null = use the global registry for every id, the editor's normal path.
+   *  Set by `decodeLevel` AFTER `reset()`, like the PRNG replay fields. */
+  handlerOverrides: ObjectHandlerOverrides | null = null;
 
   // --- Per-cell handler slots (set by init handler before walker runs) -
   /** Cart $1F/$21 — handler for ODD column index. */

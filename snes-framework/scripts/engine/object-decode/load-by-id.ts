@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { decodeLevel } from './index.ts';
 import type { SymbolMap } from '../symbol-map.ts';
-import type { DecodeState } from './state.ts';
+import type { DecodeState, ObjectHandlerOverrides } from './state.ts';
 import type { DecodeStats } from './parser.ts';
 import { serializeLevel } from '../../serialize-level.ts';
 import { levelIdHexKey, loadLevelMapPublic, resolveLevelBinPath } from '../../level.ts';
@@ -130,6 +130,9 @@ export interface DecodeLevelFromLevelDataOptions {
   /** Collect per-object drawn-tile footprints for editor hit-testing (see
    *  decodeLevel options / `resolveObjectFootprints`). */
   collectObjectCells?: boolean;
+  /** Replace individual object handlers for THIS decode only — for a stream
+   *  authored against a foreign object table. See `ObjectHandlerOverrides`. */
+  handlerOverrides?: ObjectHandlerOverrides;
 }
 
 /**
@@ -177,7 +180,8 @@ export function decodeLevelFromLevelData(
     provenanceTargets: opts.provenanceTargets,
     prngReplayBySite: opts.prngReplayBySite,
     prngSeed: opts.prngSeed,
-    collectObjectCells: opts.collectObjectCells
+    collectObjectCells: opts.collectObjectCells,
+    handlerOverrides: opts.handlerOverrides
   });
   return {
     state,

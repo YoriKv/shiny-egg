@@ -1,6 +1,8 @@
 # snes-framework
 
-A specialized fork of [Yoshifanatic's SNES ROM Framework v1.4.0](https://github.com/Yoshifanatic/SNES-ROM-Framework) carrying his YI disassembly (Yoshi's Island, SMW2). Trimmed to only what YI needs and wrapped in a Node-managed build system, while keeping the build byte-identical to the original cart at every step.
+A specialized fork of [Yoshifanatic's SNES ROM Framework v1.4.0](https://github.com/Yoshifanatic1/SNES-ROM-Framework) carrying his YI disassembly (Yoshi's Island, SMW2). Trimmed to only what YI needs and wrapped in a Node-managed build system, while keeping the build byte-identical to the original cart at every step.
+
+Licensed under the **GNU GPL v3.0**, like the upstream framework — see [`LICENSE`](LICENSE). This is a *modified* version; the changes to upstream (symbol renaming, added source comments, file splits, corrections, trimming) are recorded in [`NOTICE`](NOTICE) as GPL-3.0 section 5(a) requires.
 
 It does double duty: a documented, navigable YI source (inline comments, descriptive labels, cross-references), and the asm + build pipeline a host application extracts from and rebuilds.
 

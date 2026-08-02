@@ -130,7 +130,12 @@ export function loadLevelObjectStream(
         // attributed. `objectsParsed` is incremented AFTER the handler, so it
         // is this object's 0-based index here. No-op unless a target is armed.
         state.currentObjectIndex = stats.objectsParsed;
-        const handler = getExtObjectHandler(extId);
+        // A per-decode override wins over the global registry, and an override
+        // whose VALUE is null means "draw nothing" (see ObjectHandlerOverrides) —
+        // hence `has()` rather than `?? getExtObjectHandler(...)`, which would
+        // silently fall back to the retail handler for a deliberate blank.
+        const extOv = state.handlerOverrides?.ext;
+        const handler = extOv?.has(extId) ? extOv.get(extId)! : getExtObjectHandler(extId);
         if (handler === null) {
           stats.unregisteredObjects++;
         } else {
@@ -241,7 +246,9 @@ export function loadLevelObjectStream(
 
       // Provenance: this object's stream index (see the ext branch note).
       state.currentObjectIndex = stats.objectsParsed;
-      const handler = getStdObjectHandler(id);
+      // Per-decode override first — see the ext branch above for the null rule.
+      const stdOv = state.handlerOverrides?.std;
+      const handler = stdOv?.has(id) ? stdOv.get(id)! : getStdObjectHandler(id);
       if (handler === null) {
         stats.unregisteredObjects++;
       } else {

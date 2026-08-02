@@ -40,7 +40,8 @@ export type {
   DecodedScreenExit,
   DecodeResult,
   InitHandler,
-  PerCellHandler
+  PerCellHandler,
+  ObjectHandlerOverrides
 } from './state.ts';
 export {
   loadLevelObjectStream,
@@ -90,7 +91,7 @@ export { resolveProvenanceCells, resolveObjectFootprints, type ProvenanceCell } 
 import { HANDLER_INSTALLERS } from './handlers/all.ts';
 for (const install of HANDLER_INSTALLERS) install();
 
-import { DecodeState } from './state.ts';
+import { DecodeState, type ObjectHandlerOverrides } from './state.ts';
 import { unpackLevelHeader } from './header.ts';
 import { populateTemplates } from './templates.ts';
 import { loadLevelObjectStream, loadObjectPropertyTable, type DecodeStats } from './parser.ts';
@@ -126,6 +127,11 @@ export interface DecodeLevelOptions {
    *  and a Set per stamped cell but never touches the rendered buffer, so the
    *  decode output stays byte-identical. Resolve with `resolveObjectFootprints`. */
   collectObjectCells?: boolean;
+  /** Replace individual object handlers for THIS decode only — for streams
+   *  authored against a different object table than our retail cart's (the
+   *  source leak's pre-release generations). Omit for the editor's normal path.
+   *  See `ObjectHandlerOverrides`. */
+  handlerOverrides?: ObjectHandlerOverrides;
 }
 
 export function decodeLevel(
@@ -172,6 +178,12 @@ export function decodeLevel(
   // Arm the drawn-tiles footprint collector (editor hit-testing) when requested.
   if (opts.collectObjectCells) {
     state.cellStampers = new Map();
+  }
+
+  // Per-decode handler replacement (foreign object tables — see the type docs).
+  // Set after reset() so it survives into the parse, like the PRNG fields above.
+  if (opts.handlerOverrides != null) {
+    state.handlerOverrides = opts.handlerOverrides;
   }
 
   // 3. Populate per-tileset Map16-ID template slots in WRAM (cart

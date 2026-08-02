@@ -8,14 +8,14 @@
 // instead of being duplicated per dev tool.
 
 import { isWorld6RecordDeep } from '../level.ts';
-import { decodeLevelFromLevelData } from './object-decode/index.ts';
+import { decodeLevelFromLevelData, type ObjectHandlerOverrides } from './object-decode/index.ts';
 import { loadLevelGfx, type GfxFileEntry, type GfxHeader } from './load-graphics.ts';
 import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
 import { applyAnimatedPalette } from './load-anim-palette.ts';
 import { loadTileAnimation } from './load-tile-animation.ts';
 import { loadSceneRegs, bgLayerBpp } from './scene-regs.ts';
 import { composeBgLayers } from './bg-layers-compose.ts';
-import { loadMap16Tables } from './map16.ts';
+import { loadMap16Tables, type Map16Tables } from './map16.ts';
 import { buildBg1Bands } from './bg1-band-gfx.ts';
 import { renderBg1 } from './render-bg1.ts';
 import { renderSpriteLayer, buildSpriteRenderModel, compositeSpriteFull, type SpriteRenderModel } from './render-sprite-layer.ts';
@@ -106,7 +106,32 @@ export function renderLevelLayers(
    *  `DATA_spriteset_files[header[7]]` — for rendering a level whose sprites no
    *  stock spriteset covers (see `mintSpriteset`). Threaded into BOTH the VRAM
    *  load and the per-sprite tile-base slot lookup so they stay consistent. */
-  spritesetOverride?: readonly number[]
+  spritesetOverride?: readonly number[],
+  /** Optional per-decode object-handler replacement, for a level stream authored
+   *  against a DIFFERENT object table than our retail cart's — the source leak's
+   *  pre-release generations reuse the same std/ext ids for different objects.
+   *  Affects only the object decode (BG1 geometry + collision), never gfx or
+   *  palettes. Omit for the editor's normal path. See `ObjectHandlerOverrides`. */
+  handlerOverrides?: ObjectHandlerOverrides,
+  /** Optional VRAM override, keyed `${format}/${fileId}` (`lz2/8`, `lz16/114`) →
+   *  decompressed tile bytes. After each gfx file decompresses into VRAM its bytes
+   *  are overwritten from here, so a caller can render a level against DIFFERENT
+   *  graphics without touching the ROM. Same contract the editor's live gfx-edit
+   *  preview uses (`src/main/render/render-core.ts`); `engine/cgx.ts` produces
+   *  values from the artists' CGX working files. Omit for the cart's own art. */
+  gfxOverride?: ReadonlyMap<string, Uint8Array>,
+  /** Optional raw VRAM patches, applied AFTER the gfx load and the tile-animation
+   *  overlay — i.e. last, so they win. Use when the replacement art is addressed by
+   *  VRAM position rather than by gfx-file id (a CGX "V-" set is an authored VRAM
+   *  image, not a set of files). Each patch is clamped to the 64 KB buffer. */
+  vramPatches?: readonly { byteOffset: number; bytes: Uint8Array }[],
+  /** Optional replacement Map16 tables. The cart's `$4C:32A4`/`$4C:33F2` pair says
+   *  which four tilemap words each 16×16 metatile is built from; swapping it lets a
+   *  level render against a DIFFERENT metatile set — the other half of substituting
+   *  era art, since replacement CHR under retail Map16 only changes which pixels the
+   *  retail metatile definitions happen to point at. Build one with
+   *  `map16TablesFromUnitDat` (the authoring-side `pnl/unit.dat` form). */
+  map16Override?: Map16Tables
 ): RenderedLevelLayers | null {
   if (level.empty || level.special || level.header.length < 15) return null;
   const h = level.header;
@@ -115,7 +140,7 @@ export function renderLevelLayers(
   if (spritesetOverride) gfxHeader.spritesetOverride = spritesetOverride;
   const palHeader = paletteHeaderFromLevel(h, workRoot, recordId);
 
-  const decoded = decodeLevelFromLevelData({ rom, symbols, workRoot, levelData: level, prngReplayBySite });
+  const decoded = decodeLevelFromLevelData({ rom, symbols, workRoot, levelData: level, prngReplayBySite, handlerOverrides });
   if (!decoded) return null;
   const { levelDataBuffer, screenPageMap } = decoded.state;
 
@@ -123,20 +148,28 @@ export function renderLevelLayers(
   const vram = new Uint8Array(0x10000);
   const cgram = new Uint8Array(512);
   const manifest: GfxFileEntry[] = [];
-  loadLevelGfx(rom, symbols, gfxHeader, vram, manifest);
+  loadLevelGfx(rom, symbols, gfxHeader, vram, manifest, gfxOverride);
   loadTileAnimation(
     rom,
     symbols,
     { animationTileset: h[10] ?? 0, bg1Tileset: gfxHeader.bg1Tileset, levelMode: h[9] ?? 0 },
     vram
   );
+  // Raw VRAM patches go last so they beat both the gfx load and the animation
+  // overlay — they represent an authored VRAM image, not a cart gfx file.
+  if (vramPatches) {
+    for (const p of vramPatches) {
+      const n = Math.min(p.bytes.length, vram.length - p.byteOffset);
+      if (p.byteOffset >= 0 && n > 0) vram.set(p.bytes.subarray(0, n), p.byteOffset);
+    }
+  }
   loadLevelPalettes(rom, symbols, palHeader, cgram);
   // Overlay the cart's phase-0 per-frame animated palette (gm0F) — the colors
   // the level actually shows in-level on its animated CGRAM rows.
   applyAnimatedPalette(rom, cgram, h);
 
   const regs = loadSceneRegs(rom, symbols, h[9] ?? 0);
-  const map16Tables = loadMap16Tables(rom, symbols);
+  const map16Tables = map16Override ?? loadMap16Tables(rom, symbols);
   const bands = buildBg1Bands({
     rom,
     symbols,

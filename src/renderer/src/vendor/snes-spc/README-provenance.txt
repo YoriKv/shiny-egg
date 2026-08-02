@@ -13,8 +13,9 @@ API exported incl. spc_mute_voices / spc_set_tempo / SPC_Filter):
   LICENSE                    LGPL-2.1 text
 
 The Web Audio pump that drives it is first-party editor code
-(src/renderer/src/audio/spc-audio.ts). The editor is MIT with public source,
-so the LGPL combination can be rebuilt with a modified library; attribution
+(src/renderer/src/audio/spc-audio.ts). The editor is GPL-3.0 with public source
+(LGPL-2.1 section 3 permits the library's use in a GPL-3 work), so the
+combination can be rebuilt with a modified library; attribution
 lives in the top-level README's Legal Disclaimers.
 
 To upgrade: re-run ../snes_spc/wasm/build.sh, re-copy dist/snes_spc.mjs +

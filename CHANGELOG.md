@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.3 - 2026-08-02
+
+- Corrected license to GNU GPL v3.0, matching the SNES ROM
+  Framework and disassembly it is built on, also better license compliance
+
 ## v0.7.2 - 2026-07-29
 
 - Message text and level names can now extend beyond byte limit by using freespace

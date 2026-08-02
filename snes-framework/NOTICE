@@ -1,0 +1,77 @@
+snes-framework — modification notice
+====================================
+
+This directory is a MODIFIED version of:
+
+    SNES ROM Framework v1.4.0, and the Yoshi's Island (SMW2) disassembly
+    carried by it
+    Copyright (C) Yoshifanatic
+    https://github.com/Yoshifanatic1/SNES-ROM-Framework
+    Licensed under the GNU General Public License, version 3.
+
+Modifications copyright (C) 2026 Yori Kvitchko.
+
+This modified framework, and the Shiny Egg editor that is built from it, are
+distributed under the same license — the GNU General Public License, version 3.
+The full license text is in `LICENSE` next to this file.
+
+As required by GPL-3.0 section 5(a), the changes made to the upstream work are
+recorded below.
+
+
+Changes to `yi/` (the Yoshi's Island disassembly)
+-------------------------------------------------
+
+Modified continuously since 2026-05-23.
+
+- **Symbols renamed.** Templated auto-generated labels (`CODE_xxxxxx`,
+  `DATA_xxxxxx`, `YI_NorSpr*`) have been supplemented and in places replaced
+  with descriptive English names derived from verified runtime behaviour —
+  across the engine-core banks (Bank00, Bank01, Bank0F, Bank12, Bank13,
+  Bank17), the entire SuperFX program, and the boss + sprite-engine banks
+  (Bank02, Bank03, Bank05), including hundreds of dispatch-table entries. Where
+  a rename would break an existing reference, the descriptive name is added as
+  an alias at the same address rather than substituted. Notable corrections of
+  upstream naming: the LC_LZ2 decompressor and its data pointers were renamed
+  from `lz1_decompress` / `.lz1` to `lz2_decompress` / `.lz2` (the upstream name
+  reflected a historical misidentification of the format); slope-direction
+  constants were corrected from a down/up swap.
+- **Source comments added.** Every file carries a header describing its
+  contents, address ranges, and cross-references; significant routines carry
+  block comments; non-obvious instructions carry end-of-line annotations. All
+  442 normal sprites, 121 ambient sprites, and the level set are named and
+  annotated with handler-location pointers. Sprite-slot tables are documented
+  per-byte. None of this commentary is upstream's.
+- **Files split and reorganised.** The 227,396-line `Routine_Macros_YI.asm` was
+  split into 36 per-bank files under `yi/Banks/` plus shared routines under
+  `yi/Routines/`; the 75,026-line SuperFX program was split per-bank under
+  `yi/SuperFX/Banks/`; defines and memory maps were split per topic under
+  `yi/Constants/` and `yi/Memory/`. The original umbrella files remain as thin
+  `incsrc` wrappers.
+- **Content corrections.** Entries were cross-validated against other Yoshi's
+  Island disassemblies and community memory maps, which surfaced material
+  corrections to upstream labels and address annotations.
+- **Trimmed.** Only what the Yoshi's Island target needs is retained; support
+  for the other ROMs upstream covers was removed.
+
+Changes to `global/`
+--------------------
+
+- Trimmed to the subset the Yoshi's Island target uses; comments and
+  cross-references added to match the `yi/` treatment.
+
+Additions
+---------
+
+- `scripts/` — a Node build/extraction pipeline and an engine ported from the
+  disassembly above (level decode, graphics decompression, rendering, audio).
+  These ports are derived from the asm in `yi/` and are GPL-3.0 like the rest.
+- `docs/` — cross-file engine reference documentation.
+- `patches/` — a built-in custom-patch repository.
+- `asar` / `asar.exe` / `asar-macos` — the asar assembler, a separate program
+  invoked by the build, under its own license (see `asar-licenses/`).
+- `M1TE.exe` — a fork of M1TE2, a separate program, under its own license (see
+  `m1te-licenses/`).
+
+Complete corresponding source, including these modifications and the build
+scripts, is at https://github.com/YoriKv/shiny-egg.

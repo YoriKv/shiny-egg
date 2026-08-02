@@ -175,3 +175,59 @@ export function decodeMap16Alloc(tables: Map16Tables, map16Id: number): Map16Sub
   decodeMap16(tables, map16Id, out);
   return out;
 }
+
+/**
+ * Build `Map16Tables` from the authoring-side `pnl/unit.dat` — the flat page
+ * array `ys_pnlcnv` compiles into the cart's `$4C:32A4` / `$4C:33F2` pair.
+ *
+ * Layout: **256 pages × 256 cells × 4 BIG-endian words** (TL, TR, BL, BR), so
+ * cell (page, tile) is at byte `(page * 256 + tile) * 8`. Only the first
+ * `PAGE_COUNT` pages are meaningful; the rest are the allocator's slack.
+ *
+ * `ys_pnlcnv` does two things to this on the way to the cart: byte-swaps to LE,
+ * and tail-compacts each page (drops trailing unused cells, which is why the
+ * cart's pages have wildly varying sizes). We skip the compaction — nothing
+ * downstream depends on it, `decodeMap16` indexes by `pageBase + tile * 8`
+ * either way, and keeping full pages means an override can define a cell the
+ * cart's compacted page dropped.
+ *
+ * Verified: converting `source_Ver0/pnl/unit.dat` this way reproduces the built
+ * cart's Map16 page data cell-for-cell (`tmp/unit-dat-check.ts`).
+ */
+export function map16TablesFromUnitDat(unitDat: Uint8Array): Map16Tables {
+  const CELLS_PER_PAGE = 256;
+  const pageBytes = CELLS_PER_PAGE * BYTES_PER_CELL;
+  const need = PAGE_COUNT * pageBytes;
+  if (unitDat.length < need) {
+    throw new RangeError(`map16TablesFromUnitDat: need ${need} bytes for ${PAGE_COUNT} pages, got ${unitDat.length}`);
+  }
+  // Tail-compaction is NOT optional: the index table is u16 byte offsets, and 167
+  // uncompacted 2 KB pages would need 340 KB of offset range. Trailing all-zero
+  // cells are the padding `ys_pnlcnv` drops, which is what makes the offsets fit.
+  const isBlank = (o: number) => {
+    for (let i = 0; i < BYTES_PER_CELL; i++) if (unitDat[o + i] !== 0) return false;
+    return true;
+  };
+  const counts = new Uint16Array(PAGE_COUNT);
+  let total = 0;
+  for (let p = 0; p < PAGE_COUNT; p++) {
+    let n = CELLS_PER_PAGE;
+    while (n > 0 && isBlank(p * pageBytes + (n - 1) * BYTES_PER_CELL)) n--;
+    counts[p] = n;
+    total += n * BYTES_PER_CELL;
+  }
+  const indexTable = new Uint8Array(INDEX_TABLE_BYTES);
+  const pageData = new Uint8Array(total);
+  let at = 0;
+  for (let p = 0; p < PAGE_COUNT; p++) {
+    indexTable[p * 2] = at & 0xff;
+    indexTable[p * 2 + 1] = (at >>> 8) & 0xff;
+    const src = p * pageBytes;
+    for (let i = 0; i < counts[p] * BYTES_PER_CELL; i += 2) {
+      pageData[at + i] = unitDat[src + i + 1];        // BE -> LE
+      pageData[at + i + 1] = unitDat[src + i];
+    }
+    at += counts[p] * BYTES_PER_CELL;
+  }
+  return { indexTable, pageData, pageCellCounts: counts };
+}

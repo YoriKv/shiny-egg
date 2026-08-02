@@ -100,10 +100,40 @@ work this tool couldn't exist. So thank you to these folks and many more.
   this tool would exist without it and I'm excited to be able to use these tools to
   give back to a community I've followed and watched for years.
 
+## License
+
+Copyright (C) 2026 Yori Kvitchko.
+
+Shiny Egg is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License, version 3, as published by the Free
+Software Foundation.
+
+Shiny Egg is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details. The
+full text ships with every install (`resources/LICENSE`) and is at
+<https://www.gnu.org/licenses/gpl-3.0.html>.
+
+The editor is GPL-3.0 rather than a permissive license because it is built on,
+and distributes, our fork of Yoshifanatic's SNES ROM Framework and Yoshi's
+Island disassembly — itself GPL-3.0. That covers both the asm sources shipped
+under `resources/snes-framework/` and the engine ported out of them into the
+editor.
+
+Complete corresponding source for any release — editor, framework fork, and the
+scripts that build the installers — is at https://github.com/YoriKv/shiny-egg.
+
 ## Legal Disclaimers
 
 - Yoshi's Island is © Nintendo. This is an unofficial fan-made tool, not
   affiliated with or endorsed by Nintendo.
+- The asm sources, build pipeline, and rendering engine are our **modified fork
+  of Yoshifanatic's SNES ROM Framework v1.4.0 + YI disassembly**, licensed under
+  the GNU GPL v3.0 — which is why the editor as a whole is GPL-3.0 (see
+  [License](#license)). Our modifications are recorded in
+  `resources/snes-framework/NOTICE`, the license text in
+  `resources/snes-framework/LICENSE`, and upstream is at
+  https://github.com/Yoshifanatic1/SNES-ROM-Framework.
 - No game ROM is included or distributed with this editor. You must supply your
   own legally-obtained copy.
 - This editor bundles the **asar** assembler (© Alcaro and contributors) to
@@ -126,7 +156,7 @@ work this tool couldn't exist. So thank you to these folks and many more.
   our snes_spc fork's `wasm/` directory). The wasm core ships embedded in the
   app bundle; its full license text and provenance/rebuild notes ship with
   the install under `resources/snes-spc-licenses/`. This editor is
-  MIT-licensed with public source, so the combination can be rebuilt with a
+  GPL-3.0-licensed with public source, so the combination can be rebuilt with a
   modified copy of the library. Upstream:
   http://www.slack.net/~ant/libs/audio.html.
 - The warp exit / entrance marker icons are by **Delapouite**

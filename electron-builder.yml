@@ -23,6 +23,24 @@ files:
   # match this node_modules copy, so exclude it explicitly.
   - '!node_modules/snes-framework/**'
 extraResources:
+  # LICENSING — the editor is GPL-3.0, because it incorporates `snes-framework`
+  # (our fork of Yoshifanatic's GPL-3.0 SNES ROM Framework + YI disassembly) both
+  # as the shipped asm under `yi/`+`global/` below AND as the engine bundled into
+  # the main process. GPL-3.0 sections 4-6 require the license text, the
+  # modification notice, and directions to the Corresponding Source to travel
+  # with the binaries — so all four ship on every platform. README.md carries the
+  # source-code location; NOTICE carries the section 5(a) record of what we
+  # changed upstream. Do not drop these from a build.
+  - from: LICENSE
+    to: LICENSE
+  - from: README.md
+    to: README.md
+  - from: snes-framework/LICENSE
+    to: snes-framework/LICENSE
+  - from: snes-framework/NOTICE
+    to: snes-framework/NOTICE
+  - from: snes-framework/README.md
+    to: snes-framework/README.md
   # The on-disk inputs asar needs at runtime, plus the engine docs as bundled
   # reference material. The framework's TS is bundled into the Electron main
   # process; node config, extracted assets, build outputs, and reference carts
