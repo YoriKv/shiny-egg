@@ -104,24 +104,11 @@ work this tool couldn't exist. So thank you to these folks and many more.
 
 Copyright (C) 2026 Yori Kvitchko.
 
-Shiny Egg is free software: you can redistribute it and/or modify it under the
-terms of the GNU General Public License, version 3, as published by the Free
-Software Foundation.
+Shiny Egg is free software under the GNU General Public License, version 3 —
+full text in `LICENSE`, shipped with every install. It comes with ABSOLUTELY NO
+WARRANTY, to the extent permitted by law.
 
-Shiny Egg is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details. The
-full text ships with every install (`resources/LICENSE`) and is at
-<https://www.gnu.org/licenses/gpl-3.0.html>.
-
-The editor is GPL-3.0 rather than a permissive license because it is built on,
-and distributes, our fork of Yoshifanatic's SNES ROM Framework and Yoshi's
-Island disassembly — itself GPL-3.0. That covers both the asm sources shipped
-under `resources/snes-framework/` and the engine ported out of them into the
-editor.
-
-Complete corresponding source for any release — editor, framework fork, and the
-scripts that build the installers — is at https://github.com/YoriKv/shiny-egg.
+Complete corresponding source: https://github.com/YoriKv/shiny-egg
 
 ## Legal Disclaimers
 
