@@ -1257,7 +1257,7 @@ export interface PatchSummary {
 export interface PrepackagedPatch {
   id: string
   name: string
-  /** Group heading for the catalog list (e.g. "Flutter! - Misc"). Absent →
+  /** Group heading for the catalog list (e.g. "Skips and Speedups"). Absent →
    *  grouped under "Other". */
   category?: string
   description?: string
@@ -1703,6 +1703,34 @@ export interface AudioSettingUi {
   songModuleBytes?: number
 }
 
+/** One extra voice a multi-voice SFX arms behind its primary id. After arming,
+ *  the engine reads the $3EBA remap table and re-dispatches the nonzero value
+ *  as a NEW sound id on its own priority voice; `chain` is that walk.
+ *
+ *  Most partners are driver-internal: ids 0xB0-0xCA, which nothing in the cart
+ *  can queue (the 65816/GSU sound paths top out at 0xA2, and 0xC0+ aren't
+ *  accepted as queue values at all) and which carry no SoundIDs name, so they
+ *  exist only under their parent. A few chains instead reuse an ordinary named
+ *  sound as their second voice — in the shipped cart 0x74 BossExplosion pulls
+ *  in 0x30, 0x81 BigBooPop pulls in 0x48, 0x82 BossFalling pulls in 0x7D —
+ *  and those partners keep their own list row too. `name` distinguishes the
+ *  two cases. */
+export interface AudioSfxChainEntryUi {
+  /** The partner's own sound id. */
+  id: number
+  /** Its SoundIDs name when the id is also an ordinary named sound; undefined
+   *  for the driver-internal 0xB0-0xCA partners, which have no name. */
+  name?: string
+  /** Voice it claims (0-7; the priority byte's high nibble). */
+  voice: number
+  /** Its own $0EB0 priority byte — contention is per-voice, so a partner can
+   *  lose its voice while the parent keeps playing. */
+  priority: number
+  /** False when the chain slot holds an arm-and-end placeholder script (no
+   *  audible content) rather than a real voice. */
+  audible: boolean
+}
+
 export interface AudioSfxUi {
   /** Queue value for the SFX dispatcher (named ids run 0x01-0xA2; the engine
    *  accepts 0x01-0xBF — 0xC0+ are driver commands, not SFX). */
@@ -1714,6 +1742,11 @@ export interface AudioSfxUi {
   /** Raw priority byte from the engine's $0EB0 table — same-voice contention
    *  is decided by comparing these. */
   priority: number
+  /** Extra voices this SFX arms through the remap chain, in dispatch order —
+   *  empty for the single-voice majority. Playing this id plays them too, so
+   *  they are shown on the parent's row rather than as list entries of their
+   *  own. See AudioSfxChainEntryUi. */
+  chain: AudioSfxChainEntryUi[]
 }
 
 export interface AudioCatalogUi {

@@ -20,7 +20,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { loadDevCart, FRAMEWORK_ROOT, type DevCart } from '../engine/dev-cart.ts';
-import { lz16, probeLz16RowCount, encodeLz16 } from '../engine/decompress/index.ts';
+import { lz16, probeLz16RowCount, encodeLz16Improved } from '../engine/decompress/index.ts';
 import { snesToPC } from '../engine/symbol-map.ts';
 import { parseGfxPtrTable, gfxFileForLabel, GFX_ARENA } from '../gfx-reinsert.ts';
 import { diffUnsizedLz16Gfx } from './gfx-lz16.ts';
@@ -132,8 +132,13 @@ const blobStart = (id: number): number => {
 // Find a sheet whose re-encode (unchanged AND edited) fits its own slot in
 // place — and whose unchanged re-encode DIFFERS from the cart's original stream
 // bytes, so the "different bytes, same art" ycompress scenario is really
-// exercised (our encoder reproduces Nintendo's stream byte-identically on some
-// files, e.g. 0x1).
+// exercised.
+//
+// That difference has to come from `encodeLz16Improved`: `encodeLz16` is a port
+// of the cart's own compressor and reproduces all 187 shipped streams byte for
+// byte, so it can't produce this scenario at all. The improved encoder is the
+// stand-in for "some other tool re-packed this cart" — which is exactly what
+// ycompress is.
 let picked = -1;
 let baseTiles: Uint8Array = new Uint8Array(0);
 let editedTiles: Uint8Array = new Uint8Array(0);
@@ -150,8 +155,8 @@ for (let id = 0; id < lz16Labels.length && picked < 0; id++) {
   }
   const edited = out.slice();
   edited[0] ^= 0xff;
-  const encU = encodeLz16(out, rows);
-  const encE = encodeLz16(edited, rows);
+  const encU = encodeLz16Improved(out, rows);
+  const encE = encodeLz16Improved(edited, rows);
   const streamDiffers = !bytesEq(rom.subarray(start, start + encU.length), encU);
   if (streamDiffers && encU.length <= slotLen(start) && encE.length <= slotLen(start)) {
     picked = id;

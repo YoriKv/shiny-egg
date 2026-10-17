@@ -2,6 +2,28 @@
 // level-end goal pole / post. Walker-driven (shape 2): a 4-column x 0x14-row
 // vertical shape. Per-cell stamper is CODE_12AC59 ($12:AC59).
 //
+// ── DEAD in the shipped game, and its retail Map16 defs are stale ────────────
+// Ext $48 has ZERO instances across all 224 shipped records (`find-object 0x48
+// --ext`), and $12:8A96 has no callers beyond the dispatch table itself. Its
+// shipping siblings are ext $82 (goal roof, 43 instances, fine) and ext $81
+// (goal floor stand, also 0 instances).
+//
+// The handler below is a verbatim port and is correct. What is NOT correct is
+// what retail's Map16 tables make of the ids it stamps: $00DE-$00E5 draw an
+// incoherent jumble in the shipped tables, because nothing shipped uses them and
+// the definitions were left to rot. Rendering a pre-release level that does
+// place a $48 (`hanacyan`) against the Dec-94 prototype's own Map16 tables
+// instead (via `map16Override`, see `renderLevelLayers`)
+// produces a coherent striped pole with a red flag on top, and the whole
+// $DE-$E5 block differs between the two while the goal PLATFORM block
+// ($0188-$018D) is byte-identical — the signature of retail reusing the dead
+// pole's Map16 slots.
+//
+// So do not "fix" this by editing the handler. Note also that Map16 VRAM
+// coverage is not evidence here: `map16-probe` reports $DE-$E5 as covered
+// (their tiles are real goal-sheet tiles), yet the arrangement is still wrong.
+// Coverage answers "is the art in VRAM", not "do these cells assemble".
+//
 // Init (verbatim shape):
 //   REP #$20
 //   LDA $1B : AND #$0F0F : STA $00              ; keep sub-screen nibbles

@@ -282,7 +282,9 @@ export const PANEL_HELP: PanelHelp = {
         sample slots, instrument rows. Empty space is what imports can claim; the
         level count expands into clickable chips that open each level.{' '}
         <b>SFX</b> lists every named sound effect &mdash; the <i>v</i> column is the
-        voice the one-shot plays on (same-voice sounds interrupt by priority).
+        voice the one-shot plays on (same-voice sounds interrupt by priority). A
+        few sounds arm extra voices behind their id; those rows say how many
+        voices and list the partner ids, which have no rows of their own.
       </p>
       <p>
         &#9835; on any song or SFX row opens the <b>sequencer</b> — a piano-roll

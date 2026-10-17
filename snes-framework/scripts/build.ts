@@ -4,7 +4,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { commonYIDefines, runAsar } from './asar.ts';
+import { MAX_ASAR_PARALLELISM, commonYIDefines, runAsar, runAsarParallel, type AsarTask } from './asar.ts';
 import { ROM_VERSIONS, outputSfcName } from './rom-versions.ts';
 import { readExtractionState } from './state.ts';
 import type { BuildResult } from './types.ts';
@@ -49,7 +49,7 @@ export interface BuildOptions {
   onProgress?: (msg: string) => void;
 }
 
-export function buildRom(opts: BuildOptions): BuildResult {
+export async function buildRom(opts: BuildOptions): Promise<BuildResult> {
   const { workRoot, asarBin, onProgress } = opts;
   const state = readExtractionState(workRoot);
   if (!state) {
@@ -95,52 +95,87 @@ export function buildRom(opts: BuildOptions): BuildResult {
       );
     }
     const defines = [...overlayIncludes, ...commonYIDefines(romVersion), ...(opts.extraDefines ?? [])];
-    // 4 startup phases + N sample banks + main + patches + finalize + cleanup.
+    // 3 startup phases + N sample banks + main + patches + finalize + cleanup.
     // We skip the framework's phase-6 firmware-filename step entirely because
     // YI uses the SuperFX (bare silicon, no microcode blob) — the upstream
     // hook would always resolve to "NULL" anyway.
-    const totalSteps = 4 + SAMPLE_BANKS.length + 4;
+    const totalSteps = 3 + SAMPLE_BANKS.length + 4;
     let step = 0;
     const log = (label: string): void => onProgress?.(`[${++step}/${totalSteps}] ${label}`);
     const asarCall = (args: string[]): void => runAsar({ asarBin, args, cwd: yiCwd });
 
-    // Phase 0: initialize ROM (header, vectors, ROM map skeleton)
-    log('Initialize ROM');
-    asarCall(['--fix-checksum=on', ...defines, '--define', 'FileType=0', ASSEMBLE_FILE, outputRel]);
+    // ── Parallel prefix ───────────────────────────────────────────────────
+    // The first 3 + 7 phases are mutually independent, so they run concurrently
+    // (capped at MAX_ASAR_PARALLELISM — asar itself is single-threaded, so
+    // separate processes are the only parallelism on offer). Independence,
+    // verified against global/AssembleFile.asm:
+    //   - Every task only *reads* the asm tree + assets; none mutates a shared
+    //     input.
+    //   - Each writes exactly one output nobody else in the group touches:
+    //     InitializeROM → the tmp .sfc; SuperFX → SuperFXCode_YI.bin (+ the
+    //     sidecar -superfx.sym); the SPC700 engine and each sample bank → their
+    //     own .bin.
+    //   - Nothing here consumes another task's output. The main SNES phase
+    //     below is the first consumer (it incbin's all the .bins into the .sfc
+    //     initialized here), which is exactly why it sits after the barrier.
+    // Anything added to this group must satisfy all three — a task that reads a
+    // sibling's output would race silently, producing a build that succeeds
+    // with stale bytes rather than failing loudly.
+    const parallelTasks: AsarTask[] = [
+      // Phase 0: initialize ROM (header, vectors, ROM map skeleton)
+      {
+        label: 'Initialize ROM',
+        args: ['--fix-checksum=on', ...defines, '--define', 'FileType=0', ASSEMBLE_FILE, outputRel],
+      },
+      // Phase 5: SuperFX code → SuperFX/SuperFXCode_YI.bin
+      // Emit a sidecar `-superfx.sym` alongside the .sfc so codegraph picks up
+      // SuperFX-side labels (FXCODE_*, lz16_decompress, etc.) — otherwise the
+      // call graph synthesises them from CODE_AABBCC templates and drifts when
+      // patches shift bytes.
+      {
+        label: 'Assemble SuperFX code',
+        args: [
+          '--no-title-check', ...defines,
+          '--symbols=wla', `--symbols-path=${superfxSymRel}`,
+          '--define', 'FileType=5',
+          '--define', 'PathToFile=SuperFX/SuperFXCode_YI.asm',
+          ASSEMBLE_FILE, 'SuperFX/SuperFXCode_YI.bin',
+        ],
+      },
+      // Phase 4: SPC700 engine
+      {
+        label: 'Assemble SPC700 engine',
+        args: [
+          '--no-title-check', ...defines,
+          '--define', 'FileType=4',
+          '--define', 'PathToFile=SPC700/SPC700_Engine_YI.asm',
+          ASSEMBLE_FILE, 'SPC700/SPC700_Engine_YI.bin',
+        ],
+      },
+      // Phase 4: 7 sample banks
+      ...SAMPLE_BANKS.map((bank) => ({
+        label: `Assemble SPC700 ${bank}`,
+        args: [
+          '--no-title-check', ...defines,
+          '--define', 'FileType=4',
+          '--define', `PathToFile=SPC700/${bank}.asm`,
+          ASSEMBLE_FILE, `SPC700/${bank}.bin`,
+        ],
+      })),
+    ];
+    await runAsarParallel({
+      asarBin,
+      cwd: yiCwd,
+      tasks: parallelTasks,
+      concurrency: MAX_ASAR_PARALLELISM,
+      // Progress fires in completion order, so the [n/total] counter still
+      // climbs monotonically even though the phases no longer finish in order.
+      onDone: log,
+    });
 
-    // Phase 5: SuperFX code → SuperFX/SuperFXCode_YI.bin
-    // Emit a sidecar `-superfx.sym` alongside the .sfc so codegraph picks up
-    // SuperFX-side labels (FXCODE_*, lz16_decompress, etc.) — otherwise the
-    // call graph synthesises them from CODE_AABBCC templates and drifts when
-    // patches shift bytes.
-    log('Assemble SuperFX code');
-    asarCall([
-      '--no-title-check', ...defines,
-      '--symbols=wla', `--symbols-path=${superfxSymRel}`,
-      '--define', 'FileType=5',
-      '--define', 'PathToFile=SuperFX/SuperFXCode_YI.asm',
-      ASSEMBLE_FILE, 'SuperFX/SuperFXCode_YI.bin',
-    ]);
-
-    // Phase 4: SPC700 engine
-    log('Assemble SPC700 engine');
-    asarCall([
-      '--no-title-check', ...defines,
-      '--define', 'FileType=4',
-      '--define', 'PathToFile=SPC700/SPC700_Engine_YI.asm',
-      ASSEMBLE_FILE, 'SPC700/SPC700_Engine_YI.bin',
-    ]);
-
-    // Phase 4: 7 sample banks
-    for (const bank of SAMPLE_BANKS) {
-      log(`Assemble SPC700 ${bank}`);
-      asarCall([
-        '--no-title-check', ...defines,
-        '--define', 'FileType=4',
-        '--define', `PathToFile=SPC700/${bank}.asm`,
-        ASSEMBLE_FILE, `SPC700/${bank}.bin`,
-      ]);
-    }
+    // ── Serial tail ───────────────────────────────────────────────────────
+    // Strictly ordered from here: all three phases mutate the same .sfc in
+    // place, so they cannot overlap with each other or with the prefix.
 
     // Phase 1: main SNES code (uses the SuperFX/SPC700 .bins via incbin).
     // --symbols=wla emits a `<rom>.sym` file alongside the ROM so the editor

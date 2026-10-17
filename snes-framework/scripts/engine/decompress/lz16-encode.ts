@@ -1,9 +1,18 @@
 // LZ16 (LC_LZ16, Lunar Compress FORMAT=15) ENCODER — the canonical inverse of
-// `lz16.ts`. This is the *exact* parse the cart's graphics were packed with, so
+// `lz16.ts`. This is the *exact* parse the cart's graphics were packed with:
 // `decode(cartBlob)` → `encodeLz16` reproduces the original compressed bytes
-// byte-for-byte (verified against every shipped LZ16 entry). That byte-identity
-// is the point: re-encoding an unedited blob yields the original bytes, so the
-// build stays byte-identical and edited blobs are the only ones that change.
+// byte-for-byte for **all 187** shipped LZ16 blobs. That byte-identity is the
+// point — re-encoding unedited data yields the bytes it came from, so nothing
+// downstream of it moves.
+//
+// The reference implementation is `press/ascgx.c` (K. Ohta, 1994) in the YI
+// authoring toolchain, and this file is a direct port of it: `asLine0` /
+// `asLine1` / `makePalet` / `emitNumber` mirror `as_line_0` / `as_line_1` /
+// `make_palet` / `write_number`, and `encodeBlobBits` mirrors `make_ascgx`.
+// Keep it that way — every deviation is a byte-exactness regression, which is
+// precisely how the one candidate-palette shortcut that used to live here broke
+// 10 of the 187. Anything that wants to compress *better* belongs in
+// `lz16-encode-improved.ts`, which composes the same primitives.
 //
 // # The format (mirrors `lz16.ts`; see `docs/lz16-model.md`)
 //
@@ -45,7 +54,7 @@ const BYTES_PER_TILE_ROW = TILES_PER_ROW * BYTES_PER_TILE; // 512
 
 /** Inverse of `lz16.ts`'s final transpose: SNES 4bpp tile bytes → row-major
  *  128-wide pixel rows (one nibble per pixel). */
-function tilesToPixels(tiles: Uint8Array, off: number, rowCount: number): Uint8Array {
+export function tilesToPixels(tiles: Uint8Array, off: number, rowCount: number): Uint8Array {
   const totalTiles = TILES_PER_ROW * rowCount;
   const pixels = new Uint8Array(ROW_PIXELS * rowCount * 8);
   for (let tileIdx = 0; tileIdx < totalTiles; tileIdx++) {
@@ -72,7 +81,7 @@ function tilesToPixels(tiles: Uint8Array, off: number, rowCount: number): Uint8A
 }
 
 /** Length of the constant-color run ending at `x` (walking left). */
-function runCount(line: Uint8Array, x: number): number {
+export function runCount(line: Uint8Array, x: number): number {
   const color = line[x]!;
   let count = 1;
   for (let i = x - 1; i >= 0 && line[i] === color; i--) count++;
@@ -201,7 +210,7 @@ function asLine1(nowLine: Uint8Array, oldLine: Uint8Array, f: number, palet: Uin
  *  the delta encoding of the blob (the boundary mutation is replayed so the
  *  counts match what `asLine1` will actually emit). Returns all 16 colors
  *  sorted descending; the first 7 are the predictors. */
-function makePalet(pixels: Uint8Array, lineSu: number): Uint8Array {
+export function makePalet(pixels: Uint8Array, lineSu: number): Uint8Array {
   const color = new Uint8Array(16);
   for (let n = 0; n < 16; n++) color[n] = n;
   const count = new Int32Array(16);
@@ -257,37 +266,9 @@ function makePalet(pixels: Uint8Array, lineSu: number): Uint8Array {
   return color;
 }
 
-/** Alternative predictor ranking: by how many maximal runs each color forms
- *  across the blob. Unlike `makePalet`, this counts the background color (0)
- *  at full weight, which is often the better choice — it's offered as a
- *  candidate and the smaller encoding wins (see `encodeLz16`). */
-function paletByRunFreq(pixels: Uint8Array, lineSu: number): Uint8Array {
-  const count = new Int32Array(16);
-  for (let y = 0; y < lineSu; y++) {
-    const base = y * 128;
-    for (let x = 0; x < 128; ) {
-      const c = pixels[base + x]!;
-      let len = 1;
-      while (x + len < 128 && pixels[base + x + len] === c) len++;
-      count[c]++;
-      x += len;
-    }
-  }
-  const color = new Uint8Array(16);
-  for (let n = 0; n < 16; n++) color[n] = n;
-  for (let y = 0; y < 15; y++)
-    for (let x = y + 1; x < 16; x++)
-      if (count[color[y]!]! < count[color[x]!]!) {
-        const t = color[y]!;
-        color[y] = color[x]!;
-        color[x] = t;
-      }
-  return color;
-}
-
 /** Encode the blob with a given predictor palette → bit list (28-bit header +
- *  per-line min(RLE, delta)). */
-function encodeBlobBits(pixels: Uint8Array, lineSu: number, palet: Uint8Array): number[] {
+ *  per-line min(RLE, delta)). Mirrors `make_ascgx`. */
+export function encodeBlobBits(pixels: Uint8Array, lineSu: number, palet: Uint8Array): number[] {
   const bits: number[] = [];
   for (let n = 0; n < 7; n++) emitPaletColor(bits, palet[n]!); // 28-bit header
   const nowLine = new Uint8Array(128);
@@ -303,41 +284,57 @@ function encodeBlobBits(pixels: Uint8Array, lineSu: number, palet: Uint8Array): 
   return bits;
 }
 
-/**
- * Compress `tiles[off .. off + rowCount*512)` (SNES 4bpp tile bytes) into an
- * LZ16 stream. The result, fed to `lz16()` with the same `rowCount`, reproduces
- * those tile bytes exactly.
- *
- * Predictor selection is the main size lever (a cached run color costs 3 bits
- * vs 7 for an escape) and no single ranking is optimal, so we try a few
- * candidate palettes and keep the smallest valid encoding. `makePalet` is the
- * canonical/reference ranking; `paletByRunFreq` favours the background color.
- */
-export function encodeLz16(
+/** Pack a bit list (LSB-first within each byte) into the output blob. */
+export function packLz16Bits(bits: number[]): Uint8Array {
+  const out = new Uint8Array((bits.length + 7) >> 3);
+  for (let i = 0; i < bits.length; i++) if (bits[i]) out[i >> 3]! |= 1 << (i & 7);
+  return out;
+}
+
+/** Decode `tiles[off …]` into the 128-wide pixel rows both encoders work on.
+ *  Throws if the range doesn't hold `rowCount` tile-rows. */
+export function lz16Pixels(
   tiles: Uint8Array,
   rowCount: number,
   off = 0
-): Uint8Array {
-  if (rowCount === 0) return new Uint8Array(0);
+): { pixels: Uint8Array; lineSu: number } {
   if (off + rowCount * BYTES_PER_TILE_ROW > tiles.length) {
     throw new Error(
       `encodeLz16: need ${rowCount * BYTES_PER_TILE_ROW} bytes at off ${off}, ` +
         `have ${tiles.length - off}`
     );
   }
+  return { pixels: tilesToPixels(tiles, off, rowCount), lineSu: rowCount * 8 };
+}
 
-  const pixels = tilesToPixels(tiles, off, rowCount);
-  const lineSu = rowCount * 8;
-
-  const candidates = [makePalet(pixels, lineSu), paletByRunFreq(pixels, lineSu)];
+/** Encode with each candidate predictor palette and keep the smallest result.
+ *  The exact parse passes exactly one candidate (what `make_ascgx` does); the
+ *  improved encoder passes several. */
+export function encodeLz16FromPalettes(
+  pixels: Uint8Array,
+  lineSu: number,
+  palettes: Uint8Array[]
+): Uint8Array {
   let best: number[] | null = null;
-  for (const palet of candidates) {
+  for (const palet of palettes) {
     const bits = encodeBlobBits(pixels, lineSu, palet);
     if (best === null || bits.length < best.length) best = bits;
   }
-  const bits = best!;
+  return packLz16Bits(best!);
+}
 
-  const out = new Uint8Array((bits.length + 7) >> 3);
-  for (let i = 0; i < bits.length; i++) if (bits[i]) out[i >> 3]! |= 1 << (i & 7);
-  return out;
+/**
+ * Compress `tiles[off .. off + rowCount*512)` (SNES 4bpp tile bytes) into an
+ * LZ16 stream, reproducing the cart's own parse.
+ *
+ * The result, fed to `lz16()` with the same `rowCount`, reproduces those tile
+ * bytes exactly — and for tiles that came out of a cart LZ16 blob it *is* that
+ * blob, byte for byte. The single predictor palette is `make_palet`'s ranking,
+ * which is the whole of what `make_ascgx` considers; offering it a choice of
+ * palettes is what `lz16-encode-improved.ts` is for.
+ */
+export function encodeLz16(tiles: Uint8Array, rowCount: number, off = 0): Uint8Array {
+  if (rowCount === 0) return new Uint8Array(0);
+  const { pixels, lineSu } = lz16Pixels(tiles, rowCount, off);
+  return encodeLz16FromPalettes(pixels, lineSu, [makePalet(pixels, lineSu)]);
 }

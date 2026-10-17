@@ -129,7 +129,7 @@ export function diffForeignGfx(foreign: Uint8Array, base: Uint8Array, symbols: S
       // bogus "sheet" (e.g. 10466 B vs the real 4096). Importing that re-encodes a
       // blob that overflows its 4 KB VRAM slot at runtime, and — because it inflates
       // the gfx arena past its slack — can force the whole overflow-relocation path
-      // (the corruption seen in the "eggcellent" import). We can't tell LZ16-in-an-
+      // (the corruption seen in a real-world import). We can't tell LZ16-in-an-
       // LZ2-slot from a real LZ2 sheet by the bytes, but we can tell structurally:
       // a valid self-terminating LZ2 blob stops within its own pointer-table slot,
       // so an entry whose decode reads PAST its slot isn't valid LZ2 → skip it.

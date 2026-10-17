@@ -117,13 +117,14 @@ export function registerProjectsIpc(): void {
   /** Build `id` for an export, streaming progress to the caller's window.
    *  Stops any running emulator first (it holds a lock on the build output).
    *  Throws on a build failure (the handlers turn that into `{ ok:false }`). */
-  function buildForExport(event: Electron.IpcMainInvokeEvent, id: string): string {
+  async function buildForExport(event: Electron.IpcMainInvokeEvent, id: string): Promise<string> {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (anyEmulatorRunning()) stopAllEmulators()
-    return buildProject({
+    const result = await buildProject({
       id,
       onProgress: (msg) => win?.webContents.send('framework:progress', msg)
-    }).outputPath
+    })
+    return result.outputPath
   }
 
   async function pickSavePath(
@@ -141,7 +142,7 @@ export function registerProjectsIpc(): void {
     async (event, id: string): Promise<ProjectExportResult> => {
       let outputPath: string
       try {
-        outputPath = buildForExport(event, id)
+        outputPath = await buildForExport(event, id)
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
@@ -170,7 +171,7 @@ export function registerProjectsIpc(): void {
     async (event, id: string): Promise<ProjectExportResult> => {
       let patch: Uint8Array
       try {
-        const outputPath = buildForExport(event, id)
+        const outputPath = await buildForExport(event, id)
         if (!existsSync(referenceCartPath())) {
           return { ok: false, error: 'No reference cart found — extract a cart first.' }
         }

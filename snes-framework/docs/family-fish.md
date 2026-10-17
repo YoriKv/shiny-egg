@@ -605,7 +605,7 @@ column visually (the column height varies between $1C and 0).
 |---------|---------|------|
 | `$00` | `CODE_07BF39` | Idle. Watch for Yoshi within X-distance and $A0 Y. On range hit, spawn first `AmbSpr1BA` splash + sound `$61` (Splash3), arm `$7A96 = $18`, set Y-vel = `$FF00` (upward). |
 | `$02` | `CODE_07BFBF` | Wind-up. After timer, anim-advance, arm `$7A98 = $30`, `$7AF6 = $D1`. |
-| `$04` | `CODE_07BFF3` | Spray. Every 4 frames check `$14 & $0003` -- play sound `$51` (ThunderLakituAttacking1). Process per-row spray geometry via `CODE_07C192` and per-tile pose `DATA_07BFE0` (a 19-element stutter table). |
+| `$04` | `CODE_07BFF3` | Spray. Every 4 frames check `$14 & $0003` -- play sound `$51` (SpinTick1 -- one step of the shared $51-$56 pitched-tick family). Process per-row spray geometry via `CODE_07C192` and per-tile pose `DATA_07BFE0` (a 19-element stutter table). |
 | `$06` | `CODE_07C04E` | Pause / hold spout. After `$16,x` ticks, spawn another splash, set Y-vel = `$0100` (downward), reset anim. |
 | `$08` | `CODE_07C0B1` | Re-aim. Pick new target X. |
 | `$0A` | `CODE_07C0DD` | Despawn. |
@@ -684,7 +684,7 @@ and Main restores it on despawn.)
 | `$04` | `CODE_0DA270` | Lurk-fallback. Pick alternate X-target from `DATA_0DA268 = $0080, $00A0, $00C0, $0100`. |
 | `$06` | (stub: `dw $0004`) | Unreachable in normal play -- the "dw value" form is the giveaway that this slot is a state-table sentinel rather than an executable address. |
 | `$08` | (stub: `dw $0004`) | Same -- unreachable. |
-| `$0A` | `CODE_0DA2F4` | Chomp / lunge. Accelerate $78,x toward $200; on $1400 cap hit, play sound `$56` (ThunderLakituAttacking6 -- repurposed as shark's surge sound), `DEC $16,x`. |
+| `$0A` | `CODE_0DA2F4` | Chomp / lunge. Accelerate $78,x toward $200; on $1400 cap hit, play sound `$56` (SpinTick6 -- top step of the shared $51-$56 pitched-tick family), `DEC $16,x`. |
 | `$0C` | `CODE_0DA332` | Sink / despawn. On Y crossing $0140, free slot + restore `MainScreenLayers AND $1313`. |
 
 The two `dw $0004` entries are unusual: they're literal byte values

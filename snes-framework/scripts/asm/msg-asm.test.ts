@@ -1,7 +1,7 @@
 // Unit test: define-shaped `!` handling across every `db "…"` emit/read path.
 // asar expands `!name` defines even inside string literals, so an emitted
 // literal like `db "GREEN COINS !They"` fails to assemble ("Define 'They'
-// wasn't found" — hit by the EGGCELLENT ROM import). Writers escape (`\!`) via
+// wasn't found" — hit by a real ROM import). Writers escape (`\!`) via
 // escapeDefineBangs, readers unescape; a harmless `!` (followed by space /
 // punctuation / end-of-string, as all over the base Bank51) stays readable.
 // Covers: msg-asm (messages), glyph-line (intro/ending), findQuotedLiterals +

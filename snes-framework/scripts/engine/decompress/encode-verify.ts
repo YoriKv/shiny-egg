@@ -6,6 +6,12 @@
 //
 //   1. TS round-trip   : decode(encode(decode(blob))) === decode(blob)
 //   2. decomp.exe cross : decomp.exe(encode(decode(blob))) === decode(blob)
+//   3. byte-exactness   : encode(decode(blob)) === blob — both encoders reproduce
+//                         the cart's own parse, which is what keeps a rebuild
+//                         byte-identical. Reported, not failed: from the ROM
+//                         alone a blob is indistinguishable from an over-reading
+//                         non-LZ2 one (gfx ids $2C-$2F are orphaned LZ16 sheets
+//                         in LZ2 slots), so the hard gate is `lz2-encode.test.ts`.
 //
 // Check 2 is the important one — `decomp.exe` is the canonical Lunar Compress
 // decoder, byte-exact against the SuperFX cart on real data, so it accepting our
@@ -26,7 +32,9 @@ import { spawnSync } from 'node:child_process';
 import { lz2 } from './lz2.ts';
 import { lz16 } from './lz16.ts';
 import { encodeLz2 } from './lz2-encode.ts';
+import { encodeLz2Improved } from './lz2-encode-improved.ts';
 import { encodeLz16 } from './lz16-encode.ts';
+import { encodeLz16Improved } from './lz16-encode-improved.ts';
 import { snesToPC } from '../symbol-map.ts';
 import { u24le } from '../rom-read.ts';
 
@@ -37,7 +45,13 @@ const LC_DIR = '/mnt/d/Dev/SNES/lc200';
 const DECOMP_EXE = path.join(LC_DIR, 'decomp.exe');
 const RECOMP_EXE = path.join(LC_DIR, 'recomp.exe');
 const TABLE_ENTRIES = 256;
-const MAX_ROWCOUNT = 4; // probe rowCount down from here (per lz16-model.md §8)
+/** PC of the graphics arena's end boundary (`GFX_ARENA.boundary`, $5F8A36). */
+const GFX_ARENA_END_PC = snesToPC(0x5f8a36);
+// Probe rowCount down from here. The cart uses 2, 3, 4, 8 and 16 — an earlier
+// cap of 4 silently measured every 8/16-row blob at the wrong row count, which
+// makes the encoder look inexact when it isn't. Keep this at/above the largest
+// row count in `YCOMPRESS_LZ16_ROW_COUNTS` (scripts/import/gfx-lz16.test.ts).
+const MAX_ROWCOUNT = 16;
 
 // MUST live on /mnt/d so wslToWin can hand Windows-style paths to the .exe
 // tools (a /tmp path stays a WSL path the .exe can't open). Run from repo root.
@@ -96,10 +110,24 @@ interface Stats {
   ourBytes: number;
   recompBytes: number;
   recompWins: number; // entries where recomp beat us
+  exact: number; // entries we re-encoded to the cart's own bytes (LZ2/LZ16 both aim for this)
+  inexact: number[]; // ids we did not — expected only for the $2C-$2F LZ16 orphans
+  improvedBytes: number; // what the format's improved encoder would have cost
 }
 
 function newStats(): Stats {
-  return { pass: 0, fail: 0, empty: 0, origBytes: 0, ourBytes: 0, recompBytes: 0, recompWins: 0 };
+  return {
+    pass: 0,
+    fail: 0,
+    empty: 0,
+    origBytes: 0,
+    ourBytes: 0,
+    recompBytes: 0,
+    recompWins: 0,
+    exact: 0,
+    inexact: [],
+    improvedBytes: 0,
+  };
 }
 
 function reportRow(sym: string, id: number, srcPC: number, msg: string): void {
@@ -162,22 +190,63 @@ function verifyLz2(rom: Uint8Array, cartPath: string, id: number, s: Stats): voi
     return;
   }
 
-  // Ratio (vs original compressed, vs recomp.exe).
+  // 3. Byte-exactness against the cart's own parse — the property that keeps a
+  //    rebuild identical. Reported, not failed: reading straight from the ROM
+  //    can't tell a blob from an over-reading non-LZ2 one (gfx ids $2C-$2F are
+  //    orphaned LZ16 sheets), so the hard gate lives in `lz2-encode.test.ts`,
+  //    which works from per-blob extract files with exact slot bounds.
+  const cartBytes = rom.subarray(srcPC, srcPC + origCompLen);
+  const isExact = enc.length === cartBytes.length && eqBytes(enc, cartBytes) === -1;
+  if (isExact) s.exact++;
+  else s.inexact.push(id);
+
+  // Ratio (vs original compressed, vs recomp.exe, vs our improved encoder).
   const rawPath = path.join(tmpDir, 'raw.bin');
   fs.writeFileSync(rawPath, data);
   const recompLen = runRecompSize(rawPath, 1, 0);
   s.origBytes += origCompLen;
   s.ourBytes += enc.length;
+  s.improvedBytes += encodeLz2Improved(data).length;
   if (recompLen > 0) {
     s.recompBytes += recompLen;
     if (recompLen < enc.length) s.recompWins++;
   }
   s.pass++;
   const recompStr = recompLen > 0 ? ` recomp=${recompLen}` : '';
-  reportRow('✓', id, srcPC, `raw=${data.length} orig=${origCompLen} ours=${enc.length}${recompStr}`);
+  reportRow(
+    '✓',
+    id,
+    srcPC,
+    `raw=${data.length} orig=${origCompLen} ours=${enc.length}${recompStr}` +
+      (isExact ? ' exact' : ' NOT-EXACT')
+  );
 }
 
-function verifyLz16(rom: Uint8Array, cartPath: string, id: number, s: Stats): void {
+/** Where the blob at LZ16 table slot `id` must end: the nearest blob start above
+ *  it across BOTH pointer tables (the two share one arena), or the arena's end.
+ *  Bounds the row-count probe so it can't decode past the blob into its
+ *  neighbour and report too many rows. */
+function nextBlobStart(rom: Uint8Array, id: number): number {
+  const self = snesToPC(u24le(rom, COMPRESSED_TABLE_LZ16 + id * 3));
+  let best = GFX_ARENA_END_PC;
+  for (const table of [COMPRESSED_TABLE_LZ2, COMPRESSED_TABLE_LZ16]) {
+    for (let i = 0; i < TABLE_ENTRIES; i++) {
+      const snes = u24le(rom, table + i * 3);
+      if (snes === 0) continue;
+      const pc = snesToPC(snes);
+      if (pc > self && pc < best) best = pc;
+    }
+  }
+  return best;
+}
+
+function verifyLz16(
+  rom: Uint8Array,
+  cartPath: string,
+  id: number,
+  s: Stats,
+  slotEnd: number
+): void {
   const srcSnes = u24le(rom, COMPRESSED_TABLE_LZ16 + id * 3);
   const srcPC = snesToPC(srcSnes);
   if (srcSnes === 0 || srcPC <= 0 || srcPC >= rom.length) {
@@ -185,17 +254,24 @@ function verifyLz16(rom: Uint8Array, cartPath: string, id: number, s: Stats): vo
     return;
   }
 
-  // Probe rowCount down from MAX until decomp.exe yields output (most entries
-  // can't fill 4 strips — see lz16-model.md §8).
+  // Probe rowCount down from MAX until decomp.exe yields output. A blob decodes
+  // at any row count up to its true one (it just stops early), so the LARGEST
+  // that works is the answer — but only if we stop it running into the next
+  // blob, hence the slot bound: the decode has to fit inside [srcPC, slotEnd).
   let rowCount = 0;
   let data: Uint8Array | null = null;
   for (let rc = MAX_ROWCOUNT; rc >= 1; rc--) {
     const d = runDecomp(cartPath, srcPC, 15, rc);
-    if (d && d.length === rc * 512) {
-      rowCount = rc;
-      data = d;
-      break;
+    if (!d || d.length !== rc * 512) continue;
+    try {
+      const r = lz16(rom, srcPC, new Uint8Array(rc * 512), 0, rc);
+      if (r.srcEnd > slotEnd) continue; // overran into the next blob — too many rows
+    } catch {
+      continue;
     }
+    rowCount = rc;
+    data = d;
+    break;
   }
   if (!data) {
     reportRow('✗', id, srcPC, 'decomp.exe could not decode at any rowCount 1..4');
@@ -246,10 +322,17 @@ function verifyLz16(rom: Uint8Array, cartPath: string, id: number, s: Stats): vo
   } catch {
     origCompLen = 0;
   }
+  // 3. Byte-exactness against the cart's own parse (see the LZ2 path).
+  const cartBytes = rom.subarray(srcPC, srcPC + origCompLen);
+  const isExact = origCompLen > 0 && enc.length === cartBytes.length && eqBytes(enc, cartBytes) === -1;
+  if (isExact) s.exact++;
+  else s.inexact.push(id);
+
   const rawPath = path.join(tmpDir, 'raw.bin');
   fs.writeFileSync(rawPath, data);
   const recompLen = runRecompSize(rawPath, 15, rowCount);
   s.origBytes += origCompLen;
+  s.improvedBytes += encodeLz16Improved(data, rowCount).length;
   s.ourBytes += enc.length;
   if (recompLen > 0) {
     s.recompBytes += recompLen;
@@ -257,7 +340,13 @@ function verifyLz16(rom: Uint8Array, cartPath: string, id: number, s: Stats): vo
   }
   s.pass++;
   const recompStr = recompLen > 0 ? ` recomp=${recompLen}` : '';
-  reportRow('✓', id, srcPC, `rc=${rowCount} raw=${data.length} orig=${origCompLen} ours=${enc.length}${recompStr}`);
+  reportRow(
+    '✓',
+    id,
+    srcPC,
+    `rc=${rowCount} raw=${data.length} orig=${origCompLen} ours=${enc.length}${recompStr}` +
+      (isExact ? ' exact' : ' NOT-EXACT')
+  );
 }
 
 function summarize(label: string, s: Stats): void {
@@ -268,7 +357,17 @@ function summarize(label: string, s: Stats): void {
       `ours/recomp=${pct(s.ourBytes, s.recompBytes)} ` +
       `(recomp smaller on ${s.recompWins})`
   );
-  console.log(`     ${label}: orig=${s.origBytes}B ours=${s.ourBytes}B recomp=${s.recompBytes}B\n`);
+  console.log(
+    `     ${label}: orig=${s.origBytes}B ours=${s.ourBytes}B recomp=${s.recompBytes}B` +
+      (s.improvedBytes ? ` improved=${s.improvedBytes}B` : '')
+  );
+  console.log(
+    `     byte-exact vs cart: ${s.exact}/${s.exact + s.inexact.length}` +
+      (s.inexact.length
+        ? ` — ids ${s.inexact.map((i) => '0x' + i.toString(16)).join(',')}`
+        : '') +
+      '\n'
+  );
 }
 
 function main(): void {
@@ -301,7 +400,7 @@ function main(): void {
 
   console.log('=== LZ16 encoder (decomp.exe FORMAT=15) ===');
   const s16 = newStats();
-  for (const id of idList) verifyLz16(rom, cart, id, s16);
+  for (const id of idList) verifyLz16(rom, cart, id, s16, nextBlobStart(rom, id));
   summarize('lz16', s16);
 
   process.exit(s2.fail + s16.fail === 0 ? 0 : 1);

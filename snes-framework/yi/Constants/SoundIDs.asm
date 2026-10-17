@@ -83,12 +83,31 @@
 !Define_YI_SoundID4E_StairsAppearing4 = $004E
 !Define_YI_SoundID4F_StairsAppearing5 = $004F
 !Define_YI_SoundID50_MessageAppears = $0050
-!Define_YI_SoundID51_ThunderLakituAttacking1 = $0051
-!Define_YI_SoundID52_ThunderLakituAttacking2 = $0052
-!Define_YI_SoundID53_ThunderLakituAttacking3 = $0053
-!Define_YI_SoundID54_ThunderLakituAttacking4 = $0054
-!Define_YI_SoundID55_ThunderLakituAttacking5 = $0055
-!Define_YI_SoundID56_ThunderLakituAttacking6 = $0056
+; $51-$56 are ONE generic pitched-tick family, not a per-sprite sound. Six
+; identical scripts (SFX instrument 1, duration 24, a downward pitch slide),
+; start notes stepping down 4 semitones each ($C7 $C3 $BF $BB $B7 $B3) with
+; the volume arching $80 -> $60 -> $80. Named SpinTick after the only caller
+; that walks the whole ramp; every other caller picks one step for its pitch.
+; Callers (verified 2026-08-20; an earlier ThunderLakituAttacking1..6 naming
+; generalised from the Bank07 site alone and hid the goal-ring use):
+;   Bank02 DATA_02A60D            goal-ring spin -- a 10-entry up-and-back
+;                                 ramp ($51..$56 $55 $54 $53 $52) indexed by
+;                                 the wheel digit; $2E ends it when the spin
+;                                 timer expires (see main_goal)
+;   Bank10 DATA_bonus_game_tick_ptrs   bonus-game ticks ($51, $53, $51)
+;   Bank01 CODE_hookbill_{crawl,walk,run}_forward   footfalls ($56)
+;   Bank01 CODE_message_box_09    ($56)
+;   Bank07 DATA_spray_fish_state_ptr        spray, every 4 frames ($51)
+;   Bank07 DATA_lakitu_thunder_state_ptr    charge ($51, x2)
+;   Bank0D main_boo_guys_carrying_bombs     ($55)
+;   Bank0D main_shark_chomp       surge on speed-cap hit ($56)
+;   Bank0B (GSU)                  ($56)
+!Define_YI_SoundID51_SpinTick1 = $0051
+!Define_YI_SoundID52_SpinTick2 = $0052
+!Define_YI_SoundID53_SpinTick3 = $0053
+!Define_YI_SoundID54_SpinTick4 = $0054
+!Define_YI_SoundID55_SpinTick5 = $0055
+!Define_YI_SoundID56_SpinTick6 = $0056
 !Define_YI_SoundID57_LoseStarsTimerAbove10 = $0057
 !Define_YI_SoundID58_LoseStarsTimerUnder10 = $0058
 !Define_YI_SoundID59_RollingRock = $0059

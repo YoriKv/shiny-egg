@@ -83,7 +83,7 @@ async function main(): Promise<void> {
   if (!fs.existsSync(symPath) || !fs.existsSync(superfxSymPath)) {
     const missing = !fs.existsSync(symPath) ? symPath : superfxSymPath;
     console.error(`▶ no .sym at ${missing}; running a build to emit symbols`);
-    const built = buildRom({
+    const built = await buildRom({
       workRoot, asarBin,
       onProgress: (m) => console.error(m),
     });

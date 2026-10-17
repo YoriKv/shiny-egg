@@ -1841,17 +1841,14 @@
       ]
     },
     "0x6A": {
-      "name": "Unknown object",
-      "desc": "An unknown object.",
+      "name": "Rubber floor",
+      "desc": "A rubber floor. Placed in no shipped level; its art slots in the shared BG1 sheet hold another family's tiles, so it renders as an unfamiliar strip.",
       "category": "decoration",
       "tilesets": [
         "misc"
       ],
       "defaultWidth": 4,
-      "defaultHeight": 1,
-      "bg1Tilesets": [
-        "0x6"
-      ]
+      "defaultHeight": 1
     },
     "0x6B": {
       "name": "Goal platform",

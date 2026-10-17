@@ -6399,6 +6399,18 @@ h3 { margin: 0; }
   font-size: 10px;
   color: var(--ink-3);
 }
+/* SFX tab: the remap-chain partners a multi-voice one-shot arms. Only 25 of
+   the 162 rows have one, so it stays quiet and shrinks before the name does. */
+.se-audio__sfx-chain {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: 6px;
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Collapsible export-section header (YY-CHR-tab pattern): caret + folder name
    + count meta (+ status badges while collapsed, so pending sample edits
    aren't hidden by the collapse). Mirrors .se-audio__group-title's look. */

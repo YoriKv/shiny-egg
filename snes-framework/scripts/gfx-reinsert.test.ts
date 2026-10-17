@@ -221,5 +221,44 @@ console.log('\n=== writeGfxEdit (save side: edited tiles → overlay blob → de
   fs.rmSync(root, { recursive: true, force: true });
 }
 
+// The encoder-choice policy: a blob entering the overlay is edited by
+// definition, so `writeGfxEdit` takes the compact parse (smaller, different
+// stream) while every other caller defaults to the cart parse (reproduces the
+// shipped bytes). Pinned because the two differ ONLY in output size — a
+// regression here is silent, and shows up much later as arena pressure or as a
+// build that stopped being byte-identical.
+console.log('\n=== encodeGfxBlob parse selection (cart vs compact) ===');
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gfxparse-'));
+  const overlayAssets = path.join(root, 'assets/yi');
+  // Art with enough structure that the two parses actually diverge in size.
+  const data = Uint8Array.from({ length: 4096 }, (_, i) =>
+    i % 64 < 40 ? 0 : (i * 31 + (i >> 6)) & 0xff
+  );
+  const cart = encodeGfxBlob('lz2', data, undefined, 'cart');
+  const compact = encodeGfxBlob('lz2', data, undefined, 'compact');
+  eq(encodeGfxBlob('lz2', data).length, cart.length, "encodeGfxBlob defaults to the 'cart' parse");
+  assert(compact.length < cart.length, `compact parse is smaller (${compact.length}B < ${cart.length}B)`);
+
+  const rel = writeGfxEdit(yiRoot, overlayAssets, 'lz2', 0, data);
+  const wrote = new Uint8Array(fs.readFileSync(path.join(overlayAssets, rel)));
+  assert(
+    wrote.length === compact.length && wrote.every((v, i) => v === compact[i]),
+    'writeGfxEdit writes the compact parse (overlay = already edited)'
+  );
+  // Both parses still decode to the same art — the choice is size-only.
+  const a = new Uint8Array(4200);
+  const b = new Uint8Array(4200);
+  const ra = lz2(cart, 0, a, 0);
+  const rb = lz2(compact, 0, b, 0);
+  assert(
+    ra.destEnd === data.length && rb.destEnd === data.length &&
+      a.subarray(0, data.length).every((v, i) => v === data[i]) &&
+      b.subarray(0, data.length).every((v, i) => v === data[i]),
+    'both parses decode back to the same bytes'
+  );
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
 console.log(`\n${failures === 0 ? '✓' : '✗'} ${failures === 0 ? 'all tests pass' : `${failures} failure(s)`}`);
 process.exit(failures === 0 ? 0 : 1);

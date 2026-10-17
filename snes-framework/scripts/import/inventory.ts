@@ -52,7 +52,7 @@ const CATEGORY_DEFS: Record<string, { label: string; imported: boolean }> = {
  *  IMPORTED gfx-meta labels (pointer tables, logo tilemap) are matched before the
  *  generic `tileset_files|spriteset_files|tilemap` selection-table bucket, so a
  *  relocated-graphics pointer or the imported logo tilemap isn't mis-flagged as a
- *  not-imported selection table (the EGGCELLENT false positive). */
+ *  not-imported selection table (a false positive seen on a real import). */
 function categorizeLabel(label: string): string {
   if (/palette_ptrs|palette_layout/i.test(label)) return 'palette-ptrs';
   if (/bitmap_asset/i.test(label)) return 'map16';
@@ -248,7 +248,8 @@ function fillerBlocks(
  * (`readForeignMessages` / `readForeignLevelNames`), so the spilled text IS
  * imported — without this it lands just past `DATA_level_name_garbage_sentinel`
  * (the region's last byte) with no containing band or later label, and reports as
- * not-imported "Other data tables" (the EGGCELLENT extended-string-table case).
+ * not-imported "Other data tables" (an extended-string-table case seen on a real
+ * import).
  *
  * Evidence-driven like `fillerBlocks`' level-data use: only a tail a foreign
  * string pointer actually targets is claimed, so a hack that parks unrelated data

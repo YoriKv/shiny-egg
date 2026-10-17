@@ -19,10 +19,11 @@
 // diff substrate is exact (one Map16 ID per cell); sprites are entities with
 // arbitrary footprints, overlap, and z-order, so there's no natural per-cell ID.
 // Instead we build a per-cell **content-signature** grid (`buildSpriteCellGrid`):
-// each renderable sprite folds a hash of (num, placed x/y, draw index) into every
-// cell its footprint covers, in draw order. Within a token chain the header is
-// fixed, so a cel's pixels are a pure function of `num` → the signature fully
-// determines a cell's rendered pixels. Diffing two signature grids
+// each renderable sprite folds a hash of (num, placed x/y, draw index, and the
+// explicit celVariant when a foreign stream set one) into every cell its footprint
+// covers, in draw order. Within a token chain the header is fixed, so a cel's
+// pixels are a pure function of those → the signature fully determines a cell's
+// rendered pixels. Diffing two signature grids
 // (`diffCellGrids`, shared with BG1) yields the changed cells; `renderSpritePatch`
 // re-composites just those cells (clipped to 16×16, in draw order = the full
 // path's overwrite order → byte-identical). The only cost vs BG1's exact IDs is an
@@ -114,6 +115,10 @@ interface PlacedSprite {
   height: number;
   /** The cel's RGBA pixels as u32 (shared per num). `width * height` long. */
   pixels: Uint32Array;
+  /** The placement's explicit cel variant, when it carried one — folded into the
+   *  cell signature so the incremental patch path stays exact for foreign
+   *  streams (two same-num placements at the same cell CAN differ by variant). */
+  celVariant?: number;
 }
 
 /** The resolved sprite render model for one request: every renderable sprite
@@ -146,6 +151,7 @@ function placedHash(p: PlacedSprite): number {
   h = fnvStep(h, p.baseX & 0xffff);
   h = fnvStep(h, p.baseY & 0xffff);
   h = fnvStep(h, p.drawIndex);
+  if (p.celVariant != null) h = fnvStep(h, p.celVariant + 1);
   return h;
 }
 
@@ -188,13 +194,23 @@ export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRende
     const preferFormatA = FORMAT_A_NUMS.has(renderNum);
     // A revealed target renders through the normal cel path (never a custom renderer).
     const customRenderer: CustomSpriteRenderer | undefined = revealed ? undefined : CUSTOM_SPRITE_RENDERERS[spr.num];
-    const parityIdx = parityCelVariantIndex(renderNum, spr.x, spr.y);
+    // Parity source. Normally the spawn cell; a sprite carrying an explicit
+    // `celVariant` (foreign streams whose generation named the variant instead
+    // of encoding it in the position — see LevelSprite.celVariant) substitutes
+    // the cell coords that ENCODE that parity. resolveSpriteCel consults the
+    // placement ONLY through parityIndex()/`y & 1`, so this redirects the cel,
+    // the parity palette and the Y-parity synth cel together — and the DRAW
+    // position below still uses spr.x/spr.y, so nothing moves.
+    const pc = spr.celVariant == null
+      ? { x: spr.x, y: spr.y }
+      : { x: spr.celVariant & 1, y: (spr.celVariant >> 1) & 1 };
+    const parityIdx = parityCelVariantIndex(renderNum, pc.x, pc.y);
     // Some sprites pick their PALETTE (not a different cel) from spawn-cell parity — the shy-guy
     // family ($01E/$133/$124/$192), stilt/fat/woozy guy, Mock-Up, Piscatory Pete (SPRITE_PARITY_
     // PALETTE). Like cel-variant parity these vary per placed cell, so they need placement passed
     // to the resolver AND a parity-keyed cache slot — else every instance reuses one cached color
     // (the $01E Shy Guy bug: it always rendered parity-0 green regardless of cell).
-    const palParityIdx = SPRITE_PARITY_PALETTE[renderNum] !== undefined ? parityIndex(spr.x, spr.y) : null;
+    const palParityIdx = SPRITE_PARITY_PALETTE[renderNum] !== undefined ? parityIndex(pc.x, pc.y) : null;
     const parityKeyIdx = parityIdx ?? palParityIdx;
     // Cel cache key: revealed cels get a high bit so the 50%-opacity bitmap never collides
     // with the same target sprite's full-opacity cel placed directly elsewhere.
@@ -214,7 +230,7 @@ export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRende
       } else {
       const resolved = resolveSpriteCel(
         rom, symbols, header, renderNum, manifest, preferFormatA, levelSpritePaletteId,
-        parityKeyIdx !== null || revealed ? { x: spr.x, y: spr.y } : undefined,
+        parityKeyIdx !== null || revealed ? pc : undefined,
         SETTLED_PALETTE_ROW.get(renderNum),
         REST_FRAME.get(renderNum)
       );
@@ -263,7 +279,8 @@ export function buildSpriteRenderModel(args: RenderSpriteLayerArgs): SpriteRende
       baseY: spr.y * CELL_PX - originY,
       width: cel.width,
       height: cel.height,
-      pixels: cel.pixels
+      pixels: cel.pixels,
+      celVariant: spr.celVariant
     });
   }
   return { placed, boundsByNum };

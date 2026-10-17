@@ -280,7 +280,7 @@ type MessageMaps = Map<string, { markup: string; ok: boolean; removed?: boolean 
  * counts. Three faithful-to-source actions:
  *  • **blank** a slot the hack deleted (pointer `$0000`) — matches the hack's own
  *    smaller layout and reclaims its bytes (the key to fitting a repacked hack
- *    like Flutter into the fixed, zero-slack message region);
+ *    into the fixed, zero-slack message region);
  *  • **change** a body whose foreign text differs from base;
  *  • when `dedup` is on, import a foreign message **shared** across pointer slots
  *    only once (later copies keep base text) — a budget fallback, since our build
@@ -358,7 +358,7 @@ function analyzeMessages(foreign: Buffer, base: Buffer, projectId: string | null
     const contentText = hasConflict ? readFileSync(overlayPath!, 'utf8') : baseText
     const ft = loadFontTable(workRoot)
     // A hack that outgrew the vanilla message region moved its text into bank
-    // $51's free tail (EGGCELLENT does exactly this). Our editor can do the same,
+    // $51's free tail (real hacks do exactly this). Our editor can do the same,
     // so give the import the same headroom the Strings panel gets — otherwise a
     // faithfully-decoded text set is rejected purely for being longer than vanilla.
     const budget = { headroomBytes: stringHeadroomBytes(MESSAGE_TEXT_ID) }

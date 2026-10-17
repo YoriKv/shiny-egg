@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.4 - 2026-10-17
+
+- Faster builds w/ parallel assembly
+- Better compression for edited graphics
+- Object metadata corrections
+- Fixes and improvements
+
 ## v0.7.3 - 2026-08-02
 
 - Corrected license to GNU GPL v3.0, matching the SNES ROM

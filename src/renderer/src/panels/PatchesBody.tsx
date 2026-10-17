@@ -19,9 +19,10 @@ import type {
 // with the catch-all "Other" last. The categories themselves come from each
 // prepackaged patch's `category` field in snes-framework/patches/*.json.
 const CATEGORY_ORDER = [
-  'Flutter! - Death Mechanics',
-  'Flutter! - Skips and Speedups',
-  'Flutter! - Misc',
+  'Engine Fixes',
+  'Skips and Speedups',
+  'Cheats',
+  'Cosmetic',
   'Trisma - Improvements'
 ]
 const OTHER_CATEGORY = 'Other'

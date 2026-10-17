@@ -154,6 +154,63 @@ export function bgPaletteBaseRows(
   return { bg1: bg1 < 0 ? 4 : bg1, bg2: bg2 < 0 ? 6 : bg2, bg3: bg3 < 0 ? 0 : bg3 };
 }
 
+/** One contiguous run of CGRAM colour entries a palette-program entry writes. */
+export interface CgramSpan {
+  /** 4bpp palette row (colour index >> 4). */
+  row: number;
+  /** First colour index within the row (0..15). */
+  firstCol: number;
+  /** Colours written, starting at `firstCol`. */
+  count: number;
+}
+
+/**
+ * Every CGRAM span the BG1 colours land in, read from `scene_palette_layout`.
+ *
+ * `bgPaletteBaseRows` answers "which row does BG1 start at" and that is not the
+ * whole footprint: the stock program writes BG1 through TWO DP slots, and the
+ * second one is not a row of its own.
+ *
+ *     $12 BG1      cgram idx $41  2 rows x 15  ->  rows 4,5 cols 1-15
+ *     $1A BG1-alt  cgram idx $1C  3 rows x  4  ->  rows 1,2,3 cols 12-15
+ *
+ * `$1A` is `$12 + $3C` — the same BG1 sub-palette read 30 colours in, scattered
+ * into the last four columns of rows 1-3 so a BG1 tile can be drawn in a row
+ * whose low columns belong to BG3 and the backdrop (the literal `$27C` entry
+ * writes rows 1-3 cols 1-11). That is why a snow level's Map16 names palette row
+ * 3 for its slope shading and still gets snow colours out of it.
+ *
+ * Anyone REPLACING BG1's colours has to honour the column split or it repaints
+ * another layer: rows 4/5 are BG1's outright, rows 1-3 only from column 12 up.
+ * (Mode `$0A`'s tail program puts BG1 at rows 14,15 and has no alt slot, which
+ * is why this is derived per level rather than hardcoded.)
+ */
+export function bg1CgramSpans(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  levelMode?: number
+): CgramSpan[] {
+  const PC = symbols.pc('DATA_scene_palette_layout');
+  const out: CgramSpan[] = [];
+  let prog = PC + (levelMode === LEVEL_MODE_0A ? LEVEL_MODE_0A_START_OFFSET : 0);
+  for (let guard = 0; guard < 10_000; guard++) {
+    const sourceWord = u16le(rom, prog);
+    if (sourceWord === PROGRAM_END) break;
+    if (sourceWord & 0x8000) {
+      const slotIdx = (sourceWord & 0x7fff) >>> 1; // 1 = $12 BG1, 5 = $1A BG1-alt
+      if (slotIdx === 1 || slotIdx === 5) {
+        const cgramByte = rom[prog + 2]!, size = rom[prog + 3]!;
+        const perRow = size & 0x0f, rows = size >> 4;
+        for (let r = 0; r < rows; r++) {
+          out.push({ row: (cgramByte >> 4) + r, firstCol: cgramByte & 0x0f, count: perRow });
+        }
+      }
+    }
+    prog += 4;
+  }
+  return out;
+}
+
 /**
  * Run the cart's palette interpreter for an in-level scene and write the
  * resulting 512-byte CGRAM payload into `cgram`. Cgram is modified in-place

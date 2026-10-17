@@ -1244,7 +1244,7 @@ export const MESSAGE_PTR_COUNT = (0x1333 - 0x10db) / 2
  * Decode a target cart's message bodies, keyed by base asm label, by FOLLOWING
  * the message pointer table (`$51:10DB`) — NOT by reading at the base label's
  * baked `$51:XXXX` address. A hack can repoint the table (GoldenEgg edits in
- * place, but a from-scratch repack like Flutter rewrites every slot), so message
+ * place, but a from-scratch repack rewrites every slot), so message
  * N lives at a different offset than the base build and an address read would
  * decode a misaligned fragment that still *looks* like text. We map each editable
  * body's base low-word → its message ID (via the BASE/reference table) → the

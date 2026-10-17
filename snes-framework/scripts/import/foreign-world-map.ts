@@ -123,14 +123,13 @@ export interface IndexMergeResult {
 
 /**
  * Merge a foreign cart's INDEX-table words (translevel → record byte-offset)
- * onto the editable model's raw array. Three gates, learned from real hacks
- * (Flutter):
+ * onto the editable model's raw array. Three gates, learned from real hacks:
  *   • per-word: a word imports only if it addresses a record our fixed-size
  *     table actually has (4-byte aligned, in range) — uniform fill words
  *     ($00FF disabled-slot convention, $FFFF) are deliberate but
  *     unrepresentable, so they're skipped without penalty;
  *   • whole-table: when most CHANGED words are random invalid garbage, the
- *     hack repurposed the table's bytes (e.g. Flutter's custom respawn system
+ *     hack repurposed the table's bytes (e.g. a custom respawn system that
  *     stores data over the midway index) — import NOTHING from it, since even
  *     its in-range words (like `$0000` "no checkpoint") are part of the
  *     clobber and would corrupt real slots.

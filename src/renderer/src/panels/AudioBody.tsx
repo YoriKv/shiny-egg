@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
-import type { AudioCatalogUi, AudioSettingUi, SettingAramUsage, SongTimeline } from '../../../preload/api'
+import type { AudioCatalogUi, AudioSettingUi, AudioSfxUi, SettingAramUsage, SongTimeline } from '../../../preload/api'
 import { useSpcPlayer } from '../hooks/useSpcPlayer'
 import { getLevel } from '../data/levels'
 import { persistedState } from '../lib/persisted-state'
@@ -46,6 +46,43 @@ const TAB_STORE = persistedState<{ tab: TabId }>('shinyEgg.audioPanel.v1', { tab
 function loadTab(): TabId {
   const t = TAB_STORE.load().tab
   return (TAB_IDS as readonly string[]).includes(t) ? t : 'songs'
+}
+
+/** Label for one chain partner: named partners (the few that reuse an ordinary
+ *  sound as a second voice) are worth naming; the 0xB0-0xCA ones have no name. */
+function sfxChainLabel(c: AudioSfxUi['chain'][number]): string {
+  return c.name ? `${hex0x(c.id)} ${c.name}` : hex0x(c.id)
+}
+
+/** Row text for a multi-voice SFX. The count is the voices actually occupied —
+ *  itself plus the partners whose script has content (a chain slot can hold an
+ *  arm-and-end placeholder claiming no lane; same test buildSfxTimeline uses) —
+ *  so only those partners are listed, or the count would contradict the list
+ *  (Pause/Unpause arm three partners, two of them silent). The tooltip still
+ *  names every slot. */
+function sfxChainText(s: AudioSfxUi): string {
+  const audible = s.chain.filter((c) => c.audible)
+  if (audible.length === 0) return `+${s.chain.length} armed, silent`
+  return `${1 + audible.length} voices (${audible.map(sfxChainLabel).join(', ')})`
+}
+
+function sfxChainTitle(s: AudioSfxUi): string {
+  const silent = s.chain.filter((c) => !c.audible)
+  const unnamed = s.chain.filter((c) => !c.name)
+  return [
+    `Multi-voice SFX: playing ${hex0x(s.id)} also arms ` +
+      s.chain.map((c) => `${sfxChainLabel(c)} on voice ${c.voice} (priority ${hex0x(c.priority)})`).join(', ') +
+      '.',
+    silent.length > 0
+      ? `${silent.map((c) => hex0x(c.id)).join(', ')} ${silent.length === 1 ? 'is a' : 'are'} silent placeholder${silent.length === 1 ? '' : 's'} — armed but claiming no voice.`
+      : '',
+    unnamed.length > 0
+      ? `${unnamed.map((c) => hex0x(c.id)).join(', ')} ${unnamed.length === 1 ? 'is' : 'are'} driver-internal (the $3EBA remap chain) — unnamed, not queueable alone, so no row of ${unnamed.length === 1 ? 'its' : 'their'} own.`
+      : '',
+    '▶ and ♫ cover the whole chain.'
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 /** One browser row = one block-set row; settings sharing it play the same
@@ -373,8 +410,17 @@ export function AudioBody({
     if (!catalog) return []
     const q = sfxFilter.trim().toLowerCase()
     if (!q) return catalog.sfx
+    // Chain partners match too. The driver-internal ones (0xB0-0xCA) have no
+    // row of their own, so a search for 0xB8 has to land on the parent that
+    // arms it; for the few named partners this additionally surfaces the
+    // reuse (searching AppearingStars also turns up BossExplosion).
     return catalog.sfx.filter(
-      (s) => s.name.toLowerCase().includes(q) || hex0x(s.id).toLowerCase().includes(q)
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        hex0x(s.id).toLowerCase().includes(q) ||
+        s.chain.some(
+          (c) => hex0x(c.id).toLowerCase().includes(q) || (c.name?.toLowerCase().includes(q) ?? false)
+        )
     )
   }, [catalog, sfxFilter])
 
@@ -538,6 +584,11 @@ export function AudioBody({
             <div key={s.id} className="se-audio__row">
               <span className="se-audio__slot">{hex0x(s.id)}</span>
               <span className="se-audio__sfx-name">{s.name}</span>
+              {s.chain.length > 0 && (
+                <span className="se-audio__sfx-chain" title={sfxChainTitle(s)}>
+                  {sfxChainText(s)}
+                </span>
+              )}
               <span
                 className="se-audio__sfx-voice"
                 title={`Plays on voice ${s.voice} (priority ${hex0x(s.priority)} — same-voice contention: higher priority wins)`}

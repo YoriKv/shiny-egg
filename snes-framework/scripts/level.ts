@@ -496,6 +496,11 @@ export interface DecodeLevelStreamsOptions {
   /** Raw sprite stream, or null if none. */
   spriteBytes: Buffer | null;
   spawn?: { x: number; y: number };
+  /** Set when `standardObjectInfo` is NOT the cart's own table — a pre-release
+   *  stream authored against an earlier one. Stamps it onto the returned
+   *  `LevelData` so the re-serialize inside `decodeLevelFromLevelData` uses the
+   *  same record shapes the parse did; see `LevelData.standardObjectInfo`. */
+  foreignObjectTable?: boolean;
 }
 
 /**
@@ -541,6 +546,7 @@ export function decodeLevelStreams(o: DecodeLevelStreamsOptions): LevelData {
     objects,
     exits,
     sprites,
+    ...(o.foreignObjectTable ? { standardObjectInfo: o.standardObjectInfo } : {}),
     empty: false,
     special: false,
     ...(o.spawn ? { spawn: o.spawn } : {}),

@@ -165,22 +165,42 @@ export function loadSceneRegsByIndex(
     (rom[indicesBase + sceneModeByteIdx + 1] << 8);
   const row = layoutBase + rowOffset;
 
-  const backdropScrollFlag = rom[row + 4];
-  const bgmode = rom[row + 5];
-  const bg1sc = rom[row + 6];
-  const bg2sc = rom[row + 7];
-  const bg3sc = rom[row + 8];
-  const bg12nba = rom[row + 9];
-  const bg34nba = rom[row + 10];
-  // mirror slots (byte = slot + 5): slot 9 = row+14 → TM ($212C),
-  // slot 10 = row+15 → TS ($212D), slot 13 = row+18 → CGWSEL ($2130),
-  // slot 14 = row+19 → CGADSUB ($2131). Per reg_mirror_mapping at
+  // Row bytes $05..$13 ARE the 15 mirror values, in reg_mirror_mapping order.
+  return decodeSceneRegs(rom.subarray(row + 5, row + 20), rom[row + 4]);
+}
+
+/**
+ * Decode the 15-value PPU register mirror block (`$095E..$096C`, filled from a
+ * `scene_register_layout` row in `reg_mirror_mapping` order) into `SceneRegs`.
+ *
+ * Split out of {@link loadSceneRegsByIndex} because the mirror block is also
+ * readable **live**, straight out of a WRAM dump — which is the only way to get
+ * scene registers for a cart whose scene tables we haven't located. Pre-release
+ * builds mirror the block at a different WRAM address, and reading it live from
+ * a dump decodes to the BG1 tilemap ring `0xD000` + BG1 char base `0xE000` that
+ * their render chain pins independently — so this is the entry point for
+ * rendering a level from a running build rather than from located tables.
+ *
+ * `mirror` slot index = byte offset here; see the table at the top of this file.
+ */
+export function decodeSceneRegs(
+  mirror: ArrayLike<number>,
+  backdropScrollFlag = 0
+): SceneRegs {
+  const bgmode = mirror[0];
+  const bg1sc = mirror[1];
+  const bg2sc = mirror[2];
+  const bg3sc = mirror[3];
+  const bg12nba = mirror[4];
+  const bg34nba = mirror[5];
+  // slot 9 → TM ($212C), slot 10 → TS ($212D), slot 13 → CGWSEL ($2130),
+  // slot 14 → CGADSUB ($2131). Per reg_mirror_mapping at
   // yi/Banks/Bank00.asm:5817-5833. Verified byte-for-byte against the
   // bg23-render runtime captures (yi-shiny scenario) for every catalog mode.
-  const tm = rom[row + 14];
-  const ts = rom[row + 15];
-  const cgwsel = rom[row + 18];
-  const cgadsub = rom[row + 19];
+  const tm = mirror[9];
+  const ts = mirror[10];
+  const cgwsel = mirror[13];
+  const cgadsub = mirror[14];
 
   const bg1 = decodeBGxSC(bg1sc);
   const bg2 = decodeBGxSC(bg2sc);

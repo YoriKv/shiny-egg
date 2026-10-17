@@ -117,6 +117,32 @@ export function buildBackdrop(
     overrideColors && overrideColors.length === GRADIENT_COLOR_COUNT
       ? Uint16Array.from(overrideColors, (c) => c & 0xffff)
       : readGradientColors(rom, symbols, backgroundColor);
+  return gradientBackdrop(colors15);
+}
+
+/**
+ * Build a backdrop from 24 stops the caller already has, with no ROM/symbol
+ * lookup — for a cart whose `DATA_bg_gradient_ptrs` we can't resolve through a
+ * symbol map. The Dec-94 prototype galleries use it: both proto ROMs hold the
+ * 16 stop tables contiguously at PC `0x7C2F6` (`+ id * 0x30`, 24 × u16 BGR-15
+ * each — four of them are byte-identical to the retail tables, which is what
+ * pinned the base), but no `.sym` exists for those builds.
+ *
+ * `backgroundColor` still decides solid-vs-gradient exactly as
+ * {@link buildBackdrop} does, so callers keep one code path.
+ */
+export function buildBackdropFromStops(
+  cgram: Uint8Array,
+  backgroundColor: number,
+  stops: readonly number[]
+): Backdrop {
+  if (backgroundColor < GRADIENT_THRESHOLD || stops.length !== GRADIENT_COLOR_COUNT) {
+    return { kind: 'solid', color15: u16le(cgram, 0) };
+  }
+  return gradientBackdrop(Uint16Array.from(stops, (c) => c & 0xffff));
+}
+
+function gradientBackdrop(colors15: Uint16Array): Backdrop {
   const rgba = renderGradientColumn(colors15);
   return { kind: 'gradient', rgba, width: 1, height: LEVEL_HEIGHT_PX, stops: Array.from(colors15) };
 }

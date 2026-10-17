@@ -1,0 +1,26 @@
+{
+  // Type-check the research/ gallery generators.
+  //
+  // `research/` is gitignored and is NOT part of the app, so it is deliberately
+  // absent from tsconfig.node.json's `include` — which meant none of those files
+  // were ever type-checked. That let a plain `const` reassignment ship into
+  // asm-gallery.ts and fail at RUNTIME on four levels, where the per-level
+  // try/catch turned it into a status string instead of a crash. Hence this target:
+  //
+  //     npx tsc --noEmit -p tsconfig.research.json
+  //
+  // `snes-framework/scripts` is included so the pattern always matches something
+  // even in a clone that has no `research/` (tsc errors on an empty input set), and
+  // because the generators import it heavily. `tmp/` is deliberately NOT here: it
+  // holds throwaway one-off scripts by design.
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  },
+  "include": [
+    "research/**/*.ts",
+    "snes-framework/scripts/**/*",
+    "src/shared/**/*"
+  ]
+}

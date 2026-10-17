@@ -33,7 +33,9 @@ import { rewriteFreeBytesText, snes6, type BoundaryMove } from './boundary-move.
 import { deleteIncbin } from './relocate.ts';
 import type { FreeRegion } from './pool-map.ts';
 import { encodeLz2 } from './engine/decompress/lz2-encode.ts';
+import { encodeLz2Improved } from './engine/decompress/lz2-encode-improved.ts';
 import { encodeLz16 } from './engine/decompress/lz16-encode.ts';
+import { encodeLz16Improved } from './engine/decompress/lz16-encode-improved.ts';
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -263,12 +265,35 @@ export function relocateGfxBlobs(treeYiRoot: string, blobs: GfxEditedBlob[], fre
 
 // ── save side: edited decompressed tiles → re-encoded overlay blob ───────────
 
-/** Re-encode edited decompressed tiles into a compressed blob for `format`
- *  (`lz16` needs the tile-row count). The build's reinsert layout then places it. */
-export function encodeGfxBlob(format: GfxFormat, tiles: Uint8Array, rowCount?: number): Uint8Array {
-  if (format === 'lz2') return encodeLz2(tiles);
+/**
+ * Which parse `encodeGfxBlob` uses. Both round-trip identically; they differ in
+ * what they optimise for, and the choice is made once — here — rather than being
+ * a per-caller judgement call.
+ *
+ * - `'cart'` reproduces the parse the ROM shipped, so re-encoding cart data
+ *   returns the cart's own bytes. That is the right default for anything that
+ *   has to stay byte-comparable to the reference cart.
+ * - `'compact'` compresses smaller — 13.4% on LZ2 (a shortest-path parse), 0.13%
+ *   on LZ16 (saturated) — but emits a different, equally valid stream. Correct
+ *   precisely when there is no cart blob left to match.
+ */
+export type GfxParse = 'cart' | 'compact';
+
+/** Re-encode decompressed tiles into a compressed blob for `format` (`lz16`
+ *  needs the tile-row count). The build's reinsert layout then places it. */
+export function encodeGfxBlob(
+  format: GfxFormat,
+  tiles: Uint8Array,
+  rowCount?: number,
+  parse: GfxParse = 'cart'
+): Uint8Array {
+  if (format === 'lz2') {
+    return parse === 'compact' ? encodeLz2Improved(tiles) : encodeLz2(tiles);
+  }
   if (rowCount == null) throw new Error('encodeGfxBlob: lz16 requires a rowCount');
-  return encodeLz16(tiles, rowCount);
+  return parse === 'compact'
+    ? encodeLz16Improved(tiles, rowCount)
+    : encodeLz16(tiles, rowCount);
 }
 
 /**
@@ -276,6 +301,17 @@ export function encodeGfxBlob(format: GfxFormat, tiles: Uint8Array, rowCount?: n
  * (`<overlayAssetsYi>/{Graphics|Tilemaps}/<name>.lz{2,16}`), the file the build's
  * reinsert pipeline picks up. Returns the path written (relative to `assets/yi`,
  * incl. its subdir). Throws if the file ID isn't an editable blob.
+ *
+ * **Always encodes `'compact'`.** This is the one place a graphics blob enters
+ * the overlay, and a blob in the overlay is by definition one the user edited —
+ * its bytes will differ from the cart's whatever we do, so matching the cart's
+ * parse buys nothing here and what the compact parse saves is real headroom
+ * against the gfx arena (13.4% on LZ2; on LZ16 it is a rounding error, but the
+ * rule stays uniform across the two formats). The `'cart'` parse stays the default for every other
+ * caller, where reproducing the shipped bytes is the whole point. Note the
+ * corollary: editing a file and undoing back to the original art still rewrites
+ * the blob (smaller, same pixels) rather than restoring the cart's bytes — reset
+ * the file to base if you want those back.
  */
 export function writeGfxEdit(
   yiRoot: string,
@@ -287,7 +323,7 @@ export function writeGfxEdit(
 ): string {
   const file = gfxBlobFileForId(yiRoot, format, fileId); // assets/yi-relative (Graphics/ or Tilemaps/)
   if (!file) throw new Error(`gfx-reinsert: ${format} file ID ${fileId} is not a graphics blob`);
-  const enc = encodeGfxBlob(format, tiles, rowCount);
+  const enc = encodeGfxBlob(format, tiles, rowCount, 'compact');
   const dest = path.join(overlayAssetsYi, file);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(dest, enc);

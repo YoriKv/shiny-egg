@@ -13,17 +13,19 @@ import { loadLevelGfx, type GfxFileEntry, type GfxHeader } from './load-graphics
 import { loadLevelPalettes, type PaletteHeader } from './load-palettes.ts';
 import { applyAnimatedPalette } from './load-anim-palette.ts';
 import { loadTileAnimation } from './load-tile-animation.ts';
-import { loadSceneRegs, bgLayerBpp } from './scene-regs.ts';
+import { loadSceneRegs, bgLayerBpp, type SceneRegs } from './scene-regs.ts';
 import { composeBgLayers } from './bg-layers-compose.ts';
+import type { Backdrop } from './backdrop.ts';
 import { loadMap16Tables, type Map16Tables } from './map16.ts';
 import { buildBg1Bands } from './bg1-band-gfx.ts';
-import { renderBg1 } from './render-bg1.ts';
+import { GRID_COLS } from './cell-grid.ts';
+import { renderBg1, renderBg1Patch } from './render-bg1.ts';
 import { renderSpriteLayer, buildSpriteRenderModel, compositeSpriteFull, type SpriteRenderModel } from './render-sprite-layer.ts';
 import { spriteRequiredFile } from './sprite-tile-base.ts';
 import { loadCollisionTable, loadSlopePanels } from './collision.ts';
 import { renderCollisionLayer } from './render-collision.ts';
 import type { SymbolMap } from './symbol-map.ts';
-import type { LevelData } from '../types.ts';
+import type { BgLayerDescriptor, LevelData } from '../types.ts';
 
 /** Structural RGBA image — the render results are all assignable to this. */
 export interface LayerImage {
@@ -52,6 +54,17 @@ export interface RenderedLevelLayers {
   /** Null only if the sprite renderer declines (kept for caller parity). */
   sprite: LayerImage | null;
   collision: LayerImage;
+  /** Per-level backdrop — solid CGRAM[0] color, or the 24-stop vertical
+   *  gradient as a 1×2048 strip. Forwarded straight from `composeBgLayers`. */
+  backdrop: Backdrop;
+  /** Per-layer compositing descriptors (visibility ∧ blend ∧ background-vs-
+   *  overlay role). A caller that draws BG2/BG3 must honour these — a layer the
+   *  cart hides, or subtracts as a cave-shadow overlay above BG1, is not an
+   *  ordinary background. Same model the editor canvas draws from. */
+  bg2Layer: BgLayerDescriptor;
+  bg3Layer: BgLayerDescriptor;
+  /** Decoded scene registers (tilemap/char bases, TM/TS, color math). */
+  regs: SceneRegs;
 }
 
 export function gfxHeaderFromLevel(
@@ -108,8 +121,8 @@ export function renderLevelLayers(
    *  load and the per-sprite tile-base slot lookup so they stay consistent. */
   spritesetOverride?: readonly number[],
   /** Optional per-decode object-handler replacement, for a level stream authored
-   *  against a DIFFERENT object table than our retail cart's — the source leak's
-   *  pre-release generations reuse the same std/ext ids for different objects.
+   *  against a DIFFERENT object table than our retail cart's — pre-release
+   *  generations of the source reuse the same std/ext ids for different objects.
    *  Affects only the object decode (BG1 geometry + collision), never gfx or
    *  palettes. Omit for the editor's normal path. See `ObjectHandlerOverrides`. */
   handlerOverrides?: ObjectHandlerOverrides,
@@ -131,7 +144,19 @@ export function renderLevelLayers(
    *  era art, since replacement CHR under retail Map16 only changes which pixels the
    *  retail metatile definitions happen to point at. Build one with
    *  `map16TablesFromUnitDat` (the authoring-side `pnl/unit.dat` form). */
-  map16Override?: Map16Tables
+  map16Override?: Map16Tables,
+  /** Optional raw CGRAM patches, applied LAST — after the palette load and after
+   *  the animated-palette overlay, so they win the same way `vramPatches` do.
+   *  `byteOffset` is a CGRAM byte offset (colour index × 2) into the 512-byte
+   *  buffer; each patch is clamped to it.
+   *
+   *  The colour counterpart of `gfxOverride`: replacement CHR drawn under the
+   *  cart's own CGRAM is only two thirds of a substitution, because a sheet also
+   *  carries which colour index means what. Patch the layer's OWN rows only —
+   *  `bg1CgramSpans` gives BG1's exact footprint, columns included, since rows
+   *  1-3 are shared with BG3 and the backdrop — so a caller substituting BG1 art
+   *  can bring that sheet's own colours along without disturbing the other layers. */
+  cgramPatches?: readonly { byteOffset: number; bytes: Uint8Array }[]
 ): RenderedLevelLayers | null {
   if (level.empty || level.special || level.header.length < 15) return null;
   const h = level.header;
@@ -167,6 +192,15 @@ export function renderLevelLayers(
   // Overlay the cart's phase-0 per-frame animated palette (gm0F) — the colors
   // the level actually shows in-level on its animated CGRAM rows.
   applyAnimatedPalette(rom, cgram, h);
+  // Raw CGRAM patches go last, for the same reason vramPatches do: they stand
+  // for an authored palette, not a cart palette id, so nothing downstream of the
+  // loader may overwrite them.
+  if (cgramPatches) {
+    for (const p of cgramPatches) {
+      const n = Math.min(p.bytes.length, cgram.length - p.byteOffset);
+      if (p.byteOffset >= 0 && n > 0) cgram.set(p.bytes.subarray(0, n), p.byteOffset);
+    }
+  }
 
   const regs = loadSceneRegs(rom, symbols, h[9] ?? 0);
   const map16Tables = map16Override ?? loadMap16Tables(rom, symbols);
@@ -224,7 +258,22 @@ export function renderLevelLayers(
     palHeader,
     levelMode: h[9] ?? 0,
     vram,
-    cgram
+    cgram,
+    // The BG2/BG3 TILEMAP is a separate gm$0C load from the CHR `loadLevelGfx`
+    // does above, so it needs the override handed to it again — passing it to
+    // `loadLevelGfx` alone overlays the chars and leaves the tilemap the cart's,
+    // which draws the substituted art in the ORIGINAL arrangement (silently, and
+    // convincingly). `src/main/ipc/render.ts`'s `render:bgLayers` has always
+    // forwarded it; this path had not, so every caller that goes through
+    // `renderLevelLayers` — render-cli, render-snapshot, render-parity,
+    // import-verify, the research galleries — saw a different picture from the
+    // editor canvas for the same override. Keep the two in step.
+    //
+    // Safe for a CHR-only override: the CHR and tilemap file-id spaces share one
+    // pointer table but do not overlap in the cart (56 CHR keys vs 64 tilemap
+    // keys, 0 collisions), so forwarding cannot make a CHR
+    // edit accidentally replace a tilemap.
+    gfxOverride
   });
 
   return {
@@ -236,8 +285,126 @@ export function renderLevelLayers(
     bg3Front: composedBg.bg3Front,
     bg3Mid: composedBg.bg3Mid,
     sprite: sprite ?? null,
-    collision
+    collision,
+    backdrop: composedBg.backdrop,
+    bg2Layer: composedBg.bg2Layer,
+    bg3Layer: composedBg.bg3Layer,
+    regs: composedBg.regs
   };
+}
+
+/** One extra BG1 art pass: re-render a named set of cells with a DIFFERENT BG1
+ *  tileset (and optionally palette) than the level's header authors. */
+export interface Bg1ThemePass {
+  /** BG1 tileset whose dp0/dp1/dp2 sheets carry these cells' art family. */
+  bg1Tileset: number;
+  /** BG1 palette to load alongside it. Omit to keep the level's own — right
+   *  when only the CHR moved, wrong when the family's colours live in another
+   *  palette row, so callers that know a donor level should pass its `header[2]`. */
+  bg1Palette?: number;
+  /** Absolute cell indices (`y * 256 + x`, matching `resolveObjectFootprints`)
+   *  to take from this pass instead of the base render. */
+  cells: readonly number[];
+}
+
+/**
+ * Composite a level's BG1 from MULTIPLE tilesets: the base render plus one
+ * re-render per `Bg1ThemePass`, taking only that pass's cells.
+ *
+ * What this is for. A Map16 block names tile SLOTS, and which art sits in a
+ * slot is a property of the BG1 tileset's sheets, not of the block. Both the
+ * era→retail drift (a theme slot kept its id while its contents were redrawn —
+ * see the `$05` bubble→jungle case in the defunct-levels README) and plain
+ * cross-theme authoring land in the same place: the object decodes correctly,
+ * stamps the ids it always stamped, and those ids resolve into whatever family
+ * the level's own sheets happen to hold. Re-rendering just those cells under a
+ * tileset that still carries the family shows what the author meant.
+ *
+ * The DECODE is shared — passes differ only in gfx/palette — so the geometry is
+ * identical across passes by construction and this can never move a cell.
+ * Graphic-Changer bands are deliberately NOT applied to extra passes: a band is
+ * a per-region tileset override, so it would fight the whole-level override the
+ * pass exists to apply.
+ *
+ * Gallery / diagnostic use ONLY — real hardware loads one BG1 tileset, so this
+ * is not a faithful single-VRAM view, exactly like `renderLevelSpriteLayerMultiPass`.
+ * Returns `base` unchanged when no pass has cells.
+ */
+export function renderLevelBg1MultiTheme(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  workRoot: string,
+  level: LevelData,
+  /** The decode `renderLevelLayers` returned — reused verbatim, never re-run. */
+  decode: { levelDataBuffer: Uint8Array; screenPageMap: Uint8Array },
+  /** The level's own BG1 render (`renderLevelLayers(...).bg1`). Not mutated. */
+  base: LayerImage,
+  passes: readonly Bg1ThemePass[],
+  gfxOverride?: ReadonlyMap<string, Uint8Array>,
+  map16Override?: Map16Tables
+): LayerImage {
+  const live = passes.filter((p) => p.cells.length > 0);
+  if (live.length === 0) return base;
+  const h = level.header;
+  const gfxHeader = gfxHeaderFromLevel(h, workRoot, level.recordId);
+  const palHeader = paletteHeaderFromLevel(h, workRoot, level.recordId);
+  const regs = loadSceneRegs(rom, symbols, h[9] ?? 0);
+  const map16Tables = map16Override ?? loadMap16Tables(rom, symbols);
+  const bg1Bpp = bgLayerBpp(regs.bgmodeMode, 'bg1');
+
+  const out: LayerImage = { rgba: base.rgba.slice(), width: base.width, height: base.height };
+
+  for (const pass of live) {
+    const vram = new Uint8Array(0x10000);
+    const manifest: GfxFileEntry[] = [];
+    loadLevelGfx(rom, symbols, { ...gfxHeader, bg1Tileset: pass.bg1Tileset }, vram, manifest, gfxOverride);
+    loadTileAnimation(
+      rom,
+      symbols,
+      { animationTileset: h[10] ?? 0, bg1Tileset: pass.bg1Tileset, levelMode: h[9] ?? 0 },
+      vram
+    );
+    const cgram = new Uint8Array(512);
+    loadLevelPalettes(
+      rom,
+      symbols,
+      pass.bg1Palette == null ? palHeader : { ...palHeader, bg1Palette: pass.bg1Palette },
+      cgram
+    );
+    applyAnimatedPalette(rom, cgram, h);
+
+    const coords = new Int32Array(pass.cells.length * 2);
+    for (let i = 0; i < pass.cells.length; i++) {
+      coords[i * 2] = pass.cells[i]! % GRID_COLS;
+      coords[i * 2 + 1] = (pass.cells[i]! / GRID_COLS) | 0;
+    }
+    const patch = renderBg1Patch(
+      {
+        vram,
+        cgram,
+        map16Tables,
+        levelDataBuffer: decode.levelDataBuffer,
+        screenPageMap: decode.screenPageMap,
+        bg1CharAddr: regs.bg1CharAddr,
+        bg1Bpp
+      },
+      coords
+    );
+    // Blit each rendered cell over the base. Copied wholesale (alpha included):
+    // the pass re-renders the SAME Map16 ids, so a cell that draws nothing here
+    // drew nothing in the base either.
+    const px = patch.cellPx;
+    const cellBytes = px * px * 4;
+    for (let i = 0; i < pass.cells.length; i++) {
+      const ox = coords[i * 2]! * px;
+      const oy = coords[i * 2 + 1]! * px;
+      for (let py = 0; py < px; py++) {
+        const src = i * cellBytes + py * px * 4;
+        out.rgba.set(patch.rgba.subarray(src, src + px * 4), ((oy + py) * out.width + ox) * 4);
+      }
+    }
+  }
+  return out;
 }
 
 /**

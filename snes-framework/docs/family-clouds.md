@@ -238,7 +238,7 @@ two thunder-segment ambients: $20D (head) and $20E (tail).  $20D and
 $20E use OAM tile parameters derived from `DATA_07ED4B,y` (palette
 byte) and `DATA_07ED4F,y` (X offset) keyed off the facing byte.
 
-`!Define_YI_SoundID51_ThunderLakituAttacking1` plays once per charge
+`!Define_YI_SoundID51_SpinTick1` plays once per charge
 animation cycle (mask `$0F` against `$18,x`).  Stomp respawn: same $11C
 cloud spawn path as $11B, with an additional Y offset of +$08 to keep
 the cloud out of the player's mount-detection box during the spawn

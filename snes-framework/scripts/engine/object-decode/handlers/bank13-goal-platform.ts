@@ -1,5 +1,31 @@
 // Bank13 goal platform ($6B) — wide structure with neighbour-probe edge-snap.
 //
+// ── The diagonal green/blue stripes ARE the goal floor. Not a placeholder. ───
+// This object renders as a field of green-and-pale-blue diagonal stripes with a
+// white top edge, which reads exactly like a "tiles missing from VRAM" filler and
+// has been mistaken for one. It is the real art, and nothing here needs fixing:
+//
+//   * The CHR is loaded UNCONDITIONALLY for every normal level, as the very first
+//     chunk of the scene program — `DATA_scene_gfx_layout` entry 0 ($00:AD6D) is
+//     `db $19,$00,$F8,$00,$10`: LZ16 gfx file $19, 4096 bytes to VRAM byte $F000,
+//     i.e. tiles $080-$0FF at bg1CharAddr $E000. Source `DATA_lz16_compressed_gfx_ptrs`
+//     ($06:FC79) entry 25 -> $5D:6469. A literal file id, not a $F0..$FE
+//     header-indirect slot, so no header field can turn it off. (Sole exception:
+//     levelMode $0A, the boss cinema, takes a different layout program — and has
+//     no goal platform.)
+//   * The tiles below ($0B4-$0D7, palette row 3) sit inside that chunk, and
+//     `map16-probe` reports every goal sub-tile `ok` — it is the tool that exists
+//     to flag "sheet says no art here", and it does not flag these.
+//   * The pixels byte-match the artist's own CHR stock sheet named for the goal,
+//     tile-for-tile at the same sheet positions, and that sheet's per-tile palette
+//     attribute for the whole range is 3 — the row our Map16 decode assigns.
+//   * CGRAM row 3 colors 0-11 are byte-identical across every level sampled: a
+//     shared goal sub-palette, so the goal floor looks the same game-wide by design.
+//
+// Verified 2026-08-03 after a false "static renderer can't reach runtime-DMA'd
+// goal art" diagnosis. There is no runtime DMA of goal BG1 CHR; the only
+// goal-adjacent runtime upload is lz2 file $20, the "GOAL!" sprite lettering.
+//
 // Cart routines:
 //   $12:9AA3  CODE_init_goal_platform  — std-object $6B init
 //   $13:C742  CODE_goal_platform       — per-cell stamp

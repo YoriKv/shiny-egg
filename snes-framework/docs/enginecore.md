@@ -205,13 +205,13 @@ the map) leaves block `$1C` absent, and requesting song `$07` then **hangs the
 SPC driver** (no voice ever keys on; the prior song's buffer just repeats). A
 "warm" in-session warp is unaffected -- the block is still resident from the
 earlier map visit. Diagnosed via runtime SPC700 tracing; full write-up in
-`trace-harness/scenarios/spike-audio/PLAN.md`. (The cbrgray YI practice hack hit
+`trace-harness/scenarios/spike-audio/PLAN.md`. (A community YI practice hack hit
 the same hole when warping in before the map loads, and confirms only block `$1C`
 is needed: it pre-uploads that one block on first level entry as its fix.)
 
 The missing-block hang is one instance of a general weakness: **the SPC driver
 has no defense against missing or zero-initialized state.** Two further
-driver-wedge modes are *reported by the cbrgray practice hack* and noted here as
+driver-wedge modes are *reported by that same practice hack* and noted here as
 leads -- they have **not** been independently re-verified against our ROM
 (neither touchpoint shows up under static analysis, so confirming them needs an
 SPC700 trace): (1) a music change issued while the WRAM-stored song tempo

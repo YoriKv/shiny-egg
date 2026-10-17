@@ -4137,11 +4137,11 @@ DATA_02A601:
 	dw $0000,$0200,$0280,$02A0,$02A8,$02AA
 
 DATA_02A60D:
-	db !Define_YI_SoundID51_ThunderLakituAttacking1,!Define_YI_SoundID52_ThunderLakituAttacking2
-	db !Define_YI_SoundID53_ThunderLakituAttacking3,!Define_YI_SoundID54_ThunderLakituAttacking4
-	db !Define_YI_SoundID55_ThunderLakituAttacking5,!Define_YI_SoundID56_ThunderLakituAttacking6
-	db !Define_YI_SoundID55_ThunderLakituAttacking5,!Define_YI_SoundID54_ThunderLakituAttacking4
-	db !Define_YI_SoundID53_ThunderLakituAttacking3,!Define_YI_SoundID52_ThunderLakituAttacking2
+	db !Define_YI_SoundID51_SpinTick1,!Define_YI_SoundID52_SpinTick2
+	db !Define_YI_SoundID53_SpinTick3,!Define_YI_SoundID54_SpinTick4
+	db !Define_YI_SoundID55_SpinTick5,!Define_YI_SoundID56_SpinTick6
+	db !Define_YI_SoundID55_SpinTick5,!Define_YI_SoundID54_SpinTick4
+	db !Define_YI_SoundID53_SpinTick3,!Define_YI_SoundID52_SpinTick2
 
 YI_NorSpr00D_GoalRing_Main:
 main_goal:                                      ; Raidenthequick: main_goal

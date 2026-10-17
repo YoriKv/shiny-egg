@@ -8024,7 +8024,7 @@ CODE_07BFF3:
 	LDA.b $14
 	AND.w #$0003
 	BNE.b CODE_07C00E
-	LDA.w #!Define_YI_SoundID51_ThunderLakituAttacking1
+	LDA.w #!Define_YI_SoundID51_SpinTick1
 	JSL.l CODE_push_sound_queue
 CODE_07C00E:
 	LDA.w $7AF6,x
@@ -13688,7 +13688,7 @@ CODE_07ED89:
 	LDA.b $18,x
 	AND.w DATA_07ED57,y
 	BNE.b CODE_07ED9B
-	LDA.w #!Define_YI_SoundID51_ThunderLakituAttacking1
+	LDA.w #!Define_YI_SoundID51_SpinTick1
 	JSL.l CODE_push_sound_queue
 CODE_07ED9B:
 	LDY.w $7400,x
@@ -13772,7 +13772,7 @@ CODE_07EE54:
 	LDA.b $14
 	AND.w #$0007
 	BNE.b CODE_07EE62
-	LDA.w #!Define_YI_SoundID51_ThunderLakituAttacking1
+	LDA.w #!Define_YI_SoundID51_SpinTick1
 	JSL.l CODE_push_sound_queue
 CODE_07EE62:
 	LDA.w $7402,x

@@ -165,10 +165,17 @@ export function decodeLevelFromLevelData(
     entry = { objectFile: `DATA_level_${hex}_obj.bin`, spriteFile: `DATA_level_${hex}_spr.bin` };
   }
   if (!entry || entry.objectFile === null) return null;
+  // The stream's OWN record-size table when it has one (a pre-release stream
+  // authored against an earlier table), else the cart's. Both the re-serialize
+  // and the parse below must use the same one: a shape that disagrees drops a
+  // field silently — see `LevelData.standardObjectInfo`.
+  const objectInfo = opts.levelData.standardObjectInfo
+    ? Array.from(opts.levelData.standardObjectInfo)
+    : map.standardObjectInfo;
   const { objectBytes } = serializeLevel({
     level: opts.levelData,
     headerBitWidths: map.headerBitWidths,
-    standardObjectInfo: map.standardObjectInfo
+    standardObjectInfo: objectInfo
   });
   // `decodeLevel` expects a Uint8Array starting at the object section
   // (header + objects + exits, $FF-terminated). Our serializer emits
@@ -181,7 +188,8 @@ export function decodeLevelFromLevelData(
     prngReplayBySite: opts.prngReplayBySite,
     prngSeed: opts.prngSeed,
     collectObjectCells: opts.collectObjectCells,
-    handlerOverrides: opts.handlerOverrides
+    handlerOverrides: opts.handlerOverrides,
+    ...(opts.levelData.standardObjectInfo ? { standardObjectInfo: objectInfo } : {})
   });
   return {
     state,

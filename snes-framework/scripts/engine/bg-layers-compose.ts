@@ -112,6 +112,11 @@ const BG3_FOREGROUND_MIN_ROW: Readonly<Record<number, number>> = {
   0x20: 28
 };
 
+/** A `foregroundMinRow` past every tilemap row: priority-1 cells are ALL `'mid'`
+ *  (in front of BG2, behind BG1) and none is `'high'`. Used for a subscreen-only
+ *  BG3, where nothing can be foreground — see the split below. */
+const BG3_MID_ALL_ROWS = Number.MAX_SAFE_INTEGER;
+
 /** Collapse an all-transparent render to `null` so an EMPTY nullable plane
  *  (foreground / mid) costs nothing downstream — no rgba buffer over IPC, no
  *  `createImageBitmap`, no draw call. The renderer treats `null` as "layer
@@ -151,18 +156,49 @@ export function composeBgLayers(args: ComposeBgLayersArgs): ComposedBgLayers {
   // foreground tiles → no extra render, and `bg2`/`bg3` stay byte-identical to
   // the un-split single-plane render. bpp is BGMODE-derived (bgLayerBpp), index-0
   // transparent (cart filler tiles are color-0 so they don't paint a solid rect).
+  //
+  // **FOREGROUND IS A MAIN-SCREEN NOTION.** Tile priority orders layers WITHIN a
+  // screen; it says nothing across the main/sub divide. A subscreen pixel never
+  // occludes a main-screen one — it can only be color-math'd into it, and YI's
+  // CGADSUB ($20) enables math for the BACKDROP alone, so a subscreen layer
+  // reaches the picture only where the main screen is transparent. Promoting a
+  // subscreen-ONLY layer's priority-1 tiles to a plane above BG1 therefore
+  // inverts the compositing `descriptorFor` already describes for the same
+  // layer. It showed up as a whole level under water: BG3 tileset $1D (the
+  // full-screen water body, every tile priority-1) on a mode-$0B room, where
+  // TM/TS put BG3 on the subscreen only.
+  //
+  // Priority still ORDERS the subscreen internally, though: under BG3-priority
+  // mode a priority-1 BG3 tile outranks BG2, so it belongs in FRONT of BG2 and
+  // behind BG1 — which is exactly the `bg3Mid` plane the screen-designation
+  // split already defines. Demoting it all the way to the deep plane would bury
+  // that same water body under BG2's opaque cave wall.
+  //
+  // 18 shipped levels take this path (5-6's pink cloud bank among them); the
+  // render-parity goldens pin every one, so flipping the rule back fails them.
+  const bg2MainScreen = regs.bg2Enable;
+  const bg3MainScreen = regs.bg3Enable;
+  const bg3SubOnlyPriority =
+    bg3Layer.role === 'background' && !bg3MainScreen &&
+    tilemapHasForeground(vram, regs.bg3TilemapAddr, bg3Load.bytesWritten);
   // BG3 "screen-designation" water-line gate (see BG3_FOREGROUND_MIN_ROW): on
   // these levels priority-1 BG3 ABOVE the water line is behind BG1, so only rows
   // at/below the gate are real foreground. 0 (= no gate) for every other level.
-  const bg3FgMinRow = BG3_FOREGROUND_MIN_ROW[gfxHeader.bg3Tileset] ?? 0;
+  // For the subscreen-only case the gate is past every row — i.e. ALL priority-1
+  // is mid and none of it is foreground, which is the rule above expressed in
+  // the split's own terms.
+  const bg3FgMinRow = bg3SubOnlyPriority
+    ? BG3_MID_ALL_ROWS
+    : (BG3_FOREGROUND_MIN_ROW[gfxHeader.bg3Tileset] ?? 0);
   // screen-designation levels (gate > 0) get the three-plane BG3 split (deep /
   // mid / front); every other level is the plain two-plane (or single) split.
-  const bg3Split = bg3Layer.role === 'background' && bg3FgMinRow > 0;
+  const bg3Split = bg3Layer.role === 'background' && bg3FgMinRow > 0 &&
+    (bg3MainScreen || bg3SubOnlyPriority);
   const bg2HasFg =
-    bg2Layer.role === 'background' &&
+    bg2Layer.role === 'background' && bg2MainScreen &&
     tilemapHasForeground(vram, regs.bg2TilemapAddr, bg2LoadedBytes);
   const bg3HasFg =
-    bg3Layer.role === 'background' &&
+    bg3Layer.role === 'background' && bg3MainScreen &&
     tilemapHasForeground(vram, regs.bg3TilemapAddr, bg3Load.bytesWritten, bg3FgMinRow);
 
   const renderBg2 = (priority?: 'low' | 'high'): RenderResult =>

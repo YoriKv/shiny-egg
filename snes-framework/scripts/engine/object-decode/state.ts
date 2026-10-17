@@ -28,7 +28,7 @@ export type InitHandler = (state: DecodeState) => void;
  * The registry in `handlers/index.ts` is a module-level singleton holding OUR
  * cart's (retail V1.0) handler set — correct for every level the editor edits.
  * These overrides exist for decoding streams authored against a DIFFERENT
- * object table: the source leak's pre-release generations reuse the same ids
+ * object table: pre-release generations of the source reuse the same ids
  * for entirely different objects (e.g. std $21-$30 are a soap-bubble family in
  * the oldest dispatch table and the jungle family in the retail one), so the
  * retail handler draws confidently-wrong geometry for them.

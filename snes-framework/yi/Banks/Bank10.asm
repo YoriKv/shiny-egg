@@ -5603,7 +5603,7 @@ CODE_10B02D:
 	REP.b #$30
 	LDA.w #$0100
 	STA.w $10F4
-	LDA.w #!Define_YI_SoundID51_ThunderLakituAttacking1
+	LDA.w #!Define_YI_SoundID51_SpinTick1
 	JSL.l CODE_push_sound_queue
 CODE_10B045:
 	RTS
@@ -5633,7 +5633,7 @@ CODE_10B062:
 	LDA.w $10F4
 	CMP.w #$0150
 	BNE.b CODE_10B079
-	LDA.w #!Define_YI_SoundID53_ThunderLakituAttacking3
+	LDA.w #!Define_YI_SoundID53_SpinTick3
 	JSL.l CODE_push_sound_queue
 	INC.w $1184
 	BRA.b CODE_10B080
@@ -5717,7 +5717,7 @@ CODE_10B0F3:
 	STA.w $118E
 	STZ.w $1190
 	JSR.w CODE_10AB3F
-	LDA.w #!Define_YI_SoundID51_ThunderLakituAttacking1
+	LDA.w #!Define_YI_SoundID51_SpinTick1
 	JSL.l CODE_push_sound_queue
 	INC.w $1184
 CODE_10B122:

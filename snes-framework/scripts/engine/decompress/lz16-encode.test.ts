@@ -1,16 +1,29 @@
-// Unit test: LZ16 encoder round-trips through the LZ16 decoder.
-// Run: node --experimental-strip-types snes-framework/scripts/engine/decompress/lz16-encode.test.ts
+// Unit test: both LZ16 encoders round-trip through the LZ16 decoder, and the
+// exact one reproduces the cart's own parse byte-for-byte.
+// Run: node snes-framework/scripts/engine/decompress/lz16-encode.test.ts
 //
 // `lz16(encodeLz16(tiles), rowCount) === tiles` is the gate. The decoder is
 // byte-exact vs `decomp.exe FORMAT=15` and the SuperFX cart (187/187 entries),
-// so this proves our encoder produces format-valid streams. The cart-decoder
+// so this proves our encoders produce format-valid streams. The cart-decoder
 // cross-check on real blobs lives in `encode-verify.ts`.
+//
+// The byte-exactness section pins `lz16-encode.ts` to `press/ascgx.c`'s parse:
+// every extracted LZ16 blob must re-encode to the bytes it came from. It needs
+// an extract, and skips cleanly without one. This is the section that would have
+// caught the candidate-palette shortcut that used to cost 10 of the 187.
 
-import { lz16 } from './lz16.ts';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { lz16, probeLz16RowCount } from './lz16.ts';
 import { encodeLz16 } from './lz16-encode.ts';
+import { encodeLz16Improved } from './lz16-encode-improved.ts';
 
 let failures = 0;
+let checks = 0;
 function assert(cond: boolean, msg: string): void {
+  checks++;
   if (!cond) {
     console.error(`  ✗ ${msg}`);
     failures++;
@@ -20,7 +33,21 @@ function assert(cond: boolean, msg: string): void {
 const BYTES_PER_TILE_ROW = 512;
 
 function roundTrip(tiles: Uint8Array, rowCount: number, label: string): void {
-  const enc = encodeLz16(tiles, rowCount);
+  for (const [name, encode] of [
+    ['exact', encodeLz16],
+    ['improved', encodeLz16Improved],
+  ] as const) {
+    roundTripWith(encode, tiles, rowCount, `${label} [${name}]`);
+  }
+}
+
+function roundTripWith(
+  encode: (t: Uint8Array, rc: number) => Uint8Array,
+  tiles: Uint8Array,
+  rowCount: number,
+  label: string
+): void {
+  const enc = encode(tiles, rowCount);
   const want = rowCount * BYTES_PER_TILE_ROW;
   const dest = new Uint8Array(want);
   let ok = true;
@@ -139,6 +166,56 @@ for (const rc of [1, 2, 3, 4, 8]) {
       }
     }
     roundTrip(pixelsToTiles(pixels, rc), rc, `partial coherence, ${rc} tile-row(s)`);
+  }
+}
+
+console.log(`  ✓ ${checks} round-trips (both encoders × every case)`);
+
+// ── byte-exactness against the cart's own parse ─────────────────────────────
+//
+// `encodeLz16` is a port of `press/ascgx.c`, so re-encoding a cart blob must
+// return that blob. `probeLz16RowCount` recovers each blob's row count from its
+// exact compressed length (the cart uses 2, 3, 4, 8 and 16 — do not assume a
+// small cap here; that mistake makes a correct encoder look broken).
+
+console.log('\n=== LZ16 encoder reproduces the cart parse ===');
+{
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const assetsYi = path.resolve(here, '../../../assets/yi');
+  const blobs: string[] = [];
+  for (const dir of ['Graphics', 'Tilemaps']) {
+    const d = path.join(assetsYi, dir);
+    if (!fs.existsSync(d)) continue;
+    for (const f of fs.readdirSync(d)) if (f.endsWith('.lz16')) blobs.push(path.join(d, f));
+  }
+  if (blobs.length === 0) {
+    console.log('  – skipped: no extracted .lz16 blobs (run an extract first)');
+  } else {
+    let exact = 0;
+    const unprobeable: string[] = [];
+    const mismatched: string[] = [];
+    for (const file of blobs.sort()) {
+      const blob = new Uint8Array(fs.readFileSync(file));
+      const rowCount = probeLz16RowCount(blob);
+      if (rowCount == null) {
+        unprobeable.push(path.basename(file));
+        continue;
+      }
+      const tiles = new Uint8Array(rowCount * BYTES_PER_TILE_ROW);
+      lz16(blob, 0, tiles, 0, rowCount);
+      const enc = encodeLz16(tiles, rowCount);
+      if (enc.length === blob.length && enc.every((b, i) => b === blob[i])) exact++;
+      else mismatched.push(`${path.basename(file)} rc=${rowCount} (${blob.length}B → ${enc.length}B)`);
+    }
+    assert(unprobeable.length === 0, `every blob's row count probes (${unprobeable.slice(0, 5).join(', ')})`);
+    assert(
+      mismatched.length === 0,
+      `${exact}/${exact + mismatched.length} blobs re-encode byte-exact` +
+        (mismatched.length ? ` — ${mismatched.slice(0, 5).join(', ')}` : '')
+    );
+    if (mismatched.length === 0 && unprobeable.length === 0) {
+      console.log(`  ✓ ${exact} blobs re-encode byte-exact`);
+    }
   }
 }
 

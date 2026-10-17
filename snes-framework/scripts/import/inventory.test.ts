@@ -1,8 +1,8 @@
 // Pins the import-inventory categorization. The regression this guards: the
 // now-imported fixed-address regions (gfx pointer tables, title-screen tilemaps,
 // gradient tables, cutscene text) must be attributed to IMPORTED categories — not
-// the not-imported "tileset/spriteset selection tables" bucket (the EGGCELLENT
-// false positive where 2011 B of relocated gfx pointers + logo tilemap showed as
+// the not-imported "tileset/spriteset selection tables" bucket (a real import's
+// false positive, where 2011 B of relocated gfx pointers + logo tilemap showed as
 // "Graphics-selection tables, not imported"). The genuine selection tables must
 // stay not-imported. Run: node snes-framework/scripts/import/inventory.test.ts
 
@@ -56,9 +56,9 @@ for (const c of cases) {
 }
 
 // ── Relocated level data in a free bank tail must read as level-data, not
-//    "Other data tables" (the EGGCELLENT bucket the Ptrs-target rule fixes). A
-//    hack points a level stream into vanilla filler; the stream's zero-fill
-//    padding + edges would otherwise fall to data-other.
+//    "Other data tables" (where a real import misfiled it; the Ptrs-target
+//    rule fixes that). A hack points a level stream into vanilla filler; the
+//    stream's zero-fill padding + edges would otherwise fall to data-other.
 console.log('\n=== import inventory: relocated-stream free-space reclassification ===');
 {
   const SZ = 0x200000;
@@ -94,7 +94,7 @@ console.log('\n=== import inventory: relocated-stream free-space reclassificatio
 //    strings, not "Other data tables". Vanilla's string region ends at $51:5348
 //    (just past DATA_level_name_garbage_sentinel), so a hack whose message /
 //    level-name text outgrows it repoints slots into the bank's filler tail — and
-//    the spill has no containing band or later symbol (the EGGCELLENT report's
+//    the spill has no containing band or later symbol (one imported hack's report:
 //    "Other data tables at DATA_level_name_garbage_sentinel+0x19").
 console.log('\n=== import inventory: extended string table in the bank $51 tail ===');
 {

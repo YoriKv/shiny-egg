@@ -1791,7 +1791,7 @@ CODE_019391:
 	BNE.b CODE_0193B6
 	LDA.w #$0008
 	STA.w $7A96,x
-	LDA.w #!Define_YI_SoundID56_ThunderLakituAttacking6
+	LDA.w #!Define_YI_SoundID56_SpinTick6
 	JSL.l CODE_push_sound_queue
 	INC.w $7A36,x
 	STZ.b $18,x
@@ -2069,7 +2069,7 @@ CODE_0194FE:
 	BNE.b CODE_019525
 	LDA.w #$0008
 	STA.w $7A96,x
-	LDA.w #!Define_YI_SoundID56_ThunderLakituAttacking6
+	LDA.w #!Define_YI_SoundID56_SpinTick6
 	JSL.l CODE_push_sound_queue
 	INC.w $7A36,x
 	STZ.b $18,x
@@ -2157,7 +2157,7 @@ CODE_hookbill_run_forward:
 	LDA.w $7402,x
 	AND.w #$0003
 	BNE.b CODE_019599
-	LDA.w #!Define_YI_SoundID56_ThunderLakituAttacking6
+	LDA.w #!Define_YI_SoundID56_SpinTick6
 	JSL.l CODE_push_sound_queue
 CODE_019599:
 	LDY.b #$08
@@ -12275,7 +12275,7 @@ CODE_message_box_09:
 	LDA.l $70406E
 	CMP.b #$02
 	BCC.b CODE_01DEF4
-	LDA.b #!Define_YI_SoundID56_ThunderLakituAttacking6
+	LDA.b #!Define_YI_SoundID56_SpinTick6
 	JSL.l CODE_push_sound_queue
 	JSR.w CODE_01DEA2
 CODE_01DEF4:

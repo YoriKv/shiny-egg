@@ -129,9 +129,15 @@ export interface DecodeLevelOptions {
   collectObjectCells?: boolean;
   /** Replace individual object handlers for THIS decode only — for streams
    *  authored against a different object table than our retail cart's (the
-   *  source leak's pre-release generations). Omit for the editor's normal path.
+   *  source's pre-release generations). Omit for the editor's normal path.
    *  See `ObjectHandlerOverrides`. */
   handlerOverrides?: ObjectHandlerOverrides;
+  /** Record-size table for the STREAM, when it was authored against one that
+   *  isn't the cart's — the sibling of `handlerOverrides`, for the same
+   *  pre-release generations. Only the low 2 bits of each byte are read (the
+   *  size encoding), so `OLD_COS_OBJECT_INFO` drops straight in. Omit for the
+   *  editor's normal path and the cart's own table is loaded from ROM. */
+  standardObjectInfo?: readonly number[];
 }
 
 export function decodeLevel(
@@ -192,7 +198,12 @@ export function decodeLevel(
   populateTemplates(rom, symbols, state);
 
   // 4. Run parser
-  const propTable = loadObjectPropertyTable(rom, symbols);
+  // The cart's record-shape table, unless the caller's stream was authored
+  // against a different one (`LevelData.standardObjectInfo`). Only the low 2 bits
+  // are read (the record's size encoding), so an era table drops straight in.
+  const propTable = opts.standardObjectInfo
+    ? Uint8Array.from(opts.standardObjectInfo)
+    : loadObjectPropertyTable(rom, symbols);
   const stats = loadLevelObjectStream(state, propTable);
 
   return { state, stats };

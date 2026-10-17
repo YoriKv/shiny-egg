@@ -69,7 +69,6 @@ import {
   SAMPLE_BANK_WRAPPERS,
   SAMPLE_MANIFEST_NAME,
   sampleDisplayName,
-  SFX_PRIORITY_TABLE,
   SFX_REMAP_TABLE,
   sha256Hex,
   SMW_SAMPLE_FILES,
@@ -212,18 +211,33 @@ function loadCatalog(): { catalog: AudioCatalog; ui: AudioCatalogUi; rom: Uint8A
     }
   })
 
-  // SFX voice/priority: the engine's priority table (1-based — entry for id
-  // at SFX_PRIORITY_TABLE-1+id; high nibble = the voice the one-shot plays
-  // on), read out of the engine upload stream rather than a composed image.
-  const engineBlocks = parseBlockFromRom(rom, catalog, ENGINE_BLOCK_ID).stream.blocks
-  const priorityOf = (id: number): number => {
-    const addr = SFX_PRIORITY_TABLE - 1 + id
-    const b = engineBlocks.find((blk) => addr >= blk.dest && addr < blk.dest + blk.data.length)
-    return b ? b.data[addr - b.dest] : 0
-  }
-  const sfx: AudioSfxUi[] = readSfxNames().map((s) => {
-    const priority = priorityOf(s.id)
-    return { ...s, priority, voice: (priority >> 4) & 0x0f }
+  // SFX voice/priority/chain all come out of the engine block's own tables
+  // ($0EB0 priority, $0F7D/$107D script ptrs, $3EBA remap) — SFX data is
+  // engine-resident and identical in every music setting, so an engine-only
+  // ARAM is a complete and cheap baseline (no sample/song blocks needed).
+  const sfxAram = new Uint8Array(0x10000)
+  applyUploadStream(sfxAram, parseBlockFromRom(rom, catalog, ENGINE_BLOCK_ID).stream)
+  const named = readSfxNames()
+  const nameOf = new Map(named.map((s) => [s.id, s.name]))
+  const sfx: AudioSfxUi[] = named.map((s) => {
+    // resolveSfxChain[0] is the id itself; the rest are the extra voices it
+    // arms. `audible` mirrors buildSfxTimeline's lane test — a chain slot may
+    // hold an arm-and-end placeholder that claims no voice. A partner usually
+    // has no name (the driver-internal 0xB0-0xCA block), but a few chains
+    // reuse an ordinary named sound as their second voice.
+    const [self, ...partners] = resolveSfxChain(sfxAram, s.id)
+    return {
+      ...s,
+      priority: self?.priority ?? 0,
+      voice: self?.voice ?? 0,
+      chain: partners.map((c) => ({
+        id: c.soundId,
+        name: nameOf.get(c.soundId),
+        voice: c.voice,
+        priority: c.priority,
+        audible: c.scriptAddr !== 0 && decodeSfxScript(sfxAram, c.scriptAddr).events.length > 0
+      }))
+    }
   })
 
   const blocks = SPC_BLOCKS.map((b) => ({

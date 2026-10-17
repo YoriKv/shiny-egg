@@ -1136,7 +1136,7 @@ CODE_0D88A8:
 	CMP.w #$000E
 	BNE.b CODE_0D88B6
 	PHA
-	LDA.w #!Define_YI_SoundID55_ThunderLakituAttacking5
+	LDA.w #!Define_YI_SoundID55_SpinTick5
 	JSL.l CODE_push_sound_queue
 	PLA
 CODE_0D88B6:
@@ -4566,7 +4566,7 @@ CODE_0DA308:
 	BMI.b CODE_0DA32E
 	LDA.w #$FF00
 	STA.b $78,x
-	LDA.w #!Define_YI_SoundID56_ThunderLakituAttacking6
+	LDA.w #!Define_YI_SoundID56_SpinTick6
 	JSL.l CODE_push_sound_queue
 	DEC.b $16,x
 	BNE.b CODE_0DA32B

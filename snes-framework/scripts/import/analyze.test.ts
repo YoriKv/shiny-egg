@@ -293,7 +293,7 @@ console.log('=== world-map: foreign entrance read aligns with the asm model (bas
   const idxChanged = hwm2.entranceIndexWords.filter((w, i) => w !== wmIdx.entranceIndexWords[i]);
   assert(idxChanged.length === 1 && hwm2.entranceIndexWords[1] === 0x0008, 'exactly the remapped index word differs');
 
-  // Merge gates (Flutter-shaped): genuine remaps import even next to $00FF
+  // Merge gates (real-hack-shaped): genuine remaps import even next to $00FF
   // "disabled slot" fills; a wholesale-clobbered table imports NOTHING.
   const baseWords = [0x0000, 0x0004, 0x0008, 0x000c, 0x0010, 0x0014];
   {

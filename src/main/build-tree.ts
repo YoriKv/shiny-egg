@@ -378,7 +378,7 @@ function layoutViolationMessage(violations: LayoutViolation[]): string {
  * data-only include fast path against the pristine base. Output goes to the
  * base build dir either way (render/BizHawk read it).
  */
-export function buildProject(opts: BuildProjectOptions): BuildResult {
+export async function buildProject(opts: BuildProjectOptions): Promise<BuildResult> {
   const { id, onProgress } = opts
   const outputDir = projectBuildDir(id)
 
@@ -468,7 +468,7 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
     // Inject engine-label addresses (resolved from the build symbols) so asm
     // patches can reference `!CODE_xxxxxx` in the label-less FinalizeROM phase.
     const extraDefines = asmSymbolDefines(id)
-    result = buildRom({
+    result = await buildRom({
       workRoot: buildTreeRoot(id),
       asarBin: asarBinPath(),
       outputDir,
@@ -476,7 +476,7 @@ export function buildProject(opts: BuildProjectOptions): BuildResult {
       onProgress
     })
   } else {
-    result = buildRom({
+    result = await buildRom({
       workRoot: frameworkWorkRoot(),
       asarBin: asarBinPath(),
       overlayRoot: overlayRoot(id),

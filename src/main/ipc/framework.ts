@@ -70,7 +70,7 @@ export function registerFrameworkIpc(): void {
       // logged but doesn't fail the (already-completed) extract.
       try {
         win?.webContents.send('framework:progress', 'Building reference ROM…')
-        buildRom({
+        await buildRom({
           workRoot: frameworkWorkRoot(),
           asarBin: asarBinPath(),
           onProgress: (msg) => win?.webContents.send('framework:progress', msg)
@@ -111,8 +111,8 @@ export function registerFrameworkIpc(): void {
       // With an active project, build through the project pipeline (data-only
       // include fast path, or build-tree merge when the overlay has asm edits).
       const result = projectId
-        ? buildProject({ id: projectId, onProgress })
-        : buildRom({ workRoot: frameworkWorkRoot(), asarBin: asarBinPath(), onProgress })
+        ? await buildProject({ id: projectId, onProgress })
+        : await buildRom({ workRoot: frameworkWorkRoot(), asarBin: asarBinPath(), onProgress })
       // Build produced a new ROM. If an emulator is already running it's holding
       // the OLD ROM in memory (no auto-reload). Stop it so the next manual Launch
       // picks up the new file.

@@ -8643,7 +8643,7 @@ CODE_0BC442:
 	LMS R0, ($18A)
 	SUB #0
 	BEQ CODE_0BC450 : SUB R0
-	IBT R0, #!Define_YI_SoundID56_ThunderLakituAttacking6
+	IBT R0, #!Define_YI_SoundID56_SpinTick6
 	SMS ($7A), R0
 	SUB R0
 CODE_0BC450:

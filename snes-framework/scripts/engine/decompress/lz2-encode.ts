@@ -1,215 +1,283 @@
-// LZ2 (LC_LZ2, Lunar Compress FORMAT=1) ENCODER — the inverse of `lz2.ts`.
+// LZ2 (LC_LZ2, Lunar Compress FORMAT=1) ENCODER — the *exact* parse the cart's
+// graphics and tilemaps were packed with. `encodeLz2(lz2(blob))` reproduces the
+// original compressed bytes byte-for-byte for every LZ2 blob in the ROM, so
+// re-encoding untouched data is a no-op and nothing downstream of it moves.
+// `lz16-encode.ts` does the same job for the other format.
 //
-// Produces a compressed stream that `lz2()` (and the cart's SuperFX
-// `lz2_decompress`, and `decomp.exe FORMAT=1`) decode back to the input
-// byte-for-byte. Used at build time to re-pack edited graphics blobs.
+// This is the default parse, and the one to use whenever the result has to stay
+// byte-comparable to the reference cart. Graphics that are *already* edited go
+// through `lz2-encode-improved.ts` instead — see `encodeGfxBlob`, which makes
+// that choice once for both formats.
 //
-// We do NOT need to reproduce Lunar Compress's `recomp.exe` output bit-for-bit
-// — any valid stream that round-trips is correct. We DO stay inside the command
-// subset that real YI data exercises (opcodes 0..4, backref via opcode 4 only)
-// so the cart-side decoder is guaranteed to accept it. See `lz2.ts` for the
-// command-byte layout this mirrors.
+// # Provenance
 //
-// Parse: greedy by benefit (bytes saved vs literals) with one-step LAZY
-// deferral — if emitting a literal exposes a strictly longer command next
-// position, defer. Backref matches come from a 3-byte-prefix hash chain.
-// This beats the cart's own packing and edges out `recomp`/`ycompress` on
-// total size, while staying well clear of optimal-parse complexity.
+// The format is `lz2.ts` (SuperFX `lz2_decompress`, `$08:A980`). The *parse* —
+// which command to emit where — is not implied by the format, so it was
+// recovered empirically from the shipped data and then confirmed exhaustively:
+// this encoder reproduces all 261 real LZ2 blobs in the USA V1.0 cart bit for
+// bit (77,145 of 77,145 commands). The four `.lz2`-named blobs it does not
+// cover (gfx IDs $2C-$2F) are orphaned LZ16 sheets sitting in LZ2 table slots,
+// not LZ2 data at all — see `research/notes-rom-import-lz2-overread.md`.
 //
-// # Command set emitted
+// # The parse
 //
-//   0x00 literal       — copy `len` raw bytes
-//   0x20 run-byte      — repeat 1 byte `len` times
-//   0x40 alternating   — repeat 2 bytes (a,b,a,b,…) `len` times
-//   0x60 incrementing  — b, b+1, b+2, … (`len` bytes)
-//   0x80 backref       — copy `len` bytes from output[offset] (offset 16-bit BE).
-//                        We always use opcode 4 (0x80); the decoder aliases
-//                        5/6/7 to it, and opcode 7 long-form would collide with
-//                        the 0xFF terminator (0xE0|0x1C|0x03 == 0xFF), so we
-//                        avoid it entirely.
+// A single left-to-right pass with NO lookahead, no lazy matching and no cost
+// comparison. At each position the first rule that fires wins:
 //
-// Length forms (mirrors the decoder):
-//   short: `<op> | (len-1)`             — len 1..32, top 3 bits never 111
-//   long:  `0xE0 | (op>>3 & 0x1C) | (L>>8)`, then `L & 0xFF`   — len 33..1024,
-//          where L = len-1. For our opcodes the command byte lands in
-//          0xE0..0xF3 — never 0xFF.
+//   1. fill (0x20)  — a run of one repeated byte, length >= 3.
+//   2. word (0x40)  — an a,b,a,b,… run, length >= 4.
+//   3. inc  (0x60)  — b, b+1, b+2, …, length >= 3.
+//   4. backref (0x80) — the longest earlier match, length >= 4.
+//   5. otherwise the byte joins a pending literal run, flushed before the next
+//      command (or at end of input).
+//
+// The three run kinds are what makes the parse reproducible, because they
+// *pre-empt* everything: a run is detected wherever it starts, and every other
+// command has to stop short of it. Concretely:
+//
+//   - A fill run is always maximal — nothing pre-empts it.
+//   - A word run stops where a fill run would start, yielding the boundary byte
+//     to the fill (`00 ff 00 ff 00 00 00 00 00` codes as word=4 + fill=5, not
+//     word=5 + fill=4).
+//   - An increasing run stops where either a fill or a word run would start,
+//     which is usually what disqualifies it: clipped below 3 it never fires, so
+//     the bytes fall through to literals.
+//   - A backref stops where ANY of the three would start. This is why the cart's
+//     streams routinely split one long match into ref/word/ref: the match is not
+//     truncated for cost reasons, it is truncated because a run began.
+//
+// Three quirks matter for byte-exactness, all confirmed across the whole corpus:
+//
+//   - Increasing runs do NOT wrap modulo 256. `fe ff 00` is a run of 2, not 3,
+//     so it falls through to literals; the decoder wraps, the encoder never
+//     emits a run that needs it.
+//   - Among equal-length matches the encoder takes the EARLIEST (lowest offset),
+//     not the nearest — i.e. first occurrence wins.
+//   - The per-command length caps are not uniform: fill 1024 (the format
+//     maximum), word 1023, backref 512. A run longer than its cap is emitted at
+//     the cap and re-scanned from the new position, which is how the cart ends
+//     up with e.g. word=1023 followed by a stray literal byte and then a fresh
+//     word run.
+//
+// The literal cap is the one number the cart data cannot pin down (its longest
+// literal run is 386 bytes), so we use the format maximum, 1024. Any choice
+// round-trips; none can differ from the cart on cart data.
+//
+// # Command byte layout
+//
+// See `lz2.ts`. Short form `<op> | (len-1)` for len 1..32; long form
+// `0xE0 | (op>>3 & 0x1C) | (L>>8)`, `L & 0xFF` for len 33..1024 with L = len-1.
+// We only ever emit backrefs as opcode 4 (0x80) — the decoder aliases 5/6/7 onto
+// it, and opcode 7's long form would collide with the 0xFF terminator.
 
 const MAX_SHORT_LEN = 32;
-const MAX_LONG_LEN = 1024;
-const MIN_MATCH = 3; // backref/run shorter than this never beats literals
 
-// Hash-chain match finder tuning. Real YI gfx blobs are small (≤ a few KB), so
-// these caps are generous; they only bound pathological inputs.
-const HASH_BITS = 15;
+/** Per-command length caps. Deliberately non-uniform — see the file header. */
+const MAX_FILL = 1024;
+const MAX_WORD = 1023;
+const MAX_INC = 1024;
+const MAX_MATCH = 512;
+const MAX_LITERAL = 1024;
+
+/** Minimum length at which each command fires. */
+const MIN_FILL = 3;
+const MIN_WORD = 4;
+const MIN_INC = 3;
+const MIN_MATCH = 4;
+
+const OP_LITERAL = 0x00;
+const OP_FILL = 0x20;
+const OP_WORD = 0x40;
+const OP_INC = 0x60;
+const OP_BACKREF = 0x80;
+
+const HASH_BITS = 14;
 const HASH_SIZE = 1 << HASH_BITS;
-const MAX_CHAIN = 64;
 
-function hash3(a: number, b: number, c: number): number {
-  return ((a * 0x9e37 + b * 0x85eb + c * 0xc2b2) >>> (32 - HASH_BITS)) & (HASH_SIZE - 1);
+/** Hash of the 4-byte prefix at `p`. Any match of MIN_MATCH bytes shares it, so
+ *  a bucket holds every candidate a search must consider — the index is exact,
+ *  not a heuristic, which is what lets the search stay byte-faithful. */
+function hash4(d: Uint8Array, p: number): number {
+  return (
+    ((d[p]! * 0x9e37 + d[p + 1]! * 0x85eb + d[p + 2]! * 0xc2b2 + d[p + 3]! * 0x27d4) >>>
+      (32 - HASH_BITS)) &
+    (HASH_SIZE - 1)
+  );
 }
 
-interface Candidate {
-  op: number; // 0x00/0x20/0x40/0x60/0x80
-  len: number; // bytes covered
-  cost: number; // total emitted bytes (header + payload)
-  off?: number; // backref offset (absolute output index)
-}
-
-/** Emit a command header (short or long form) for `op` covering `len` bytes. */
-function emitHeader(out: number[], op: number, len: number): void {
-  if (len <= MAX_SHORT_LEN) {
-    out.push(op | (len - 1));
-  } else {
-    const l = len - 1; // 0..1023
-    out.push(0xe0 | ((op >> 3) & 0x1c) | (l >> 8));
-    out.push(l & 0xff);
+/** The run lengths the parse is driven by, measured at every position at once.
+ *  Each is a property of the bytes alone, so one backward pass beats
+ *  re-measuring per step. */
+function runLengths(d: Uint8Array): { fill: Int32Array; word: Int32Array; inc: Int32Array } {
+  const n = d.length;
+  const fill = new Int32Array(n);
+  const word = new Int32Array(n);
+  const inc = new Int32Array(n);
+  for (let i = n - 1; i >= 0; i--) {
+    fill[i] = i + 1 < n && d[i + 1] === d[i] ? Math.min(fill[i + 1]! + 1, MAX_FILL) : 1;
+    // No modulo wrap: `d[i+1] === d[i] + 1` is false at 0xFF, so a run stops
+    // there rather than rolling over to 0x00.
+    inc[i] = i + 1 < n && d[i + 1] === d[i]! + 1 ? Math.min(inc[i + 1]! + 1, MAX_INC) : 1;
+    // a,b,a,b,… continues exactly when d[i+2] repeats d[i]; the tail from i+1 is
+    // the same shape with the pair swapped, so its length carries.
+    word[i] =
+      i + 2 < n && d[i + 2] === d[i]
+        ? Math.min(word[i + 1]! + 1, MAX_WORD)
+        : Math.min(2, n - i);
   }
+  return { fill, word, inc };
 }
 
-const headerCost = (len: number): number => (len <= MAX_SHORT_LEN ? 1 : 2);
+interface Cmd {
+  op: number;
+  len: number;
+  pos: number;
+  off: number;
+}
 
 /**
- * Compress `data` into an LZ2 stream. The returned bytes, fed to `lz2()` with
- * `srcOff = 0`, reproduce `data` exactly (terminated by a 0xFF command).
+ * Compress `data` into an LZ2 stream, reproducing the cart's own parse.
+ *
+ * The result decodes back to `data` exactly (`lz2()` with `srcOff = 0`), and for
+ * data that came out of a cart LZ2 blob it *is* that blob, byte for byte.
  */
 export function encodeLz2(data: Uint8Array): Uint8Array {
   const n = data.length;
   const out: number[] = [];
+  if (n === 0) return Uint8Array.from([0xff]);
+  if (n > 0x10000) {
+    // A backref offset is an absolute 16-bit index into the output, so this is
+    // the largest structure the format can address at all.
+    throw new Error(`encodeLz2: ${n} bytes exceeds the format's 0x10000-byte cap`);
+  }
 
-  // Pending run of literal bytes [litStart, d). Flushed (possibly split into
-  // ≤1024-byte chunks) right before any special command, and at EOF.
+  const { fill, word, inc } = runLengths(data);
+
+  // Where the next run of each kind starts, at or after each position. Built
+  // back to front so each "does a run pre-empt me?" question is O(1). Length
+  // n+1 because a position asks about i+1, and the last one asks about n.
+  const nextFill = new Int32Array(n + 1);
+  const nextWord = new Int32Array(n + 1);
+  const nextRun = new Int32Array(n + 1);
+  /** Word-run length at `i` after yielding to a fill run that starts inside it. */
+  const wordLenAt = new Int32Array(n);
+  /** Increasing-run length at `i` after yielding to both fill and word runs. */
+  const incLenAt = new Int32Array(n);
+  nextFill[n] = n;
+  nextWord[n] = n;
+  nextRun[n] = n;
+  for (let i = n - 1; i >= 0; i--) {
+    nextFill[i] = fill[i]! >= MIN_FILL ? i : nextFill[i + 1]!;
+    wordLenAt[i] = Math.min(word[i]!, nextFill[i + 1]! - i);
+    nextWord[i] = wordLenAt[i]! >= MIN_WORD ? i : nextWord[i + 1]!;
+    incLenAt[i] = Math.min(inc[i]!, nextFill[i + 1]! - i, nextWord[i + 1]! - i);
+    nextRun[i] =
+      fill[i]! >= MIN_FILL || wordLenAt[i]! >= MIN_WORD || incLenAt[i]! >= MIN_INC
+        ? i
+        : nextRun[i + 1]!;
+  }
+
+  /** The run command starting at `p`, or null. Order is fill, word, inc. Only
+   *  fill and word can both qualify at one position (a constant run is also an
+   *  a,a,a,a run) and fill wins; inc excludes the other two by construction. */
+  const runAt = (p: number): Cmd | null => {
+    if (fill[p]! >= MIN_FILL) return { op: OP_FILL, len: fill[p]!, pos: p, off: 0 };
+    if (wordLenAt[p]! >= MIN_WORD) return { op: OP_WORD, len: wordLenAt[p]!, pos: p, off: 0 };
+    if (incLenAt[p]! >= MIN_INC) return { op: OP_INC, len: incLenAt[p]!, pos: p, off: 0 };
+    return null;
+  };
+
+  // 4-byte-prefix index over the output-so-far, in oldest-first chain order so
+  // the search naturally reports the earliest offset among equal-length matches.
+  const head = new Int32Array(HASH_SIZE).fill(-1);
+  const tail = new Int32Array(HASH_SIZE).fill(-1);
+  const next = new Int32Array(n).fill(-1);
+  let indexed = 0;
+  const indexUpTo = (end: number): void => {
+    for (; indexed < end; indexed++) {
+      if (indexed + MIN_MATCH > n) break;
+      const h = hash4(data, indexed);
+      if (tail[h]! < 0) head[h] = indexed;
+      else next[tail[h]!] = indexed;
+      tail[h] = indexed;
+    }
+  };
+
+  /**
+   * Longest match at `p`, stopping short of the next run and of MAX_MATCH.
+   *
+   * Candidates are compared against `data` directly rather than through the
+   * copy's period: for a self-overlapping match the two are provably the same
+   * sequence, since every byte the copy would read back has already been matched.
+   */
+  const matchAt = (p: number): Cmd | null => {
+    const limit = Math.min(MAX_MATCH, n - p, nextRun[p + 1]! - p);
+    if (limit < MIN_MATCH) return null;
+    indexUpTo(p);
+    let best = 0;
+    let bestOff = 0;
+    for (let q = head[hash4(data, p)]!; q >= 0; q = next[q]!) {
+      if (q >= p) break;
+      // One comparison rules out a candidate that cannot beat the best so far.
+      if (best > 0 && data[q + best] !== data[p + best]) continue;
+      let l = 0;
+      while (l < limit && data[p + l] === data[q + l]) l++;
+      // Strictly greater only: ties keep the earlier (already-seen) offset.
+      if (l > best) {
+        best = l;
+        bestOff = q;
+        if (best === limit) break;
+      }
+    }
+    return best >= MIN_MATCH ? { op: OP_BACKREF, len: best, pos: p, off: bestOff } : null;
+  };
+
+  const cmds: Cmd[] = [];
   let litStart = -1;
   const flushLiterals = (end: number): void => {
     if (litStart < 0) return;
-    let i = litStart;
-    while (i < end) {
-      const chunk = Math.min(end - i, MAX_LONG_LEN);
-      emitHeader(out, 0x00, chunk);
-      for (let k = 0; k < chunk; k++) out.push(data[i + k]!);
-      i += chunk;
+    for (let i = litStart; i < end; i += MAX_LITERAL) {
+      cmds.push({ op: OP_LITERAL, len: Math.min(end - i, MAX_LITERAL), pos: i, off: 0 });
     }
     litStart = -1;
   };
 
-  // Hash chains over 3-byte prefixes for backref search.
-  const head = new Int32Array(HASH_SIZE).fill(-1);
-  const prev = new Int32Array(n).fill(-1);
-  const insert = (pos: number): void => {
-    if (pos + 2 >= n) return;
-    const h = hash3(data[pos]!, data[pos + 1]!, data[pos + 2]!);
-    prev[pos] = head[h]!;
-    head[h] = pos;
-  };
+  let p = 0;
+  while (p < n) {
+    const cmd = runAt(p) ?? matchAt(p);
+    if (cmd) {
+      flushLiterals(p);
+      cmds.push(cmd);
+      p += cmd.len;
+      continue;
+    }
+    if (litStart < 0) litStart = p;
+    p++;
+  }
+  flushLiterals(n);
 
-  /** Longest LZ77 match at `d` (allowing overlap → periodic run extension). */
-  const findBackref = (d: number): { len: number; off: number } | null => {
-    if (d < 1 || d + 2 >= n) return null;
-    const h = hash3(data[d]!, data[d + 1]!, data[d + 2]!);
-    let p = head[h]!;
-    let bestLen = 0;
-    let bestOff = 0;
-    let chain = MAX_CHAIN;
-    const maxLen = Math.min(n - d, MAX_LONG_LEN);
-    while (p >= 0 && chain-- > 0) {
-      const period = d - p; // overlap period
-      let l = 0;
-      while (l < maxLen && data[d + l]! === data[p + (l % period)]!) l++;
-      if (l > bestLen) {
-        bestLen = l;
-        bestOff = p;
-        if (l >= maxLen) break;
-      }
-      p = prev[p]!;
+  for (const c of cmds) {
+    if (c.len <= MAX_SHORT_LEN) out.push(c.op | (c.len - 1));
+    else {
+      const l = c.len - 1; // 0..1023
+      out.push(0xe0 | ((c.op >> 3) & 0x1c) | (l >> 8), l & 0xff);
     }
-    return bestLen >= MIN_MATCH ? { len: bestLen, off: bestOff } : null;
-  };
-
-  // Best non-literal command starting at `d` (max benefit; tie-break fewer
-  // bytes), or null if literals are no worse.
-  const bestCommandAt = (d: number): Candidate | null => {
-    let best: Candidate | null = null;
-    const consider = (c: Candidate): void => {
-      const benefit = c.len - c.cost;
-      if (benefit < 1) return;
-      if (
-        best === null ||
-        benefit > best.len - best.cost ||
-        (benefit === best.len - best.cost && c.cost < best.cost)
-      )
-        best = c;
-    };
-    // run-byte
-    {
-      let l = 1;
-      while (d + l < n && data[d + l]! === data[d]! && l < MAX_LONG_LEN) l++;
-      if (l >= MIN_MATCH) consider({ op: 0x20, len: l, cost: headerCost(l) + 1 });
-    }
-    // incrementing
-    {
-      let l = 1;
-      while (d + l < n && data[d + l]! === ((data[d]! + l) & 0xff) && l < MAX_LONG_LEN) l++;
-      if (l >= MIN_MATCH) consider({ op: 0x60, len: l, cost: headerCost(l) + 1 });
-    }
-    // alternating (only meaningful when the two bytes differ)
-    if (d + 1 < n && data[d]! !== data[d + 1]!) {
-      const a = data[d]!;
-      const b = data[d + 1]!;
-      let l = 1;
-      while (d + l < n && data[d + l]! === (l & 1 ? b : a) && l < MAX_LONG_LEN) l++;
-      if (l >= 4) consider({ op: 0x40, len: l, cost: headerCost(l) + 2 });
-    }
-    // backref
-    {
-      const m = findBackref(d);
-      if (m && m.off <= 0xffff)
-        consider({ op: 0x80, len: m.len, cost: headerCost(m.len) + 2, off: m.off });
-    }
-    return best;
-  };
-
-  const emitCommand = (c: Candidate, d: number): void => {
-    emitHeader(out, c.op, c.len);
     switch (c.op) {
-      case 0x20: // run-byte
-        out.push(data[d]!);
+      case OP_LITERAL:
+        for (let k = 0; k < c.len; k++) out.push(data[c.pos + k]!);
         break;
-      case 0x40: // alternating pair
-        out.push(data[d]!, data[d + 1]!);
+      case OP_FILL:
+      case OP_INC:
+        out.push(data[c.pos]!);
         break;
-      case 0x60: // incrementing — payload is the start value
-        out.push(data[d]!);
+      case OP_WORD:
+        out.push(data[c.pos]!, data[c.pos + 1]!);
         break;
-      case 0x80: // backref — 2-byte big-endian offset
-        out.push((c.off! >> 8) & 0xff, c.off! & 0xff);
+      default:
+        out.push((c.off >> 8) & 0xff, c.off & 0xff); // big-endian — LZ2, not LZ1
         break;
-    }
-  };
-
-  let d = 0;
-  while (d < n) {
-    const c = bestCommandAt(d);
-    if (c !== null) {
-      // Lazy: if deferring one byte exposes a strictly longer command, emit a
-      // literal now and take the better command next iteration.
-      const c2 = d + 1 < n ? bestCommandAt(d + 1) : null;
-      if (c2 !== null && c2.len > c.len) {
-        if (litStart < 0) litStart = d;
-        insert(d);
-        d++;
-        continue;
-      }
-      flushLiterals(d);
-      emitCommand(c, d);
-      for (let k = 0; k < c.len; k++) insert(d + k);
-      d += c.len;
-    } else {
-      if (litStart < 0) litStart = d;
-      insert(d);
-      d++;
     }
   }
-
-  flushLiterals(n);
   out.push(0xff); // terminator
   return Uint8Array.from(out);
 }

@@ -188,6 +188,25 @@ export interface LevelSprite {
   x: number;
   /** Tile-grid Y (0..127). */
   y: number;
+  /**
+   * Force this placement's placement-parity cel variant (0..3) instead of
+   * deriving it from the spawn cell. Omit for the cart's own behaviour — the
+   * cart has no such field, and nothing in the editor sets it.
+   *
+   * Exists for FOREIGN streams whose authoring generation carried the variant
+   * somewhere else. Retail packs several figures into one sprite id and picks
+   * between them by spawn-cell parity (`$071` Big Boo: `init_big_boo` branches
+   * on X pos bit4, then on Y bit4 → Big-Boo-plus-3 / Big Boo / lone Boo). The
+   * pre-release source's earlier generation instead had SEPARATE entity names
+   * for them, so a re-slotted name lands on the merged id and the cell parity —
+   * an accident of where the level designer dropped it — decides the figure.
+   * Setting `celVariant` puts the name back in charge, which is what a converter
+   * from that generation's entity names needs.
+   *
+   * The resolver reads the spawn cell ONLY to compute parity, so this also
+   * governs the parity-keyed palette and the Y-parity synth cels.
+   */
+  celVariant?: number;
 }
 
 // ── Levels catalog (level-dropdown source) ────────────────────────────────
@@ -256,6 +275,20 @@ export interface LevelData {
    * and other levels reachable only via in-level exits.
    */
   spawn?: { x: number; y: number };
+  /**
+   * The object record-size table this stream was PARSED with, when it is not the
+   * cart's own — a pre-release stream authored against an earlier table. It has
+   * to travel with
+   * the level because `decodeLevelFromLevelData` re-serializes the objects before
+   * decoding them, and a record shape that disagrees with the parse silently
+   * DROPS a field: 16 ids differ between the oldest table and the cart's, and for
+   * `$22` (era 5-byte, cart 4-byte) the width byte vanishes, so every big soap
+   * bubble walked one column instead of four.
+   *
+   * Undefined for every cart-format level, where the level-map's table is right
+   * and this would be a redundant copy.
+   */
+  standardObjectInfo?: readonly number[];
   /** True if the slot in the pointer table is zeroed (no level here). */
   empty: boolean;
   /** True if the slot is special-cased in the engine (e.g. level 0x38). */
@@ -967,7 +1000,7 @@ export interface PatchFile {
   id: string;
   name: string;
   /** Group heading the prepackaged catalog lists this patch under (e.g.
-   *  "Flutter! - Death Mechanics"). Absent → grouped under "Other". */
+   *  "Skips and Speedups"). Absent → grouped under "Other". */
   category?: string;
   /** Concise, user-facing summary shown in the patches panel. */
   description?: string;

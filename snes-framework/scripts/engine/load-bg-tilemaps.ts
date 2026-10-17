@@ -36,11 +36,15 @@
 //      - **$01-$7F**: write per-stripe modification table at WRAM
 //        $70:3D4A (CODE_01EAA9). **Runtime per-frame effect** — no VRAM
 //        tilemap content change. Static render is correct.
-//      - **$80** `bg3_low_water_adjust`: queues an extra DMA targeting
-//        VRAM $3740 with size $0680, blanking the bottom of the BG3
-//        tilemap (water-line effect). Our render leaves the LZ2-loaded
-//        bytes in place → BG3 shows extra tiles below the water line.
-//        Not glitchy (real cart bytes), just busier than the cart.
+//      - **$80** `bg3_low_water_adjust` (`CODE_01EB3D`): water-surface
+//        levels. MODELLED — see `applyLowWaterAdjust`. The plain step-6
+//        upload is thrown away again: the handler re-fills the whole
+//        region with the empty tile (tilemap-DMA queue $21 =
+//        `DATA_01E902`: fill word $3400.. with $01CE) and then DMAs only
+//        the blob's FIRST `$0800 - DATA_bg3_low_water_vram_size` bytes to
+//        `DATA_bg3_low_water_vram_ptr`, so the water band lands at the
+//        BOTTOM of the tilemap and everything above the water line is
+//        blank.
 //      - **$81-$87**: HDMA-setup dispatch table (horiz_scroll,
 //        screen_des, clouds_mist, sun, transparency, wavy_mist). All
 //        runtime per-frame effects — no VRAM tilemap content change.
@@ -89,6 +93,11 @@ const BG2_TILEMAP_VRAM_ADDR = 0x7000;
 const BG3_TILEMAP_VRAM_ADDR = 0x6800;
 const BG3_TILEMAP_VRAM_BYTES = 0x0800; // 2 KB = 32×32 tilemap words
 const BG3_EMPTY_TILE_WORD = 0x01ce;    // YI's "blank tile" pattern
+/** BG3 tilemap word address, for turning the asm's PPU word addresses into
+ *  offsets inside our byte-addressed `vram` (see the doubling note above). */
+const BG3_TILEMAP_WORD_ADDR = BG3_TILEMAP_VRAM_ADDR >>> 1; // $3400
+/** Action byte $80 = `CODE_bg3_low_water_adjust` (water-surface levels). */
+const BG3_ACTION_LOW_WATER = 0x80;
 const SRAM_STAGING_BYTES = 0x10000; // matches DLL buffer size
 
 interface Bg2GfxEntry {
@@ -182,6 +191,13 @@ export function resolveBgTilemapSource(
   const fileId = rom[rowOff]! | (rom[rowOff + 1]! << 8);
   const action = rom[rowOff + 2]!;
   if (fileId === 0 || action === 0xff) return null; // no file / BG3 hidden
+  // Low-water levels break the 1:1 VRAM↔file mapping this contract promises:
+  // `applyLowWaterAdjust` blanks the region and re-drops only the blob's first
+  // rows at a NON-zero tilemap offset, so `memoryEntryOff − vramBase` names the
+  // wrong file byte (and most of the region isn't in the file at all). Reporting
+  // "no static tilemap" keeps a placement write-back from splicing the file at a
+  // bogus offset; the callers already degrade cleanly on null.
+  if (action === BG3_ACTION_LOW_WATER) return null;
   return { format: 'lz2', fileId, bytes: decompress(fileId), vramBase: BG3_TILEMAP_VRAM_ADDR };
 }
 
@@ -196,6 +212,19 @@ export interface Bg3LoadResult {
    *  BG3 in this case even though VRAM has tile data. Renderer should
    *  suppress the BG3 layer for this level. */
   bg3Disabled: boolean;
+}
+
+/** The `bg3Disabled` verdict WITHOUT the load — does this BG3 tileset's action
+ *  byte make the cart hide the layer (clear TM/TS bit 2)? For callers that need
+ *  the visibility answer but not the tilemap (no LZ2 decompress, no VRAM). */
+export function bg3TilesetHidesLayer(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  bg3Tileset: number
+): boolean {
+  if (bg3Tileset === 0) return false;
+  const action = rom[symbols.pc('DATA_bg3_tilemap_table') + (bg3Tileset - 1) * 3 + 2]!;
+  return action === 0xff || (action >= 0x88 && action <= 0xfe);
 }
 
 /**
@@ -256,16 +285,56 @@ export function loadBg3Tilemap(
     vram[BG3_TILEMAP_VRAM_ADDR + i] = 0;
   }
 
+  // Action-byte dispatch. $80 rewrites what we just uploaded (see below); the
+  // rest are runtime-only effects or the hide range.
+  const lowWater = action === BG3_ACTION_LOW_WATER;
+  if (lowWater) applyLowWaterAdjust(rom, symbols, scratch, vram);
+
   // BG3-hide range: $88-$FE all fall through to CODE_01EAA0 (clears
   // bit 2 of TM/TS), as does $FF explicitly. None of these levels are
   // present in V1.0's level set today but the broader check is cheap
   // and matches the cart for any future addition.
   const bg3Disabled = action === 0xff || (action >= 0x88 && action <= 0xfe);
   return {
-    bytesWritten: sizeBytes,
+    // The low-water pass defines the WHOLE region (blank fill + the band), so
+    // none of it is "unloaded" even when the blob was shorter than 2 KB.
+    bytesWritten: lowWater ? BG3_TILEMAP_VRAM_BYTES : sizeBytes,
     emptyFilled: false,
     bg3Disabled
   };
+}
+
+/**
+ * Action byte $80 — `CODE_bg3_low_water_adjust` ($01:EB3D), the water-surface
+ * levels' BG3 init. It discards the plain full-blob upload the caller just did:
+ *
+ *   1. tilemap-DMA queue $21 (`DATA_01E902`) fills the whole BG3 tilemap region
+ *      with the empty-tile word $01CE, then
+ *   2. a direct DMA writes the blob's FIRST `$0800 - DATA_bg3_low_water_vram_size`
+ *      bytes to `DATA_bg3_low_water_vram_ptr` (both read from the cart here, so
+ *      an asm patch moving the water line follows automatically).
+ *
+ * Net: the water band sits at the BOTTOM of the 32-row tilemap and every row
+ * above the water line is blank — which, with the preview's bottom-anchored
+ * tilemap wrap, puts the surface at the level's real water line.
+ *
+ * Pinned by `load-bg-tilemaps.test.ts` against the live-cart VRAM dump for
+ * record $20 (Lake Shore Paradise). Without it the blob's own 32 rows — solid
+ * water top to bottom, every tile priority-1 — load as-is and the priority
+ * split hands the editor an opaque foreground plane over the entire level.
+ */
+function applyLowWaterAdjust(
+  rom: Uint8Array,
+  symbols: SymbolMap,
+  scratch: Uint8Array,
+  vram: Uint8Array
+): void {
+  fillBg3WithEmptyTile(vram);
+  const dstWord = u16le(rom, symbols.pc('DATA_bg3_low_water_vram_ptr'));
+  const bandBytes = BG3_TILEMAP_VRAM_BYTES - u16le(rom, symbols.pc('DATA_bg3_low_water_vram_size'));
+  const dstOff = BG3_TILEMAP_VRAM_ADDR + (dstWord - BG3_TILEMAP_WORD_ADDR) * 2;
+  const n = Math.min(bandBytes, scratch.length, BG3_TILEMAP_VRAM_ADDR + BG3_TILEMAP_VRAM_BYTES - dstOff);
+  for (let i = 0; i < n; i++) vram[dstOff + i] = scratch[i]!;
 }
 
 function fillBg3WithEmptyTile(vram: Uint8Array): void {
