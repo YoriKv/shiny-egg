@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
 // App icon. electron-vite copies the `?asset` next to the bundled main process
 // (so it resolves in dev + packaged); electron-builder generates the exe /
@@ -45,6 +45,9 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
+    // Linux: ask GTK for the dark variant of the window decorations (honoured by
+    // some desktop environments; no-op elsewhere). See themeSource below.
+    darkTheme: true,
     title: 'Shiny Egg',
     icon,
     webPreferences: {
@@ -106,6 +109,11 @@ registerValidationIpc()
 registerAudioIpc()
 
 app.whenReady().then(async () => {
+  // The app is dark-only (App.css has no light palette). Pin Chromium's theme
+  // rather than following the OS: on Linux the OS preference comes from the GTK
+  // theme / desktop portal and reads as light when neither says dark, which
+  // left native controls, scrollbars and dialogs light.
+  nativeTheme.themeSource = 'dark'
   await ensureFrameworkWorkRoot()
   createWindow()
   // Silent 10-minute safety-net backups of the current project (no UI).

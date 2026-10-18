@@ -11,6 +11,13 @@ import type { RomVersion } from './rom-versions.ts';
 // committed prebuilt binary per platform (all LGPL): asar.exe, asar, and
 // asar-macos (a universal arm64+x86_64 Mach-O, since upstream ships no mac
 // build). electron-builder bundles the matching one per OS (extraResources).
+// The Linux `asar` is FULLY STATICALLY LINKED (no libc/libstdc++ deps): a
+// dynamic build inherits its build host's glibc floor (Ubuntu 24.04 → 2.38),
+// and ROM builds then fail on older distros with "GLIBC_2.38 not found".
+// Rebuild from the asar 1.91 source with
+//   cmake -S src -B build -DCMAKE_EXE_LINKER_FLAGS=-static
+//   cmake --build build --target asar-standalone
+// and check `file` reports "statically linked".
 export function asarBinName(): string {
   switch (process.platform) {
     case 'win32':

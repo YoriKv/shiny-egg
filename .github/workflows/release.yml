@@ -4,7 +4,8 @@ name: Release
 # and publish a GitHub Release with the artifacts:
 #   - shiny-egg-<version>-setup.exe           (Windows NSIS installer)
 #   - shiny-egg-<version>-win.zip             (zipped portable app = win-unpacked contents)
-#   - shiny-egg-<version>-linux.AppImage      (portable Linux app)
+#   - shiny-egg-<version>-x86_64.AppImage     (portable Linux app)
+#   - shiny-egg-<version>-x86_64.AppImage.zsync (AppImageUpdate delta metadata)
 #   - shiny-egg-<version>-mac-universal.dmg   (macOS disk image, arm64 + x64)
 #   - shiny-egg-<version>-mac-universal.zip   (zipped macOS .app, arm64 + x64)
 # The release body is the matching `## v<version>` section of CHANGELOG.md
@@ -40,7 +41,8 @@ jobs:
           - os: ubuntu-latest
             script: build:linux
             artifacts: |
-              dist/*-linux.AppImage
+              dist/*-x86_64.AppImage
+              dist/*-x86_64.AppImage.zsync
           - os: macos-latest
             script: build:mac
             artifacts: |
@@ -68,6 +70,14 @@ jobs:
 
       - name: Build app
         run: pnpm run ${{ matrix.script }}
+
+      # Linux only: embed AppImage update info (pointing at the public
+      # YoriKv/shiny-egg releases) + write the .zsync AppImageUpdate needs.
+      # electron-builder can't do either, so the script repacks its AppImage
+      # with a pinned appimagetool.
+      - name: Embed AppImage update info
+        if: runner.os == 'Linux'
+        run: bash scripts/appimage-update-info.sh dist/*-x86_64.AppImage
 
       # Always keep per-OS artifacts on the run: the release job downloads them
       # (tag push), and a manual run leaves them here for inspection.
@@ -111,7 +121,8 @@ jobs:
           files: |
             artifacts/**/*-setup.exe
             artifacts/**/*-win.zip
-            artifacts/**/*-linux.AppImage
+            artifacts/**/*-x86_64.AppImage
+            artifacts/**/*-x86_64.AppImage.zsync
             artifacts/**/*-mac-universal.dmg
             artifacts/**/*-mac-universal.zip
           fail_on_unmatched_files: true

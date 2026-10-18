@@ -5056,38 +5056,6 @@ h3 { margin: 0; }
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--ink-4); }
 
-/* ── Light mode ────────────────────────────────────────────────────────── */
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg-base:        #f4ede0;
-    --bg-surface:     #ece4d3;
-    --bg-elevated:    #e3dac8;
-    --bg-overlay:     #d8cfba;
-
-    --line:           #cdc3ad;
-    --line-strong:    #b3a88e;
-    --line-faint:     #ddd3bb;
-
-    --ink:            #1a1814;
-    --ink-2:          #4a4438;
-    --ink-3:          #82796a;
-    --ink-4:          #a89e85;
-
-    --accent:         #6f7c1e;
-    --accent-soft:    #95a235;
-    --accent-glow:    rgba(111, 124, 30, 0.15);
-
-    --danger:         #b04535;
-    --warn:           #8f6f1c;
-
-    --shadow-window:  0 8px 20px -8px rgba(0, 0, 0, 0.18);
-    --shadow-pop:     0 16px 36px -12px rgba(0, 0, 0, 0.25);
-
-    color-scheme: light;
-  }
-}
-
 /* ── Object finder (debug panel) ──────────────────────────────────────────── */
 
 .se-finder {

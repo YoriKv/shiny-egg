@@ -3,6 +3,13 @@ productName: Shiny Egg
 directories:
   output: dist
   buildResources: resources
+# AppImage packaging toolset: 1.0.2 = the static type-2 runtime (20251108),
+# which needs neither the system's libfuse2 nor its C library to mount. The
+# default (0.0.0) is the legacy fuse2 runtime that AppImage compatibility
+# checkers flag. (Beta in electron-builder 26.8.1; CI then repacks the AppImage
+# with appimagetool to embed update info — see release.yml.)
+toolsets:
+  appimage: '1.0.2'
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -127,7 +134,10 @@ linux:
   # Single portable AppImage (x64). The runtime makes the bundled `asar` binary
   # executable on first use (resources are read-only; see runAsar's chmod).
   # BizHawk (Launch / Test Level) is user-provided via EmuHawk.sh, not bundled.
-  artifactName: ${name}-${version}-linux.${ext}
+  # ${arch} renders as x86_64 for Linux targets. No "linux" in the name — every
+  # AppImage is Linux — and release.yml's embedded update info matches on
+  # `shiny-egg-*-x86_64.AppImage.zsync`, so keep the two in step.
+  artifactName: ${name}-${version}-${arch}.${ext}
   category: Development
   icon: resources/icon.png # 256x256; AppImage builds fine (electron-builder may warn it prefers 512)
   extraResources:

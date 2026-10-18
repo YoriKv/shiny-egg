@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.5 - 2026-10-17
+
+- Build and dark mode fixes
+
 ## v0.7.4 - 2026-10-17
 
 - Faster builds w/ parallel assembly
