@@ -1110,7 +1110,7 @@ export async function setExitEntranceResource(
 // ── Level-data byte budget (shared-pool gate, task #14) ─────────────────────
 // Per-level obj/spr streams share fixed bank "pools" (snes-framework/pool-map.ts).
 // The live report drives the editor's warn-on-save / block-on-build blockers;
-// the all-pools check is the pre-build gate. See research/notes-level-size-overflow.md.
+// the all-pools check is the pre-build gate. See docs/notes-level-size-overflow.md.
 
 const LEVEL_DATA_REL = path.join('assets', 'yi', 'LevelData')
 
@@ -1548,7 +1548,7 @@ export async function loadResource(resource: EditableResource): Promise<unknown>
 // (Bank00: setting→row, the 13 block rows, item denial; Bank01: init songs).
 // Edited from the Audio panel's Sets tab; an asm edit → overlay copies of
 // both bank files (renderer marks the build dirty). See scripts/music-sets.ts
-// + research/plan-audio-panel.md §1.10.
+// + docs/plan-audio-panel.md §1.10.
 
 /** Load the music set tables (overlay-first, both banks). */
 export function loadMusicSetsResource(): MusicSetsModel {
@@ -2018,13 +2018,13 @@ export async function saveLogoTilemap(edits: LogoTilemapEdit[]): Promise<SaveRes
  *  select them and fail at apply). */
 export function exceptionalSaveBlockReason(levelRecordId: number): string | null {
   if (levelRecordId === 0x7d) {
-    // Migrating 0x7D emits its full 366-byte stream as a self-contained copy in a
-    // free region + repoints the obj pointer, so once migrated its edits persist.
+    // Migrating 0x7D emits its object stream as a self-contained copy in a free
+    // region + repoints the obj pointer, so once migrated its edits persist.
     if (getProjectRelocations(getCurrentProjectId()).includes(0x7d)) return null
-    return 'Level 0x7D edits aren\'t persistable while it uses the cart\'s truncated ' +
-      '225-byte object slot (DATA_169D23, whose real 366-byte stream overlaps the ' +
-      'adjacent data). Resolution: migrate it to free space from the Banks panel — ' +
-      'it gets its own self-contained 366-byte copy.'
+    return 'Level 0x7D edits aren\'t persistable while it uses the cart\'s raw ' +
+      '225-byte object slot (DATA_169D23, which relies on the first byte of the ' +
+      'data after it to end its exit list). Resolution: migrate it to free space ' +
+      'from the Banks panel — it gets its own self-contained copy.'
   }
   if (levelRecordId === 0xbf || levelRecordId === 0xd0) {
     return `Level 0x${levelRecordId.toString(16).toUpperCase()} edits are not yet ` +

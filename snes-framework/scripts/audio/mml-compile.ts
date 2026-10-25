@@ -6,7 +6,7 @@
 //             declares `#amk N`). Raw $-hex is the AMK/SMW driver's command
 //             set and is TRANSLATED to YI vcmds; constructs with no YI
 //             equivalent follow the gap policies pinned in
-//             research/plan-audio-panel.md §1.11 (superloop unroll, remote
+//             docs/plan-audio-panel.md §1.11 (superloop unroll, remote
 //             key-on inlining, ADSR/GAIN → synthetic instrument rows, …).
 //             Every approximation/drop lands in `report` (the port report).
 //  - 'amy'  — AddMusicY dialect (YI-native letter commands, #patterns/

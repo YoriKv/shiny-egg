@@ -11,6 +11,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { runAsar } from './asar.ts';
+import { walkObjStream } from './obj-stream.ts';
 import { snesToPC, vendoredV10SymbolMap } from './engine/symbol-map.ts';
 import { buildLevelsCatalog } from './levels-catalog.ts';
 import { parseEntranceTable, loadLevelIdSymbols } from './world-map.ts';
@@ -171,56 +172,36 @@ function parseEntrancesFromAsm(workRoot: string): Map<number, { x: number; y: nu
 }
 
 /**
- * Walk the object stream + exit list starting at cart PC and return the byte
- * extent (= the PC immediately after the exit-list terminator). Mirrors the
- * cart's main object loop (Bank10 `CODE_108BAF`) byte-for-byte for accounting
- * purposes. Used to compute the size of each level's per-level object .bin.
+ * The level object stream (header + objects + exit list) at cart PC `startPC`,
+ * as a self-contained blob — the per-level object `.bin` the extract emits and
+ * the ROM importer slices. Byte extent per the shared cart-faithful walker
+ * (`walkObjStream`, Bank10 `CODE_108BAF`). Null for an empty extent.
+ *
+ * A level whose exit gate is BORROWED from the following data (record 0x7D: its
+ * `DATA_169D23` slice ends at the object `$FF`, and the next blob's `$F4` is what
+ * tells the loader "no exits" — see `exitListAbsent`) gets the canonical
+ * empty-list `$FF` appended, so the blob terminates wherever it's placed (a
+ * migration copies it into free space) and round-trips through `serializeExits`.
+ * The build still incbin's the cart's own 225-byte `DATA_169D23.bin` for that
+ * row, so V1.0 byte-identity is untouched.
  */
-export function findObjStreamEndPC(
+export function readObjStream(
   cart: Buffer,
   startPC: number,
   headerBitWidths: number[],
   standardObjectInfo: number[]
-): number {
+): Buffer | null {
   // Header: bit-packed, round up to byte boundary.
   let bitPos = 0;
   for (const w of headerBitWidths) bitPos += w;
   const headerBytes = Math.ceil(bitPos / 8);
-  let p = startPC + headerBytes;
-
   // Safety upper bound — no legitimate object stream + exits comes close to
   // a full 32KB bank, but we cap to avoid runaway parses when fed garbage.
   const limit = Math.min(cart.length, startPC + 0x4000);
-
-  // Object stream: each record is num + locH + locL + maybe-w + maybe-h.
-  // Terminator is num == $FF.
-  while (p < limit) {
-    const num = cart[p];
-    if (num === 0xff) {
-      p += 1;
-      break;
-    }
-    p += 3; // num + locH + locL
-    if (num === 0x00) {
-      p += 1; // extended-object exnum
-    } else {
-      const flag = standardObjectInfo[num]! & 3;
-      if (flag !== 1) p += 1; // width byte
-      if (flag !== 0) p += 1; // height byte
-    }
-  }
-
-  // Exit list: 5-byte records (screen, dest_level, dest_X, dest_Y, entry),
-  // terminator is a leading $FF byte.
-  while (p < limit) {
-    const b = cart[p];
-    if (b === 0xff) {
-      p += 1;
-      break;
-    }
-    p += 5;
-  }
-  return p;
+  const { end, borrowedExitGate } = walkObjStream(cart, startPC, headerBytes, standardObjectInfo, limit);
+  if (end <= startPC) return null;
+  const bytes = cart.subarray(startPC, end);
+  return borrowedExitGate ? Buffer.concat([bytes, Buffer.from([0xff])]) : bytes;
 }
 
 /** Walk the sprite stream starting at cart PC and return the byte extent (=
@@ -337,11 +318,10 @@ function buildLevelMap(
     let spriteFile: string | null = null;
 
     if (objSnes !== 0 && !SENTINEL_OBJ_SNES.has(objSnes)) {
-      const start = snesToPC(objSnes);
-      const end = findObjStreamEndPC(cart, start, headerBitWidths, standardObjectInfo);
-      if (end > start) {
+      const bytes = readObjStream(cart, snesToPC(objSnes), headerBitWidths, standardObjectInfo);
+      if (bytes) {
         objectFile = `DATA_level_${levelIdHex(id)}_obj.bin`;
-        fs.writeFileSync(path.join(levelDataDir, objectFile), cart.subarray(start, end));
+        fs.writeFileSync(path.join(levelDataDir, objectFile), bytes);
       }
     }
 

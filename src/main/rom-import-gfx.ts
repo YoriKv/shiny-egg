@@ -208,7 +208,7 @@ export interface RawGfxDiffResult {
 /** Raw-CHR gfx banks the importer covers — SuperFX-mapped $52–$57:3BFF (PC
  *  range, from the catalog). $57:0000–$3BFF (DATA_570000.bin) is GSU-only
  *  bitmap data — NOT the GSU program (that lives in banks $08–$0B; corrected in
- *  research/graphics-survey/11-vram-loading.md §4, and the "H-flip mirror of
+ *  docs/graphics-survey/11-vram-loading.md §4, and the "H-flip mirror of
  *  $56" theory is byte-disproven — the bank is independent art, so it imports
  *  like any other raw GSU bank). */
 const [RAW_GFX_LO, RAW_GFX_HI] = RAW_GFX_PC_RANGE

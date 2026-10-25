@@ -1,7 +1,7 @@
 // Committed render-parity regression test (Vitest).
 //
 // Locks in the render output that was verified byte-exact against the live cart
-// (219/219 levels — see research/notes-bg1-trace-rng-parity.md). For every backed
+// (219/219 levels — see docs/notes-bg1-trace-rng-parity.md). For every backed
 // level it re-renders the V1.0 build and hashes each layer (decode grid + bg1 /
 // bg2 / bg3 / sprite / collision RGBA), comparing against the committed goldens
 // in render-parity.golden.json. A hash drift = a render regression on that level.

@@ -1,5 +1,5 @@
 // Bonus-game screens (gm$2A) — the six end-of-level bonus challenges as static
-// scenes. Composition asm-traced 2026-07-02 (research/graphics-editing/
+// scenes. Composition asm-traced 2026-07-02 (docs/graphics-editing/
 // minigame-screens.md; loader `CODE_gm2a_load_bonus_game` @ $10:9AE8):
 //
 //   gfx     — `scene_gfx_layout` @ $F3 with DP slots from per-game word tables:

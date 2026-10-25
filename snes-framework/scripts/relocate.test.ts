@@ -79,11 +79,11 @@ const check = (cond: boolean, msg: string): void => {
   const region = { id: 'FreeRegion51', bankFile: 'Banks/Bank51.asm', boundary: 0x515348, capacityBytes: 44216 };
   const bank = '\t%FREE_BYTES($515348, 44216, $FF)\t\t\t; V1.0: ~44 KB free tail\n';
   const out = appendRegionBlobs(bank, region, [
-    { label: 'DATA_level_7D_obj', file: 'DATA_level_7D_obj.bin', bytes: 366 }
+    { label: 'DATA_level_7D_obj', file: 'DATA_level_7D_obj.bin', bytes: 226 }
   ]);
   check(out.includes('\t%InsertMacroAtXPosition($515348)\n'), 'appendRegionBlobs should org to the region start');
   check(out.includes('DATA_level_7D_obj:\n\tincbin "LevelData/DATA_level_7D_obj.bin"'), 'appendRegionBlobs should emit the blob');
-  check(out.includes('%FREE_BYTES($5154B6, 43850, $FF)'), `appendRegionBlobs should advance boundary + shrink fill, got:\n${out}`);
+  check(out.includes('%FREE_BYTES($51542A, 43990, $FF)'), `appendRegionBlobs should advance boundary + shrink fill, got:\n${out}`);
   check(out.includes('; V1.0: ~44 KB free tail'), 'appendRegionBlobs should preserve the trailing comment');
 }
 
@@ -107,10 +107,10 @@ const check = (cond: boolean, msg: string): void => {
   // the SHRUNK region) matches the first line and leaves the pool reservation intact.
   const shrunk = { ...region, capacityBytes: geo.migrationCapacity };
   const appended = appendRegionBlobs(carved, shrunk, [
-    { label: 'DATA_level_7D_obj', file: 'DATA_level_7D_obj.bin', bytes: 366 }
+    { label: 'DATA_level_7D_obj', file: 'DATA_level_7D_obj.bin', bytes: 226 }
   ]);
   check(appended.includes('\t%InsertMacroAtXPosition($515348)\n'), 'append after carve orgs to the region start');
-  check(appended.includes('%FREE_BYTES($5154B6, 35658, $FF)'), `append after carve advances+shrinks the migration fill, got:\n${appended}`);
+  check(appended.includes('%FREE_BYTES($51542A, 35798, $FF)'), `append after carve advances+shrinks the migration fill, got:\n${appended}`);
   check(appended.includes('%FREE_BYTES($51E000, 8192, $FF)'), 'append after carve leaves the pool reservation untouched');
   let threw = false;
   try { reservePatchPool('\t; no free bytes here\n', region, PATCH_POOL_MAX_BYTES); } catch { threw = true; }
@@ -153,10 +153,10 @@ const check = (cond: boolean, msg: string): void => {
   const appended = appendRegionBlobs(
     carved,
     { ...sr, capacityBytes: geoAfterShift.migrationCapacity },
-    [{ label: 'DATA_level_7D_obj', file: 'DATA_level_7D_obj.bin', bytes: 366 }]
+    [{ label: 'DATA_level_7D_obj', file: 'DATA_level_7D_obj.bin', bytes: 226 }]
   );
   check(appended.includes('\t%InsertMacroAtXPosition($515604)\n'), 'append after shift orgs past the spilled text');
-  check(appended.includes('%FREE_BYTES($515772, 34958, $FF)'), `append after shift+carve, got:\n${appended}`);
+  check(appended.includes('%FREE_BYTES($5156E6, 35098, $FF)'), `append after shift+carve, got:\n${appended}`);
 
   let over = false;
   try { shiftRegionStart(bank, region, 44217); } catch { over = true; }
@@ -421,9 +421,9 @@ const SENTINEL = 'DATA_15FCEA,DATA_15FFD5';
 }
 
 {
-  // Absorbed-overlap guard: 0x7D's true obj stream spills into DATA_level_A5_obj
-  // + DATA_level_17_spr, so removing 0xA5 (or 0x17) while 0x7D is kept must keep
-  // those bytes in place.
+  // Absorbed-overlap guard: 0x7D's obj stream takes its exit gate from
+  // DATA_level_A5_obj's first byte, so removing 0xA5 while 0x7D is kept must keep
+  // that blob in place.
   const planA5 = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0xa5]), sizeOf: baseSizeOf });
   check(!planA5.deletions.some((d) => d.label === 'DATA_level_A5_obj'), 'remove 0xA5 (0x7D kept) must keep DATA_level_A5_obj');
   check(planA5.deletions.some((d) => d.label === 'DATA_level_A5_spr'), 'remove 0xA5 still frees its spr blob');
@@ -437,10 +437,11 @@ const SENTINEL = 'DATA_15FCEA,DATA_15FFD5';
   const planMig = planLayout(map, { migrated: new Set([0x7d]), decoupled: new Set(), removed: new Set([0xa5]), sizeOf: baseSizeOf });
   check(planMig.deletions.some((d) => d.label === 'DATA_level_A5_obj'), 'remove 0xA5 with 0x7D migrated frees the absorbed obj blob');
 
-  // The same dependency now gates MIGRATION too (regression: migrating 0xA5/0x17
-  // under a kept 0x7D would corrupt its runtime stream).
+  // The same dependency gates MIGRATION too (regression: migrating 0xA5 under a
+  // kept 0x7D would change its exit gate). 0x17 was once wrongly in the overlap
+  // (an extract that missed the gate read 0x7D's stream on into 0x17's spr).
   check(!migratable(map, 0xa5, none), '0xA5 must NOT be migratable while 0x7D points at its raw slice');
-  check(!migratable(map, 0x17, none), '0x17 must NOT be migratable while 0x7D points at its raw slice');
+  check(migratable(map, 0x17, none), '0x17 is migratable — 0x7D\'s stream never reaches its spr');
   check(migratable(map, 0xa5, none, new Set([0x7d])), '0xA5 becomes migratable once 0x7D is migrated/removed');
 }
 

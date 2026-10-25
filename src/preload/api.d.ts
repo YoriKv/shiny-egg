@@ -68,6 +68,7 @@ import type {
   FitSurfaceRequest,
   FitTileset,
   FrameworkExtractArgs,
+  HeaderGuide,
   LevelRenderRequest,
   EmulatorState,
   EmulatorKind,
@@ -253,6 +254,7 @@ export type {
   FitSurfaceRequest,
   FitTileset,
   FrameworkExtractArgs,
+  HeaderGuide,
   InfluenceClass,
   LevelRenderRequest,
   LevelTileUsage,
@@ -571,6 +573,9 @@ export interface RenderAPI {
   /** Pick the stock sprite tileset (header[7]) that best covers the given placed
    *  sprites' graphics. `spriteNums` are the level's sprite ids. */
   fitSpriteset: (spriteNums: number[]) => Promise<FitSpritesetResult>
+  /** Level Header guide: shipped-level usage of every header value (base cart,
+   *  cached) + whether `levelRecordId` reads the World-6 palette tables. */
+  headerGuide: (levelRecordId: number) => Promise<HeaderGuide>
   /** The level's distinct Map16 blocks (usage count, VRAM-coverage health,
    *  palette rows) + a composite thumbnail — the Tiles "Used" view. Pass
    *  `override` so it tracks live edits. Null for empty/special slots. */
@@ -878,7 +883,7 @@ export interface ShinyEggAPI {
  *  inspector tabs, and drive the per-project export folder — export-all,
  *  base-aware sample import, and song import, the panel's overlay-write
  *  paths (each says when to mark the build dirty).
- *  See research/plan-audio-panel.md. */
+ *  See docs/plan-audio-panel.md. */
 export interface AudioAPI {
   /** Music settings + song slots + SFX names over the built ROM. */
   catalog: () => Promise<AudioCatalogResult>

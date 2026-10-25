@@ -6,7 +6,7 @@
 //     rows, the level-mode-$0A cinema block, and the per-frame palette-animation
 //     source rows (header field 11). The complete set of selectable palettes,
 //     labelled with what the graphics pipeline knows (see
-//     research/graphics-editing/palettes.md).
+//     docs/graphics-editing/palettes.md).
 //   • scenes — the composed CGRAM for each known non-level CONTEXT (boot, title,
 //     storybook, retry screen, bonus games, per-world maps), via the shared
 //     scene interpreter.

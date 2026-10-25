@@ -4,7 +4,7 @@ import type { MusicSetsEditorApi } from '../edit-session/useMusicSetsEditor'
 import { hex0x } from '../lib/hex'
 
 // The Audio panel's Sets tab — full edit control over the music set tables
-// (see research/plan-audio-panel.md §1.10): per header-music value (setting),
+// (see docs/plan-audio-panel.md §1.10): per header-music value (setting),
 // which block-set row uploads, which song slot auto-plays on entry, and the
 // pause-item flag; plus the 13 rows' upload lists themselves. Edits are a
 // draft on the shared overlay-document engine (useMusicSetsEditor at App

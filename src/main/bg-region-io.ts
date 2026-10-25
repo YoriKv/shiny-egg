@@ -10,7 +10,7 @@
 //     2bpp-aware for BG3; sub-tiles that resolve outside the layer's gfx (BG2
 //     wraparound) are gated non-editable.
 //
-// See research/graphics-editing/bg-region-edit.md. The engine half lives in
+// See docs/graphics-editing/bg-region-edit.md. The engine half lives in
 // snes-framework/bg-region (bg-region.ts), pinned by bg-region.test.ts.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, type Dirent } from 'node:fs'
@@ -316,7 +316,7 @@ export function exportBgRegionToDir(
       if (region.width === 0 || region.subCells.length === 0) {
         return { ok: false, error: `BG${layer} has no editable tilemap in this level.` }
       }
-      // Two `.aseprite` flavours (research/graphics-editing): 8×8 is the foundational
+      // Two `.aseprite` flavours (docs/graphics-editing): 8×8 is the foundational
       // pixel unit (honest CHR sharing); placement is 16×16-WORD because BG2/BG3 run in
       // 16×16 tile mode (one word → base+{0,1,16,17}, so 8×8 placement is impossible).
       //   'aseprite'        → 8×8 CHR pixel tilemap   → import flattens → diffBgRegionTiles

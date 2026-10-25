@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.6 - 2026-10-25
+
+- Better dropdowns and presets for level header
+- Fixed 0x7D exits data
+
 ## v0.7.5 - 2026-10-17
 
 - Build and dark mode fixes

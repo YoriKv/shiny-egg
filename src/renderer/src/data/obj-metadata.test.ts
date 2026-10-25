@@ -4,7 +4,7 @@
 // included), so a metadata-regen bug that flips an enforced dep to
 // enforce:false keeps the harness green while the editor silently stops
 // flagging real errors. Update this list deliberately, alongside the TSV +
-// tmp/gen-neighbor-deps.ts (see research/notes-sprite-neighbor-dependencies.md
+// tmp/gen-neighbor-deps.ts (see docs/notes-sprite-neighbor-dependencies.md
 // Part 4).
 
 import { describe, it, expect } from 'vitest'
@@ -47,7 +47,7 @@ describe('neighborDeps enforce inventory', () => {
   // 2026-06-17: up to 67/73 — $0A7 GroupOfIncomingChomps gained the bitable-
   // floor `note` annotation (it shares main_incoming_chomp's state machine +
   // CODE_0E8A3F carve with $0A6/$0A8; see the chomp rows in
-  // research/sprite-neighbor-index.tsv).
+  // docs/sprite-neighbor-index.tsv).
   // 2026-06-28: down to 66/72 — one info-only dep was dropped from the model
   // (the enforced inventory above is unchanged, so it was a non-enforced row).
   it('total dep inventory matches the audited model (66 sprites / 72 deps)', () => {

@@ -1,9 +1,9 @@
 // gfx-file-catalog.ts — the single source of per-file knowledge for the cart's
 // graphics containers, distilled from the 2026-07 graphics survey
-// (research/graphics-survey/, esp. 03-bg2-bg3.md §4 — the CLOSED 150-tilemap
+// (docs/graphics-survey/, esp. 03-bg2-bg3.md §4 — the CLOSED 150-tilemap
 // census — and 11-vram-loading.md §4-§5). Consumers (the YY-CHR export, the ROM
 // importer, the diff inventory) read their columns from here instead of keeping
-// hand tables that rot independently (research/graphics-editing/
+// hand tables that rot independently (docs/graphics-editing/
 // pipeline-evaluation-2026-07.md §3 O1).
 //
 // ⚠ ID-SPACE RULE: the LZ2 and LZ16 pointer tables are numbered INDEPENDENTLY —

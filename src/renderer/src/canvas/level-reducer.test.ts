@@ -377,6 +377,29 @@ describe('setHeaderField (level header editor)', () => {
     expect(levelReducer(s0, { type: 'setHeaderField', index: 99, value: 1 })).toBe(s0)
   })
 
+  test('setHeaderFields applies several fields as one commit, clamped', () => {
+    const s0 = withHeader(header())
+    const s1 = levelReducer(s0, {
+      type: 'setHeaderFields',
+      fields: [
+        { index: 5, value: 0x1c },
+        { index: 9, value: 0xe },
+        { index: 1, value: 99 }
+      ]
+    })
+    expect([s1.level!.header[5], s1.level!.header[9], s1.level!.header[1]]).toEqual([0x1c, 0xe, 15])
+    expect(s1.commits).toBe(1)
+    const s2 = levelReducer(s1, { type: 'undo' })
+    expect(s2.level!.header).toEqual(header())
+  })
+
+  test('setHeaderFields with nothing to change is a no-op (SAME state)', () => {
+    const s0 = withHeader(header())
+    expect(
+      levelReducer(s0, { type: 'setHeaderFields', fields: [{ index: 1, value: 1 }, { index: 99, value: 4 }] })
+    ).toBe(s0)
+  })
+
   test('is undoable — undo restores the prior header value', () => {
     const s0 = withHeader(header())
     const s1 = levelReducer(s0, { type: 'setHeaderField', index: 2, value: 0x1f })

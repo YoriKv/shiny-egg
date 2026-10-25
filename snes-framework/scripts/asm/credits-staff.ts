@@ -1,6 +1,6 @@
 // Credits staff-roll text codec — the gm$1C/gm$1D OAM letter streams as
 // editable text lines. System fully traced 2026-07-19
-// (research/graphics-survey/09-font-hud-messages.md §4b):
+// (docs/graphics-survey/09-font-hud-messages.md §4b):
 //
 //   - The alphabet is GSU-rasterized from the 1bpp message font (`FXCODE_09ECD8`)
 //     into a two-plane OAM sheet at VRAM $E000: pixel bit 0 = font codes 0-127,

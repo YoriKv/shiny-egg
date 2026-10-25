@@ -1,5 +1,5 @@
 {
-  // Type-check the research/ gallery generators.
+  // Type-check the research/ gallery generators + docs/ working-folder scripts.
   //
   // `research/` is gitignored and is NOT part of the app, so it is deliberately
   // absent from tsconfig.node.json's `include` — which meant none of those files
@@ -20,6 +20,7 @@
   },
   "include": [
     "research/**/*.ts",
+    "docs/**/*.ts",
     "snes-framework/scripts/**/*",
     "src/shared/**/*"
   ]

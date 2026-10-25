@@ -19,7 +19,7 @@
 // imports back into the $BD blob via `diffRaphaelArenaPlacement` → saveGfxEdit
 // (lz2, unitBytes 1). Char PIXELS stay on the YY-CHR track
 // (advanced/raphael-chars-*); the arena has no other placement editor — M1TE
-// can't represent 1-byte Mode-7 cells (see research/graphics-editing/
+// can't represent 1-byte Mode-7 cells (see docs/graphics-editing/
 // tilemap-placement-import.md).
 
 import { lz2 } from './decompress/lz2.ts';

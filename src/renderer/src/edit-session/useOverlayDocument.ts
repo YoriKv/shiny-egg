@@ -15,7 +15,7 @@
 //     it) and unified-history registration (so Ctrl+Z drives it via a `doc`
 //     token — see useUnifiedHistory).
 //
-// See research/notes-edit-architecture.md.
+// See docs/notes-edit-architecture.md.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEditDocument } from './EditSession'

@@ -60,7 +60,7 @@
 // The OTHER two sub-tables ($C159 for X=0, $C16B for X=4 — the prngBit=0
 // variants) are not covered by either spec and are NOT reproduced here. At
 // static-decode our LFSR PRNG cannot replicate the cart's HV-counter noise
-// (CLAUDE.md "PRNG carry caveat"), so which variant per ID the cart picks is
+// (see the prng.ts header), so which variant per ID the cart picks is
 // non-deterministic vs us anyway. We deterministically use the spec-observed
 // variant (prngBit=1). Documented, cosmetic divergence.
 

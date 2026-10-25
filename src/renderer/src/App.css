@@ -3301,6 +3301,58 @@ h3 { margin: 0; }
   font-size: 10px;
   color: var(--ink-2);
 }
+/* Level Header: a field cell with a guide under the widget (selected value's
+   detail, the shipped levels using it, palette swatches). */
+.se-props__guided {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.se-props__guide {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--ink-3);
+}
+.se-props__guide-detail {
+  color: var(--ink-2);
+}
+.se-props__swatches {
+  display: grid;
+  gap: 1px;
+  align-self: flex-start;
+}
+.se-props__swatches > span {
+  width: 8px;
+  height: 8px;
+  outline: 1px solid var(--line);
+}
+/* Backdrop-preset dropdown — spans the 2-col header grid: label, select, status. */
+.se-props__list dd.se-props__preset {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 2px 0 4px;
+}
+.se-props__preset-label {
+  color: var(--ink-2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.se-props__preset .se-props__select {
+  max-width: 320px;
+}
+/* Packed header bytes — spans the 2-col grid, selectable for copying. */
+.se-props__list dd.se-props__bytes {
+  grid-column: 1 / -1;
+  user-select: text;
+}
 /* Collision block — the dl is a 2-col grid; spanning both columns lets the
    chips row use the panel's full width (the chips flex-wrap to whatever room
    the floating window gives them). */

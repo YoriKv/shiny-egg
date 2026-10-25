@@ -20,7 +20,7 @@ import { TILE_PX, TILE_BYTES_4BPP, MAP_BG1_CHAR_ADDR, WORLD_COUNT, mapTintRow, m
 // (`mapTintRow`). This assembles each shape into a recognizable 24×24 PNG and
 // slices edits back to the underlying BG1 char tiles (in the `$74`/`$75` files the
 // corrected map export writes) → `saveGfxEdit`. See
-// `research/graphics-editing/world-map-screens.md`.
+// `docs/graphics-editing/world-map-screens.md`.
 //
 // The icon shapes are fixed cart tables (Bank17): each is 3 rows × 3 columns of
 // tilemap words. The marker's char tiles (`$187/$18E/$18F/$198`) live in `$74`; the

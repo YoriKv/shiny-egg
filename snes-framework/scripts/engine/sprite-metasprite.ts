@@ -1,5 +1,5 @@
 // Metasprite reconstruction — the editable "meta" view of a sprite (the inverse
-// of the OBJ→cart pipeline; see research/graphics-editing/metasprite.md).
+// of the OBJ→cart pipeline; see docs/graphics-editing/metasprite.md).
 //
 // A metasprite is the artist's OBJ authoring file; the cart stores only its
 // COMPILED cel table (Bank4D 5-byte records). This module rebuilds a

@@ -1,5 +1,5 @@
 // .spc → song-module import codec — the read half of "importing spc files"
-// (research/plan-audio-panel.md).
+// (docs/plan-audio-panel.md).
 //
 // An .spc file is a 64 KB ARAM snapshot. When that snapshot runs the YI
 // driver (retail rips, our own synthesized exports, emulator captures of YI

@@ -45,7 +45,7 @@
 //           Mode-7 floating island/sea is exported by `exportTitleIsland` (its char
 //           is $B1, CPC-packed — see the island section); $B1 is skipped by the
 //           generic classifier.
-//   map   — see `research/graphics-editing/world-map-screens.md` (ground-truth
+//   map   — see `docs/graphics-editing/world-map-screens.md` (ground-truth
 //           captured). What this exporter currently covers is the gm$22 LEVEL-SELECT
 //           view (BG Mode 1, scene-register row $28: TM=$17 = BG1+BG2+BG3+OBJ on the
 //           MAIN screen, TS=$00, CGADSUB=$00 ⇒ **NO color math**). Its two visible
@@ -73,7 +73,7 @@
 //           Yoshi paths across: clouds, hills, the dotted level path + markers,
 //           forts/castles). It DOES change per world and has TWO halves per world
 //           (levels 1-4 vs 5-8). Decode (cracked + visually validated against the
-//           captures — see `research/graphics-editing/world-map-screens.md`):
+//           captures — see `docs/graphics-editing/world-map-screens.md`):
 //             • The map is a **BG1 TILEMAP**, NOT a char sheet and NOT Mode-7. The
 //               `DATA_00B3F4` pairs (w0 = `$7c`/`$7d`, w1 = `$7f`/`$80`, … — index by
 //               `world*2`, NOT `world`) are LZ2-compressed **4096-byte tilemaps**
@@ -335,7 +335,7 @@ const STORYBOOK: ScreenDescriptor = {
  *  the engine ORs this mask into every map BG tilemap word it stamps, so terrain +
  *  level-icon tiles all draw with it. World 3 = row 0 (untinted); 0/1/2/4/5 = rows
  *  3/4/5/1/2. Verified against a live capture — see
- *  `research/graphics-editing/world-map-screens.md`. */
+ *  `docs/graphics-editing/world-map-screens.md`. */
 export function mapTintRow(rom: Uint8Array, symbols: SymbolMap, world: number): number {
   const mask = u16le(rom, symbols.pc('DATA_17C9EA') + world * 2);
   return (mask >> 10) & 0x07;

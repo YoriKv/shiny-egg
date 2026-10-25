@@ -1,5 +1,5 @@
 // Music set-table editing — the four byte tables the level header's music
-// value resolves through (see research/plan-audio-panel.md §1.10 and the
+// value resolves through (see docs/plan-audio-panel.md §1.10 and the
 // audio catalog's readers, scripts/audio/catalog.ts):
 //   Bank00 `DATA_spc_block_set_indexes` (;@editable:music-set-indexes) —
 //     setting → DATA_spc_data_blocks row (byte = row·4; byte 0 = sentinel,

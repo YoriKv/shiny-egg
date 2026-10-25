@@ -15,7 +15,7 @@
 // real loader": we never re-implement the width sign-fold / bg1-tileset quirk —
 // `decodeLevelStreams` does, on bytes that are already in SNES layout.
 //
-// Full pipeline + conversion table + parity findings: research/notes-gba-import.md
+// Full pipeline + conversion table + parity findings: docs/notes-gba-import.md
 
 import type { LevelData, RomVersion } from '../types.ts';
 import { decodeLevelStreams } from '../level.ts';

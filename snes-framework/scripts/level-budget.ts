@@ -1,5 +1,5 @@
 // Level-data byte-budget computation over the shared pools (pool-map.ts), made
-// free-region + migration aware (research/notes-level-data-byte-budget.md): each view
+// free-region + migration aware (docs/notes-level-data-byte-budget.md): each view
 // takes a LayoutContext (the active migrated / de-coupled sets) and runs
 // `planLayout`, so a migrated-out level leaves its home pool (reclaimed) and lands
 // in a free region.

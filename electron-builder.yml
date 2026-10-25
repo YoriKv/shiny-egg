@@ -18,7 +18,10 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.renderer.json}'
   # Gitignored dev-scratch trees — never part of the app bundle
   - '!tmp/**'
+  - '!docs/**'
   - '!research/**'
+  # Public user tutorials (published to the GitHub wiki), not app content
+  - '!wiki/**'
   - '!snes-framework/**'
   # `snes-framework` is a workspace dep symlinked into node_modules, so
   # electron-builder would otherwise drag the WHOLE package in (and unpack it,

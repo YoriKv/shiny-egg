@@ -2,7 +2,7 @@
 // can render bodies the rigid flat decoder can't (rotation and/or fractional scale). It decodes the
 // un-transformed chunky texture FROM THE CART (never baked pixels), then applies the same rotation +
 // scale the GSU applies, using transform params (angle/scale) captured by the yi-shiny
-// `dynbody-transform` trace (see research/dynbody-transform-trace-spec.md).
+// `dynbody-transform` trace (see docs/dynbody-transform-trace-spec.md).
 //
 // Convention CALIBRATED against captures (tmp/rotozoom-calib.ts → moved here): identity ($09E) = 100%,
 // pure-scale ($07A scale≈1.98×) = 97%. The GSU's rotation handedness is rotSign −1.

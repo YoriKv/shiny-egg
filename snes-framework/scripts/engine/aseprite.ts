@@ -1,5 +1,5 @@
 // Minimal Aseprite (.aseprite/.ase) tilemap codec for the BG Region editor
-// (research/graphics-editing/aseprite-export.md). Like png.ts, this is a
+// (docs/graphics-editing/aseprite-export.md). Like png.ts, this is a
 // dependency-free, node:zlib-only codec so the dev/export pipeline keeps the
 // "no native deps, runs from WSL, byte-exact pinnable" property — we own the
 // format instead of shelling out to an installed Aseprite.

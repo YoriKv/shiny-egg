@@ -5,7 +5,7 @@
 // expressed (angle, the direction at +w, whether -w mirrors it).
 //
 // The data file (`fit-metadata.json`) is derived by probing decoded collision
-// (research/surface-painting/gen-fit-metadata.ts), not hand-asserted. This module
+// (docs/surface-painting/gen-fit-metadata.ts), not hand-asserted. This module
 // is the data's engine home + the `ThemePalette` it resolves to; the fitter
 // (`surface-fit.ts`) reads `paletteForTileset()` instead of a hardcoded palette.
 

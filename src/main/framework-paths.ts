@@ -45,7 +45,7 @@ export function bizhawkExeName(): string {
 
 // Dev-only convenience: BizHawk sitting as a sibling of the project root
 // (`<projectRoot>/../bizhawk/EmuHawk.exe`, or `EmuHawk.sh` on Linux/macOS, per
-// CLAUDE.md). Lets dev builds run Launch / Test Level without locating EmuHawk
+// docs/notes-emulator-integration.md "Exe paths"). Lets dev builds run Launch / Test Level without locating EmuHawk
 // first. Returns null in packaged builds, or when the file isn't there.
 export function devBizhawkPath(): string | null {
   if (app.isPackaged) return null

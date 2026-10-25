@@ -1,5 +1,5 @@
 // BG region export/import — the in-situ "edit what you see" surface
-// (research/graphics-editing/bg-region-edit.md). Render a positioned region of a
+// (docs/graphics-editing/bg-region-edit.md). Render a positioned region of a
 // BG layer as it composites in-level, with per-cell tile metadata, and slice an
 // edited region back to the underlying CHR gfx files (→ saveGfxEdit). Pixels-only
 // (the MVP): tile pixels change, tilemap/Map16 layout stays fixed.
@@ -484,7 +484,7 @@ export function bg1RegionAseprite(ctx: MetatileContext, region: Bg1RegionResult)
   const cols8 = region.width / TILE_PX;   // 8×8 tiles across
   const rows8 = region.height / TILE_PX;
 
-  // 8×8 is the foundational pixel unit (research/graphics-editing): each distinct
+  // 8×8 is the foundational pixel unit (docs/graphics-editing): each distinct
   // 8×8 CHR-under-a-palette-row is ONE Aseprite tile, so the cart's heavy BG1 CHR
   // sharing (a tile reused by many Map16 blocks) is VISIBLE — editing it updates
   // every placement on-canvas, matching the game. (The 16×16 Map16-block view stays
@@ -1095,7 +1095,7 @@ export function diffBgRegionCombined(
 // ─────────────────────────────────────────────────────────────────────────────
 // M1TE2 ".M1" session export/import — the whole BG2/BG3 layer (tilemap + CHR +
 // palette) bundled into ONE file editable in M1TE2 (m1te2.ts). Everything maps
-// VERBATIM (research/graphics-editing/bg-region-edit.md): a YI 16×16 tilemap word IS
+// VERBATIM (docs/graphics-editing/bg-region-edit.md): a YI 16×16 tilemap word IS
 // an M1TE2 16×16-mode word (it expands base+{0,1,16,17} with the word's flips, like
 // the YI PPU); VRAM CHR IS raw SNES planar (a byte copy); CGRAM IS BGR555 (a byte
 // copy). BG2 (4bpp) → M1TE2 map slot 1; BG3 (2bpp) → slot 2. M1TE2 v2 supports up to a

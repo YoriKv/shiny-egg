@@ -1,5 +1,5 @@
 // The central graphics-import RECONCILER — the Electron-coupled writer half of the
-// standardized export/import model (research/graphics-editing/). It exists to fix "edits
+// standardized export/import model (docs/graphics-editing/). It exists to fix "edits
 // thrash on re-import": the old importers decided "did this file change?" by diffing the
 // edited artifact against the CURRENT live/overlay state, which drifts as other files/folders
 // import — so re-importing an unedited folder reverted newer edits. The fix is two-part:

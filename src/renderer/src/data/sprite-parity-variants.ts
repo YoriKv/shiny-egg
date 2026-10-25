@@ -5,7 +5,7 @@
 // the resolved variant (move the sprite one column/row to flip it).
 //
 // Every mapping here is asm-verified (init + consuming code read; see
-// research/notes-sprite-neighbor-dependencies.md Part 4's parity audit).
+// docs/notes-sprite-neighbor-dependencies.md Part 4's parity audit).
 // VISUAL-ONLY *color* parity variants (the shy-guy family — Shy Guy / Stilt /
 // Woozy / Stretch / Petal Guy / Lantern Ghost — whose spawn-cell X+Y parity
 // picks an OBJ palette row) ARE now listed, under the 'Color' label, because

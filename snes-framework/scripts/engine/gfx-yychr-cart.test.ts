@@ -114,7 +114,7 @@ console.log('\n=== chunky ↔ planar bijective on the real GSU banks ===');
     [0x550000, 0x8000], [0x558000, 0x8000], [0x560000, 0x8000],
     // $57:0000 — GSU-only bitmap data bank (added to the gsu/ export 2026-07-18;
     // not the GSU program, and byte-disproven as a flip of $56 — see
-    // research/graphics-survey/11-vram-loading.md §4).
+    // docs/graphics-survey/11-vram-loading.md §4).
     [0x570000, 0x3c00]
   ];
   let ok = 0;

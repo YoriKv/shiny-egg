@@ -20,7 +20,7 @@ export const SCREEN_PX = SCREEN_CELLS * CELL_PX
  * screens as `y*16 + x`, range 0..127 — i.e. 16 wide, 8 tall). That fixes the
  * editable spatial bounds for every level regardless of how many screens it
  * actually allocates. See `snes-framework/docs/levelloader.md` and
- * `research/level-render-source-and-scripts.md` §11.2.
+ * `docs/level-render-source-and-scripts.md` §11.2.
  */
 export const LEVEL_SCREENS_W = 16
 export const LEVEL_SCREENS_H = 8

@@ -170,6 +170,13 @@ export type LevelAction =
       index: number
       value: number
     }
+  | {
+      /** Set several header fields as ONE commit / undo step (the Level Header
+       *  panel's backdrop presets). Each value is clamped like `setHeaderField`;
+       *  no-op when nothing changes. */
+      type: 'setHeaderFields'
+      fields: { index: number; value: number }[]
+    }
   | { /** Remove one sprite (by uid). Caller clears selection. */
       type: 'deleteSprite'; uid: number }
   | { /** Clone one sprite (by uid): +1 cell, after source, takes `nextUid`. */
@@ -452,6 +459,20 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       const header = state.level.header.slice() // NEW ref — render layers key on it
       header[action.index] = value
       return commit(state, { ...state.level, header })
+    }
+    case 'setHeaderFields': {
+      if (!state.level) return state
+      const header = state.level.header.slice() // NEW ref — render layers key on it
+      let changed = false
+      for (const f of action.fields) {
+        if (header[f.index] === undefined) continue // index outside the 15-field header
+        const value = clampHeaderField(f.index, f.value)
+        if (value !== header[f.index]) {
+          header[f.index] = value
+          changed = true
+        }
+      }
+      return changed ? commit(state, { ...state.level, header }) : state
     }
     case 'deleteSprite': {
       if (!state.level) return state

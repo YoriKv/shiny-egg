@@ -4,7 +4,7 @@
 // pixels actually changed (vs the base blob) via saveGfxEdit — so unedited files
 // keep the build byte-identical and the reinsert pipeline only moves what changed.
 // Mirrors gfx-png-export.ts's two tracks (SCREENS char sheets + tilemaps,
-// METASPRITES + glyphs); see research/graphics-editing/.
+// METASPRITES + glyphs); see docs/graphics-editing/.
 //
 // ── Editing axes per track ──────────────────────────────────────────────────
 // Every track edits tile PIXELS; a track also edits tile PLACEMENT (which tile sits in

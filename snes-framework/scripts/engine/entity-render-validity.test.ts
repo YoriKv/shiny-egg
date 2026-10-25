@@ -1,7 +1,7 @@
 // Pins for the object render-validity probe (entity-render-validity.ts).
 //
 // The pins encode what the full-matrix run established empirically
-// (research/object-render-validity.tsv — every std/ext object × every shipped
+// (docs/object-render-validity.tsv — every std/ext object × every shipped
 // gfx-header tuple), NOT the pre-run plan guesses (water pipes / jungle canopy
 // turned out to probe ok under every tileset — the per-tileset template slots
 // supply valid anchors everywhere; only tile-animation-dependent objects are

@@ -7,7 +7,7 @@
 // decode only reproduces the initial Nintendo-logo frame, so most char tiles
 // would default to row 0 (the wrong palette, and for the OBJ sprite sheets the
 // wrong HALF of CGRAM entirely). This is the same runtime-streamed-tilemap
-// situation as the world map (research/graphics-editing/world-map-screens.md):
+// situation as the world map (docs/graphics-editing/world-map-screens.md):
 // the per-tile rows come from a capture, not a static tilemap.
 //
 // `storybook-palette-facts.json` is the bake target — accumulated across the

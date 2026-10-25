@@ -42,9 +42,11 @@ export function clearExtractionState(workRoot: string): void {
  * BUMP THIS whenever a change alters what extract emits: a new/removed output
  * file, a schema change, or a derivation fix in extract.ts / the level-map /
  * levels-catalog / instance-index builders whose result should propagate to
- * existing extracts. (History: 1 = first versioned pipeline, 2026-06-12.)
+ * existing extracts. (History: 1 = first versioned pipeline, 2026-06-12;
+ * 2 = object-stream walk honours the exit-list bit-7 gate — 0x7D's obj `.bin`
+ * shrinks 366 → 226 B, 2026-10-24.)
  */
-export const EXTRACT_PIPELINE_VERSION = 1;
+export const EXTRACT_PIPELINE_VERSION = 2;
 
 /** Editor-derived outputs every complete extract must leave on disk
  *  (workRoot-relative). A missing one ⇒ the extract is stale/partial. */

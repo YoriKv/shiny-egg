@@ -128,13 +128,15 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
 
-  # Mirror the docs/ tutorial to this repo's GitHub wiki on each release. Runs
+  # Mirror the wiki/ tutorial to this repo's GitHub wiki on each release. Runs
   # independently of `release` (a wiki hiccup never blocks a release) but only
   # after a green build, and only on a tag push. Auth is the built-in
   # GITHUB_TOKEN — `contents: write` (declared above) covers wiki pushes, so no
   # secret is needed, but the wiki MUST already be initialized (Settings →
   # Wikis, with one page created via the web UI once); a push to a wiki that has
-  # never been created fails with "repository not found".
+  # never been created fails with "repository not found". The wiki repo is
+  # cloned to `wiki-repo/`, NOT `wiki/`: `wiki/` is the source tree in this
+  # checkout, and cloning over it would fail (non-empty dir).
   publish-wiki:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build
@@ -150,13 +152,13 @@ jobs:
 
       - name: Clone wiki
         run: |
-          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki-repo
 
-      - name: Build wiki pages from docs/
-        run: node scripts/publish-wiki.ts --out wiki --repo "${{ github.repository }}"
+      - name: Build wiki pages from wiki/
+        run: node scripts/publish-wiki.ts --src wiki --out wiki-repo --repo "${{ github.repository }}"
 
       - name: Commit + push wiki
-        working-directory: wiki
+        working-directory: wiki-repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

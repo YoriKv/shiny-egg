@@ -7,7 +7,7 @@
 // is a few bytes and detects any pixel change just as well. The committed
 // goldens (render-parity.golden.json) were locked in after the decode parity was
 // verified byte-exact against the live cart (219/219 — see
-// research/notes-bg1-trace-rng-parity.md); the test re-renders the V1.0 build and
+// docs/notes-bg1-trace-rng-parity.md); the test re-renders the V1.0 build and
 // fails if any layer's hash drifts from that verified-correct baseline.
 //
 // Determinism: renderLevelLayers is a pure function of the ROM bytes (the cart

@@ -2,7 +2,7 @@
 // their graphics in VRAM under a given level header? Backs the editor's Add-
 // picker filter (`render:entityRenderValidity`) and the shipped-cart gate
 // (`validity-report.ts`). Promoted from the tmp/object-render-validity.ts
-// prototype whose full-matrix run produced research/object-render-validity.tsv.
+// prototype whose full-matrix run produced docs/object-render-validity.tsv.
 //
 // Method: decode the candidate ALONE in a synthetic one-object level carrying
 // the donor level's header, then check every stamped Map16 ID — all 4
@@ -10,7 +10,7 @@
 // tile-animation fill counting as covered (see vram-coverage.ts).
 //
 // Model points, confirmed against every shipped gfx-header tuple (the
-// 2026-06-10 matrix run — research/object-render-validity.tsv — then the
+// 2026-06-10 matrix run — docs/object-render-validity.tsv — then the
 // 2026-06-11 X-placeholder correction from the level-0x06 report):
 //   - COVERAGE-validity keys on the animationTileset/levelMode pairing: 5
 //     objects (steep slopes $08/$09, animated water $35, castle lava $47, icy

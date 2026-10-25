@@ -8194,7 +8194,7 @@ DATA_00CC58:
 
 ; Credits staff-roll OAM letter streams — 35 pages (some table slots share a
 ; body), consumed by the scroller above from the WRAM-relocated copy. Stream
-; format (fully traced; research/graphics-survey/09-font-hud-messages.md §4b):
+; format (fully traced; docs/graphics-survey/09-font-hud-messages.md §4b):
 ; header word = X,Y; then (letterByte, advance) pairs — letterByte bit 4 picks
 ; OBJ palette 6/7 (= the glyph plane / the font code's high bit), advance = the
 ; 1bpp font's proportional width (word gaps folded in); $FF + $00 end / $01 new

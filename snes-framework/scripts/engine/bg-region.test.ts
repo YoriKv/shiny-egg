@@ -1,5 +1,5 @@
 // BG region export/import round-trip pin (bg-region.ts) — the in-situ "edit what
-// you see" surface (research/graphics-editing/bg-region-edit.md).
+// you see" surface (docs/graphics-editing/bg-region-edit.md).
 //
 //   1. BG1 region FAITHFUL round-trip: slicing the unedited region reproduces the
 //      base BG1 tiles (diff → 0 edits); a 1-px edit produces a non-empty edit.

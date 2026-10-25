@@ -1,5 +1,5 @@
 // Public barrel for the audio codec layer (imported by the app as
-// `snes-framework/audio`). See research/plan-audio-panel.md for the system
+// `snes-framework/audio`). See docs/plan-audio-panel.md for the system
 // map; individual modules document their own format ground truth.
 
 export * from './upload-stream.ts';

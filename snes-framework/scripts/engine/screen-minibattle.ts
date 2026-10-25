@@ -5,8 +5,8 @@
 // message box CLOSES, so these draw during gameplay. $A2 (sub-modes 0/1/2/11)
 // and $A4 (pop balloons) are 100% blank fill-char maps — those battles have no
 // tilemap HUD. Composition asm-traced 2026-07-18, tile size + semantics
-// corrected 2026-07-19 (research/graphics-survey/11-vram-loading.md §5 + the H3
-// scene trace in research/graphics-editing/pipeline-evaluation-2026-07.md):
+// corrected 2026-07-19 (docs/graphics-survey/11-vram-loading.md §5 + the H3
+// scene trace in docs/graphics-editing/pipeline-evaluation-2026-07.md):
 //
 //   gfx     — `CODE_load_per_world_variant_gfx` ($00:B49E): DP $10/$11 = the two
 //             variant char files (DATA_00B46E/DATA_00B47A[v]), DP $12/$13 = the

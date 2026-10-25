@@ -2,7 +2,7 @@
 // cross-file conflict tracker. Kept free of `./resources` (which pulls in electron via
 // framework-paths) so it's unit-testable under plain `node` — see gfx-import-conflict.test.ts.
 // The Electron-coupled writer (saveGfxEdit etc.) lives in gfx-import-reconcile.ts, which USES
-// these. See research/graphics-editing/ for the standardized export/import model.
+// these. See docs/graphics-editing/ for the standardized export/import model.
 
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'

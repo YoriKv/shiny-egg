@@ -104,7 +104,7 @@ const snapTo32Center = (x: number, y: number, hint: string): BehaviorMark[] => {
 }
 
 // Geometry below is verified against the asm (sweep 2026-06-11; quotes in
-// research/notes-sprite-variant-candidates.md). Zone boxes mean "Yoshi's
+// docs/notes-sprite-variant-candidates.md). Zone boxes mean "Yoshi's
 // CENTRE inside this box" — Yoshi's centre is (PlayerX+8, PlayerY+$14) — and
 // are stated anchor-relative; most checks compare the engine's sprite−Yoshi
 // centre deltas ($7C16/$7C18), with the sprite centre at anchor+(8,8).

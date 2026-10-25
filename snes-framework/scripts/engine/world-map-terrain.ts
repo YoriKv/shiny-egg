@@ -6,7 +6,7 @@
 // sheets. Ground-truthed via the yi-shiny `world-map-terrain` trace (fully-unlocked save,
 // real overworld displayed, real PPU bases read from `emu.getState()` — the WRAM register
 // mirrors are STALE on the overworld, which is why earlier captures only showed the
-// level-select box panel; see `research/graphics-editing/world-map-screens.md`):
+// level-select box panel; see `docs/graphics-editing/world-map-screens.md`):
 //
 //   • The displayed map is a **3-layer Mode-1 composite** (64×32 doubleWidth, 512×256):
 //     the `DATA_00B3F4` pair is **BG1 ⊕ BG2 of ONE screen**, NOT two level-range halves —

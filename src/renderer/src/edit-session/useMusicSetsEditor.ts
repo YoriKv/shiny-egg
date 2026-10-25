@@ -6,7 +6,7 @@
 // `onSaved` marks the build dirty — an asm edit with no live canvas preview
 // (the Sets tab previews audibly via the composer instead). Edited from the
 // Audio panel's Sets tab. See snes-framework/scripts/music-sets.ts +
-// research/plan-audio-panel.md §1.10.
+// docs/plan-audio-panel.md §1.10.
 
 import { useCallback } from 'react'
 import type { MusicSetsModel } from '../../../preload/api'

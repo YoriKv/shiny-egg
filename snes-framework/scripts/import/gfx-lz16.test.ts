@@ -3,7 +3,7 @@
 //   1. `probeLz16RowCount` over every extracted lz16 blob reproduces the
 //      ycompress size table — the 187 row counts FuSoYa's ycompress.exe bakes
 //      in (dumped from the exe's .data section and validated byte-exact via the
-//      AllGFX.bin rebuild; research/graphics-editing/ycompress-allgfx.md §1/§7).
+//      AllGFX.bin rebuild; docs/graphics-editing/ycompress-allgfx.md §1/§7).
 //      This is where that table lives in-repo: as pinned EXPECTED values, so a
 //      future extract-slicing change that breaks probing fails loudly here.
 //   2. The four orphaned LZ16-in-LZ2-slot blobs ($2C-$2F, `GFX_589AE6.lz2` …)

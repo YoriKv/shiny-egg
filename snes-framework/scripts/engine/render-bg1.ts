@@ -26,11 +26,13 @@
 // in BG Mode 1/2 (the 218 standard levels), 2bpp in BG Mode 0 (level mode $0A /
 // level $6B). Decoding 2bpp as 4bpp scrambles every tile — see `bg1Bpp` below.
 //
-// **Incremental re-render** (`renderBg1Patch`, research/plan-incremental-
-// render.md Tier 2): the full path and the patch path BOTH drive one shared
-// per-cell renderer (`makeBg1CellRenderer`), so a patched backing canvas stays
-// byte-identical to a fresh full render. Patch renders only the cells a diff
-// flagged; full renders all of them.
+// **Incremental re-render** (`renderBg1Patch`): after an edit, only the cells a
+// grid diff flagged are re-rendered and patched onto the caller's existing
+// bitmap, instead of re-rendering all 4096 × 2048 px. The full path and the
+// patch path BOTH drive one shared per-cell renderer (`makeBg1CellRenderer`),
+// so a patched bitmap stays byte-identical to a fresh full render — pinned by
+// `render-patch.test.ts`. Patch renders only the flagged cells; full renders
+// all of them.
 
 import { decode4bppTile, decode2bppTile } from './tile.ts';
 import { buildPaletteRow } from './color.ts';

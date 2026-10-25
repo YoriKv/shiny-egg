@@ -2,7 +2,7 @@
 // post-build write-back. Editing an EXISTING block's 4 sub-tiles is size-neutral,
 // so edits are stored as a per-project JSON (overlayRoot/map16-edits.json) and
 // applied as an 8-byte byte patch to the built ROM AFTER assembly (mirrors
-// applyProjectPatches). See research/graphics-editing/object-metatile.md §7.
+// applyProjectPatches). See docs/graphics-editing/object-metatile.md §7.
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
 import path from 'node:path'

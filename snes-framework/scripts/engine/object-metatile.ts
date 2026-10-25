@@ -1,5 +1,5 @@
 // Object "metatile" reconstruction — the editable "meta" view of BG1 objects (the
-// BG twin of the metasprite; see research/graphics-editing/object-metatile.md).
+// BG twin of the metasprite; see docs/graphics-editing/object-metatile.md).
 //
 // Std/ext objects stamp **Map16 metatiles** (16×16 = 4 sub-tiles) into the BG1
 // grid; each sub-tile draws an 8×8 tile from the level's BG1 tileset CHR with a

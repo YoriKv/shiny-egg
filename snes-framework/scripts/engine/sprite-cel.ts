@@ -6,7 +6,7 @@
 // `loadLevelGfx` already decodes into VRAM; the cel only says WHICH tiles go
 // WHERE. So a faithful editor render is "decode the cel → blit those VRAM
 // tiles at the cel's offsets" — this module. See
-// research/notes-sprite-render.md for the decode evidence + cel format.
+// docs/notes-sprite-render.md for the decode evidence + cel format.
 //
 // **Cel formats** (both feed the same normalised `SpriteCel`):
 //   - Format B (dominant; `DATA_enemy_special_chr_addrs` targets) — 5-byte

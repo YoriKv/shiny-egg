@@ -11,7 +11,7 @@ import { AramUsageDiagram } from './AramUsageDiagram'
 import { MusicSetsTab } from './MusicSetsTab'
 import type { MusicSetsEditorApi } from '../edit-session/useMusicSetsEditor'
 
-// Audio panel — four tabs + the sequencer popup (research/plan-audio-panel.md §4/§5):
+// Audio panel — four tabs + the sequencer popup (docs/plan-audio-panel.md §4/§5):
 //  - Song Sets: the 13 music-set rows (settings, song slots with verified
 //    names, init stars, used-by-levels, per-set ARAM diagram); SFX: the
 //    named ids, filterable. Both play in-editor through the synthesized-SPC

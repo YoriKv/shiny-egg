@@ -51,7 +51,7 @@ import { u16le } from './rom-read.ts';
  *  None are level visuals, so they are NOT cel-rendered — they fall through to the
  *  editor's vector-glyph tier. Only normal-range IDs (`$000-$1A9`,
  *  `NormalSpriteIDs.asm`) carry renderable enemy/object cels. See the sprite
- *  taxonomy in research/notes-sprite-render.md. */
+ *  taxonomy in docs/notes-sprite-render.md. */
 export const AMBIENT_SPRITE_ID_BASE = 0x1ba;
 /** Sprites we deliberately DON'T render (force glyph tier). All are spawned-only / never validly
  *  placed, with no correct static gfx, so we drop them rather than draw blank/garbage tiles:
@@ -513,7 +513,7 @@ export function isFormatAOnlySprite(rom: Uint8Array, symbols: SymbolMap, spriteI
  *
  * Deliberately a tiny per-sprite registry, not a general solution — the broad fix
  * is a trace that captures each sprite's settled `$7042` at rest (see
- * research/plan-editor-remaining.md SP4). Today it covers only:
+ * docs/plan-editor-remaining.md SP4). Today it covers only:
  *
  *   0x065 Red Coin — `YI_NorSpr065_RedCoin_Init` ($0C:EA10) / Main ($0C:EA40) do
  *     `LDA $7042,x : AND #$FFF1 : ORA DATA_0CE9FE,y : STA $7042,x`, where
@@ -827,7 +827,7 @@ export function resolveSpriteCel(
   // scroll locks, autoscroll paths, generator stoppers). Rendering a same-numbered
   // char row for a placed command looks plausible (it's real VFX art) but is wrong
   // — e.g. $1D6 "Lock horizontal scroll" vs char row $1D6 BUBBR bubble-burst
-  // (see research/graphics-survey/README.md, the ys_ench.asm survey).
+  // (see docs/graphics-survey/README.md, the ys_ench.asm survey).
   if (spriteId >= AMBIENT_SPRITE_ID_BASE) return null;
   // Deliberately non-rendered sprites (spawned-only projectiles with no valid static gfx).
   if (RENDER_SUPPRESSED.has(spriteId)) return null;
@@ -840,7 +840,7 @@ export function resolveSpriteCel(
   const dynSrc = DYNAMIC_BODY_SOURCES[spriteId];
   // Format-A sprites (no special_chr cel) draw as a single OBJ tile from
   // DATA_enemy_object_data_ptrs ($4D:0000) — items (red coin, eggs, key, …) and a
-  // few simple enemies. See research/plan-editor-remaining.md SP7.
+  // few simple enemies. See docs/plan-editor-remaining.md SP7.
   const objDataTablePC = symbols.tryPc('DATA_enemy_object_data_ptrs');
   const faPtr = objDataTablePC === undefined ? 0 : u16le(rom, objDataTablePC + spriteId * 2);
   // Handler-drawn sprites with a hand-recovered layout (no cel/object_data table

@@ -11,7 +11,7 @@
 // never contains. Those bodies are NOT a static tile asset anywhere in ROM —
 // the GSU's rotzoom/PLOT rasterizer (`CODE_088295`, Bank08) reads a **chunky
 // indexed bitmap** from bank `$54` and plots it into the OBJ framebuffer, which
-// NMI then DMAs to VRAM. See research/notes-sprite-render.md.
+// NMI then DMAs to VRAM. See docs/notes-sprite-render.md.
 //
 // # The two sub-cases
 //
@@ -24,7 +24,7 @@
 //     format). The one difference vs rigid is which nibble holds the index (see below).
 //     Genuinely-rotating bodies (true angular spin) stay glyph-tier unless fixed-angle.
 //
-// # The source format (reverse-engineered offline; see research/notes-sprite-render.md)
+// # The source format (reverse-engineered offline; see docs/notes-sprite-render.md)
 //
 // Bank `$54+` holds a bitmap *sheet*; each sprite's body is a sub-rectangle.
 //   - **Chunky**, 1 byte per pixel; a nibble of each byte is the 4bpp palette index
@@ -241,7 +241,7 @@ export interface BodyPiece {
  * have a *correct bitmap* but their cel places the body via LOW placeholder tiles
  * (`$c0-$d3`) the current `resolveSpriteCel` filter doesn't recognise — so the
  * body decodes but isn't drawn yet (a placement source is the remaining work, see
- * research/plan-editor-remaining.md SP2). They're kept here so the gfx work isn't lost.
+ * docs/plan-editor-remaining.md SP2). They're kept here so the gfx work isn't lost.
  */
 export const DYNAMIC_BODY_SOURCES: Readonly<Record<number, DynamicBodySource>> = {
   // ── Doors. Every door shares one special_chr cel ($9407): four tile-0 placeholder
@@ -610,7 +610,7 @@ export const DYNAMIC_BODY_SOURCES: Readonly<Record<number, DynamicBodySource>> =
   // identity-frame reads span the whole $54 page (can't isolate the 32×32) and the
   // sprite-render capture is too scaled to crack (28%), so the red source isn't
   // pinnable from current data → needs a clean identity-frame VRAM dump (snapshot ON
-  // frames 628-640 where R8=R9=$0100). See research/plan-editor-remaining.md SP1.
+  // frames 628-640 where R8=R9=$0100). See docs/plan-editor-remaining.md SP1.
 };
 
 /** Sprite nums whose bank-$54 glyph source is **byte-validated** — its stored

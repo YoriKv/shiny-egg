@@ -1,6 +1,6 @@
 // Graphics PNG/Aseprite EXPORT (the "Graphics" panel backend, export half). Renders
 // the selected tracks to a folder + a manifest the import side (gfx-png-import.ts)
-// reads back. Three tracks (research/graphics-editing/) — the first two are the two
+// reads back. Three tracks (docs/graphics-editing/) — the first two are the two
 // halves of the old single "screens" track:
 //   - WORLDMAP: the overworld map's graphics (screens/map/) — the world-map / level
 //     icons (the terrain / ground layout maps export only as M1TE2 overworld .M1s).

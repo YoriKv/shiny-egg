@@ -18,7 +18,7 @@
 // `movable`, with `headroomBytes = fillSize`. Non-movable pools (interleaved
 // sentinels/data, or shared with the name-string region) keep 0 headroom.
 //
-// See research/notes-level-size-overflow.md (task #14) for the measured numbers.
+// See docs/notes-level-size-overflow.md (task #14) for the measured numbers.
 
 import type { RomVersion } from './types.ts';
 import { hex } from './hex.ts';
@@ -76,7 +76,7 @@ export interface LevelPool {
 }
 
 /** A genuinely-unused `$FF` ROM tail repurposed as a relocation destination for
- *  migrated level-data blobs (research/notes-rom-free-space.md). Unlike a
+ *  migrated level-data blobs (docs/notes-rom-free-space.md). Unlike a
  *  LevelPool (a level's fixed native home), a free region is spare capacity the
  *  editor allocates into first-fit, with variable membership. */
 export interface FreeRegion {
@@ -92,7 +92,7 @@ export interface FreeRegion {
 
 /** A level whose sprite pointer is biased (`DATA_<alias>-$02`), borrowing its
  *  `partner` level's trailing `$FFFF` terminator instead of owning a sprite blob
- *  (see research/notes-rom-free-space.md; the de-couple impl is BIASED_POINTERS below). The only
+ *  (see docs/notes-rom-free-space.md; the de-couple impl is BIASED_POINTERS below). The only
  *  two such rows; de-coupling materializes the level's own spr blob + repoints
  *  the Ptrs row, freeing the partner to migrate. */
 export interface BiasedPointer {
@@ -174,7 +174,7 @@ const POOL_BOUNDARIES: Partial<Record<RomVersion, BoundaryDef[]>> = {
  * free-region append ever rewrites it.
  *
  * **Why ONLY these two — don't naively add more** (full inventory:
- * research/notes-rom-free-space.md):
+ * docs/notes-rom-free-space.md):
  *   • The V1.0 LoROM bank tails (Bank0F, Bank01, …) are a home pool's own
  *     growth slack — using one as a relocation target competes with its home
  *     level's grow-into-fill budget (the movable POOL_BOUNDARIES above).
@@ -215,8 +215,9 @@ const BIASED_POINTERS: Partial<Record<RomVersion, BiasedPointer[]>> = {
  *  re-resolving a clean label. Instead we materialise a self-contained
  *  `DATA_level_XX_<kind>` copy in a free region + repoint the row; the original
  *  (possibly shared) bytes stay put. Today: 0x7D's obj ships as DATA_169D23
- *  (225 B) but its real 366-byte stream overlaps the adjacent DATA_169E04 +
- *  DATA_169E75, so the original is never deleted/reclaimed (Bank16.asm:72). */
+ *  (225 B), a slice that ends at the object `$FF` and borrows its "no exits"
+ *  gate from the first byte of the blob after it (Bank16.asm:72), so the
+ *  original is never deleted/reclaimed. */
 export interface RepointMigration {
   level: string;        // '7D'
   kind: 'obj' | 'spr';
@@ -228,11 +229,12 @@ export interface RepointMigration {
   newLabel: string;     // 'DATA_level_7D_obj'
   /** Bank holding the original slice (for the migratable check). */
   homeBankFile: string; // 'Banks/Bank16.asm'
-  /** Tracked blob files the raw slice's TRUE stream spills into (Bank16.asm:72:
-   *  0x7D's 366-byte stream = the 225-byte `DATA_169D23` slice + all of
-   *  `DATA_level_A5_obj` + the first bytes of `DATA_level_17_spr`). While the
-   *  row still points at the raw slice, deleting (migrating/removing) any of
-   *  these files corrupts the dependent level's runtime stream. */
+  /** Tracked blob files the raw slice's runtime stream reads into (Bank16.asm:72:
+   *  0x7D's loader reads the first byte of `DATA_level_A5_obj` — `$F4`, bit 7
+   *  set — as its exit gate, `exitListAbsent`). While the row still points at
+   *  the raw slice, deleting (migrating/removing) any of these files changes what
+   *  follows the slice, and a gate byte without bit 7 hands the dependent level
+   *  the next blob's bytes as exits. */
   overlapFiles: string[];
 }
 
@@ -245,7 +247,7 @@ const REPOINT_MIGRATIONS: Partial<Record<RomVersion, RepointMigration[]>> = {
       fullFile: 'DATA_level_7D_obj.bin',
       newLabel: 'DATA_level_7D_obj',
       homeBankFile: 'Banks/Bank16.asm',
-      overlapFiles: ['DATA_level_A5_obj.bin', 'DATA_level_17_spr.bin']
+      overlapFiles: ['DATA_level_A5_obj.bin']
     }
   ],
 };
@@ -284,7 +286,7 @@ export function newSlotRows(romVersion: RomVersion): NewSlotRow[] {
 }
 
 /** The five irregular `Ptrs:` row expressions (biased spr `$19`/`$CB`, raw
- *  overlapping obj `$7D`, shared obj `$BF`/`$D0`) — every other row reads
+ *  gate-borrowing obj `$7D`, shared obj `$BF`/`$D0`) — every other row reads
  *  `DATA_level_XX_obj,DATA_level_XX_spr`. Verified against the DATATABLE text;
  *  the removal path replaces a whole row by this expression. */
 const SPECIAL_PTR_ROW_EXPRS: Partial<Record<RomVersion, Record<string, string>>> = {
@@ -573,14 +575,14 @@ export function repointMigrations(romVersion: RomVersion): RepointMigration[] {
  *   • engine-hardcoded / shared-pointer levels (`HARDCODED_EXCLUDE`) — never;
  *   • a partner whose terminator a biased level borrows (`$51`/`$C4`) — only once
  *     that dependent is de-coupled (the *aliased-into* exclusion lifts);
- *   • levels whose obj ships under a raw label (e.g. 0x7D's truncated
+ *   • levels whose obj ships under a raw label (e.g. 0x7D's gate-borrowing
  *     `DATA_169D23`) — not tracked here, so not migratable until the repoint path.
  * A biased dependent (`$19`/`$CB`) IS migratable: only its clean obj moves; the
  * biased spr is left in place (untouched by an obj relocation). `decoupled` = the
  * numeric level ids the user has de-coupled. `freedRawRows` = ids of repoint-
  * migration dependents (0x7D) whose row no longer references its raw slice
  * (because they're migrated or removed) — until then, the levels whose blobs that
- * slice's true stream spills into (`overlapFiles`) must keep their bytes in place.
+ * slice's runtime stream reads into (`overlapFiles`) must keep their bytes in place.
  */
 export function migratable(
   map: PoolMap,
@@ -593,10 +595,10 @@ export function migratable(
   const biased = BIASED_POINTERS[map.romVersion] ?? [];
   const partnerOf = biased.find((b) => b.partner === hex);
   if (partnerOf && !decoupled.has(parseInt(partnerOf.level, 16))) return false;
-  // Absorbed-by-a-raw-slice guard: 0x7D's true obj stream reads through
-  // DATA_level_A5_obj + into DATA_level_17_spr, so 0xA5/0x17 can't migrate out
-  // (deleting their incbins shifts the spill bytes) while 0x7D's row still
-  // points at the raw slice.
+  // Absorbed-by-a-raw-slice guard: 0x7D's obj stream takes its exit gate from
+  // DATA_level_A5_obj's first byte, so 0xA5 can't migrate out (deleting its
+  // incbin changes the byte after the slice) while 0x7D's row still points at
+  // the raw slice.
   for (const rep of REPOINT_MIGRATIONS[map.romVersion] ?? []) {
     if (freedRawRows.has(parseInt(rep.level, 16))) continue;
     if (
@@ -611,7 +613,7 @@ export function migratable(
   const sprPool = map.poolByFile.get(`DATA_level_${hex}_spr.bin`);
   if (sprPool && !sprPool.tail.reclaimable) return false;
   // Obj: a clean tracked blob in a reclaimable pool, OR a repoint migration whose
-  // home bank has a reclaimable pool (0x7D's truncated/overlapping DATA_169D23 →
+  // home bank has a reclaimable pool (0x7D's gate-borrowing DATA_169D23 →
   // a self-contained DATA_level_7D_obj copy + Ptrs repoint).
   const objPool = map.poolByFile.get(`DATA_level_${hex}_obj.bin`);
   if (objPool) return objPool.tail.reclaimable;

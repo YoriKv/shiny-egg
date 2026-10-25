@@ -1073,6 +1073,16 @@ export default function App(): JSX.Element {
     const dm = gradientEditor.draftMap
     return Array.from({ length: 24 }, (_, i) => dm.get(gradientOffset(gid, i)) ?? base[i]!)
   }, [bgColorByte, gradientEditor.baseColors, gradientEditor.draftMap])
+  // The Level Header panel's palette-row swatches read the same drafts the canvas
+  // previews with, so a strip always shows what the level shows.
+  const headerColors = useMemo(
+    () => ({
+      paletteDraft: paletteEditor.draftMap,
+      gradientBase: gradientEditor.baseColors,
+      gradientDraft: gradientEditor.draftMap
+    }),
+    [paletteEditor.draftMap, gradientEditor.baseColors, gradientEditor.draftMap]
+  )
   // Pushing palette edits into a running emulator is a MANUAL action — the
   // Palette panel's "Sync to Emulator" button (bizhawk.applyPaletteLive) — rather
   // than an automatic per-edit push, so it never competes with gameplay.
@@ -1886,7 +1896,12 @@ export default function App(): JSX.Element {
                   levelTileset={levelState.level?.header?.[1] ?? null}
                 />
               ) : w.kind === 'header' ? (
-                <HeaderBody level={levelState.level} dispatchLevel={dispatchLevel} onEditMusicSets={openMusicSets} />
+                <HeaderBody
+                  level={levelState.level}
+                  colors={headerColors}
+                  dispatchLevel={dispatchLevel}
+                  onEditMusicSets={openMusicSets}
+                />
               ) : w.kind === 'exits' ? (
                 <ExitsBody
                   level={levelState.level}

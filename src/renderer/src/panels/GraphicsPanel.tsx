@@ -195,7 +195,7 @@ export function GraphicsBody({
     // Aseprite export is PIXEL editing only: `aseprite` = the 8×8-CHR pixel tilemap (the
     // foundational pixel unit; a shared CHR is one tile). The 16×16-word PLACEMENT export
     // (`aseprite-layout`, BG2/BG3) is still supported by the backend but has NO UI for now —
-    // re-add a layout radio here (gated to BG2/BG3) to expose it. See research/graphics-editing.
+    // re-add a layout radio here (gated to BG2/BG3) to expose it. See docs/graphics-editing.
 
     const refreshEdits = useCallback(async (): Promise<void> => {
         try { setEdits(await window.shinyEgg.editor.listGfxEdits()) } catch { setEdits([]) }

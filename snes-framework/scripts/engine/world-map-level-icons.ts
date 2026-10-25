@@ -29,7 +29,7 @@
 // empty trailing slot) are out of scope. Only the per-slot OBJ palette ROW is
 // embedded metadata (the icon's OAM palette attribute, capture-derived — pixels
 // still come 100% from the cart). Full provenance:
-// `research/graphics-editing/world-map-screens.md` + `tmp/wm-icons/REPORT.md`.
+// `docs/graphics-editing/world-map-screens.md` + `tmp/wm-icons/REPORT.md`.
 
 import { loadScenePalettes } from './load-palettes.ts';
 import { mapPalette } from './screen-gfx.ts';

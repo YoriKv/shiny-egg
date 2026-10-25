@@ -5,9 +5,9 @@
 // a `FieldKind` to its widget. Stays presentational: each takes a value + an
 // `onCommit(value)`; the panels own how a commit turns into a reducer dispatch.
 
-import { useEffect, useState, type JSX } from 'react'
+import { useEffect, useState, type JSX, type ReactNode } from 'react'
 import { getLevel, getLevelGroups, levelLabel, type LevelLabelFallback } from '../data/levels'
-import type { FieldKind } from '../data/property-schema'
+import type { EnumOption, FieldKind } from '../data/property-schema'
 import { hex } from '../lib/hex'
 
 /** A compact numeric input that keeps a local value while focused (snappy
@@ -69,7 +69,7 @@ export function EnumField({
   onCommit
 }: {
   value: number
-  options: { value: number; label: string }[]
+  options: EnumOption[]
   disabled?: boolean
   onCommit: (v: number) => void
 }): JSX.Element {
@@ -159,45 +159,64 @@ export function LevelRefField({
   )
 }
 
-/** One descriptor → a labelled row with the widget for its `FieldKind`. */
+/** One descriptor → a labelled row with the widget for its `FieldKind`.
+ *  `below` (optional) renders under the widget inside the same cell — the Level
+ *  Header panel's per-value guide line and palette swatches. */
 export function FieldRow({
   label,
   field,
   value,
   hint,
+  below,
   onCommit
 }: {
   label: string
   field: FieldKind
   value: number
   hint?: string
+  below?: ReactNode
   onCommit: (v: number) => void
 }): JSX.Element {
+  const widget = <FieldWidget field={field} value={value} onCommit={onCommit} />
   return (
     <>
       <dt title={hint}>{label}</dt>
-      <dd className="se-props__field" title={hint}>
-        {field.kind === 'num' ? (
-          <>
-            {field.hex && <span className="se-meta se-props__hexprefix">0x</span>}
-            <NumberField
-              value={value}
-              min={field.min}
-              max={field.max}
-              disabled={field.disabled}
-              hex={field.hex}
-              onCommit={onCommit}
-            />
-          </>
-        ) : (
-          <EnumField
-            value={value}
-            options={field.options}
-            disabled={field.disabled}
-            onCommit={onCommit}
-          />
-        )}
-      </dd>
+      {below ? (
+        <dd className="se-props__guided" title={hint}>
+          <div className="se-props__field">{widget}</div>
+          {below}
+        </dd>
+      ) : (
+        <dd className="se-props__field" title={hint}>
+          {widget}
+        </dd>
+      )}
     </>
+  )
+}
+
+function FieldWidget({
+  field,
+  value,
+  onCommit
+}: {
+  field: FieldKind
+  value: number
+  onCommit: (v: number) => void
+}): JSX.Element {
+  return field.kind === 'num' ? (
+    <>
+      {field.hex && <span className="se-meta se-props__hexprefix">0x</span>}
+      <NumberField
+        value={value}
+        min={field.min}
+        max={field.max}
+        disabled={field.disabled}
+        hex={field.hex}
+        onCommit={onCommit}
+      />
+    </>
+  ) : (
+    <EnumField value={value} options={field.options} disabled={field.disabled} onCommit={onCommit} />
   )
 }

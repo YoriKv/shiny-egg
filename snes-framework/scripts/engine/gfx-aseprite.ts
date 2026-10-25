@@ -1,5 +1,5 @@
 // Aseprite tileset/tilemap export for the tile-based graphics that AREN'T BG-region
-// (research/graphics-editing/aseprite-export.md §6): the faithful gfx sheets and the
+// (docs/graphics-editing/aseprite-export.md §6): the faithful gfx sheets and the
 // assembled screens (title logo / island). Generalises the BG-region adapters
 // (bg-region.ts) into one primitive:
 //

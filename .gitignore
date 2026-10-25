@@ -9,5 +9,12 @@ out/
 .env.*.local
 *.tsbuildinfo
 research/
+# Private editor dev docs (the public user tutorials live in wiki/).
+/docs/
 tmp/
 release.sh
+# Agent instructions: private to the dev repo (never mirrored by release.sh).
+/CLAUDE.md
+# Agent tooling: registers the WebStorm MCP relay (D:/Tools/mcp_relay.py) for
+# this checkout; machine-specific.
+/.mcp.json

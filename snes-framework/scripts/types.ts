@@ -260,6 +260,20 @@ export interface LevelsCatalog {
   recordCount?: number;
 }
 
+/** Which shipped levels set each level-header field to each value — the Level
+ *  Header panel's "used by" guide (`headerValueUsage` in level.ts). Computed
+ *  against the BASE cart, so it describes what a value means in the game, not
+ *  what a project has since done with it. */
+export interface HeaderUsage {
+  /** `byField[field][value]` = record ids whose header sets `field` (0..14) to
+   *  `value`; each field's array spans every value its bit width can hold. */
+  byField: number[][][];
+  /** `rootOf[recordId]` = the world-map level record that reaches this record:
+   *  itself for a world-map level, the first world-map level (by translevel)
+   *  whose warp graph reaches it for a sub-room, `null` when nothing does. */
+  rootOf: (number | null)[];
+}
+
 export interface LevelData {
   recordId: number;
   romVersion: RomVersion;
@@ -308,9 +322,9 @@ export interface LevelData {
 // gate. A pool's effective limit is `capacityBytes + headroomBytes` (the movable
 // boundary-move headroom a build can absorb; 0 for fixed pools). Beyond that, a
 // level can be *migrated* out to a free region — reclaiming its slot for the
-// bank's other levels (research/notes-rom-free-space.md). A level can touch
+// bank's other levels (docs/notes-rom-free-space.md). A level can touch
 // two pools (Bank15 splits a level's obj and spr blobs across its two pools), so
-// the report is per-pool. See research/notes-level-data-byte-budget.md.
+// the report is per-pool. See docs/notes-level-data-byte-budget.md.
 
 export interface PoolBudgetEntry {
   /** Stable pool id, e.g. `Bank4C` (single pool) or `Bank15#1` (multi-pool). */

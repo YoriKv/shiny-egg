@@ -42,7 +42,7 @@ import { loadSceneRegs, bgLayerBpp } from 'snes-framework/scene-regs'
 import { loadSpritesetFileIds, type GfxFileEntry } from 'snes-framework/load-graphics'
 import { bestStockSpriteset } from 'snes-framework/sprite-tile-base'
 import { hex0x } from 'snes-framework/hex'
-import { loadLevel } from 'snes-framework/level'
+import { headerValueUsage, loadLevel } from 'snes-framework/level'
 import { buildPaletteCatalog } from 'snes-framework/palette-catalog'
 import {
   buildWorldMapTerrainContext,
@@ -66,6 +66,7 @@ import type {
   FitSurfaceRequest,
   FitSpritesetResult,
   FitTileset,
+  HeaderGuide,
   LevelRenderRequest,
   LevelTileUsage,
   ObjectCellsResponse,
@@ -688,6 +689,16 @@ export function registerRenderIpc(): void {
     async (_e, spriteNums: number[]): Promise<FitSpritesetResult> => {
       const { rom, symbols } = loadRomAndSymbols()
       return bestStockSpriteset(rom, symbols, spriteNums.map((num) => ({ num })))
+    }
+  )
+
+  // Level Header guide: which shipped levels use each header value (base cart,
+  // cached in level.ts until the next extract) + the level's World-6 flag.
+  ipcMain.handle(
+    'render:headerGuide',
+    async (_e, levelRecordId: number): Promise<HeaderGuide> => {
+      const workRoot = frameworkWorkRoot()
+      return { usage: headerValueUsage(workRoot), isWorld6: isWorld6(levelRecordId, workRoot) }
     }
   )
 

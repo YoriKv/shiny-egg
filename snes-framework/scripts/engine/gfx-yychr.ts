@@ -3,7 +3,7 @@
 // body is just the decompressed blob — these helpers produce the display sidecars
 // (.pal palette, .col per-tile palette rows) and the padding/naming the round-trip
 // depends on. Facts below were verified against the decompiled YY-CHR.NET 20210606
-// source (CharactorLib/*, YYCHR/*); see research/graphics-editing/yychr-export.md.
+// source (CharactorLib/*, YYCHR/*); see docs/graphics-editing/yychr-export.md.
 //
 // The load-bearing YY-CHR behaviors:
 //  • Format auto-select is EXTENSION-driven, first match in registration order
@@ -138,7 +138,7 @@ export function buildColSidecar(tileSub: readonly number[], bpp: 2 | 4, paddedBy
 // pixel, carrying TWO independent 4-bit layers (low nibble + high nibble).
 // No YY-CHR format reads that — so, like FuSoYa's ycompress does for AllGFX.bin,
 // we present them as ordinary planar 4bpp CHR through this bijective transform
-// (spec + validation: research/graphics-editing/ycompress-allgfx.md §3 — the
+// (spec + validation: docs/graphics-editing/ycompress-allgfx.md §3 — the
 // forward direction reproduces ycompress's real output byte-for-byte).
 //
 // Layout of the planar view (N = bytes/32 tiles, q = N/4 per quadrant):

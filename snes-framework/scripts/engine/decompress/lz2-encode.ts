@@ -17,7 +17,7 @@
 // this encoder reproduces all 261 real LZ2 blobs in the USA V1.0 cart bit for
 // bit (77,145 of 77,145 commands). The four `.lz2`-named blobs it does not
 // cover (gfx IDs $2C-$2F) are orphaned LZ16 sheets sitting in LZ2 table slots,
-// not LZ2 data at all — see `research/notes-rom-import-lz2-overread.md`.
+// not LZ2 data at all — see `docs/notes-rom-import-lz2-overread.md`.
 //
 // # The parse
 //

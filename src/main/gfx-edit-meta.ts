@@ -11,7 +11,7 @@
 //
 // Best-effort: a missing / corrupt store reads as empty, and recording is wrapped by the
 // callers so a stamp failure never fails the underlying save. See
-// research/graphics-editing/png-roundtrip.md.
+// docs/graphics-editing/png-roundtrip.md.
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
 import path from 'node:path'

@@ -168,7 +168,7 @@ roundTrip(
 // it) identical on rebuild. Re-encode every extracted blob and demand identity.
 //
 // The four `.lz2`-named blobs that are really orphaned LZ16 sheets (gfx IDs
-// $2C-$2F, see research/notes-rom-import-lz2-overread.md) do not decode as LZ2
+// $2C-$2F, see docs/notes-rom-import-lz2-overread.md) do not decode as LZ2
 // at all; they are counted as skipped, not as failures.
 
 console.log(`  ✓ ${checks} round-trips (both encoders × every case)`);

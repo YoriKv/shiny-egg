@@ -177,12 +177,17 @@ export function FloatingWindow({
 
   const cssWidth = size?.width ?? width
   const cssHeight = size?.height // undefined → auto
+  // An auto-height window stops at the stage's bottom edge (less a margin) and
+  // its body scrolls — otherwise a tall panel (Level Header) runs off-screen
+  // with no way to reach its lower rows. `%` resolves against `.se-stage`, the
+  // positioned parent; the 120px floor keeps a window dragged low usable.
+  const cssMaxHeight = size ? undefined : `max(120px, calc(100% - ${pos.y}px - 8px))`
 
   return (
     <>
       <div
         className={`se-window${dragging ? ' is-dragging' : ''}${resizing ? ' is-resizing' : ''}`}
-        style={{ left: pos.x, top: pos.y, width: cssWidth, height: cssHeight, zIndex }}
+        style={{ left: pos.x, top: pos.y, width: cssWidth, height: cssHeight, maxHeight: cssMaxHeight, zIndex }}
         onMouseDown={onFocus}
       >
         <div

@@ -69,14 +69,15 @@ DATA_level_17_obj:
 DATA_level_4F_obj:
 	incbin "LevelData/DATA_level_4F_obj.bin"
 
-DATA_169D23:							; level $7D obj stream. Kept as DATA_169D23 (not renamed to
-								; DATA_level_7D_obj) because the cart's actual stream is 366 bytes
-								; -- extending past this incbin's 225-byte slice into what the asm
-								; calls DATA_169E04 + DATA_169E75. A per-level rename would push
-								; Bank16's subsequent labels by 141 bytes and overflow the 32KB
-								; bank. Editor's DATA_level_7D_obj.bin (366 bytes) is the source
-								; of truth for level reads; write-back to this 225-byte slice +
-								; the absorbed adjacent .bins is handled out-of-band.
+DATA_169D23:							; level $7D obj stream (225 bytes). It ends at the object-list $FF
+								; with no exit-list $FF of its own: the loader reads the NEXT byte
+								; (DATA_level_A5_obj's first, $F4) as the first exit screen, and its
+								; bit 7 (CODE_108BAF: LDA $1C / BMI) means "no exits". So $7D has no
+								; screen exits, and DATA_level_A5_obj must stay right after this
+								; slice. Kept as DATA_169D23 (not DATA_level_7D_obj): the editor's
+								; DATA_level_7D_obj.bin is the same stream + an explicit $FF (226
+								; bytes, self-contained), which a migration places in free space
+								; before repointing the Ptrs row (pool-map.ts REPOINT_MIGRATIONS).
 	incbin "LevelData/DATA_169D23.bin"
 
 DATA_level_A5_obj:

@@ -18,8 +18,14 @@
 //   bitor     := bitand ('|' bitand)*
 //   expr      := bitor
 //
-// Precedence matches asar 1.91 (and JS): `&` < `<<`, `|` < `+` — see
-// CLAUDE.md "asar 1.81 → 1.91 gotchas" for why this matters.
+// Precedence matches asar 1.91 (and JS): `&` < `<<`, `|` < `+`. Why it
+// matters: a lazy `!X = expr` define is substituted into its users as TEXT,
+// but this parser evaluates a `!X` reference as an atom (by value). The two
+// agree only when the define's body is parenthesized — otherwise a user's
+// `+`/`<<` binds inside the substituted `|`/`&` under asar's precedence, and
+// we'd resolve a different address than the assembler. That's why
+// `yi/Memory/` wraps such bodies in outer parens (WRAM_RelocatedCode.asm:
+// "outer parens lock | inside substitutions"); keep new defines that way.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';

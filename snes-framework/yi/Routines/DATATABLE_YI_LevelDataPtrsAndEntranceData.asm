@@ -401,7 +401,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_7A_obj,DATA_level_7A_spr    ; $7A sub-room of 3-3 "Nep-Enuts' Domain" -- underwater room: drives a BG3 vertical-offset HDMA for the water line
 	dl DATA_level_7B_obj,DATA_level_7B_spr    ; $7B sub-room of 3-4 "Prince Froggy's Fort"
 	dl DATA_level_7C_obj,DATA_level_7C_spr    ; $7C sub-room of 3-5 "Jammin' Through The Trees"
-	dl DATA_169D23,DATA_level_7D_spr    ; $7D sub-room of 3-6 "The Cave Of Harry Hedgehog" -- obj ptr is the truncated 225-byte DATA_169D23 slice of a 366-byte stream (see Bank16.asm)
+	dl DATA_169D23,DATA_level_7D_spr    ; $7D sub-room of 3-6 "The Cave Of Harry Hedgehog" -- obj ptr is the raw 225-byte DATA_169D23 slice, whose exit-list gate is the next blob's first byte (see Bank16.asm)
 	dl DATA_level_7E_obj,DATA_level_7E_spr    ; $7E sub-room of 3-7 "Monkeys' Favorite Lake"
 	dl DATA_level_7F_obj,DATA_level_7F_spr    ; $7F sub-room of 3-8 "Naval Piranha's Castle"
 	dl DATA_level_80_obj,DATA_level_80_spr    ; $80 sub-room of 4-1 "GO! GO! MARIO!!" (Superstar dash chain via $52; historically misglossed "PrologueIntro" -- no code loads $80)

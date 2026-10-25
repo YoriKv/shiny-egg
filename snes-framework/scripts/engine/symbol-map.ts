@@ -248,7 +248,7 @@ export function vendoredV10SymbolMap(): SymbolMap {
   add('DATA_lz16_compressed_gfx_ptrs', 0x06fc79); // LZ16 source ptrs
 
   // Enemy-sprite cel + dynamic-body renderer (sprite-cel / sprite-tile-base /
-  // sprite-dynamic-gfx). char-id == sprite-id; see research/notes-sprite-render.md.
+  // sprite-dynamic-gfx). char-id == sprite-id; see docs/notes-sprite-render.md.
   add('DATA_enemy_special_chr_addrs', 0x4d048a); // Bank4D dw cel-ptr table (Format B)
   add('DATA_enemy_object_data_ptrs', 0x4d0000);  // Bank4D dw object_data table (Format A)
   add('DATA_sprite_render_control_table', 0x0a9b1c);                  // $7040 spawn-seed; hi byte = OAMByteCount (frame-0 record count)

@@ -15,6 +15,7 @@ import type {
   Bg1RenderResult,
   BgLayerDescriptor,
   ForeignLevelDiff,
+  HeaderUsage,
   LayerCellPatch,
   LevelData,
   LevelObject,
@@ -857,6 +858,16 @@ export interface FitSpritesetResult {
   missingFiles: number[]
 }
 
+/** The Level Header panel's per-level guide data (`render:headerGuide`): which
+ *  shipped levels use each header value, plus the one per-level fact the panel's
+ *  palette swatches need. */
+export interface HeaderGuide {
+  usage: HeaderUsage
+  /** World-6 levels (sub-rooms included) load BG1 palettes from the dark table,
+   *  so the BG1-palette swatch reads the catalog's `bg1-dark` group. */
+  isWorld6: boolean
+}
+
 /** A painted height corner: a target surface row at a cell-corner column. */
 export interface PaintCorner {
   col: number
@@ -1027,7 +1038,7 @@ export type BgRegionLayer = 1 | 2 | 3
  *  **8×8-CHR pixel** tilemap project (the foundational pixel unit — one Aseprite tile =
  *  one 8×8 CHR, so the cart's CHR sharing is visible; all layers). `aseprite-layout` =
  *  the **16×16-WORD placement** tilemap for BG2/BG3 only (rearrange which tile goes where;
- *  8×8 placement is impossible in 16×16 tile mode — see research/graphics-editing). BG1
+ *  8×8 placement is impossible in 16×16 tile mode — see docs/graphics-editing). BG1
  *  has no static tilemap placement (that's the level editor), so it rejects
  *  `aseprite-layout`. `m1te2` = an M1TE2 `.M1` session file (any BG layer) bundling the
  *  layer's tilemap + CHR + palette for editing in M1TE2 — one `.M1` for the whole layer
@@ -1667,7 +1678,7 @@ export type GbaImportApplyResult =
 
 // ── Audio panel (audio:* IPC) ───────────────────────────────────────────────
 // Browse/audition surface over the built ROM's audio (music settings, song
-// slots, SFX ids) + .spc synthesis. See research/plan-audio-panel.md.
+// slots, SFX ids) + .spc synthesis. See docs/plan-audio-panel.md.
 
 /** One music setting (level-header field-13 value 0x00-0x0F, or an engine
  *  context 0x10-0x13 the header can't express). Settings sharing a

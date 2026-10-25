@@ -1,11 +1,11 @@
-// Build GitHub-wiki content from docs/ into a target directory (a checked-out
-// wiki repo). Transforms each docs/*.md from Obsidian flavor to wiki markdown
-// (wiki-transform.ts), copies docs/images/ across, and generates Home + _Sidebar
+// Build GitHub-wiki content from wiki/ into a target directory (a checked-out
+// wiki repo). Transforms each wiki/*.md from Obsidian flavor to wiki markdown
+// (wiki-transform.ts), copies wiki/images/ across, and generates Home + _Sidebar
 // navigation. It does NOT touch git — the Release workflow clones the wiki, runs
 // this, then commits + pushes (see .github/workflows/release.yml).
 //
 // Usage:
-//   node scripts/publish-wiki.ts --out <wikiDir> [--src docs] [--repo owner/name]
+//   node scripts/publish-wiki.ts --out <wikiDir> [--src wiki] [--repo owner/name]
 //
 // Local run (manual publish): clone the wiki, build into it, commit, push:
 //   git clone https://github.com/YoriKv/shiny-egg.wiki.git /tmp/wiki
@@ -31,7 +31,7 @@ function flag(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined
 }
 
-const src = flag('src') ?? 'docs'
+const src = flag('src') ?? 'wiki'
 const out = flag('out')
 const repo = flag('repo') ?? DEFAULT_REPO
 

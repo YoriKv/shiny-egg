@@ -1,8 +1,8 @@
-// Pure Obsidian-markdown → GitHub-wiki-markdown transforms for the docs/ tutorial.
+// Pure Obsidian-markdown → GitHub-wiki-markdown transforms for the wiki/ tutorial.
 // No filesystem or Node APIs, so it's trivially unit-testable (wiki-transform.test.ts);
 // the CLI that applies it + copies assets is publish-wiki.ts.
 //
-// Two Obsidian-isms appear in docs/:
+// Two Obsidian-isms appear in wiki/:
 //   - image embeds  ![[file.png]]  and  ![[file.png|WIDTH]]
 //   - page links    [[Page Name]]
 // GitHub wiki renders [[Page Name]] natively (→ the page whose file is

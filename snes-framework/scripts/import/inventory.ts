@@ -143,7 +143,7 @@ function buildIntervals(levelExtents: Array<[number, number]>): Interval[] {
     // Raw-CHR graphics banks $52–$56 (animation tiles, world-map icons, sprite /
     // dynamic-body gfx, world-map char base) — imported via the raw-CHR path.
     // $52–$57:3BFF incl. DATA_570000.bin — GSU bitmap data, not the GSU program
-    // (corrected: research/graphics-survey/11-vram-loading.md §4; the program is
+    // (corrected: docs/graphics-survey/11-vram-loading.md §4; the program is
     // banks $08–$0B, and the "$57 = H-flip mirror of $56" theory is byte-disproven).
     { start: RAW_GFX_PC_RANGE[0], end: RAW_GFX_PC_RANGE[1], key: 'graphics-raw', priority: 1 },
     // Bank57 asset bands (file offsets, from the bank's documented layout).

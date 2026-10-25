@@ -2,7 +2,7 @@
 // self-terminate, so diffing one needs its row count up front. The app layer
 // sizes the level-loaded files from its scene walk (`gfxSizeRegistry`), but 55
 // of the 187 lz16 files load from no level scene (mini-battle / bonus / boss /
-// ending-cutscene sheets — see research/graphics-survey/11-vram-loading.md for
+// ending-cutscene sheets — see docs/graphics-survey/11-vram-loading.md for
 // the closed attribution) and were invisible to the graphics diff. This module covers
 // them: the BASE extract's blob byte length is exact (the cart pointer table
 // defines each blob's range), so `probeLz16RowCount` recovers the row count —
@@ -11,7 +11,7 @@
 // too, exactly like the registry-sized path.
 //
 // Expected row counts for all 187 blobs are pinned against the ycompress size
-// table in gfx-lz16.test.ts (research/graphics-editing/ycompress-allgfx.md);
+// table in gfx-lz16.test.ts (docs/graphics-editing/ycompress-allgfx.md);
 // the test also pins the decode-level-equality property that makes the diff
 // robust to a ycompress-reinserted cart (every blob re-encoded, art unchanged
 // → not flagged).

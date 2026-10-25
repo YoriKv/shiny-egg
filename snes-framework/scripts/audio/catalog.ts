@@ -16,7 +16,7 @@
 //    marker), and 19/20 are byte-identical to the original module files —
 //    only the title-music sequence block differs (a late +8-byte edit; the
 //    extracted TitleScreenMusic.bin is the retail version).
-//    Full derivation: research/plan-audio-panel.md §2.2.
+//    Full derivation: docs/plan-audio-panel.md §2.2.
 //
 // Music-setting index spaces (all four appear below — don't conflate):
 //  - "music setting" = level-header field 13 value (0x00-0x0D used, 0x0E/0x0F

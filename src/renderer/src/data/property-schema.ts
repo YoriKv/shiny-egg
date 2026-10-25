@@ -1,6 +1,6 @@
 // Declarative property schema for the Properties panel.
 //
-// Research (research/notes-entity-properties.md) found the editable surface is
+// Research (docs/notes-entity-properties.md) found the editable surface is
 // thin and uniform: every entity is `type + cell-position + optional typed
 // payload`. So instead of hand-coding three panels, each entity type declares a
 // list of `PropertyField` descriptors and the panel renders them generically.
@@ -39,8 +39,16 @@ export interface NumFieldKind {
  *  editor doesn't have a label for. EnumField always offers this raw fallback. */
 export interface EnumFieldKind {
   kind: 'enum'
-  options: { value: number; label: string }[]
+  options: EnumOption[]
   disabled?: boolean
+}
+
+/** One dropdown entry. `detail` is the longer explanation a panel shows beside
+ *  the field while this value is selected (too long for the option text). */
+export interface EnumOption {
+  value: number
+  label: string
+  detail?: string
 }
 
 /** Widget seam — extend with 'levelRef' / 'picker' / 'flag' as they're built.

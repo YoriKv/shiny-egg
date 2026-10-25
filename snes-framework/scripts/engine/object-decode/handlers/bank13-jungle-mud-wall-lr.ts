@@ -227,7 +227,7 @@ function jungleWallRandomBody(state: DecodeState, side: 'left' | 'right'): void 
   // $22 handler already tagged, but the mud-wall side rolled UNTAGGED, so the
   // capture's mud-wall rolls had no shiny home and looked like "extra" cart
   // rolls (the rec_4c "115 phantom rolls" = its 28 $25/$26 mud walls; see
-  // research/notes-bg1-trace-rng-parity.md §7.1). Verified: with both sides
+  // docs/notes-bg1-trace-rng-parity.md §7.1). Verified: with both sides
   // tagged, the capture-vs-shiny per-site delta is 0 for every jungle-wall
   // record (delta tracked mud-wall count exactly while this side was untagged).
   const site = side === 'left' ? RNG_SITE.jungleLeftWallBody : RNG_SITE.jungleRightWallBody;

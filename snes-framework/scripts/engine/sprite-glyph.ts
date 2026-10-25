@@ -1,5 +1,5 @@
 // Dynamic-sprite glyph editor — the GSU-rasterized sprites' functional equivalent
-// of the metasprite (research/graphics-editing/metasprite.md §3/§9). Boss /
+// of the metasprite (docs/graphics-editing/metasprite.md §3/§9). Boss /
 // dynamic-tile sprites have NO Bank4D cel table; their CHR streams from the
 // bank-$54/$55 chunky glyph sheet (`FXDATA_5xxxxx`, graphicsassets §5.8). This
 // exports each byte-validated glyph as a PNG and writes edits back to the raw

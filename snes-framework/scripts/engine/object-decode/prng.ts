@@ -92,7 +92,7 @@ export const RNG_SITE = {
   // 11 jungle-wall records, 0 undershoot) and the jungle-wall rng-variant residual
   // closed catalog-wide (228 → 27). The no-replay editor render is unaffected
   // (LFSR); tagging sharpens only the capture comparison. Full write-up + the
-  // shared-site disambiguation method: research/notes-bg1-trace-rng-parity.md §7.1.
+  // shared-site disambiguation method: docs/notes-bg1-trace-rng-parity.md §7.1.
   jungleLeftWallBody: 0x139189,    // CODE_jungle_left_wall_random_body: `prng & 1` + $909E
   jungleRightWallBody: 0x1391da,   // CODE_jungle_right_wall_random_body: `prng & 1` + $9062
   jungleBlockPatternBTop: 0x139922,// CODE_jungle_block_pattern_b_top interior: `prng & 3` + $90C0

@@ -3,8 +3,7 @@
 // unpatched assembly. Pure (no node/DOM).
 //
 // YI's internal header sits at the LoROM position: the 16-bit checksum lives at
-// PC $7FDE and its one's-complement at PC $7FDC (both little-endian) — see
-// CLAUDE.md "PC $7FDC-$7FDF (ROM-header checksum)".
+// PC $7FDE and its one's-complement at PC $7FDC (both little-endian).
 //
 // Algorithm (canonical, header-content-independent): the checksum is the 16-bit
 // sum of every ROM byte, where the 4-byte checksum/complement field is taken at

@@ -6,7 +6,7 @@
 // The .pal/.col sidecars are display aids only (a wrong palette can't corrupt data —
 // YY-CHR's pen stores the index-within-row). Engine byte-layout helpers + the
 // verified YY-CHR.NET facts live in snes-framework/scripts/engine/gfx-yychr.ts;
-// design + decisions in research/graphics-editing/yychr-export.md.
+// design + decisions in docs/graphics-editing/yychr-export.md.
 //
 // Scope (whole cart, not per-level):
 //   • every level-loaded CHR sheet, from the distinct tileset-combo walk
@@ -379,7 +379,7 @@ export function collectYychrExport(rom: Uint8Array, symbols: SymbolMap): YychrEx
   const storybookCg = lazyCgram(() => sceneCgram(storybookVariant().palette))
   const bonusCg = lazyCgram(() => buildBonusSceneContext(rom, symbols, 0).cgram)
   // Bandit minigames: scene palette program X=$C2 (rows 0-13 + Yoshi row, all
-  // master-blob literals — research/graphics-survey/08-screens.md §7).
+  // master-blob literals — docs/graphics-survey/08-screens.md §7).
   const banditCg = lazyCgram(() => sceneCgram({ startOffset: 0xc2, slots: [] }))
   // gm$38 storybook prologue: settled BG/OBJ blobs (screen-storybook-intro.ts).
   const prologueCg = lazyCgram(() => buildStorybookIntroContext(rom, symbols).cgram)

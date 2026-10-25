@@ -19,6 +19,7 @@
 
 import { snesToPC, vendoredV10SymbolMap } from '../engine/symbol-map.ts';
 import { u24le } from '../engine/rom-read.ts';
+import { walkObjStream } from '../obj-stream.ts';
 import type { AnchorResolution } from '../types.ts';
 
 /** Number of level-data pointer-table entries (data-record indices). */
@@ -134,9 +135,9 @@ function readPropertyTable(cart: Buffer, pc: number): number[] {
 /**
  * Does `objSnes` point at a well-formed level object stream — a bit-packed
  * header followed by an object list terminated by `$FF`, then a screen-exit
- * list terminated by `$FF`, all in-bounds and within a tight cap? This is the
- * whole validation strategy: a pointer-table entry "is a level" iff it points
- * at a parseable level header + stream. It doesn't care WHERE the stream lives,
+ * list terminated by `$FF` (or gated off — `exitListAbsent`), all in-bounds and
+ * within a tight cap? This is the whole validation strategy: a pointer-table
+ * entry "is a level" iff it points at a parseable level header + stream. It doesn't care WHERE the stream lives,
  * so it's immune to a hack relocating/repointing streams (GoldenEgg writes the
  * pointer table in place + repoints each level's data into free space). A
  * pointer into code/garbage almost never walks to both terminators cleanly.
@@ -148,32 +149,7 @@ export function pointsAtValidObjStream(cart: Buffer, objSnes: number, info: numb
   // A real obj stream is at most ~2 KB; cap well under the 32 KB bank so a
   // garbage pointer that never hits a terminator is rejected, not walked.
   const cap = Math.min(cart.length, start + 0x2000);
-  let p = start + HEADER_BYTES;
-
-  let objTerm = false;
-  while (p < cap) {
-    const num = cart[p];
-    if (num === 0xff) {
-      p += 1;
-      objTerm = true;
-      break;
-    }
-    p += 3; // num + locH + locL
-    if (num === 0x00) {
-      p += 1; // extended-object exnum
-    } else {
-      const flag = info[num]! & 3;
-      if (flag !== 1) p += 1; // width byte
-      if (flag !== 0) p += 1; // height byte
-    }
-  }
-  if (!objTerm) return false;
-
-  while (p < cap) {
-    if (cart[p] === 0xff) return p + 1 <= cart.length;
-    p += 5; // 5-byte exit record
-  }
-  return false; // hit the cap without an exit-list terminator
+  return walkObjStream(cart, start, HEADER_BYTES, info, cap).terminated;
 }
 
 /** Generous sprite-stream cap: 512 records × 3 B (vanilla's largest is ~98). A

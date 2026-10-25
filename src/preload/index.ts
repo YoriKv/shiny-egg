@@ -25,6 +25,7 @@ import type {
   EntityValidityRequest,
   FindInstanceKind,
   FitSpritesetResult,
+  HeaderGuide,
   FitSurfaceRequest,
   FitTileset,
   FrameworkExtractArgs,
@@ -231,6 +232,9 @@ const api = {
     /** Best-covering stock sprite tileset (header[7]) for the given placed sprites. */
     fitSpriteset: (spriteNums: number[]): Promise<FitSpritesetResult> =>
       ipcRenderer.invoke('render:fitSpriteset', spriteNums),
+    /** Header-value usage across shipped levels + the level's World-6 flag. */
+    headerGuide: (levelRecordId: number): Promise<HeaderGuide> =>
+      ipcRenderer.invoke('render:headerGuide', levelRecordId),
     /** The level's distinct Map16 blocks with usage count, VRAM coverage
      *  health (loaded / anim / miss), and palette rows, plus a composite
      *  thumbnail of those blocks — the Tiles "Used in this level" view. Pass

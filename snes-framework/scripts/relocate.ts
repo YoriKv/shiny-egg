@@ -1,5 +1,5 @@
 // Build-time level-data layout transform — the unified pass behind free-region
-// migration + biased-pointer de-coupling (research/notes-rom-free-space.md).
+// migration + biased-pointer de-coupling (docs/notes-rom-free-space.md).
 //
 // It generalises the boundary move (boundary-move.ts) into one reconcile-from-base
 // pass per bank that composes four edit kinds, all addressed by asar LABEL so the
@@ -512,13 +512,13 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
   //       hands the bytes back to the pool. Bytes that deliberately SURVIVE a
   //       removal (the row repoint alone already takes the level out of play):
   //         • blobs in a non-reclaimable pool (the Bank51 home pool);
-  //         • raw/shared pointer slices with no tracked blob (0x7D's truncated
+  //         • raw/shared pointer slices with no tracked blob (0x7D's gate-borrowing
   //           DATA_169D23, 0xBF/0xD0's shared DATA_11DC0F);
   //         • a partner's spr blob whose tail terminator a KEPT biased level
   //           still borrows ($51/$C4 while $19/$CB is neither removed nor
   //           de-coupled);
-  //         • blobs a kept raw-slice stream spills into (0x7D's true stream
-  //           reads through DATA_level_A5_obj + DATA_level_17_spr).
+  //         • blobs a kept raw-slice stream reads into (0x7D's exit gate is
+  //           DATA_level_A5_obj's first byte).
   const removals: RemovedBlob[] = [];
   const removalRepoints: { oldExpr: string; replacement: string }[] = [];
   const freedFiles = new Set<string>();

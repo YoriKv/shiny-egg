@@ -111,7 +111,7 @@ export type NeighborSpatial =
 
 export type NeighborTargetKind = 'std-object' | 'map16-tile' | 'sprite' | 'screen-metadata'
 
-/** Relationship class (research/notes-sprite-neighbor-dependencies.md, Part 4 =
+/** Relationship class (docs/notes-sprite-neighbor-dependencies.md, Part 4 =
  *  the corrected model). The TSV / asm docs use the letter shorthands; the
  *  metadata carries the developer-friendly names:
  *    A `rail-follower`  — follows the $87xx line-guide rail

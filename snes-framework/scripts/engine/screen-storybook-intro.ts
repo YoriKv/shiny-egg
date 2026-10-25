@@ -1,7 +1,7 @@
 // Storybook-intro screen (gm$38/gm$39 — the "Once upon a time…" playable
 // prologue) — the BG2 story frame + BG3 backdrop as a static scene.
 // Composition asm-traced 2026-07-18 (`CODE_gm38_load_intro_cutscene`,
-// Bank10.asm:10639; research/graphics-survey/11-vram-loading.md §5):
+// Bank10.asm:10639; docs/graphics-survey/11-vram-loading.md §5):
 //
 //   gfx     — DP $10-$16 set directly ($23,$23,$23,$B1,$B2,$1A,$17; spriteset
 //             slots $AB,$AC,$1A ×4), then the STANDARD in-level program

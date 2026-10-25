@@ -13,7 +13,9 @@ import * as path from 'node:path';
 import type { LevelMap, LevelMapEntry } from './extract.ts';
 import type { RomVersion } from './rom-versions.ts';
 import { hex0x } from './hex.ts';
+import { exitListAbsent } from './obj-stream.ts';
 import type {
+  HeaderUsage,
   LevelData,
   LevelObject,
   LevelSprite,
@@ -107,6 +109,7 @@ export function isWorld6Record(map: LevelMap, recordId: number): boolean {
 
 let cachedMap: { workRoot: string; map: LevelMap } | null = null;
 let cachedWorld6: { workRoot: string; set: Set<number> } | null = null;
+let cachedHeaderUsage: { workRoot: string; usage: HeaderUsage } | null = null;
 
 /** Public accessor for the cached level-map. Callers (e.g. the serializer
  *  override path in the render IPC) need `headerBitWidths` +
@@ -148,6 +151,7 @@ function loadLevelMap(workRoot: string): LevelMap {
 export function invalidateLevelMapCache(): void {
   cachedMap = null;
   cachedWorld6 = null;
+  cachedHeaderUsage = null;
 }
 
 /**
@@ -221,6 +225,69 @@ export function world6Records(workRoot: string): Set<number> {
  */
 export function isWorld6RecordDeep(workRoot: string, recordId: number): boolean {
   return world6Records(workRoot).has(recordId);
+}
+
+/**
+ * Every backed record's header, inverted: for each field and value, the records
+ * that use it — plus which world-map level reaches each sub-room, so a guide can
+ * say "used by 1-4, 2-4" instead of listing bare room ids.
+ *
+ * Several header fields have no per-value names anywhere (sprite tileset,
+ * animation tileset, the palette rows), and the curated names the others carry
+ * are partly inferred. The levels that use a value are the one description that
+ * is always available and never wrong, so the editor shows them beside the
+ * field.
+ *
+ * Roots come from the same warp walk as {@link world6Records}, seeded from every
+ * world-map level in translevel order; a sub-room is claimed by the first root
+ * that reaches it, and a world-map destination is never traversed (it is its own
+ * root). BASE cart, cached per workRoot, cleared by `invalidateLevelMapCache`.
+ */
+export function headerValueUsage(workRoot: string): HeaderUsage {
+  if (cachedHeaderUsage && cachedHeaderUsage.workRoot === workRoot) return cachedHeaderUsage.usage;
+  const map = loadLevelMap(workRoot);
+  const byField = map.headerBitWidths.map((w) =>
+    Array.from({ length: 1 << w }, (): number[] => [])
+  );
+  const levels = new Map<number, LevelData>();
+  for (const [k, v] of Object.entries(map.levels)) {
+    const id = Number(k);
+    if (!v.objectFile || Number.isNaN(id)) continue;
+    try {
+      const data = loadLevel({ workRoot, levelRecordId: id });
+      if (data.empty || data.special) continue;
+      levels.set(id, data);
+    } catch {
+      continue;
+    }
+  }
+  for (const id of [...levels.keys()].sort((a, b) => a - b)) {
+    levels.get(id)!.header.forEach((value, field) => byField[field]?.[value]?.push(id));
+  }
+
+  const rootOf: (number | null)[] = [];
+  const roots = Object.entries(map.translevelToRecord)
+    .filter((e): e is [string, number] => e[1] != null)
+    .sort((a, b) => parseInt(a[0], 16) - parseInt(b[0], 16))
+    .map(([, rec]) => rec);
+  for (const rec of roots) rootOf[rec] = rec;
+  for (const root of roots) {
+    const queue = [root];
+    while (queue.length > 0) {
+      for (const ex of levels.get(queue.shift()!)?.exits ?? []) {
+        if (ex.variant !== 'warp') continue;
+        const dest = ex.destLevelRecordId;
+        if (dest == null || !levels.has(dest) || rootOf[dest] != null) continue;
+        rootOf[dest] = root;
+        queue.push(dest);
+      }
+    }
+  }
+  for (const id of levels.keys()) rootOf[id] ??= null;
+
+  const usage = { byField, rootOf };
+  cachedHeaderUsage = { workRoot, usage };
+  return usage;
 }
 
 /**
@@ -330,6 +397,9 @@ function parseExits(
 ): { exits: ScreenExit[]; nextOffset: number } {
   const exits: ScreenExit[] = [];
   let p = startOffset;
+  // Cart gate (`exitListAbsent`): ANY `$80+` byte where the first exit's screen
+  // would be means "no exits", not only a lone `$FF`.
+  if (p < bytes.length && exitListAbsent(bytes[p])) return { exits, nextOffset: p + 1 };
   while (p < bytes.length) {
     const b = bytes[p];
     if (b === 0xff) {

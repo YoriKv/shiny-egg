@@ -19,7 +19,7 @@
 //    + module-layout.ts).
 // The sample + song imports are this file's overlay-write paths (guarded by
 // requireWritableProject; change metadata in overlayRoot/audio-edits.json;
-// callers markRomDirty). System map: research/plan-audio-panel.md.
+// callers markRomDirty). System map: docs/plan-audio-panel.md.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join, resolve, sep } from 'path'
