@@ -352,7 +352,22 @@ export const DYNAMIC_BODY_SOURCES: Readonly<Record<number, DynamicBodySource>> =
   0x052: { delta: 0x550040 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 4, highNibble: true }, // Balloon
   0x06d: { delta: 0x544040 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 2, highNibble: true }, // Hootie the Blue Fish (CW)
   0x06e: { delta: 0x544040 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 2, highNibble: true }, // Hootie the Blue Fish (CCW)
-  0x07f: { delta: 0x544060 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 4 }, // Log seesaw
+  // Log seesaw $07F — THREE logs, one GSU-plotted 32×32 log image drawn three times. Asm (Bank04
+  // main_log_seesaw_platform): CODE_04AE9D rotzooms FXDATA_540000+$4060 = $54:4060 (LOW nibble, R12
+  // even) into the sprite's dynamic slot at angle $7A39 / scale $0100 (FXCODE_088205; identity at
+  // angle 0 = a straight copy of the source rect). The main then runs CODE_polar_to_xy_simple
+  // (FXCODE_0B855B, R1 = angle*2, R6 = $1A00) → R0 = $1A00*cos >> 16, R1 = $1A00*sin >> 16, and the
+  // CODE_04AD66 loop writes 3 × a 2×2 16×16 quad (the same slot tiles) at log centre
+  // (anchor + 8 − R0 + i*R0, anchor + 8 − R1 + i*R1), quad top-left = centre − 16. At rest (angle 0,
+  // the balance pose: cos = $0100, sin = 0) R0 = 26, R1 = 0 → logs' top-left x = −34, −8, +18, y = −8:
+  // an 84×32 plank. The static special_chr cel stacks all 12 records at (−8,−8) (the spacing is only
+  // in the handler's R0), which is why a plain decode drew one log. Iteration 0 (leftmost) is the
+  // LOWEST OAM index → frontmost, so the pieces go right→left (later pieces overwrite earlier).
+  0x07f: { delta: 0x544060 - ANCHOR_SNES, width: 84, height: 32, paletteRow: 4, originX: -34, originY: -8, pieces: [
+    { delta: 0x544060 - ANCHOR_SNES, width: 32, height: 32, x: 52, y: 0 },  // right log (behind)
+    { delta: 0x544060 - ANCHOR_SNES, width: 32, height: 32, x: 26, y: 0 },  // middle log
+    { delta: 0x544060 - ANCHOR_SNES, width: 32, height: 32, x: 0, y: 0 },   // left log (front)
+  ] }, // Log seesaw
   0x09d: { delta: 0x5400c0 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 1, highNibble: true }, // !-switch
   // End-Transformation (Yoshi-shaped) block $098: a 2×2 tile-0 placeholder grid (32×32) whose gfx
   // the GSU plots from FXDATA_548000+$60C0 = $54:E0C0 (handler init_yoshi_block: R12/R13 source,
@@ -453,8 +468,9 @@ export const DYNAMIC_BODY_SOURCES: Readonly<Record<number, DynamicBodySource>> =
   //    0x0D8 was removed after rendering the wrong silhouette. To promote/correct, re-run
   //    the trace with the Rev-4 `rigid` gate (source == settled-rest-frame body, strict).
   //    Dims from oamW/oamH (distinctCols overcounts). Deferred (wide/jumble — dims need
-  //    refinement): 0x01C/0x01D (Freezegood multi-sprite region), 0x07F (84w straddle),
-  //    0x162 (124w), 0x13C; and 0x158 (compact=0, intrinsically scaled).
+  //    refinement): 0x01C/0x01D (Freezegood multi-sprite region), 0x162 (124w), 0x13C; and
+  //    0x158 (compact=0, intrinsically scaled). (0x07F's 84w "straddle" was the 3-log plank —
+  //    now asm-derived as a 3-piece body, see its entry above.)
   0x003: { delta: 0x552080 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 4 }, // Crate, key — source $55:2080 LOW nibble (the asm GET address, DATA_0D9109[0]=FXDATA_550000+$2080, plotted by CODE_0D9111→FXCODE_088295). Was $55:2081 (off by one): reading 1 byte over made column 31 land on byte $20A0 = the NEXT frame's source ($55:20A0), so 3 stray pixels leaked into the right edge.
   0x040: { delta: 0x54a0a0 - ANCHOR_SNES, width: 32, height: 32, paletteRow: 6 }, // Baby Luigi
   // Giant Shy Guys ($043 red / $044 green) — their special_chr cel TILES are a vestigial logo (low

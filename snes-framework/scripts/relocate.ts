@@ -511,7 +511,8 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
   //       are deleted from reclaimable pools — the boundary reclaim in step 2/4
   //       hands the bytes back to the pool. Bytes that deliberately SURVIVE a
   //       removal (the row repoint alone already takes the level out of play):
-  //         • blobs in a non-reclaimable pool (the Bank51 home pool);
+  //         • blobs in a non-reclaimable pool (none on V1.0 today; every V1.1
+  //           pool, but V1.1 has no sentinel rows, so removal is off there);
   //         • raw/shared pointer slices with no tracked blob (0x7D's gate-borrowing
   //           DATA_169D23, 0xBF/0xD0's shared DATA_11DC0F);
   //         • a partner's spr blob whose tail terminator a KEPT biased level
@@ -559,11 +560,12 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
     removalRepoints.push({ oldExpr: ptrRowExpr(map.romVersion, hex), replacement: sentinel });
   }
 
-  // 2. Per movable/reclaimable pool, the signed growth over POST-migration,
-  //    POST-removal membership (negative = a reclaim from a deleted blob).
+  // 2. Per pool, the signed growth over POST-migration, POST-removal membership
+  //    (negative = a reclaim from a deleted blob). A FIXED pool (neither movable
+  //    nor reclaimable, e.g. every V1.1 pool) gets no move in step 4, but its
+  //    growth still has to be gated: its close asserts like any other.
   const poolGrowth = new Map<string, number>();
   for (const pool of map.pools) {
-    if (!pool.tail.movable && !pool.tail.reclaimable) continue;
     const used = pool.blobs
       .filter((b) => !migratedHex.has(b.level) && !freedFiles.has(b.file))
       .reduce((n, b) => n + opts.sizeOf(b.file), 0);
@@ -601,11 +603,16 @@ export function planLayout(map: PoolMap, opts: LayoutOptions): LayoutPlan {
   // 4. Emit moves + over-budget violations from the final per-pool growth.
   const moves: BoundaryMove[] = [];
   for (const pool of map.pools) {
-    if (!pool.tail.movable && !pool.tail.reclaimable) continue;
     const g = poolGrowth.get(pool.id) ?? 0;
+    if (!pool.tail.movable && !pool.tail.reclaimable) {
+      // Fixed pool: any growth overruns its close; a shrink needs no rewrite
+      // (the close's `org` pads the gap).
+      if (g > 0) violations.push({ kind: 'pool-over', id: pool.id, bytes: g });
+      continue;
+    }
     if (g > 0) {
       // Forward growth: only a MOVABLE pool can absorb it (grow into spare fill).
-      // A reclaimable-only pool's fill is load-bearing (Bank15) — any growth
+      // A reclaimable-only pool's fill is load-bearing (Bank15) or zero (Bank51) — any growth
       // overflows (it should already be blocked upstream, since headroom is 0).
       if (!pool.tail.movable || g > pool.tail.fillSize) {
         violations.push({ kind: 'pool-over', id: pool.id, bytes: pool.tail.movable ? g - pool.tail.fillSize : g });

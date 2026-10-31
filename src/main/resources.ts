@@ -1135,6 +1135,13 @@ function activePoolMap(): { map: NonNullable<ReturnType<typeof poolMapFor>>; rom
   return { map, romVersion }
 }
 
+/** The active cart's unnarrowed pool map (base pool spans + free regions), or
+ *  null before extract/build. Used to name the pool or region behind a failed
+ *  asar boundary assert. */
+export function activeBasePoolMap(): PoolMap | null {
+  return activePoolMap()?.map ?? null
+}
+
 /** Bytes the active project reserves for the asm-patch pool (0 when no asm patch
  *  is enabled — then no carve). Every budget view shrinks the free-region map by
  *  this (via `carvePatchPool`) so the gate matches the room the build actually

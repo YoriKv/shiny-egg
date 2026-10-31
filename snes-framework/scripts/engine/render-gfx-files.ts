@@ -56,6 +56,10 @@ const TILE_BYTES_2BPP = 16;
 /** Conventional sprite VRAM start (matches the `'sprite'` region in
  *  `render:vram`). Sprites in YI sit in the upper 8KB of VRAM. */
 const SPRITE_VRAM_START = 0x6000;
+/** End of the two OBJ name pages (byte $8000 + 512 4bpp tiles). Level gfx above
+ *  it is BG char data: the BG1/BG2 base at $E000 holds the third BG1 tileset
+ *  file and the global $19 sheet; $C000 holds the HUD chars. */
+const OBJ_VRAM_END = 0xc000;
 
 /**
  * Palette row to PREVIEW an animated slot with (the Tiles-gallery animated-slot
@@ -100,14 +104,17 @@ function dpSlotLayer(slot: number): 'BG1' | 'BG2' | 'BG3' | 'Sprite' {
  *      $15-$16 BG3, $17-$1C sprite.
  *   2. Else if vramByteOffset is inside the BG3 char-base 8KB window:
  *      label as BG3 (2bpp).
- *   3. Else if vramByteOffset >= `SPRITE_VRAM_START` ($6000): break
+ *   3. Else if vramByteOffset >= `OBJ_VRAM_END` ($C000): above both OBJ
+ *      pages, so BG char data whatever its LZ format (the global lz16 $19
+ *      at $F000 is BG1/BG2 tiles 128-255).
+ *   4. Else if vramByteOffset >= `SPRITE_VRAM_START` ($6000): break
  *      the tie on **LZ format**, because Nintendo's convention is
  *      LZ2 for BG1/BG3 and LZ16 for BG2/Sprite (verified empirically
  *      across all V1.0 tilesets: 100% LZ2-for-BG1+BG3, 100%
  *      LZ16-for-BG2, ~90% LZ16-for-sprite). A literal LZ2 in upper
  *      VRAM is almost certainly appended BG1; LZ16 is almost
  *      certainly sprite.
- *   4. Else: label as BG1/BG2 (4bpp pal 0).
+ *   5. Else: label as BG1/BG2 (4bpp pal 0).
  *
  * **Forward-compatibility note**: this rule treats the LZ-format
  * convention as authoritative. A modded ROM that violates it (e.g.
@@ -136,6 +143,9 @@ function inferRenderParams(
     entry.vramByteOffset < bg3CharAddr + 0x2000
   ) {
     return { bpp: 2, paletteRow: bgRows.bg3, layer: 'BG3' };
+  }
+  if (entry.vramByteOffset >= OBJ_VRAM_END) {
+    return { bpp: 4, paletteRow: bgRows.bg1, layer: 'BG1' };
   }
   if (entry.vramByteOffset >= SPRITE_VRAM_START) {
     // LZ format breaks the BG1-vs-sprite tie in upper VRAM.
@@ -393,8 +403,12 @@ export interface GfxRole {
   slot?: number;
 }
 
-/** VRAM byte offsets of the two always-loaded global sprite sheets ($72/$19). */
-const GLOBAL_SPRITE_VRAM = new Set([0x8000, 0xf000]);
+/** VRAM byte offset of the always-loaded global sprite sheet ($72, OBJ tiles
+ *  0-255). The other always-loaded lz16 file, $19 at `$F000`, is NOT a sprite
+ *  sheet: it fills tiles 128-255 of the shared BG1/BG2 char base (`$E000`, the
+ *  run that wraps on into `$0000`), so it classifies as BG1 via
+ *  `inferRenderParams` (above the OBJ pages). */
+const GLOBAL_SPRITE_VRAM = new Set([0x8000]);
 /** VRAM byte offsets of the fixed HUD / font / status sheets ($12/$76/$4F). */
 const HUD_VRAM = new Set([0x2400, 0x2a00, 0xc000]);
 

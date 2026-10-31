@@ -12,7 +12,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { runAsar } from './asar.ts';
 import { walkObjStream } from './obj-stream.ts';
-import { snesToPC, vendoredV10SymbolMap } from './engine/symbol-map.ts';
+import { snesToPC, vendoredSymbolMap } from './engine/symbol-map.ts';
 import { buildLevelsCatalog } from './levels-catalog.ts';
 import { parseEntranceTable, loadLevelIdSymbols } from './world-map.ts';
 import { findOrphanRecords, invalidateLevelMapCache } from './level.ts';
@@ -57,7 +57,7 @@ const CATEGORIES: Category[] = [
  *     in yi/Banks/Bank12.asm; expected first byte 0xFF then `02,01,01,...`).
  *
  * The level pointer table (`Ptrs`) is likewise resolved from the cart at
- * extract time via the vendored V1.0 SymbolMap — see buildLevelMap(). Each
+ * extract time via the per-version vendored SymbolMap (`vendoredSymbolMap`) — see buildLevelMap(). Each
  * entry's label maps 1:1 to a LevelData/.bin filename.
  */
 /** Number of entries in the level-data pointer table (`Ptrs:`) — i.e. the count
@@ -70,7 +70,7 @@ export const LEVEL_RECORD_COUNT = 222
 
 const ROM_TABLES = {
   levelCount: LEVEL_RECORD_COUNT,
-  // Cart-address constants are resolved via the vendored V1.0 SymbolMap at
+  // Cart-address constants are resolved via the per-version vendored SymbolMap at
   // extract time — see buildLevelMap() — so a future asm patch that shifts
   // these tables only requires updating the vendored map, not this file.
   // Labels: `DATA_header_bit_length` ($10:8B05) and
@@ -259,9 +259,11 @@ function buildLevelMap(
   availableLevelBins: Set<string>,
   levelBinSlices: LevelBinSlice[]
 ): LevelMap {
-  // Resolve cart-resident table addresses via the vendored V1.0 SymbolMap
-  // (extract runs BEFORE any build, so no `.sym` exists yet).
-  const symbols = vendoredV10SymbolMap();
+  // Resolve cart-resident table addresses via the vendored SymbolMap for THIS
+  // cart's version (extract runs BEFORE any build, so no `.sym` exists yet).
+  // V1.1 moved the Ptrs:/entrance data table to $0F:E446, so a V1.0 map here
+  // reads garbage off a V1.1 cart.
+  const symbols = vendoredSymbolMap(opts.romVersion);
   const headerBitWidthsPC = symbols.pc('DATA_header_bit_length');
   const standardObjectInfoPC = symbols.pc('DATA_object_property_table');
   // Cart pointer-table address. The cart's runtime indexes this with
@@ -467,7 +469,15 @@ export function extractAssets(opts: ExtractOptions): ExtractResult {
         empty++;
       } else {
         const startPC = snesToPC(srcStartSnes);
-        const endPC = snesToPC(srcEndSnes);
+        let endPC = snesToPC(srcEndSnes);
+        // The rows are LoROM-addressed and the end is exclusive, so a slice that
+        // runs to the end of a LoROM bank ends at `$BB:8000` of the NEXT bank. For
+        // the cart's last bank ($3F) that's `$40:8000`, which snesToPC reads as
+        // the SuperFX HiROM view (PC $008000) and the slice came out empty (V1.1's
+        // DATA_5FFCE4_YI_U2 end-of-ROM garbage). Read such an end as LoROM.
+        if (endPC < startPC && (srcEndSnes & 0xffff) === 0x8000) {
+          endPC = ((srcEndSnes >>> 16) & 0x7f) * 0x8000;
+        }
         data = cart.subarray(startPC, endPC);
         // Track which LevelData .bin files actually got produced — the asm
         // parser uses this to skip entries whose .bin didn't materialize.
@@ -527,7 +537,7 @@ export function extractAssets(opts: ExtractOptions): ExtractResult {
   const catalog = buildLevelsCatalog(
     workRoot,
     cart,
-    vendoredV10SymbolMap(),
+    vendoredSymbolMap(romVersion),
     levelMapForDisc.translevelToRecord // hex-keyed, as buildLevelsCatalog now expects
   );
   // Append orphan / unused rooms — records with level data reachable from

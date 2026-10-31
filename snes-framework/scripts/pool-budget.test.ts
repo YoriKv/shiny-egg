@@ -6,8 +6,11 @@
 // `capacity == Σ(base blob sizes)`. Movable pools then tolerate growth up to
 // their fill size (boundary move); a byte past that overruns the pool. This
 // pins down membership, capacity, headroom, and the boundary-move rewrite.
+// Section 8 does the same for USA V1.1 when a V1.1 build is available (all of
+// its pools are fixed), and skips otherwise.
 //
 // Run: node --experimental-strip-types snes-framework/scripts/pool-budget.test.ts
+//      YI_U2_WORK_ROOT=<V1.1-extracted + built work root> node … (adds V1.1)
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -17,6 +20,7 @@ import { buildPoolMap, poolLevels } from './pool-map.ts';
 import { checkAllPools, computeLevelBudget, computePoolOverview } from './level-budget.ts';
 import { computeBoundaryMoves, rewriteFreeBytesText } from './boundary-move.ts';
 import { outputSfcName } from './rom-versions.ts';
+import { readExtractionState } from './state.ts';
 
 const frameworkRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const baseBinDir = path.join(frameworkRoot, 'assets', 'yi', 'LevelData');
@@ -45,7 +49,7 @@ const check = (cond: boolean, msg: string): void => {
   }
 };
 
-// 1. Expected pool count (9 obj/spr pools + Bank51's name-string pool = 10).
+// 1. Expected pool count (10, incl. Bank51's 0x32/0x69/0x95 run).
 check(map.pools.length === 10, `expected 10 pools, got ${map.pools.length}`);
 
 // 2. capacity == Σ(base blob sizes) for every pool, by construction.
@@ -144,6 +148,69 @@ check(
   'Bank4C overview levels should be sorted descending by bytes'
 );
 
+// 8. USA V1.1 (YI_U2) against a real V1.1 build. Needs a work root extracted
+//    from the V1.1 cart and built: `YI_U2_WORK_ROOT=<root>`, or this framework
+//    root when it is extracted as V1.1. Skipped (not failed) otherwise.
+//    Pins the YI_U2 boundary table to the built `.sym`: every pool ends exactly
+//    at its close, every level blob is tracked, every pool is fixed (garbage
+//    data follows each close, and V1.1 has no free regions), and one byte of
+//    growth anywhere is a violation.
+let v11Summary = 'V1.1 skipped (no V1.1 build; set YI_U2_WORK_ROOT)';
+{
+  const candidates = [process.env.YI_U2_WORK_ROOT, frameworkRoot].filter((r): r is string => !!r);
+  const v11Root = candidates.find((r) => readExtractionState(r)?.romVersion === 'YI_U2');
+  const v11Sym = v11Root
+    ? path.join(v11Root, 'build', outputSfcName('YI_U2').replace(/\.sfc$/i, '.sym'))
+    : null;
+  if (process.env.YI_U2_WORK_ROOT && !v11Root) {
+    check(false, `YI_U2_WORK_ROOT=${process.env.YI_U2_WORK_ROOT} is not a V1.1-extracted work root`);
+  } else if (v11Root && v11Sym && fs.existsSync(v11Sym)) {
+    const v11Bins = path.join(v11Root, 'assets', 'yi', 'LevelData');
+    const v11SizeOf = (file: string): number => {
+      try {
+        return fs.statSync(path.join(v11Bins, file)).size;
+      } catch {
+        return 0;
+      }
+    };
+    const v11SymText = fs.readFileSync(v11Sym, 'utf8');
+    const v11 = buildPoolMap('YI_U2', v11SymText, v11SizeOf);
+    const ids = v11.pools.map((p) => p.id).join(',');
+    check(
+      ids === 'Bank00,Bank10,Bank11,Bank12,Bank14,Bank15#1,Bank15#2,Bank16,Bank4C,Bank51',
+      `V1.1 pool ids, got ${ids}`
+    );
+    check(v11.freeRegions.length === 0, `V1.1 should have no free regions, got ${v11.freeRegions.length}`);
+    for (const p of v11.pools) {
+      check(!p.tail.movable && !p.tail.reclaimable && p.headroomBytes === 0, `V1.1 ${p.id} should be fixed`);
+      check(p.capacityBytes === p.blobs.reduce((n, b) => n + b.baseBytes, 0), `V1.1 ${p.id}: capacity != Σbase`);
+      const end = Math.max(...p.blobs.map((b) => b.snesAddr + b.baseBytes));
+      check(end === p.tail.boundary, `V1.1 ${p.id}: data ends at $${end.toString(16)}, close is $${p.tail.boundary.toString(16)}`);
+    }
+    // Every level blob in the .sym is tracked, so none escapes the gate.
+    const symBlobs = v11SymText.split('\n').filter((l) => /\sDATA_level_[0-9A-Fa-f]+_(obj|spr)\s*$/.test(l)).length;
+    check(v11.poolByFile.size === symBlobs, `V1.1 tracks ${v11.poolByFile.size} of ${symBlobs} level blobs`);
+    // The V1.1-only placements.
+    check(v11.poolByFile.get('DATA_level_04_obj.bin')?.id === 'Bank51', 'V1.1 level 0x04 lives in Bank51');
+    check(v11.poolByFile.get('DATA_level_2A_obj.bin')?.id === 'Bank10', 'V1.1 level 0x2A lives in Bank10');
+    check(v11.poolByFile.get('DATA_level_30_obj.bin')?.id === 'Bank4C', 'V1.1 level 0x30 lives in Bank4C');
+
+    check(checkAllPools(v11, v11SizeOf).length === 0, 'V1.1 base build should have 0 pool violations');
+    for (const p of v11.pools) {
+      const grown = (f: string): number => v11SizeOf(f) + (f === p.blobs[0]!.file ? 1 : 0);
+      const v = checkAllPools(v11, grown);
+      check(v.length === 1 && v[0]?.poolId === p.id && v[0]?.overBy === 1, `V1.1 ${p.id} +1 should over-run by 1, got ${JSON.stringify(v)}`);
+      check(computeBoundaryMoves(v11, grown).length === 0, `V1.1 ${p.id} +1 should yield no boundary move`);
+    }
+    const ov = computePoolOverview(v11, v11SizeOf);
+    check(
+      ov.every((e) => e.freeBytes === 0 && e.levels.every((l) => !l.migratable && !l.decouplable)),
+      'V1.1 overview: every pool full at base, nothing migratable or de-couplable'
+    );
+    v11Summary = `V1.1 ${v11.pools.length} fixed pools, ${v11.poolByFile.size} blobs, base exactly at capacity`;
+  }
+}
+
 if (failures > 0) {
   console.error(`\npool-budget.test: ${failures} failure(s).`);
   process.exit(1);
@@ -151,5 +218,5 @@ if (failures > 0) {
 console.log(
   `pool-budget.test: OK — ${map.pools.length} pools, ` +
     `${map.pools.reduce((n, p) => n + poolLevels(p).length, 0)} level-slots, ` +
-    `${splitLevels.size} Bank15 split levels, base build exactly at capacity.`
+    `${splitLevels.size} Bank15 split levels, base build exactly at capacity; ${v11Summary}.`
 );

@@ -66,6 +66,7 @@ import {
   referenceCartPath
 } from './framework-paths'
 import { getCurrentProjectId } from './projects'
+import { stripLegacyTemplateChunks } from './patch-template-legacy'
 
 interface PatchManifest {
   version: 1
@@ -154,7 +155,24 @@ function readPatchFile(dir: string, id: string): PatchFile | null {
     // writes under `hunks`. Adopt the legacy key so existing project patch files
     // (and any hand-authored `.json` still using it) keep loading.
     const raw = JSON.parse(readFileSync(p, 'utf8')) as PatchFile & { hunks?: StoredPatchChunk[] }
-    const chunks = Array.isArray(raw.chunks) ? raw.chunks : Array.isArray(raw.hunks) ? raw.hunks : []
+    let chunks = Array.isArray(raw.chunks) ? raw.chunks : Array.isArray(raw.hunks) ? raw.hunks : []
+    // One-time cleanup: the old "New Patch" template shipped two sample chunks
+    // LIVE, which broke a boss fight when enabled unedited (see templatePatchFile
+    // + patch-template-legacy.ts). Strip them from user patches and rewrite only
+    // the JSON in place, so the file stops showing them; the asm sibling (or a
+    // legacy inline `asm`) is left exactly as it was. Remove after a few releases.
+    if (raw.source === 'user') {
+      const stripped = stripLegacyTemplateChunks(chunks)
+      if (stripped !== chunks) {
+        chunks = stripped
+        const { hunks: _legacyHunks, ...rest } = raw
+        try {
+          writeFileSync(p, JSON.stringify({ ...rest, chunks }, null, 2), 'utf8')
+        } catch {
+          // Read-only file: still serve the cleaned patch; retry on the next load.
+        }
+      }
+    }
     // Build-time asm lives in the sibling `<id>.asm` (the on-disk home); fall back
     // to a legacy inline `asm` field so pre-split JSONs keep loading.
     const asmPath = patchAsmPath(dir, id)
@@ -500,17 +518,22 @@ export function importAsm(filePath: string): PatchImportResult {
 }
 
 /** A self-documenting template `PatchFile` for the "New Patch" button: every
- *  user-relevant field present with sample data. `details` carries the format
- *  reference (it's the field meant for hand-editing notes, never shown in the
- *  UI — JSON has no comments, so this is where the docs live). Created DISABLED:
- *  the sample chunk bytes are illustrative, so the user edits, then enables. */
+ *  user-relevant field present, but NO live edits — `chunks` is empty and the
+ *  sibling asm is all comments, so enabling the template unedited is a true
+ *  no-op. Never put sample byte writes in `chunks`: users enable the template
+ *  as-is, and the old samples (an RTS over Hookbill's fog init, NOPs inside
+ *  its wall-turn routine) silently broke the 4-8 boss fight. `details` carries
+ *  the format reference, with example chunk shapes as text (it's the field
+ *  meant for hand-editing notes, never shown in the UI — JSON has no comments,
+ *  so this is where the docs live). Created disabled; the user edits, then
+ *  enables. */
 function templatePatchFile(id: string, romVersion: RomVersion): PatchFile {
   return {
     id,
     name: 'My New Patch (template)',
     category: 'My Patches',
     description:
-      'TEMPLATE — edit the fields + sample bytes below, then enable in the panel. (Created disabled.)',
+      'TEMPLATE — does nothing yet: add chunks below and/or asm in the sibling .asm file, then enable in the panel. (Created disabled.)',
     attribution: 'Optional credit: original hack · author · URL',
     details: [
       'FORMAT REFERENCE (this `details` field is never shown in the UI — it documents',
@@ -543,12 +566,17 @@ function templatePatchFile(id: string, romVersion: RomVersion): PatchFile {
       '    name your own anchor.',
       '  "bytes": hex bytes, packed ("EAEA") or with optional $NN / 0xNN prefixes and',
       '    whitespace/comma separators ("$EA $EA"). "EA" = NOP, "60" = RTS.',
-      '  Hex anywhere here accepts $NN and 0xNN interchangeably.'
+      '  Hex anywhere here accepts $NN and 0xNN interchangeably.',
+      '',
+      'Example chunks (the SHAPE only, these exact writes would break a boss fight;',
+      'copy the shape into "chunks" with your own address + bytes):',
+      '  { "offset": "0x0093E2", "bytes": "EAEA" }',
+      '  { "label": "CODE_018041", "labelOffset": "0x0", "bytes": "60" }'
     ],
     source: 'user',
     romVersionAuthored: romVersion,
     asm: [
-      '; --- asar source assembled into the build (delete this file if unused) ---',
+      '; --- asar source assembled into the build (delete this file if you only use chunks) ---',
       '; Everything here is commented out, so it assembles to nothing until you edit it.',
       '; Engine labels are injected as `!CODE_*` / `!RAM_*` defines (the "define inject"),',
       '; resolved against the just-built ROM .sym so they survive asm drift. See the',
@@ -574,17 +602,14 @@ function templatePatchFile(id: string, romVersion: RomVersion): PatchFile {
       ';     JML !CODE_018041+$04                ; resume after the displaced bytes',
       ';   %endpatchcode()'
     ],
-    chunks: [
-      // Offset-addressed sample (survives asm drift). Replace before enabling.
-      { offset: '0x0093E2', bytes: 'EAEA' },
-      // Label-addressed sample (resolved against the build .sym). Replace before enabling.
-      { label: 'CODE_018041', labelOffset: '0x0', bytes: '60' }
-    ]
+    // Empty on purpose: see the doc comment (examples live in `details`).
+    chunks: []
   }
 }
 
 /** Create a new, self-documenting template patch in the active project (disabled,
- *  appended to the list). The user edits the JSON via "Open folder" then enables it. */
+ *  appended to the list). It carries no edits until the user adds chunks / asm
+ *  via "Open folder", then enables it. */
 export function createTemplatePatch(): PatchImportResult {
   const projectId = getCurrentProjectId()
   if (!projectId) return { ok: false, error: 'No active project to create a patch in.' }
@@ -592,7 +617,7 @@ export function createTemplatePatch(): PatchImportResult {
   const id = uniqueId(projectId, 'my-patch')
   const pf = templatePatchFile(id, baseRomVersion() ?? 'YI_U1')
   writePatchFiles(dir, pf) // splits the asm template into the sibling `<id>.asm`
-  appendToOrder(projectId, id) // not enabled — the sample bytes are illustrative
+  appendToOrder(projectId, id) // not enabled: it does nothing until edited
   return { ok: true, patch: summaryOf(pf, false) }
 }
 

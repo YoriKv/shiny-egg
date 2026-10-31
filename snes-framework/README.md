@@ -117,7 +117,7 @@ Both USA versions build successfully end-to-end:
 | Version | Extracted files | Build vs reference cart |
 |---|---|---|
 | YI_U1 (USA V1.0) | 981 (0 empty placeholders) | **Byte-identical** |
-| YI_U2 (USA V1.1) | 1026 (95 deliberately empty) | Known benign diffs in banks `$11`/`$12` (and the header checksum) from upstream garbage-data slots the V1.1 extraction path doesn't yet cover — game still boots and runs |
+| YI_U2 (USA V1.1) | 1026 (94 deliberately empty) | **Byte-identical** |
 
 `E1`/`E2`/`J1`/`J2`/`J3` exist as labels in `scripts/rom-versions.ts` but are flagged `supported: false` — enabling one would require a matching `RomMap/ROM_Map_YI_<V>.asm` file and version-specific data work in `AssetPointersAndFiles.asm` and `Routine_Macros_YI.asm`.
 
@@ -193,7 +193,7 @@ Both USA versions build successfully end-to-end:
 
    The build emits the `.sfc` plus the `<stem>.sym` / `<stem>-superfx.sym` symbol maps the exploration tools consume. (`yi/Custom/Asar_Patches_YI.asm` is disabled for the byte-exact output.)
 
-3. **Verify** — V1.0 output is MD5-byte-identical to the reference cart; treat any diff as a regression. (See the ROM-version table for V1.1's known benign diffs.)
+3. **Verify** — both USA versions build MD5-byte-identical to their reference carts; treat any diff as a regression.
 
 ## Documentation philosophy
 

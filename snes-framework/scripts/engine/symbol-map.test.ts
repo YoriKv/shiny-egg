@@ -1,7 +1,8 @@
 // Unit test: parseWlaSymbolMap against synthetic .sym text.
 // Run: node --experimental-strip-types snes-framework/scripts/engine/symbol-map.test.ts
 
-import { isFriendlyLabel, mergeSymbolMaps, parseWlaSymbolMap, snesToPC } from './symbol-map.ts';
+import * as fs from 'node:fs';
+import { isFriendlyLabel, mergeSymbolMaps, parseWlaSymbolMap, snesToPC, vendoredSymbolMap, vendoredV10SymbolMap } from './symbol-map.ts';
 
 let failures = 0;
 function assert(cond: boolean, msg: string): void {
@@ -135,6 +136,36 @@ console.log('\n=== mergeSymbolMaps (complete map, primary wins, reverseLookup sp
   // reverseLookup works on the merged map (was the latent bug: shallow merge lacked it)
   assert(m.reverseLookup(0x0055)?.label === 'fx_b', 'merged reverseLookup spans the secondary map');
   assert(typeof m.reverseLookup === 'function', 'merged map carries reverseLookup');
+}
+
+console.log('\n=== vendoredSymbolMap (per-version cart tables) ===');
+{
+  const v10 = vendoredV10SymbolMap();
+  const u1 = vendoredSymbolMap('YI_U1');
+  const u2 = vendoredSymbolMap('YI_U2');
+  assert(u1.labels().every((l) => u1.pc(l) === v10.pc(l)), 'YI_U1 map == the V1.0 vendored map');
+  assert(u2.labels().length === v10.labels().length, 'YI_U2 map carries the same label set');
+  assert(u2.pc('YI_LevelDataPtrsAndEntranceData_Ptrs') === snesToPC(0x0fe822), 'V1.1 Ptrs: at $0F:E822');
+  assert(u2.pc('YI_LevelDataPtrsAndEntranceData_DATA_level_entrance_indexes') === snesToPC(0x0fe446), 'V1.1 entrance indexes at $0F:E446');
+  assert(u2.pc('YI_LevelDataPtrsAndEntranceData_DATA_map_level_entrances') === snesToPC(0x0fe4d0), 'V1.1 map entrances at $0F:E4D0');
+  assert(u2.pc('DATA_header_bit_length') === v10.pc('DATA_header_bit_length'), 'unmoved labels keep the V1.0 address');
+  let threw = false;
+  try { vendoredSymbolMap('YI_J1'); } catch { threw = true; }
+  assert(threw, 'unsupported version throws');
+
+  // Cart-gated: the first Ptrs: row (record 0x00) is the same level in both
+  // carts, so each map must find it on its own cart. Skips without the carts.
+  const carts = { YI_U1: '/mnt/d/Dev/SNES/YI_USA1.sfc', YI_U2: '/mnt/d/Dev/SNES/YI_USA2.sfc' } as const;
+  if (fs.existsSync(carts.YI_U1) && fs.existsSync(carts.YI_U2)) {
+    const row0 = (v: 'YI_U1' | 'YI_U2'): string => {
+      const cart = fs.readFileSync(carts[v]);
+      const pc = vendoredSymbolMap(v).pc('YI_LevelDataPtrsAndEntranceData_Ptrs');
+      return cart.subarray(pc, pc + 6).toString('hex');
+    };
+    assert(row0('YI_U1') === row0('YI_U2'), `Ptrs: row 0 matches across carts (${row0('YI_U1')} vs ${row0('YI_U2')})`);
+  } else {
+    console.log('  (reference carts not found; cart-gated check skipped)');
+  }
 }
 
 console.log(`\n${failures === 0 ? '✓' : '✗'} ${failures === 0 ? 'all tests pass' : `${failures} failure(s)`}`);

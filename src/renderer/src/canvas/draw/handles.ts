@@ -11,6 +11,7 @@
 
 import type { LevelObject } from '../../../../preload/api'
 import type { SizeMode } from '../../data/object-record'
+import type { OutlineMode } from '../../types'
 import { CELL_PX, objectVisualBox } from '../geometry'
 import { SELECTION_ACCENT } from './selection'
 
@@ -106,6 +107,52 @@ export function hitResizeHandle(
   for (const h of objectResizeHandles(o, sizeMode)) {
     if (Math.abs(wx - h.x) <= tol && Math.abs(wy - h.y) <= tol) return h.id
   }
+  return null
+}
+
+/** On-screen half-width of the grab band along a free edge, px (render mode). */
+const EDGE_PX = 4
+
+/**
+ * Edge-band hit-test for 'render' outline mode, which draws no handle squares:
+ * anywhere along a free edge of the w/h box (± EDGE_PX screen px) grabs it, and
+ * the free corner gets the handle square's tolerance so it's easy to land.
+ * Corner first, matching `hitResizeHandle`'s order.
+ */
+export function hitResizeEdge(
+  o: LevelObject,
+  sizeMode: SizeMode,
+  wx: number,
+  wy: number,
+  zoom: number
+): ResizeHandle | null {
+  if (sizeMode === 'none') return null
+  const { x0, y0, w, h } = objectVisualBox(o)
+  const e = boxEdges(o)
+  const cornerTol = (HANDLE_PX / 2 + 1) / zoom
+  if (sizeMode === 'wh' && Math.abs(wx - e.freeX) <= cornerTol && Math.abs(wy - e.freeY) <= cornerTol) {
+    return 'corner'
+  }
+  const tol = EDGE_PX / zoom
+  const alongY = wy >= y0 - tol && wy <= y0 + h + tol
+  const alongX = wx >= x0 - tol && wx <= x0 + w + tol
+  if (sizeMode !== 'h' && alongY && Math.abs(wx - e.freeX) <= tol) return 'edgeW'
+  if (sizeMode !== 'w' && alongX && Math.abs(wy - e.freeY) <= tol) return 'edgeH'
+  return null
+}
+
+/** The resize grab under the cursor for the active object outline mode:
+ *  handle squares in 'detailed', edge bands in 'render', nothing in 'off'. */
+export function hitObjectResize(
+  o: LevelObject,
+  sizeMode: SizeMode,
+  wx: number,
+  wy: number,
+  zoom: number,
+  outlines: OutlineMode
+): ResizeHandle | null {
+  if (outlines === 'detailed') return hitResizeHandle(o, sizeMode, wx, wy, zoom)
+  if (outlines === 'render') return hitResizeEdge(o, sizeMode, wx, wy, zoom)
   return null
 }
 

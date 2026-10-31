@@ -34,6 +34,21 @@ describe('parityVariantRows', () => {
     expect(parityVariantRows(0x0b5, 1, 0)[0].value).toBe('5 stars')
     expect(parityVariantRows(0x0b5, 0, 1)[0].value).toBe('Red switch')
   })
+  it('morph bubbles: even column = inside a winged cloud (DATA_03C0FD $FF), odd column = bare bubble popped at init ($00)', () => {
+    for (const id of [0x0af, 0x0b0, 0x0b1, 0x0b2, 0x0b4]) {
+      expect(parityVariantRows(id, 10, 6)[0].value).toBe('Inside a winged cloud')
+      expect(parityVariantRows(id, 11, 6)[0].value).toBe('Bare bubble')
+      expect(parityVariantRows(id, 10, 7)[0].value).toBe('Hidden winged cloud (red switch)')
+      expect(parityVariantRows(id, 11, 7)[0].value).toBe('Bare bubble, drifts sideways')
+    }
+    expect(parityVariantRows(0x0b3, 10, 6)).toEqual([]) // Fuzzy cloud: no-op Init, not a bubble
+  })
+  it('parityDirection: stairs / platform clouds build right on even columns, left on odd (CODE_03C398 $76 = +-$10)', () => {
+    for (const id of [0x0ba, 0x0bb]) {
+      expect(parityDirection(id, 10, 7)).toBe('right')
+      expect(parityDirection(id, 11, 6)).toBe('left')
+    }
+  })
   it('returns [] for sprites without parity variants', () => {
     expect(parityVariantRows(0x185, 5, 5)).toEqual([])
   })

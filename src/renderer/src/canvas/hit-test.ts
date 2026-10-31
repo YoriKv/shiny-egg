@@ -13,6 +13,7 @@ import {
   LEVEL_CELLS_H,
   LEVEL_CELLS_W,
   SPAWN_HIT_HALF_PX,
+  SPAWN_MARKER_DY,
   exitMarkerX,
   exitMarkerY,
   objectVisualBox
@@ -242,7 +243,7 @@ export function hitTestAll(
     const spawn = spawnPos !== undefined ? spawnPos : level.spawn
     if (spawn) {
       const sx = (spawn.x + 0.5) * CELL_PX
-      const sy = (spawn.y + 0.5) * CELL_PX
+      const sy = (spawn.y + SPAWN_MARKER_DY + 0.5) * CELL_PX
       if (
         Math.abs(wx - sx) <= SPAWN_HIT_HALF_PX &&
         Math.abs(wy - sy) <= SPAWN_HIT_HALF_PX
@@ -453,7 +454,7 @@ export function hitTestSpawn(
   if (!spawn) return false
   const { wx, wy } = clientToWorld(rect, view, clientX, clientY)
   const sx = (spawn.x + 0.5) * CELL_PX
-  const sy = (spawn.y + 0.5) * CELL_PX
+  const sy = (spawn.y + SPAWN_MARKER_DY + 0.5) * CELL_PX
   return (
     Math.abs(wx - sx) <= SPAWN_HIT_HALF_PX &&
     Math.abs(wy - sy) <= SPAWN_HIT_HALF_PX

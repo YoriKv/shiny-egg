@@ -7,10 +7,11 @@
 ;# Contents at a glance:
 ;#   V1.1 (!ROM_YI_U2) layout:
 ;#       $510000  GSU code blob (next %InsertNextPreCompiledCodeBlock)
-;#       inline   DATA_10F262, DATA_10F4FA -- level data blobs that V1.1 hoisted up
-;#                                            from low banks into the HiROM mirror.
-;#       $510000+ DATA_51xxxx -- six standard level-data blobs (object + sprite streams).
-;#       $51567B  garbage padding from V1.1 cart.
+;#       inline   DATA_level_04_{obj,spr} -- level $04, which V1.1 hoisted up from
+;#                                           bank $10 into the HiROM mirror.
+;#       inline   DATA_level_{32,69,95}_{obj,spr} -- the six level blobs V1.0 also has here.
+;#       $51567B  garbage padding from V1.1 cart. Its %InsertGarbageData asserts
+;#                pc() <= $51567B, so it is the level run's size gate.
 ;#
 ;#   V1.0 layout:
 ;#       $510000  DATA_510000 .. $51106A -- six standard level-data blobs.
@@ -61,6 +62,10 @@ DATA_level_95_spr:							; level data
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($51567B, incbin, DATA_51567B_YI_U2.bin)	; V1.1 padding to bank-end alignment
 else
+	; Zero-byte close of the level-data run. The GSU block below is pinned at $5110DB,
+	; so the run can't grow, but the blobs are label-addressed: dropping one pulls this
+	; boundary back and the fill pads the gap with $FF up to the pinned block.
+	%FREE_BYTES($5110DB, 0, $FF)				; V1.0: level-data run ends exactly at the GSU block
 	%InsertNextPreCompiledCodeBlock($5110DB, YI_SuperFXCode, "SuperFX/SuperFXCode_YI.bin")	; V1.0: more GSU code after the level data
 	%FREE_BYTES($515348, 44216, $FF)			; V1.0: ~44 KB free tail
 endif

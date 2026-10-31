@@ -15,9 +15,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildPoolMap, carvePatchPool, migratable, patchPoolGeometry, poolLevels, shiftRegionHead, PATCH_POOL_MAX_BYTES } from './pool-map.ts';
+import { buildPoolMap, carvePatchPool, migratable, patchPoolGeometry, poolLevels, ptrRowExpr, sentinelRowExpr, shiftRegionHead, PATCH_POOL_MAX_BYTES } from './pool-map.ts';
 import type { LevelPool, PoolMap } from './pool-map.ts';
 import {
+  DATATABLE,
   deleteIncbin,
   insertBeforeFreeBytes,
   appendRegionBlobs,
@@ -221,6 +222,106 @@ const check = (cond: boolean, msg: string): void => {
   check(out.includes('%FREE_BYTES($16FF17, 233, $FF)'), `signed rewrite should reclaim, got: ${out.trim()}`);
 }
 
+// ── USA V1.1: fixed pools, no free regions (synthetic .sym, no artifacts) ────
+//
+// Every V1.1 pool is closed by `%InsertGarbageData` (or Bank15#1's 1-byte
+// sentinel) and there's no free region, so the model must gate growth on fixed
+// pools, never emit a boundary rewrite, and never offer or plan anything that
+// needs free space. The real-build counterpart is pool-budget.test's V1.1 block.
+{
+  // Bank4C: two levels ending exactly at the $4CFEE7 garbage close. Bank51:
+  // level 0x04 ending at $51567B. A Bank14 biased-row level (0x19) for the
+  // de-couple no-op.
+  const sym = [
+    '4c:fd00 DATA_level_30_obj', '4c:fe00 DATA_level_30_spr', '4c:fe80 DATA_level_67_obj',
+    '51:5600 DATA_level_04_obj', '51:5640 DATA_level_04_spr',
+    '14:ff00 DATA_level_19_obj',
+  ].join('\n');
+  const sizes: Record<string, number> = {
+    'DATA_level_30_obj.bin': 0x100, 'DATA_level_30_spr.bin': 0x80, 'DATA_level_67_obj.bin': 0x67,
+    'DATA_level_04_obj.bin': 0x40, 'DATA_level_04_spr.bin': 0x3b,
+    'DATA_level_19_obj.bin': 0xa5,
+  };
+  const sz = (f: string): number => sizes[f] ?? 0;
+  const v11 = buildPoolMap('YI_U2', sym, sz);
+  check(v11.freeRegions.length === 0, `V1.1 should have no free regions, got ${v11.freeRegions.length}`);
+  check(
+    v11.pools.map((p) => p.id).join(',') === 'Bank14,Bank4C,Bank51',
+    `V1.1 synthetic pools, got ${v11.pools.map((p) => p.id).join(',')}`
+  );
+  check(
+    v11.pools.every((p) => !p.tail.movable && !p.tail.reclaimable && p.headroomBytes === 0),
+    'every V1.1 pool is fixed (not movable, not reclaimable, 0 headroom)'
+  );
+  const b4c = v11.pools.find((p) => p.id === 'Bank4C')!;
+  check(b4c.tail.boundary === 0x4cfee7 && b4c.capacityBytes === 0x1e7, `V1.1 Bank4C close/capacity, got ${JSON.stringify(b4c.tail)} ${b4c.capacityBytes}`);
+  check(v11.poolByFile.get('DATA_level_04_spr.bin')?.id === 'Bank51', 'V1.1 level 0x04 belongs to Bank51');
+
+  // Nothing is migratable (no reclaimable pool, no region), so the budget views
+  // never offer it, even for a level that is over.
+  check([0x30, 0x67, 0x04, 0x19].every((id) => !migratable(v11, id, new Set())), 'no V1.1 level is migratable');
+  const grownSz = (f: string): number => sz(f) + (f === 'DATA_level_30_obj.bin' ? 1 : 0);
+  const budget = computeLevelBudget(
+    v11, 0x30, { objFile: 'DATA_level_30_obj.bin', spriteFile: 'DATA_level_30_spr.bin' },
+    { objBytes: 0x101, spriteBytes: 0x80 }, sz
+  );
+  check(budget.over && budget.worstOverBy === 1 && !budget.canRelocate, `V1.1 +1 byte: over by 1, no relocate offer, got ${JSON.stringify(budget)}`);
+  check(
+    computePoolOverview(v11, sz).every((p) => p.levels.every((l) => !l.migratable && !l.decouplable)),
+    'V1.1 overview offers no migrate / de-couple'
+  );
+
+  // The gate: base fits; one byte of growth in a fixed pool is a pool-over
+  // violation with NO boundary move; a shrink needs no rewrite either.
+  check(checkAllPools(v11, sz).length === 0, 'V1.1 base should fit');
+  const grownPlan = planLayout(v11, { migrated: new Set(), decoupled: new Set(), sizeOf: grownSz });
+  check(
+    grownPlan.violations.length === 1 && grownPlan.violations[0]?.kind === 'pool-over' &&
+      grownPlan.violations[0]?.id === 'Bank4C' && grownPlan.violations[0]?.bytes === 1,
+    `V1.1 Bank4C +1 → one pool-over by 1, got ${JSON.stringify(grownPlan.violations)}`
+  );
+  check(grownPlan.moves.length === 0, 'a fixed pool never gets a boundary move');
+  const gate = checkAllPools(v11, grownSz);
+  check(gate.length === 1 && gate[0]?.poolId === 'Bank4C' && gate[0]?.overBy === 1, `V1.1 pre-build gate catches +1, got ${JSON.stringify(gate)}`);
+  const shrunk = planLayout(v11, { migrated: new Set(), decoupled: new Set(), sizeOf: (f) => Math.max(0, sz(f) - 1) });
+  check(shrunk.moves.length === 0 && shrunk.violations.length === 0, 'a V1.1 shrink is neither a move nor a violation');
+
+  // Free-space requests are refused, never placed: a (drifted) migration has no
+  // region, a de-couple / new slot / removal has no V1.1 row.
+  const mig = planLayout(v11, { migrated: new Set([0x30]), decoupled: new Set([0x19]), newSlots: new Set([0xda]), removed: new Set([0x67]), sizeOf: sz });
+  check(mig.relocations.length === 0 && mig.deletions.length === 0, 'V1.1 migration places nothing and deletes nothing');
+  check(mig.violations.every((v) => v.kind === 'region-full'), `V1.1 migration reports region-full, got ${JSON.stringify(mig.violations)}`);
+  check(mig.decouples.length === 0 && mig.repoints.length === 0 && mig.rowRepoints.length === 0, 'V1.1 has no de-couple / new-slot rows');
+  check(mig.removals.length === 0 && mig.removalRepoints.length === 0 && sentinelRowExpr('YI_U2') === null, 'V1.1 removal is off (no sentinel rows)');
+
+  // The FreeRegion51-keyed helpers are no-ops on a map with no regions.
+  check(carvePatchPool(v11, 0x400) === v11, 'carvePatchPool is a no-op without FreeRegion51');
+  check(shiftRegionHead(v11, 100) === v11, 'shiftRegionHead is a no-op without FreeRegion51');
+
+  // The Ptrs: table is one version-shared macro, so the irregular rows match.
+  for (const id of ['19', '7D', 'BF', 'CB', 'D0', '04']) {
+    check(ptrRowExpr('YI_U2', id) === ptrRowExpr('YI_U1', id), `V1.1 Ptrs row expr for 0x${id} matches V1.0`);
+  }
+
+  // Applying an empty V1.1 layout rewrites only the DATATABLE (no reclaimable
+  // pool, no region bank) and leaves it byte-identical.
+  const tmpV11 = fs.mkdtempSync(path.join(os.tmpdir(), 'relocate-test-v11-'));
+  try {
+    applyLevelDataLayout(yiRoot, null, tmpV11, v11, { migrated: new Set(), decoupled: new Set(), sizeOf: sz });
+    const written = fs.readdirSync(tmpV11, { recursive: true }).filter((f) => String(f).endsWith('.asm')).map(String);
+    check(
+      written.length === 1 && written[0]!.replace(/\\/g, '/') === DATATABLE,
+      `empty V1.1 layout should write only the DATATABLE, got ${written.join(', ')}`
+    );
+    check(
+      fs.readFileSync(path.join(tmpV11, DATATABLE), 'utf8') === fs.readFileSync(path.join(yiRoot, DATATABLE), 'utf8'),
+      'empty V1.1 layout: DATATABLE byte-identical to base'
+    );
+  } finally {
+    fs.rmSync(tmpV11, { recursive: true, force: true });
+  }
+}
+
 // ── planner + apply against real artifacts ───────────────────────────────────
 
 if (!fs.existsSync(symPath) || !fs.existsSync(baseBinDir)) {
@@ -298,6 +399,21 @@ check(plan15.relocations.length === 2, `0x07 should relocate 2 blobs, got ${plan
 const reclaim15 = plan15.moves.filter((m) => m.bankFile === 'Banks/Bank15.asm').reduce((n, m) => n + m.growth, 0);
 check(reclaim15 === -(obj07 + spr07), `Bank15 should reclaim ${obj07 + spr07} bytes (move growth ${reclaim15})`);
 check(plan15.moves.filter((m) => m.bankFile === 'Banks/Bank15.asm').every((m) => m.growth < 0), 'Bank15 moves should all be reclaims (negative growth)');
+
+// Bank51: its level run ends at a GSU block pinned at $5110DB, closed by a
+// zero-byte %FREE_BYTES. Non-movable but RECLAIMABLE, and a distinct pool from
+// FreeRegion51 (whose %FREE_BYTES is the bank's $515348 tail).
+const bank51 = map.pools.find((p) => p.bank === 0x51)!;
+check(bank51.tail.boundary === 0x5110db && bank51.tail.fillSize === 0, `Bank51 pool should close at $5110DB with fill 0, got $${bank51.tail.boundary.toString(16)}/${bank51.tail.fillSize}`);
+check(!bank51.tail.movable && bank51.tail.reclaimable && bank51.headroomBytes === 0, 'Bank51 pool should be non-movable, reclaimable, 0 headroom');
+check(poolLevels(bank51).join(',') === '32,69,95', `Bank51 pool should hold 0x32/0x69/0x95, got ${poolLevels(bank51).join(',')}`);
+for (const id of [0x32, 0x69, 0x95]) check(migratable(map, id, none), `0x${id.toString(16)} (Bank51) should be migratable`);
+const obj69 = baseSizeOf('DATA_level_69_obj.bin');
+const spr69 = baseSizeOf('DATA_level_69_spr.bin');
+const plan51m = planLayout(map, { migrated: new Set([0x69]), decoupled: new Set(), sizeOf: baseSizeOf });
+check(plan51m.violations.length === 0, `migrate 0x69 (Bank51) should have no violations, got ${JSON.stringify(plan51m.violations)}`);
+const mv51 = plan51m.moves.filter((m) => m.bankFile === 'Banks/Bank51.asm');
+check(mv51.length === 1 && mv51[0].boundary === 0x5110db && mv51[0].growth === -(obj69 + spr69), `Bank51 should reclaim ${obj69 + spr69} bytes at $5110DB, got ${JSON.stringify(mv51)}`);
 
 // Budget views: free-region overview + migration-aware pool overview.
 const regsBase = computeFreeRegionsOverview(map, baseSizeOf);
@@ -447,12 +563,12 @@ const SENTINEL = 'DATA_15FCEA,DATA_15FFD5';
 
 {
   // Shared-obj rows (0xBF/0xD0, both at DATA_11DC0F): only the spr blob frees;
-  // a Bank51-pool level (non-reclaimable home) frees nothing but still repoints.
+  // a Bank51-pool level frees both blobs (reclaimable home) and repoints.
   const planBF = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0xbf]), sizeOf: baseSizeOf });
   check(planBF.deletions.length === 1 && planBF.deletions[0].label === 'DATA_level_BF_spr', `remove 0xBF frees only its spr blob, got ${JSON.stringify(planBF.deletions)}`);
   check(planBF.removalRepoints[0]?.oldExpr === 'DATA_11DC0F,DATA_level_BF_spr', '0xBF removal targets its shared-obj row expression');
   const plan51 = planLayout(map, { migrated: new Set(), decoupled: new Set(), removed: new Set([0x32]), sizeOf: baseSizeOf });
-  check(plan51.deletions.length === 0 && plan51.removals.length === 0, 'a Bank51-pool level frees nothing (non-reclaimable home)');
+  check(plan51.deletions.length === 2 && plan51.removals.length === 2, `a Bank51-pool level frees its obj + spr, got ${JSON.stringify(plan51.deletions)}`);
   check(plan51.removalRepoints.length === 1 && plan51.removalRepoints[0].oldExpr === 'DATA_level_32_obj,DATA_level_32_spr', 'its row still repoints');
 }
 
@@ -525,6 +641,18 @@ try {
   applyLevelDataLayout(yiRoot, null, tmp, map, { migrated: new Set(), decoupled: new Set(), sizeOf: baseSizeOf });
   const b4cRestored = fs.readFileSync(path.join(tmp, 'Banks/Bank4C.asm'), 'utf8');
   check(b4cRestored === fs.readFileSync(path.join(yiRoot, 'Banks/Bank4C.asm'), 'utf8'), 'empty re-apply should restore Bank4C to base');
+
+  // (c2) migrate 0x69 (a Bank51 home level) ⇒ its incbins leave the home run,
+  //      the zero-byte $5110DB close pulls back + pads, and the blobs land in
+  //      FreeRegion51 (one incbin each, after the region's org).
+  applyLevelDataLayout(yiRoot, null, tmp, map, { migrated: new Set([0x69]), decoupled: new Set(), sizeOf: baseSizeOf });
+  const b51m = fs.readFileSync(path.join(tmp, 'Banks/Bank51.asm'), 'utf8');
+  const n69 = obj69 + spr69;
+  const pad51 = (0x5110db - n69).toString(16).toUpperCase().padStart(6, '0');
+  check(b51m.includes(`%FREE_BYTES($${pad51}, ${n69}, $FF)`), `Bank51 home close should pull back by ${n69}`);
+  check(b51m.indexOf('%InsertMacroAtXPosition($515348)') < b51m.indexOf('DATA_level_69_obj:'), '0x69 obj should now sit in FreeRegion51');
+  check(b51m.split('incbin "LevelData/DATA_level_69_obj.bin"').length === 2, '0x69 obj should be incbin\'d exactly once');
+  check(b51m.split('incbin "LevelData/DATA_level_69_spr.bin"').length === 2, '0x69 spr should be incbin\'d exactly once');
 
   // (d) patchPoolBytes=0 ⇒ Bank51 byte-identical to base (no carve when patches off).
   applyLevelDataLayout(yiRoot, null, tmp, map, { migrated: new Set(), decoupled: new Set(), sizeOf: baseSizeOf, patchPoolBytes: 0 });

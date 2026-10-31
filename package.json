@@ -1,12 +1,12 @@
 {
   "name": "shiny-egg",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "A Yoshi's Island (SNES) level editor",
   "main": "./out/main/index.js",
   "author": "",
   "license": "GPL-3.0-only",
   "private": true,
-  "packageManager": "pnpm@11.5.1",
+  "packageManager": "pnpm@12.15.0+sha512.b3951d6d6ff4a9f13dc7cf56cd28d2b8eb37dbcc9c68e52e1e1191873ea9f82a017287ab50baadc5ccc494f036c67c0e47eb13608c2fa36f47711b61ea128e61",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",

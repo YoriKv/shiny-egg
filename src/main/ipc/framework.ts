@@ -20,7 +20,6 @@ import { asarBinPath, frameworkWorkRoot } from '../framework-paths'
 import { getCurrentProjectId } from '../projects'
 import { buildProject } from '../build-tree'
 import { anyEmulatorRunning, stopAllEmulators } from '../emulator/registry'
-import { checkActivePoolBudgets, poolViolationMessage } from '../resources'
 import type { CartIdentification, FrameworkExtractArgs } from '../../shared/ipc-types'
 
 export function registerFrameworkIpc(): void {
@@ -94,22 +93,9 @@ export function registerFrameworkIpc(): void {
       const onProgress = (msg: string): void => {
         win?.webContents.send('framework:progress', msg)
       }
-      // Pre-build budget gate (task #14). Saved overlay streams may exceed a
-      // shared bank pool; building them would trip the asar boundary assert and
-      // fail the build. Refuse with an actionable message first (the asar error
-      // is cryptic). The renderer also gates Test Level on the same signal
-      // (build-scope blocker); this is the defense-in-depth backstop (covers
-      // Launch too). The build itself is now atomic (build.ts) — a failure here
-      // would leave the previous good ROM intact regardless — but the friendly
-      // pre-check still beats showing the raw asar assert.
-      const violations = checkActivePoolBudgets()
-      if (violations.length > 0) {
-        const msg = poolViolationMessage(violations)
-        onProgress(`Build blocked: ${msg}`)
-        throw new Error(msg)
-      }
       // With an active project, build through the project pipeline (data-only
       // include fast path, or build-tree merge when the overlay has asm edits).
+      // buildProject runs the pre-build budget gate and translates asar failures.
       const result = projectId
         ? await buildProject({ id: projectId, onProgress })
         : await buildRom({ workRoot: frameworkWorkRoot(), asarBin: asarBinPath(), onProgress })

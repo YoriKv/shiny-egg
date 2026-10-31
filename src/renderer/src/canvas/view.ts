@@ -2,7 +2,7 @@
 // initial view. Pure — no React, no DOM.
 
 import type { LevelData } from '../../../preload/api'
-import { CELL_PX } from './geometry'
+import { CELL_PX, LEVEL_PX_H, LEVEL_PX_W } from './geometry'
 
 export interface View {
   /** Pan offsets in canvas pixels — applied AFTER the zoom. */
@@ -133,6 +133,22 @@ export function clientToWorld(view: View, canvasX: number, canvasY: number): { x
   }
 }
 
+/**
+ * The CANVAS-relative point that shows, under view `to`, the same world point
+ * (canvasX, canvasY) showed under view `from`. Re-anchors a drag's start point
+ * when the view changes mid-drag (wheel zoom, edge auto-scroll) so the drag's
+ * client-space delta keeps meaning the same world delta. Pure.
+ */
+export function reanchorCanvasPoint(
+  from: View,
+  to: View,
+  canvasX: number,
+  canvasY: number
+): { x: number; y: number } {
+  const w = clientToWorld(from, canvasX, canvasY)
+  return { x: w.x * to.zoom + to.panX, y: w.y * to.zoom + to.panY }
+}
+
 /** The cell-grid point at the centre of the viewport. Used by paste to drop a
  *  clipboard group on-screen when its original position is scrolled out of
  *  view. Pure. */
@@ -153,4 +169,56 @@ export function isCellOnScreen(
   const screenX = x * CELL_PX * view.zoom + view.panX
   const screenY = y * CELL_PX * view.zoom + view.panY
   return screenX >= 0 && screenX <= sizePx.w && screenY >= 0 && screenY <= sizePx.h
+}
+
+/** Width of the band along each canvas edge where a drag auto-scrolls. Also the
+ *  margin the level edge stops at, so scrolling never runs off into the void. */
+export const EDGE_SCROLL_ZONE_PX = 40
+/** Auto-scroll speed (canvas px/s) at the very edge or beyond it. */
+const EDGE_SCROLL_MAX_SPEED = 1200
+
+/** Signed speed (px/s) for one axis: +ve near the far edge (scroll toward
+ *  higher world coords), -ve near the near edge, 0 in the interior. Ramps
+ *  linearly across the zone and saturates once the cursor leaves the canvas. */
+function edgeSpeed(pos: number, extent: number): number {
+  const near = EDGE_SCROLL_ZONE_PX - pos
+  const far = pos - (extent - EDGE_SCROLL_ZONE_PX)
+  if (near > 0) return -EDGE_SCROLL_MAX_SPEED * Math.min(1, near / EDGE_SCROLL_ZONE_PX)
+  if (far > 0) return EDGE_SCROLL_MAX_SPEED * Math.min(1, far / EDGE_SCROLL_ZONE_PX)
+  return 0
+}
+
+/** Move `pan` by `-speed * dt` but never past the level-edge limit, and never
+ *  snap toward it from beyond (a view the user already panned past stays put). */
+function edgeStep(pan: number, speed: number, dtSec: number, levelPx: number, extent: number): number {
+  if (speed > 0) {
+    const min = extent - EDGE_SCROLL_ZONE_PX - levelPx
+    return Math.min(pan, Math.max(min, pan - speed * dtSec))
+  }
+  if (speed < 0) {
+    return Math.max(pan, Math.min(EDGE_SCROLL_ZONE_PX, pan - speed * dtSec))
+  }
+  return pan
+}
+
+/**
+ * Drag edge auto-scroll: the pan after `dtMs` with the cursor at the
+ * CANVAS-relative point (canvasX, canvasY), which may lie outside the canvas
+ * (window-level drag listeners keep reporting it). Inside the edge band the view
+ * scrolls toward that edge, faster the closer the cursor is, and stops once the
+ * level's edge is EDGE_SCROLL_ZONE_PX inside the viewport. Returns `view`'s pan
+ * unchanged when nothing should move. Pure.
+ */
+export function edgeScrollPan(
+  view: View,
+  sizePx: { w: number; h: number },
+  canvasX: number,
+  canvasY: number,
+  dtMs: number
+): { panX: number; panY: number } {
+  const dt = dtMs / 1000
+  return {
+    panX: edgeStep(view.panX, edgeSpeed(canvasX, sizePx.w), dt, LEVEL_PX_W * view.zoom, sizePx.w),
+    panY: edgeStep(view.panY, edgeSpeed(canvasY, sizePx.h), dt, LEVEL_PX_H * view.zoom, sizePx.h)
+  }
 }

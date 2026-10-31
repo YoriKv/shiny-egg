@@ -114,6 +114,20 @@ export interface BuildResult {
   superfxSymbolsPath: string;
 }
 
+/** One `error:` line from asar's output, parsed. asar cites the innermost file
+ *  (a macro body's own file, e.g. the shared `%FREE_BYTES` assert in
+ *  `global/HardwareRegisters/SNES.asm`), not the caller that expanded it. */
+export interface AsarDiagnostic {
+  /** Path as asar printed it, relative to its cwd (`yi/`), e.g. `../yi/Custom/Asar_Patches_YI.asm`. */
+  file: string;
+  /** 1-based line in `file`. */
+  line: number;
+  /** asar's error code, e.g. `Eassertion_failed`, `Eunknown_command`. */
+  code: string;
+  /** The message, including asar's trailing `[source line]` echo. */
+  message: string;
+}
+
 // ── Level data ────────────────────────────────────────────────────────────
 
 export interface LevelObject {

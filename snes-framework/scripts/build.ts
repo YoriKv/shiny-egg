@@ -102,7 +102,7 @@ export async function buildRom(opts: BuildOptions): Promise<BuildResult> {
     const totalSteps = 3 + SAMPLE_BANKS.length + 4;
     let step = 0;
     const log = (label: string): void => onProgress?.(`[${++step}/${totalSteps}] ${label}`);
-    const asarCall = (args: string[]): void => runAsar({ asarBin, args, cwd: yiCwd });
+    const asarCall = (label: string, args: string[]): void => runAsar({ asarBin, args, cwd: yiCwd, label });
 
     // ── Parallel prefix ───────────────────────────────────────────────────
     // The first 3 + 7 phases are mutually independent, so they run concurrently
@@ -183,7 +183,7 @@ export async function buildRom(opts: BuildOptions): Promise<BuildResult> {
     // etc.) by label name. Survives asm patches that shift cart layout —
     // see snes-framework/scripts/engine/symbol-map.ts for the consumer.
     log('Assemble main SNES');
-    asarCall([
+    asarCall('Assemble main SNES', [
       ...defines,
       '--define', 'FileType=1',
       '--symbols=wla',
@@ -192,11 +192,11 @@ export async function buildRom(opts: BuildOptions): Promise<BuildResult> {
 
     // Phase 2: patches / late hooks
     log('Apply patches');
-    asarCall([...defines, '--define', 'FileType=2', ASSEMBLE_FILE, outputRel]);
+    asarCall('Apply patches', [...defines, '--define', 'FileType=2', ASSEMBLE_FILE, outputRel]);
 
     // Phase 3: finalize (header writeback, no checksum fix)
     log('Finalize ROM');
-    asarCall(['--fix-checksum=off', ...defines, '--define', 'FileType=3', ASSEMBLE_FILE, outputRel]);
+    asarCall('Finalize ROM', ['--fix-checksum=off', ...defines, '--define', 'FileType=3', ASSEMBLE_FILE, outputRel]);
 
     // Cleanup intermediates
     log('Cleanup intermediate .bin files');

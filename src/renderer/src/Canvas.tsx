@@ -22,6 +22,7 @@ import {
   LEVEL_PX_W,
   SCREEN_CELLS,
   SPAWN_HIT_HALF_PX,
+  SPAWN_MARKER_DY,
   exitMarkerX,
   exitMarkerY,
   makeScreenIndex,
@@ -42,7 +43,7 @@ import { useBehaviorProbes } from './hooks/useBehaviorProbes'
 import { useEntityRenderValidity } from './hooks/useEntityRenderValidity'
 import { useGeneratorThumbnails } from './hooks/useGeneratorThumbnails'
 import {
-  hitResizeHandle,
+  hitObjectResize,
   extentFromHandle,
   cursorForHandle,
   type ResizeHandle
@@ -72,8 +73,10 @@ import {
   INITIAL_VIEW,
   ZOOM_STEP,
   clientToWorld,
+  edgeScrollPan,
   fitViewForLevel,
   focusViewFor,
+  reanchorCanvasPoint,
   stepZoomPreset,
   zoomAt,
   zoomTo,
@@ -773,15 +776,17 @@ export function Canvas({
     const mark = testSpawnRef.current
     if (mark) {
       const mx = (mark.x + 0.5) * CELL_PX
-      const my = (mark.y + 0.5) * CELL_PX
+      const my = (mark.y + SPAWN_MARKER_DY + 0.5) * CELL_PX
       if (Math.abs(wx - mx) <= SPAWN_HIT_HALF_PX && Math.abs(wy - my) <= SPAWN_HIT_HALF_PX) {
         onClearTestSpawnRef.current()
         return
       }
     }
+    // The clicked cell is where the egg draws: Yoshi's FEET. Store the head
+    // cell above it (SPAWN_MARKER_DY), which is what the cart's warp loader takes.
     onSetTestSpawnRef.current(
       Math.max(0, Math.min(255, Math.floor(wx / CELL_PX))),
-      Math.max(0, Math.min(127, Math.floor(wy / CELL_PX)))
+      Math.max(0, Math.min(127, Math.floor(wy / CELL_PX) - SPAWN_MARKER_DY))
     )
   }, [])
   const toggleTestSpawnRef = useRef(toggleTestSpawnAt)
@@ -1157,15 +1162,14 @@ export function Canvas({
         if (o && wrap) {
           const rect = wrap.getBoundingClientRect()
           const { x: wx, y: wy } = clientToWorld(view, e.clientX - rect.left, e.clientY - rect.top)
-          // Resize handles take precedence over the move-box — they sit on the
+          // Resize grabs take precedence over the move-box — they sit on the
           // box edges/corner. Gated by the object's sizeMode (extended objects
-          // have no W/H → no handles → falls through to move) and, matching the
-          // draw, only in 'detailed' mode — render mode hides them, so grabbing
-          // an invisible handle would be surprising; fall through to move.
-          const handle =
-            layers.bg1Outlines === 'detailed'
-              ? hitResizeHandle(o, objectSizeMode(o.num, o.exnum, propTable), wx, wy, view.zoom)
-              : null
+          // have no W/H → no grab → falls through to move). 'detailed' grabs the
+          // drawn handle squares; 'render' draws none, so it grabs a thin band
+          // along the free edges instead (the hover cursor is the only hint).
+          const handle = hitObjectResize(
+            o, objectSizeMode(o.num, o.exnum, propTable), wx, wy, view.zoom, layers.bg1Outlines
+          )
           if (handle) {
             dragRef.current = {
               kind: 'resizeObj',
@@ -1318,13 +1322,17 @@ export function Canvas({
     // the latest position — at most one redraw per frame. Other drag kinds
     // already self-throttle (cell-snapped overlay state behind equality guards),
     // so only pan needs this. These locals are scoped to this effect run, i.e.
-    // one drag session (isPanning gates the effect).
+    // one drag session (isPanning gates the effect). The stash is the latest
+    // CURSOR point, not a pan: the target is derived from the drag's basePan at
+    // apply time, so a wheel zoom that rebases basePan in between is honoured.
     let panFrame = 0
-    let panTarget: { x: number; y: number } | null = null
+    let panCursor: { x: number; y: number } | null = null
     const applyPan = (): void => {
       panFrame = 0
-      if (!panTarget) return
-      let { x, y } = panTarget
+      const d = dragRef.current
+      if (!panCursor || !d || d.kind !== 'pan') return
+      let x = d.basePan.x + panCursor.x - d.startX
+      let y = d.basePan.y + panCursor.y - d.startY
       // Camera Preview locks the pan to the level: the drawn box is already
       // clamped, so hold the pan at the same limit rather than let the level keep
       // scrolling under a stuck box. Zoom is pinned in preview, so viewRef's zoom
@@ -1339,7 +1347,56 @@ export function Canvas({
         x = locked.panX
         y = locked.panY
       }
-      setView((v) => ({ ...v, panX: x, panY: y }))
+      // Write through (as autoScroll + the wheel handler do) so a wheel zoom
+      // before the next render reads this pan, not the pre-pan one.
+      viewRef.current = { ...viewRef.current, panX: x, panY: y }
+      setView(viewRef.current)
+    }
+    // Edge auto-scroll for every drag except pan: while the cursor sits in the
+    // canvas edge band (or past it), a rAF loop scrolls the view and replays the
+    // last mousemove so the dragged preview / sweep follows the scrolled world.
+    // Each tick shifts the drag's client-space start point by the same pan delta,
+    // which keeps its world anchor fixed, so every kind's `clientX - startX`
+    // delta (and onUp's re-derivation from it) stays world-correct.
+    let lastMove: MouseEvent | null = null
+    let scrollFrame = 0
+    let scrollLastT = 0
+    const autoScroll = (t: number): void => {
+      scrollFrame = 0
+      const d = dragRef.current
+      if (!d || d.kind === 'pan' || !d.moved || !wrap || !lastMove) return
+      const rect = wrap.getBoundingClientRect()
+      const v = viewRef.current
+      // First tick of a run has no previous timestamp: assume one 60 Hz frame.
+      // Cap dt so a stalled frame can't lurch the view.
+      const dt = scrollLastT ? Math.min(50, t - scrollLastT) : 16
+      let { panX, panY } = edgeScrollPan(
+        v,
+        sizeRef.current,
+        lastMove.clientX - rect.left,
+        lastMove.clientY - rect.top,
+        dt
+      )
+      if (cameraOnRef.current) {
+        const locked = clampPanToCamera({ panX, panY, zoom: v.zoom }, sizeRef.current, LEVEL_PX_W, LEVEL_PX_H)
+        panX = locked.panX
+        panY = locked.panY
+      }
+      const sx = panX - v.panX
+      const sy = panY - v.panY
+      if (sx === 0 && sy === 0) {
+        // Out of the band or at the level edge: stop until the next mousemove.
+        scrollLastT = 0
+        return
+      }
+      scrollLastT = t
+      d.startX += sx
+      d.startY += sy
+      // Write through so the replayed onMove (and the next tick) see the new pan
+      // before React re-renders.
+      viewRef.current = { ...v, panX, panY }
+      setView(viewRef.current)
+      onMove(lastMove) // re-samples at the new pan and schedules the next tick
     }
     const onMove = (e: MouseEvent): void => {
       const d = dragRef.current
@@ -1350,9 +1407,13 @@ export function Canvas({
         d.moved = true
       }
       if (!d.moved) return
+      if (d.kind !== 'pan') {
+        lastMove = e
+        if (!scrollFrame) scrollFrame = requestAnimationFrame(autoScroll)
+      }
       if (d.kind === 'pan') {
-        // Stash the latest target; apply at most once per frame (see applyPan).
-        panTarget = { x: d.basePan.x + dx, y: d.basePan.y + dy }
+        // Stash the latest cursor; apply at most once per frame (see applyPan).
+        panCursor = { x: e.clientX, y: e.clientY }
         if (!panFrame) panFrame = requestAnimationFrame(applyPan)
       } else if (d.kind === 'moveObj') {
         // Snap pixel delta to integer cells via current zoom, then clamp to the
@@ -1810,6 +1871,7 @@ export function Canvas({
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
       if (panFrame) cancelAnimationFrame(panFrame)
+      if (scrollFrame) cancelAnimationFrame(scrollFrame)
     }
   }, [isPanning, layers, onSelect, jumpToLevelAt])
 
@@ -1833,11 +1895,31 @@ export function Canvas({
       if (delta === 0) return
       // Shift+wheel snaps to the next/previous preset zoom (the toolbar
       // dropdown's stops); plain wheel is the continuous ZOOM_STEP factor.
-      setView((v) =>
-        e.shiftKey
-          ? zoomTo(v, cx, cy, stepZoomPreset(v.zoom, delta < 0 ? 1 : -1))
-          : zoomAt(v, cx, cy, delta < 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
-      )
+      const v = viewRef.current
+      const next = e.shiftKey
+        ? zoomTo(v, cx, cy, stepZoomPreset(v.zoom, delta < 0 ? 1 : -1))
+        : zoomAt(v, cx, cy, delta < 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
+      if (next.zoom === v.zoom) return
+      // Mid-drag zoom: drags measure `clientX - startX` against a client-space
+      // start point, which a zoom would silently rescale. Re-anchor the start to
+      // the same world point under the new view; the cursor's own world point is
+      // fixed by zoomTo, so the drag's world delta (and preview) is unchanged.
+      // A pan drag instead rebases basePan so its next move continues from the
+      // zoomed pan rather than snapping back to the pre-zoom one.
+      const d = dragRef.current
+      if (d) {
+        if (d.kind === 'pan') {
+          d.basePan = { x: next.panX - (e.clientX - d.startX), y: next.panY - (e.clientY - d.startY) }
+        } else {
+          const s = reanchorCanvasPoint(v, next, d.startX - rect.left, d.startY - rect.top)
+          d.startX = s.x + rect.left
+          d.startY = s.y + rect.top
+        }
+      }
+      // Write through so a drag mousemove before the next render (and the next
+      // wheel tick) sees the zoomed view.
+      viewRef.current = next
+      setView(next)
     }
     wrap.addEventListener('wheel', handler, { passive: false })
     return () => wrap.removeEventListener('wheel', handler)
@@ -1888,14 +1970,16 @@ export function Canvas({
       setHoveredIncoming(
         hitTestIncoming(lvl, v, layers, incomingRef.current, rect, e.clientX, e.clientY)
       )
-      // Resize-handle hover → cursor hint (single selected object only, and only
-      // in 'detailed' mode where the handles are drawn/grabbable).
+      // Resize-grab hover → cursor hint (single selected object only): the
+      // handle squares in 'detailed', the free-edge bands in 'render'.
       let rc: string | null = null
-      if (primary?.kind === 'object' && lvl && layers.bg1Outlines === 'detailed') {
+      if (primary?.kind === 'object' && lvl) {
         const o = lvl.objects.find((ob) => ob.uid === primary.uid)
         if (o) {
           const { x: wx, y: wy } = clientToWorld(v, e.clientX - rect.left, e.clientY - rect.top)
-          const handle = hitResizeHandle(o, objectSizeMode(o.num, o.exnum, propTable), wx, wy, v.zoom)
+          const handle = hitObjectResize(
+            o, objectSizeMode(o.num, o.exnum, propTable), wx, wy, v.zoom, layers.bg1Outlines
+          )
           if (handle) rc = cursorForHandle(handle, o)
         }
       }

@@ -125,6 +125,12 @@ function drawTeleportGlyph(
   ctx.restore()
 }
 
+/** Whether sprite `num` gets an entrance-arrow or teleport glyph here (its only
+ *  editor visual), so other stand-in layers can skip it. */
+export function hasEntranceGlyph(num: number): boolean {
+  return ENTRANCE_ARROWS[num] !== undefined || num === TELEPORT_SPRITE
+}
+
 /**
  * Draw the entrance-arrow / teleport glyphs for every placed entrance/teleport
  * sprite. Always on (these are the sprite's only graphic) — no zoom gate, like

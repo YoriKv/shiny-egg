@@ -1,4 +1,12 @@
-// Always-on stand-in badges for COMMAND-category entities — both sprites
+// Always-on stand-in badges for entities with no visible graphic. Two kinds
+// share one badge shape:
+//   • COMMAND badges (indigo, an abbreviation of the command name) for
+//     command-category entities, below;
+//   • RAW-ID badges (slate, the entity's hex id) for sprites the static
+//     renderer can't draw (bosses, BG3-drawn platforms, …) and objects that
+//     stamp no tiles, so a placement never vanishes into an empty cell.
+//
+// COMMAND-category entities — both sprites
 // (Graphic/Palette Changers, auto-scrollers, Ground shake, …) and objects
 // (Transparent tile, Scroll stopper, Tile eraser, …). These render no (or a
 // clear) in-game graphic, so the editor marks each with a small square badge
@@ -16,9 +24,17 @@
 
 import type { LevelObject, LevelSprite } from '../../../../preload/api'
 import { getObjectInfo, getSprite } from '../../data/obj-metadata'
+import { generatorSpawn } from '../../data/generator-spawns'
+import type { ObjectFootprints } from '../../hooks/useObjectCells'
+import { hex } from '../../lib/hex'
 import { CELL_PX } from '../geometry'
+import type { SpriteBoundsMap } from '../hit-test'
+import { hasEntranceGlyph } from './entrance-glyphs'
+import { objectHex } from './objects'
+import { isCompletionSprite } from './sprites'
 
 const COMMAND_COLOR = '#6366f1' //        indigo-500 — "system/command" marker, distinct from the others
+const RAW_ID_COLOR = '#64748b' //         slate-500 — "real entity, graphics unknown"; neutral next to the indigo commands
 const COMMAND_BORDER = 'rgba(0, 0, 0, 0.7)'
 const TEXT_OUTLINE = 'rgba(0, 0, 0, 0.85)'
 const COMMAND_ALPHA = 0.5 // half-transparent, like the hidden-sprite (HIDDEN_REVEAL) stand-ins
@@ -49,17 +65,18 @@ export function commandLabel(name: string): string {
   return initials || name.trim().slice(0, 2).toUpperCase() || '?'
 }
 
-/** Half-transparent indigo square + short white command label, centred on (cx,cy). */
-function drawCommandBadge(
+/** Half-transparent colored square + short white label, centred on (cx,cy). */
+function drawStandInBadge(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
-  label: string
+  label: string,
+  color: string
 ): void {
   const half = 7 // ~14px square — nearly fills the 16px cell, leaving a thin margin
   ctx.save()
   ctx.globalAlpha = COMMAND_ALPHA
-  ctx.fillStyle = COMMAND_COLOR
+  ctx.fillStyle = color
   ctx.fillRect(cx - half, cy - half, half * 2, half * 2)
   ctx.lineWidth = 1
   ctx.strokeStyle = COMMAND_BORDER
@@ -86,7 +103,7 @@ export function drawCommandSpriteBadges(
   for (const s of sprites) {
     const info = getSprite(s.num)
     if (info.category !== 'command') continue
-    drawCommandBadge(ctx, (s.x + 0.5) * CELL_PX, (s.y + 0.5) * CELL_PX, commandLabel(info.name))
+    drawStandInBadge(ctx, (s.x + 0.5) * CELL_PX, (s.y + 0.5) * CELL_PX, commandLabel(info.name), COMMAND_COLOR)
   }
 }
 
@@ -101,6 +118,50 @@ export function drawCommandObjectBadges(
     if (info.category !== 'command') continue
     const cx = (o.x + Math.max(1, o.w) / 2) * CELL_PX
     const cy = (o.y + Math.max(1, o.h) / 2) * CELL_PX
-    drawCommandBadge(ctx, cx, cy, commandLabel(info.name))
+    drawStandInBadge(ctx, cx, cy, commandLabel(info.name), COMMAND_COLOR)
+  }
+}
+
+/** Whether a placed sprite renders nothing and has no other stand-in: no cel
+ *  bounds from the sprite render (the static renderer couldn't draw it), and
+ *  it isn't a completion flag, entrance/teleport glyph, command or generator,
+ *  which all draw their own marker. */
+export function spriteNeedsRawIdBadge(s: LevelSprite, bounds: NonNullable<SpriteBoundsMap>): boolean {
+  if (bounds.has(s.num)) return false
+  if (isCompletionSprite(s.num) || hasEntranceGlyph(s.num) || generatorSpawn(s.num)) return false
+  return getSprite(s.num).category !== 'command'
+}
+
+/** Raw-ID badges for sprites the static renderer can't draw. Skipped until the
+ *  sprite render has produced its bounds (`null`), so a level that's still
+ *  rendering doesn't flash a badge on every sprite. Gated by the `sprites`
+ *  annotation layer in scene.ts. */
+export function drawRawIdSpriteBadges(
+  ctx: CanvasRenderingContext2D,
+  sprites: LevelSprite[],
+  bounds: SpriteBoundsMap
+): void {
+  if (!bounds) return
+  for (const s of sprites) {
+    if (!spriteNeedsRawIdBadge(s, bounds)) continue
+    drawStandInBadge(ctx, (s.x + 0.5) * CELL_PX, (s.y + 0.5) * CELL_PX, hex(s.num, 3), RAW_ID_COLOR)
+  }
+}
+
+/** Raw-ID badges for objects that stamp no tiles (an empty decode footprint) and
+ *  aren't commands, centred on their box like the command badges. Skipped until
+ *  the footprints have loaded. Gated by the `bg1Outlines` layer in scene.ts. */
+export function drawRawIdObjectBadges(
+  ctx: CanvasRenderingContext2D,
+  objects: LevelObject[],
+  footprints: ObjectFootprints
+): void {
+  if (!footprints) return
+  for (const o of objects) {
+    if (o.uid === undefined || (footprints.get(o.uid)?.size ?? 0) > 0) continue
+    if (getObjectInfo(o.num, o.exnum).category === 'command') continue
+    const cx = (o.x + Math.max(1, o.w) / 2) * CELL_PX
+    const cy = (o.y + Math.max(1, o.h) / 2) * CELL_PX
+    drawStandInBadge(ctx, cx, cy, objectHex(o), RAW_ID_COLOR)
   }
 }

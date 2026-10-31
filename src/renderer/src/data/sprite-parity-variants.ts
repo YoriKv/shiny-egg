@@ -68,10 +68,24 @@ export interface SpriteParityVariant {
 
 const DIR = 'Direction'
 
+/** Shared by the 5 morph bubbles (see the comment at their entries). */
+const MORPH_BUBBLE_FORM: SpriteParityVariant = {
+  axis: 'xy',
+  label: 'Form',
+  values: ['Inside a winged cloud', 'Bare bubble', 'Hidden winged cloud (red switch)', 'Bare bubble, drifts sideways'],
+  hint: 'Even column: the bubble starts inside a winged cloud; hit the cloud with an egg to release it, and that bubble is used up once Yoshi transforms. Odd column: a bare bubble that re-forms at its spot after the transformation ends. On an odd row the even-column cloud is invisible unless a red switch is active, and egg hits never register on it in the game code, so it cannot be popped (no shipped level uses this form); the odd-column bubble drifts slowly sideways, usually toward Yoshi (the direction comes from which way the screen was scrolling when it spawned). The editor always draws the bare bubble.'
+}
+
 export const SPRITE_PARITY_VARIANTS: Record<number, SpriteParityVariant[]> = {
   // ── Shared 'Direction' category (purely left/right, up/down, or mirror) ──
   0x089: [{ axis: 'y', label: DIR, values: ['Sweeps right first', 'Sweeps left first'], dirs: ['right', 'left'], hint: 'Horizontal platform: initial sweep direction comes from the Y cell parity (the perpendicular axis, so sliding it along its track never flips it).' }],
   0x08a: [{ axis: 'x', label: DIR, values: ['Sweeps down first', 'Sweeps up first'], dirs: ['down', 'up'], hint: 'Vertical platform: initial sweep direction comes from the X cell parity.' }],
+  // $0BA/$0BB: the egg-hit path CODE_03C398 (Bank03.asm) sets the build step $76 from the Init-saved
+  // spawn X ($7900, written at CODE_03C1C4): even column = +$10, odd = -$10. CODE_main_stairs lays
+  // steps one cell over by $76 and one cell up per step; CODE_main_cloud_platform lays a level row
+  // of platform tiles stepping by $76. Both stop at the first solid tile.
+  0x0ba: [{ axis: 'x', label: DIR, values: ['Stairs climb right', 'Stairs climb left'], dirs: ['right', 'left'], hint: 'Which way the staircase builds once the cloud is hit: the cloud hops, falls to the ground, pops, then lays steps one cell over and one cell up at a time until it meets a solid tile.' }],
+  0x0bb: [{ axis: 'x', label: DIR, values: ['Platform extends right', 'Platform extends left'], dirs: ['right', 'left'], hint: 'Which way the platform builds once the cloud is hit: the cloud hops, falls to the ground, pops, then lays a level row of platform blocks one cell at a time until it meets a solid tile.' }],
   0x0ea: [{ axis: 'x', label: DIR, values: ['Falls first', 'Rises first'], dirs: ['down', 'up'], hint: 'Bob phase around the spawn height.' }],
   0x0eb: [{ axis: 'x', label: DIR, values: ['Drifts right first', 'Drifts left first'], dirs: ['right', 'left'], hint: 'Drift phase around the spawn column.' }],
   0x103: [{ axis: 'x', label: DIR, values: ['Toss arc normal', 'Toss arc mirrored'], hint: 'The boo-guy toss animation is horizontally mirrored on odd columns.' }],
@@ -113,12 +127,19 @@ export const SPRITE_PARITY_VARIANTS: Record<number, SpriteParityVariant[]> = {
   0x08d: [{ axis: 'xy', label: 'Carries', values: ['Star shower (up to 5)', 'Red coin', '1-UP', '1-UP'], hint: 'What the Fly Guy drops when popped.' }],
   0x090: [{ axis: 'x', label: 'Reach', values: ['Short reach (66 px)', 'Long reach (98 px)'], hint: 'How far down it can stretch when lunging for Baby Mario.' }],
   0x09f: [{ axis: 'x', label: 'Spit pattern', values: ['Single spit per cycle', 'Three-spit volley'], hint: 'How many Needlenoses each lift-and-spit cycle lobs before the ball drops back.' }],
-  0x0af: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
-  0x0b0: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
-  0x0b1: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
-  0x0b2: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
-  0x0b3: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
-  0x0b4: [{ axis: 'xy', label: 'Variant', values: ['Normal bubble', 'Normal bubble', 'Hidden bubble', 'Drifting bubble'], hint: 'Odd row enables the special forms: hidden (even column) or drifting (odd column).' }],
+  // Morph bubbles (init_transform_bubble + CODE_03C1C4, Bank03.asm): DATA_03C0FD[(id-$0AF)*2 | xbit]
+  // is $FF on even X (stay a winged cloud, Main state $18=0, popped by an egg hit) and $00 on odd
+  // X (JML CODE_03C476 -> CODE_pop_transform_bubble AT INIT = a bare bubble from frame one). Odd Y
+  // adds: even X -> INC $7A38 (drawn only while the red switch's $7E08 bit 3 is set, and the egg-hit
+  // check is skipped while $7A38 != 0); odd X -> CODE_03C1B2 X speed +-$80 from $7400 (= camera
+  // scroll direction at spawn). A bare bubble ($78 = 0) re-forms at its spawn spot once the morph
+  // ends (CODE_03CA8B / the $0BF1 list, cleared by Bank04 CODE_04E86E); a cloud-released one
+  // ($78 = 3) is despawned. No shipped level places one on an odd row.
+  0x0af: [MORPH_BUBBLE_FORM],
+  0x0b0: [MORPH_BUBBLE_FORM],
+  0x0b1: [MORPH_BUBBLE_FORM],
+  0x0b2: [MORPH_BUBBLE_FORM],
+  0x0b4: [MORPH_BUBBLE_FORM],
   0x0b5: [{ axis: 'xy', label: 'Prize', values: ['1-UP', '5 stars', 'Red switch', '5 stars'], hint: 'What the hidden cloud yields on pop. The editor renders the parity-revealed winged-cloud sprite ($0BE/$0C1/$0CC) at 50% opacity, plus a full-tile prize icon above the cloud when selected (sprite-prizes.ts).' }],
   0x0be: [{ axis: 'x', label: 'Variant', values: ['Stationary', 'Moving'], hint: 'The moving variant drifts horizontally.' }],
   0x0df: [{ axis: 'x', label: 'Variant', values: ['Blue — fixed-direction leaps', 'Gold — homes on Yoshi'], hint: 'Blue repeats leaps in its spawn direction; gold re-aims at Yoshi every leap.' }],

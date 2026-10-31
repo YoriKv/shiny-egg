@@ -54,7 +54,8 @@ export interface PoolTail {
    *  pools whose blobs immediately precede their `%FREE_BYTES` so the fill can grow
    *  to absorb the reclaim (Bank15: forward growth would consume the seed-contest
    *  sentinel, but a reclaim just enlarges the `$FF` fill and re-resolves the
-   *  labels). Drives `migratable`; the reclaim move only ever fires on shrink. */
+   *  labels; Bank51: a zero-byte fill before the pinned GSU block). Drives
+   *  `migratable`; the reclaim move only ever fires on shrink. */
   reclaimable: boolean;
 }
 
@@ -121,7 +122,7 @@ interface BoundaryDef {
   movable: boolean;
   bankFile: string;
   /** Override for `PoolTail.reclaimable` (defaults to `movable`). Set true on a
-   *  non-movable pool where migration-out is still safe (Bank15). */
+   *  non-movable pool where migration-out is still safe (Bank15, Bank51). */
   reclaimable?: boolean;
 }
 
@@ -139,10 +140,23 @@ interface BoundaryDef {
  *   • Bank15 — a labeled 1-byte sentinel (`DATA_15FCEA`, a null-pointer target)
  *     and a non-level blob (`DATA_15FCBEEnd`) sit between its two pools; moving the
  *     boundary would shift the sentinel.
- *   • Bank51 — level blobs share the bank with the level-name-string region
- *     (its own asm-region budget); growth would entangle the two.
- * (V1.1 relocates blobs + uses `%InsertGarbageData` tails — add a `YI_U2` row
- * when that path is parameterised.)
+ *   • Bank51 — the level run is closed by a zero-byte `%FREE_BYTES($5110DB, 0)`
+ *     right before a GSU code block pinned at `$5110DB`, so there's no slack to
+ *     grow into. Reclaimable, like Bank15: a migration-out pulls the boundary back
+ *     and the fill pads up to the pinned block.
+ *
+ * **V1.1 (`YI_U2`)** — from the bank `.asm` `ROM_YI_U2` branches + a V1.1 `.sym`.
+ * V1.1 moves some runs between banks (level 0x04 into bank $51 after a GSU block;
+ * 0x2A/0x61/0x8D/0xB2 into bank $10 and 0x30/0x67/0x93/0xB6/0xC5/0xCC into $4C,
+ * the reverse of V1.0), and closes every run except Bank15#1 with
+ * `%InsertGarbageData(addr, …)` instead of a `$FF` `%FREE_BYTES`. That macro opens
+ * with the same `%InsertMacroAtXPosition(addr)` (`assert pc() <= addr` + `org
+ * addr`), so it is the run's size gate too, and the data ends exactly at it, like
+ * V1.0. But the bytes after it are real cart bytes, not slack, so `fillSize` is 0
+ * and EVERY V1.1 pool is fixed: not movable (nothing to grow into) and not
+ * reclaimable (V1.1 has no free regions to migrate into, and a reclaim's
+ * boundary rewrite only knows `%FREE_BYTES`). Bank15#1 keeps the version-shared
+ * 1-byte sentinel `%FREE_BYTES($15FCEA, 1, $FF)`, which is load-bearing.
  */
 const POOL_BOUNDARIES: Partial<Record<RomVersion, BoundaryDef[]>> = {
   YI_U1: [
@@ -160,7 +174,29 @@ const POOL_BOUNDARIES: Partial<Record<RomVersion, BoundaryDef[]>> = {
     { boundary: 0x15ffd5, fillSize: 43, movable: false, reclaimable: true, bankFile: 'Banks/Bank15.asm' },
     { boundary: 0x16fff8, fillSize: 8, movable: true, bankFile: 'Banks/Bank16.asm' },
     { boundary: 0x4cfeb7, fillSize: 329, movable: true, bankFile: 'Banks/Bank4C.asm' },
-    { boundary: 0x515348, fillSize: 44216, movable: false, bankFile: 'Banks/Bank51.asm' },
+    { boundary: 0x5110db, fillSize: 0, movable: false, reclaimable: true, bankFile: 'Banks/Bank51.asm' },
+  ],
+  // Each `boundary` is the run's closing `%InsertGarbageData` address unless
+  // noted. Bank00's $00BC06 (code, below the level run) and $00FFA5 (after the
+  // fixed UNK_00FFA0) hold no blobs; they're listed so no blob can be assigned
+  // past its real close.
+  YI_U2: [
+    { boundary: 0x00bc06, fillSize: 0, movable: false, bankFile: 'Banks/Bank00.asm' },
+    { boundary: 0x00f7a7, fillSize: 0, movable: false, bankFile: 'Banks/Bank00.asm' },
+    { boundary: 0x00ffa5, fillSize: 0, movable: false, bankFile: 'Banks/Bank00.asm' },
+    { boundary: 0x10fc40, fillSize: 0, movable: false, bankFile: 'Banks/Bank10.asm' },
+    // Bank11's run is split by the shared 0xBF/0xD0 obj stream DATA_11DC0F (not a
+    // tracked blob), the same as V1.0. The pool still ends exactly at the close.
+    { boundary: 0x11fd92, fillSize: 0, movable: false, bankFile: 'Banks/Bank11.asm' },
+    { boundary: 0x12ffb4, fillSize: 0, movable: false, bankFile: 'Banks/Bank12.asm' },
+    { boundary: 0x14ffa5, fillSize: 0, movable: false, bankFile: 'Banks/Bank14.asm' },
+    // `%FREE_BYTES($15FCEA, 1, $FF)`: the version-shared null-pointer sentinel.
+    { boundary: 0x15fcea, fillSize: 1, movable: false, bankFile: 'Banks/Bank15.asm' },
+    { boundary: 0x15ffd5, fillSize: 0, movable: false, bankFile: 'Banks/Bank15.asm' },
+    { boundary: 0x16fff8, fillSize: 0, movable: false, bankFile: 'Banks/Bank16.asm' },
+    { boundary: 0x4cfee7, fillSize: 0, movable: false, bankFile: 'Banks/Bank4C.asm' },
+    // Level 0x04 + 0x32/0x69/0x95, after the GSU block that V1.1 pins at $510000.
+    { boundary: 0x51567b, fillSize: 0, movable: false, bankFile: 'Banks/Bank51.asm' },
   ],
 };
 
@@ -168,10 +204,12 @@ const POOL_BOUNDARIES: Partial<Record<RomVersion, BoundaryDef[]>> = {
  * V1.0 free regions — the two large SuperFX-HiROM `$FF` bank tails (~63.7 KB).
  * Each is the bank-closing `%FREE_BYTES`, after a GSU code block, after that
  * bank's level data; CPU-reachable by the same map the loader uses for any
- * `dl LABEL`. V1.1 fills both with `%InsertGarbageData` (not free), so YI_U1-only
- * like POOL_BOUNDARIES. NB FreeRegion51 shares Bank51's closing `%FREE_BYTES`
- * with that bank's (non-movable) home pool — distinct regions, one macro; only a
- * free-region append ever rewrites it.
+ * `dl LABEL`. V1.1 fills both with `%InsertGarbageData` (not free), so YI_U1-only:
+ * a V1.1 map has `freeRegions: []`, which turns off everything that needs free
+ * space (migration, de-couple, new slots, the asm-patch pool, bank $51 text
+ * spill, gfx overflow). NB FreeRegion51 and Bank51's home pool are closed by two
+ * different `%FREE_BYTES` (the home pool's is the zero-byte one at `$5110DB`), so
+ * a home-pool reclaim and a free-region append never rewrite the same macro.
  *
  * **Why ONLY these two — don't naively add more** (full inventory:
  * docs/notes-rom-free-space.md):
@@ -202,7 +240,10 @@ const FREE_REGIONS: Partial<Record<RomVersion, FreeRegion[]>> = {
 // reservations, both since migrated to freecode: $03:FEEE — star-timer reducer;
 // $04:FF1B — fast-reset death/level-name stubs.)
 
-/** V1.0 biased-sprite-pointer rows (the only two — `$19`/`$CB`). */
+/** V1.0 biased-sprite-pointer rows (the only two — `$19`/`$CB`). V1.1 shares the
+ *  same `Ptrs:` text, so it has the same two biased rows, but de-coupling one
+ *  needs a movable home pool or a free region and V1.1 has neither. No YI_U2 row,
+ *  so nothing offers a de-couple there. */
 const BIASED_POINTERS: Partial<Record<RomVersion, BiasedPointer[]>> = {
   YI_U1: [
     { level: '19', partner: '51', alias: 'DATA_14C6C6', bankFile: 'Banks/Bank14.asm' },
@@ -238,6 +279,7 @@ export interface RepointMigration {
   overlapFiles: string[];
 }
 
+/** Migration-only, so YI_U1-only like FREE_REGIONS. */
 const REPOINT_MIGRATIONS: Partial<Record<RomVersion, RepointMigration[]>> = {
   YI_U1: [
     {
@@ -272,7 +314,11 @@ export interface NewSlotRow {
   sprSentinel: string;
 }
 
-/** V1.0's two sentinel rows — `$DA`/`$DB` ("seed contest A/B"). */
+/** V1.0's two sentinel rows — `$DA`/`$DB` ("seed contest A/B"). No YI_U2 row:
+ *  a new slot's blobs need a free region, and on V1.1 the sprite sentinel
+ *  `DATA_15FFD5` labels the first byte of `%InsertGarbageData` (`$FE`, not a
+ *  `$FF` terminator), so it isn't a safe target for a removed level's row. That
+ *  leaves `sentinelRowExpr` null on V1.1, which turns removal off in the build. */
 const NEW_SLOT_ROWS: Partial<Record<RomVersion, NewSlotRow[]>> = {
   YI_U1: [
     { level: 'DA', recordId: 0xda, rowExpr: 'DATA_15FCEA,DATA_15FFD5', occurrence: 0, sprSentinel: 'DATA_15FFD5' },
@@ -288,15 +334,19 @@ export function newSlotRows(romVersion: RomVersion): NewSlotRow[] {
 /** The five irregular `Ptrs:` row expressions (biased spr `$19`/`$CB`, raw
  *  gate-borrowing obj `$7D`, shared obj `$BF`/`$D0`) — every other row reads
  *  `DATA_level_XX_obj,DATA_level_XX_spr`. Verified against the DATATABLE text;
- *  the removal path replaces a whole row by this expression. */
+ *  the removal path replaces a whole row by this expression. Both versions
+ *  assemble the same `DATATABLE_YI_LevelDataPtrsAndEntranceData` macro (only its
+ *  `org` differs), so they share one row set. */
+const SHARED_SPECIAL_PTR_ROW_EXPRS: Record<string, string> = {
+  '19': 'DATA_level_19_obj,DATA_14C6C6-$02',
+  '7D': 'DATA_169D23,DATA_level_7D_spr',
+  BF: 'DATA_11DC0F,DATA_level_BF_spr',
+  CB: 'DATA_level_CB_obj,DATA_16F097-$02',
+  D0: 'DATA_11DC0F,DATA_level_D0_spr',
+};
 const SPECIAL_PTR_ROW_EXPRS: Partial<Record<RomVersion, Record<string, string>>> = {
-  YI_U1: {
-    '19': 'DATA_level_19_obj,DATA_14C6C6-$02',
-    '7D': 'DATA_169D23,DATA_level_7D_spr',
-    BF: 'DATA_11DC0F,DATA_level_BF_spr',
-    CB: 'DATA_level_CB_obj,DATA_16F097-$02',
-    D0: 'DATA_11DC0F,DATA_level_D0_spr',
-  },
+  YI_U1: SHARED_SPECIAL_PTR_ROW_EXPRS,
+  YI_U2: SHARED_SPECIAL_PTR_ROW_EXPRS,
 };
 
 /** The vanilla `Ptrs:` row expression (object + sprite pointer operands) for a
@@ -569,8 +619,9 @@ export function repointMigrations(romVersion: RomVersion): RepointMigration[] {
 
 /**
  * Whether a level may be migrated into a free region. Requires a CLEAN, tracked
- * `DATA_level_XX_obj` blob in a MOVABLE home pool (so the consolidating reclaim
- * can shift the bank safely); a tracked spr blob, if any, must also be movable.
+ * `DATA_level_XX_obj` blob in a RECLAIMABLE home pool (so the consolidating
+ * reclaim can shift the bank safely); a tracked spr blob, if any, must also be
+ * in one.
  * Excluded:
  *   • engine-hardcoded / shared-pointer levels (`HARDCODED_EXCLUDE`) — never;
  *   • a partner whose terminator a biased level borrows (`$51`/`$C4`) — only once

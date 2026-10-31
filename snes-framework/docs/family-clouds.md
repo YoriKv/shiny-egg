@@ -81,10 +81,11 @@ Subfamily groupings used in the rest of this doc:
 - **Winged clouds (item-pop)** -- $0B5-$0CC (excluding $0CA Big Boss Door
   which sits in the same ID block but isn't a winged cloud).  Single
   shared Init/Main body; pop dispatches per-variant payload routines.
-- **Morph bubbles** -- $0AF/$0B0/$0B1/$0B2/$0B4.  Visually distinct from
-  winged clouds (no wings) but share Bank03's Init/Main/cloud-register
-  scaffolding and use the same per-variant pop dispatch -- they spawn the
-  Yoshi-vehicle morph cinematic instead of a payload sprite.
+- **Morph bubbles** -- $0AF/$0B0/$0B1/$0B2/$0B4.  Share Bank03's
+  Init/Main/cloud-register scaffolding and the per-variant pop dispatch;
+  the payload is the Yoshi-vehicle morph instead of a sprite.  Spawn
+  parity picks the start state: an even column starts as a winged cloud
+  holding the bubble, an odd column as the bare bubble (§4.1).
 - **Hidden winged clouds (variant family)** -- $067 / $0B5.  Position
   low-bits encode the payload variant; only revealed by specific contact
   events.
@@ -441,7 +442,7 @@ documents the shared scaffold and full pop dispatch.
 | `init_winged_cloud_item`   | yes (CODE_03D406)        | yes (CODE_03C236)    | $0B6 $0B7 $0B8 $0BD $0BF $0C0 $0C1 $0CC |
 | `init_transform_bubble`    | no                       | yes                  | $0AF $0B0 $0B1 $0B2 $0B4 |
 | `init_winged_cloud_B`      | no                       | yes                  | $0B9 $0BA $0BB $0BC $0C2 $0C3 $0C4 $0C5 $0C6 $0C7 $0C8 $0C9 |
-| `init_winged_cloud_1up`    | yes                      | yes + per-axis snap  | $0BE only |
+| `init_winged_cloud_1up`    | yes                      | yes + odd-X drift    | $0BE only |
 | `init_special_winged_cloud`| yes                      | no                   | $0B5 only |
 | `CODE_03C1C4` (bare inline)| no                       | no                   | $0CB only |
 
@@ -450,31 +451,75 @@ documents the shared scaffold and full pop dispatch.
 sprite slot mask -- which is why most winged clouds are stompable but
 $0B5 hidden one isn't.)
 
-After the per-flavour entry, all paths converge at `CODE_03C1C4` which:
-1. Reads `SpriteID - !Define_YI_NorSpr0AF_CarMorphBubble` (so $0AF maps
-   to 0, $0CC to $1A; this is the pop-dispatch index).
-2. Snaps X position to the nearest $20-tile lane using
-   `DATA_03C0FD` (per-variant X offsets indexed by spriteId*2 + Y-bit).
-3. Snaps Y position similarly with `DATA_03C138`.
-4. Initialises `$7400,x` (facing) to 0, `$7402,x` (anim frame) to 2,
-   `$18,x` to 3 (cloud life-phase marker).
+After the per-flavour entry, all paths converge at `CODE_03C1C4`. It does
+no position snapping; it picks a per-variant start mode from two byte
+tables:
 
-### 4.2 Shared Main (main_winged_cloud at $03:C08C)
+1. Saves the spawn X to `GenericTable701900,x` (and, on every path, the
+   spawn Y to `GenericTable701902,x`).
+2. Indexes `DATA_03C0FD-1` with `Y = (SpriteID - $0AF)*2 | (X & $10)>>4`
+   (`$0AF` = 0 ... `$0CC` = `$1D`) and tests the HIGH byte of the 16-bit
+   load, i.e. `DATA_03C0FD[Y]`:
+   - `$FF`: no X action.
+   - `$00`: `JSR CODE_03C271`, `$18,x = 3`, then `JML CODE_03C476`, which
+     jumps straight into the variant's pop handler
+     (`DATA_winged_clouds_bubbles_pops`). The sprite skips the cloud phase
+     and starts already popped. Of the sprites whose Init reaches
+     `CODE_03C1C4`, only the morph bubbles have `$00` entries (odd X). The
+     other `$00` bytes belong to `$0B3`, `$0B5` and `$0CA`, whose Inits
+     never get here.
+   - otherwise (`$08`): `$78,x = X + value`, `$7540,x = 2`, a horizontal
+     drift target the Main steers toward.
+3. Indexes `DATA_03C138` the same way with the Y bit, so the tested byte
+   is `DATA_03C138[Y+1]`: `$FF` skips; otherwise `$76,x = Y + value`,
+   `$7542,x = 2` (a vertical bob target).
+4. `$7400,x = 0`, `$7402,x = 2` (first wing-flap frame), RTL.
 
-Used by all 24 winged-cloud / morph-bubble sprites.  Three concurrent
-duties:
+`CODE_03C271` (run only on the `$00` path) checks the sprite's level index
+`$74A0,x` against the `$0BF1` list. On a hit, it sets `$18,x = 1` and aborts
+the Init (status back to `$02`, `$74A2,x = $FF` hidden), so the Init re-runs
+next frame. Once the list no longer holds it, a non-zero `$18,x` makes it
+arm `$7A96,x = $40` (`JSL CODE_02808C`) and keep aborting until that timer
+is down to 1. Then the Init continues into the pop handler.
 
-1. **Hidden-reveal scan** ($0B5 only path): scan the slot array for an
-   alive `!Define_YI_NorSpr018_WatermelonFlame` or `!Define_YI_NorSpr006
-   _WatermelonFreeze` within the cloud's hit box; if found, force
-   `CODE_03B25B` (destroy-sprite-with-fanfare) on the watermelon then
-   pop the cloud.  Other variants skip this (gated by the early-exit at
-   `CODE_03C0CC` on `EXRAM_YI_Level_ShowHiddenItemsFlag` or no nearby
-   target).
-2. **Pop trigger**: dispatched via `DATA_winged_clouds_bubbles_pops`
-   (per-spriteId-offset pop handler ptr).
-3. **Animation**: `$7402,x` walks the OAM frame state for the cloud
-   bobbing/wing-flap.
+**Morph-bubble parity** (`init_transform_bubble`, before `CODE_03C1C4`;
+all five bubbles have `DATA_03C0FD` = `$FF,$00` for even/odd X):
+
+| Y bit4 | X bit4 | Start state |
+| ------ | ------ | ----------- |
+| 0 | 0 | Winged cloud (`$18 = 0`) holding the bubble; an egg hit pops it. |
+| 0 | 1 | Bare bubble: popped at Init (`$18 = 3`). |
+| 1 | 0 | `INC $7A38,x`, `$74A2,x = $FF`: a cloud drawn only while `$7E08` bit 3 (set by the Red Switch `$09D`) is on. The Main skips the egg-hit check while `$7A38` is non-zero, so the cloud Main never pops it. |
+| 1 | 1 | `CODE_03C1B2`: X speed `DATA_03C175[$7400,x]` (`$FF80` / `$0080`; `$7400` = `$0073` camera scroll direction at spawn), then popped at Init: a bare bubble drifting sideways. |
+
+A bubble's `$78,x` is copied from `$7402,x` by `CODE_pop_transform_bubble`:
+0 for a bubble popped at Init, 3 for one released from a cloud
+(`CODE_03C459`). After the morph starts, `CODE_03CA8B` despawns a
+cloud-released bubble (`$78` non-zero). A popped-at-Init bubble is instead
+re-spawned in its own slot (`CODE_spawn_sprite` with `Y = X`, status
+`$02`) at its saved spawn position, and its `$74A0` is added to the `$0BF1`
+list. That keeps it dormant until `CODE_04E86E` (Bank04, morph
+end) clears the list.
+
+### 4.2 Shared Main ($03:C2BF)
+
+`main_winged_cloud` ($03:C08C) is `$0B5`'s own Main. Every other sprite in
+the block (except `$0B3` and `$0CA`) shares the Main at `$03:C2BF`, which dispatches
+on `$18,x`:
+
+- **0, cloud**: flaps (`CODE_03C4F1` cycles `$7402` 2..5), steers toward
+  the `$76`/`$78` targets, and handles `$7A38` hidden clouds (see above).
+  The hit check (skipped while `$7A38 != 0`) wants a contacting sprite
+  (`$7D36,x`) in state `$10` with `$7D38,y != 0`, or a WatermelonFlame
+  `$018` / WatermelonFreeze `$006` shot, with the cloud on screen. On a
+  hit, `$0BA`/`$0BB` go to `CODE_03C398` (see 4.3) and the rest go to
+  `CODE_03C48B` (`$18 = 2`).
+- **1**: `$0BA`/`$0BB` only. The cloud hops (`Y speed $FC00`, gravity to
+  `$0400`) until it lands, then goes to `CODE_03C48B`.
+- **2, popping**: the pop ring grows (`$7A38 += $18` to `$370`), then
+  `CODE_03C459` sets `$18 = 3`, `$7402 = 3`, and jumps into the pop
+  handler via `CODE_03C476`.
+- **3+**: the per-variant Main from `DATA_winged_clouds_bubbles_mains`.
 
 ### 4.3 Pop dispatch table (DATA_winged_clouds_bubbles_pops at $03:C51A)
 
@@ -494,7 +539,7 @@ Indexed by `(SpriteID - $0AF) * 2`.  30 entries:
 | $12    | $0B8     | WingedCloudWithFlower              | CODE_pop_flower              |
 | $14    | $0B9     | WingedCloudWithPOW                 | CODE_pop_pow                 |
 | $16    | $0BA     | WingedCloudWithStairs              | CODE_pop_stairs              |
-| $18    | $0BB     | WingedCloudWithPlatform            | CODE_pop_stairs (subtype)    |
+| $18    | $0BB     | WingedCloudWithPlatform            | CODE_pop_stairs              |
 | $1A    | $0BC     | WingedCloudWithBandit              | CODE_pop_bandit              |
 | $1C    | $0BD     | WingedCloudWithCoin                | CODE_pop_one_coin            |
 | $1E    | $0BE     | WingedCloudWith1up                 | CODE_pop_1up                 |
@@ -521,9 +566,16 @@ Two special cases:
   bubble's SpriteID.  The $0B3 FuzzyFart hole in the index (entry 5 ==
   $FXDATA_550000) is unused -- $0B3 has its own Init/Main and is not a
   winged cloud despite living in the ID block.
-- `CODE_pop_stairs` is shared between $0BA Stairs and $0BB Platform; an
-  internal subtype byte (the cloud's `$7402,x` saved by Init) selects
-  which sub-variant to spawn.
+- `CODE_pop_stairs` is shared between $0BA Stairs and $0BB Platform. It
+  only re-seats the sprite at its landing cell. The two differ by their
+  Main (`CODE_main_stairs` / `CODE_main_cloud_platform`). Direction comes
+  from the egg-hit path `CODE_03C398`: `$76,x = $0010` when the saved
+  spawn X (`GenericTable701900`) has bit 4 clear (even column), `$FFF0`
+  when set. `CODE_main_stairs` stamps Map16 `$3D59`/`$3D5A` + `$6600`/
+  `$6700` (the pair chosen by `$76`'s sign), steps X by `$76` and Y up by
+  `$10`. `CODE_main_cloud_platform` stamps `$1512` and steps X by `$76`
+  only. Both stop when the `FXCODE_0ACE2F` probe finds a tile that is
+  neither empty nor in `$96D1-$96D9` (`CODE_03CD3F`).
 - `CODE_pop_watermelon` is shared between $0C4/$0C5/$0C6; uses
   `(SpriteID - $0C4)` as an offset into the watermelon spawn-ID table to
   pick normal / fire / ice variants ($007 / $009 / $005).
@@ -711,8 +763,9 @@ detailed handler walk-throughs.
 - **$0A2** -- Thunder Lakitu fireball; 3-state fan-out before despawn.
   Bank0E.
 - **$0AF-$0B4** -- 5 morph bubbles (Car, Mole, Heli, Train, Sub).
-  Shared `init_transform_bubble` + shared cloud Main; pop -> morph
-  cinematic via per-SpriteID SuperFX glyph offset.  Bank03.
+  Shared `init_transform_bubble` + shared cloud Main; X/Y parity picks
+  cloud / bare bubble / red-switch cloud / drifting bubble (§4.1); pop ->
+  morph cinematic via per-SpriteID SuperFX glyph offset.  Bank03.
 - **$0B5** -- Hidden Winged Cloud (watermelon-reveal); position-bits
   encode 4 payloads.  Bank03.
 - **$0B6-$0CC (excl. $0CA)** -- 22 winged-cloud item variants; shared

@@ -36,7 +36,9 @@ export function nextGridMode(mode: GridMode): GridMode {
  *                showing ONLY the selected entity as an alternating black/white
  *                dashed line — a trace of an object's drawn tiles, a box for a
  *                sprite. Keeps all the guiding overlays (badges, hint lines,
- *                behaviour/neighbour visuals). Click-to-select still on.
+ *                behaviour/neighbour visuals). Click-to-select still on, and
+ *                the selected object still resizes by dragging its free edges
+ *                or corner (no handles drawn; only the cursor changes).
  *   'off'      — no outlines and no hit-testing: the entity type can't be
  *                selected or edited (the old "hide outlines" state).
  */

@@ -31,6 +31,8 @@
 //   HiROM mirror  `$BB:OOOO`  with BB in $80-$BF → same as LoROM BB-$80
 //                            `$BB:OOOO`  with BB in $C0-$DF → same as SuperFX BB-$80
 
+import type { RomVersion } from '../types.ts';
+
 /** A reverse-lookup hit: the asm label at or just before a PC offset, plus how
  *  far past it the offset sits (`delta === 0` ⇒ exact label hit). */
 export interface ReverseHit {
@@ -203,8 +205,9 @@ export function mergeSymbolMaps(primary: SymbolMap, secondary: SymbolMap): Symbo
 
 /**
  * Hardcoded SymbolMap for the V1.0 reference cart. Useful when engine code
- * needs to run against the ORIGINAL Nintendo cart (e.g. `extract.ts`, which
- * runs BEFORE any build has happened and therefore has no `.sym` to parse).
+ * needs to run against an ORIGINAL Nintendo V1.0 cart before any build has
+ * happened (so there's no `.sym` to parse). For the project's own cart of
+ * either version, use `vendoredSymbolMap(romVersion)` (below).
  *
  * Addresses are SNES `bank:offset` and get converted to PC the same way as
  * a real .sym entry, so callers don't need to know which form to use.
@@ -333,5 +336,64 @@ export function vendoredV10SymbolMap(): SymbolMap {
   add('DATA_5F9800', 0x5f9800); // title-island tilemap (worlds 1-5), 1024 char bytes
   add('DATA_title_screen_logo_tilemap', 0x0ffc80); // title logo tilemap, 448 BG words
 
+  return makeMap(m);
+}
+
+/**
+ * USA V1.1 addresses for the vendored labels that V1.1 moved. Every other
+ * vendored label sits at the same address in both carts. Read off a V1.1
+ * build's main + SuperFX `.sym` (a build byte-identical to the V1.1 reference
+ * cart), by the same label names. V1.1 shifts code in banks $00/$01/$0C and
+ * bank $51's SuperFX data, and moves the `Ptrs:` / entrance data table from
+ * `$17:F3E7` to `$0F:E446` (`%DATATABLE_YI_LevelDataPtrsAndEntranceData` in
+ * Bank0F instead of Bank17).
+ */
+const V11_VENDORED_OVERRIDES: Record<string, number> = {
+  DATA_scene_palette_layout: 0x00b39a,
+  DATA_bg1_palette_ptrs: 0x00b484,
+  DATA_bg1_dark_world_palette_ptrs: 0x00b4c4,
+  DATA_bg2_palette_ptrs: 0x00b504,
+  DATA_bg3_palette_ptrs: 0x00b584,
+  DATA_sprite_palette_ptrs: 0x00b604,
+  DATA_yoshi_palette_ptrs: 0x00b624,
+  DATA_scene_gfx_layout: 0x00a97d,
+  DATA_bg1_tileset_files: 0x00ab49,
+  DATA_bg1_dark_tileset_files: 0x00ab79,
+  DATA_bg2_tileset_files: 0x00aba9,
+  DATA_bg3_tilesets_files: 0x00abe9,
+  DATA_spriteset_files: 0x00ac49,
+  DATA_0CE9FE: 0x0cea19,
+  DATA_level_name_string_ptrs: 0x5138e1,
+  DATA_level_name_garbage_sentinel: 0x514254,
+  DATA_bg2_tilemap_indices: 0x01e71e,
+  DATA_bg2_tilemap_gfx_entries: 0x01e75e,
+  DATA_bg3_tilemap_table: 0x01e917,
+  DATA_bg_gradient_ptrs: 0x01d580,
+  DATA_levelmode_index: 0x01af89,
+  DATA_scene_layout_indices: 0x00b7bf,
+  DATA_scene_register_layout: 0x00b7fa,
+  YI_LevelDataPtrsAndEntranceData_Ptrs: 0x0fe822,
+  YI_LevelDataPtrsAndEntranceData_DATA_level_entrance_indexes: 0x0fe446,
+  YI_LevelDataPtrsAndEntranceData_DATA_map_level_entrances: 0x0fe4d0,
+  YI_LevelDataPtrsAndEntranceData_DATA_level_midway_entrance_indexes: 0x0fe5b0,
+  YI_LevelDataPtrsAndEntranceData_DATA_map_level_midway_entrances: 0x0fe63a,
+};
+
+/**
+ * The vendored SymbolMap for a reference cart of `romVersion`: the V1.0 map, or
+ * the V1.0 map with V1.1's moved labels re-pointed (`V11_VENDORED_OVERRIDES`).
+ * For code that reads the ORIGINAL cart of the project's own version before a
+ * build exists (`extract.ts`). Code that reads a foreign V1.0-based cart (the ROM
+ * importer) keeps `vendoredV10SymbolMap`. Throws for an unsupported version.
+ */
+export function vendoredSymbolMap(romVersion: RomVersion): SymbolMap {
+  const v10 = vendoredV10SymbolMap();
+  if (romVersion === 'YI_U1') return v10;
+  if (romVersion !== 'YI_U2') {
+    throw new Error(`No vendored symbol map for ${romVersion}.`);
+  }
+  const m = new Map<string, number>();
+  for (const l of v10.labels()) m.set(l, v10.pc(l));
+  for (const [l, snes] of Object.entries(V11_VENDORED_OVERRIDES)) m.set(l, snesToPC(snes));
   return makeMap(m);
 }

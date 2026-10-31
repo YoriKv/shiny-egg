@@ -44,9 +44,11 @@ export function clearExtractionState(workRoot: string): void {
  * levels-catalog / instance-index builders whose result should propagate to
  * existing extracts. (History: 1 = first versioned pipeline, 2026-06-12;
  * 2 = object-stream walk honours the exit-list bit-7 gate — 0x7D's obj `.bin`
- * shrinks 366 → 226 B, 2026-10-24.)
+ * shrinks 366 → 226 B, 2026-10-24; 3 = per-version cart tables, so a USA V1.1
+ * extract reads its own `Ptrs:` / entrance / level-name tables and fills the
+ * shared 0xBF/0xD0 obj stream + the end-of-ROM garbage slot, 2026-10-27.)
  */
-export const EXTRACT_PIPELINE_VERSION = 2;
+export const EXTRACT_PIPELINE_VERSION = 3;
 
 /** Editor-derived outputs every complete extract must leave on disk
  *  (workRoot-relative). A missing one ⇒ the extract is stale/partial. */

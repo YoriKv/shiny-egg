@@ -4226,6 +4226,7 @@ h3 { margin: 0; }
 .se-pop__logline {
   padding: 2px 0;
   word-break: break-word;
+  white-space: pre-wrap; /* multi-line build errors */
 }
 
 /* ── Project menu (left-toolbar variant of the popover) ─────────────────── */

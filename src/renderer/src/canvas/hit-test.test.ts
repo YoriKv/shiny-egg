@@ -56,8 +56,9 @@ describe('applyShiftClick', () => {
 })
 
 // Spawn hit-test `spawnPos` override (world-map entrance-table draft). With
-// pan=0/zoom=1 and rect at the origin, world px == client px, so a cell (cx,cy)'s
-// marker centre sits at ((cx+0.5)*16, (cy+0.5)*16); SPAWN_HIT_HALF_PX is 10.
+// pan=0/zoom=1 and rect at the origin, world px == client px. The marker sits on
+// Yoshi's feet cell, one below the stored head cell (SPAWN_MARKER_DY), so a spawn
+// (cx,cy)'s marker centre is ((cx+0.5)*16, (cy+1.5)*16); SPAWN_HIT_HALF_PX is 10.
 describe('spawn hit-test override', () => {
   const view: View = { panX: 0, panY: 0, zoom: 1 }
   const rect = { left: 0, top: 0 } as DOMRect
@@ -65,7 +66,7 @@ describe('spawn hit-test override', () => {
   const noIncoming: IncomingExit[] = []
   const bounds = null // SpriteBoundsMap accepts null
   const footprints = null // ObjectFootprints; null ⇒ objects box-fallback (no objects here)
-  // Base spawn at cell (5,5) → centre (88,88).
+  // Base spawn at cell (5,5) → marker centre (88,104).
   const level = {
     empty: false,
     special: false,
@@ -77,30 +78,35 @@ describe('spawn hit-test override', () => {
   const spawnHit = (hits: Selection[]): Selection | undefined => hits.find((h) => h.kind === 'spawn')
 
   test('param omitted → falls back to level.spawn (base position)', () => {
-    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, footprints))).toEqual({
+    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 104, bounds, footprints))).toEqual({
       kind: 'spawn',
       spawn: { x: 5, y: 5 }
     })
   })
 
   test('override relocates the hit point — moved marker is grabbable, base no longer hits', () => {
-    // Override spawn to cell (10,10) → centre (168,168).
+    // Override spawn to cell (10,10) → marker centre (168,184).
     expect(
-      spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 168, 168, bounds, footprints, { x: 10, y: 10 }))
+      spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 168, 184, bounds, footprints, { x: 10, y: 10 }))
     ).toEqual({ kind: 'spawn', spawn: { x: 10, y: 10 } })
     expect(
-      spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, footprints, { x: 10, y: 10 }))
+      spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 104, bounds, footprints, { x: 10, y: 10 }))
     ).toBeUndefined()
   })
 
+  test('the stored head cell itself is not the marker (feet cell is)', () => {
+    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, footprints))).toBeUndefined()
+    expect(hitTestSpawn(level, view, layers, rect, 88, 88)).toBe(false)
+  })
+
   test('explicit null override → spawn not selectable (level has no entrance)', () => {
-    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 88, bounds, footprints, null))).toBeUndefined()
+    expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 104, bounds, footprints, null))).toBeUndefined()
   })
 
   test('hitTestSpawn (hover) honours the override', () => {
-    expect(hitTestSpawn(level, view, layers, rect, 168, 168, { x: 10, y: 10 })).toBe(true)
-    expect(hitTestSpawn(level, view, layers, rect, 88, 88, { x: 10, y: 10 })).toBe(false)
-    expect(hitTestSpawn(level, view, layers, rect, 88, 88, null)).toBe(false)
+    expect(hitTestSpawn(level, view, layers, rect, 168, 184, { x: 10, y: 10 })).toBe(true)
+    expect(hitTestSpawn(level, view, layers, rect, 88, 104, { x: 10, y: 10 })).toBe(false)
+    expect(hitTestSpawn(level, view, layers, rect, 88, 104, null)).toBe(false)
   })
 })
 

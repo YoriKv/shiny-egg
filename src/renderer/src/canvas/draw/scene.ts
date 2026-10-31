@@ -17,7 +17,7 @@ import type {
 import type {IncomingExit, LayerVisibility, PlacementItem, Selection} from '../../types'
 import type {View} from '../view'
 import type {SpriteBoundsMap} from '../hit-test'
-import {LEVEL_PX_W, LEVEL_PX_H, type ObjectOutlineBox} from '../geometry'
+import {LEVEL_PX_W, LEVEL_PX_H, SPAWN_MARKER_DY, type ObjectOutlineBox} from '../geometry'
 import {linksFor, resolveEntityRef} from '../entity-links'
 import {objectSizeMode} from '../../data/object-record'
 import {drawScreenGrid} from './grid'
@@ -32,7 +32,12 @@ import {buildBandedGradient} from '../../lib/gradient-banded'
 import {drawCameraGradient, drawCameraOverlay, cameraBoxScreenRect, type CameraPreview, type BoxRect} from './camera-preview'
 import {drawSpriteGlyphs, drawSpriteOutlines, drawSpriteRenderOutlines} from './sprites'
 import {drawEntranceGlyphs} from './entrance-glyphs'
-import {drawCommandObjectBadges, drawCommandSpriteBadges} from './command-badges'
+import {
+    drawCommandObjectBadges,
+    drawCommandSpriteBadges,
+    drawRawIdObjectBadges,
+    drawRawIdSpriteBadges
+} from './command-badges'
 import {drawGeneratorBadges} from './generator-badges'
 import {drawNeighborIndicators, drawNeighborSelectionOverlay} from './sprite-neighbors'
 import {drawBehaviorSelectionOverlay, drawCapWarnings} from './sprite-behavior'
@@ -390,8 +395,8 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // Object outlines — 3-state `bg1Outlines` (OutlineMode). 'detailed' draws
         // the full blueprint (per-object box + hex-id label); 'render' shows only
         // the SELECTED object as an alternating dashed trace of its stamped tiles.
-        // BOTH editing modes keep the guiding overlays (gfx-missing badge, resize
-        // handles, command badge) — only the box+label differ; 'off' draws nothing
+        // BOTH editing modes keep the guiding overlays (gfx-missing badge, command
+        // badge) — only the box+label+handles differ; 'off' draws nothing
         // (and hit-test.ts disables selection).
         if (layers.bg1Outlines !== 'off') {
             if (layers.bg1Outlines === 'detailed') {
@@ -409,7 +414,9 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             // Resize handles only for a SINGLE selected object (resize is single-only),
             // and only in 'detailed' mode — the render outline traces tiles, not the
             // w/h box the handles pull against, so they'd read as detached there.
-            // Drawn from `drawObjs` so they track the live resize preview.
+            // Render mode still resizes, from edge bands with only a cursor hint
+            // (handles.ts `hitResizeEdge`). Drawn from `drawObjs` so they track the
+            // live resize preview.
             if (layers.bg1Outlines === 'detailed' && primary?.kind === 'object') {
                 const so = drawObjs.find((o) => o.uid === primary.uid)
                 if (so) {
@@ -420,6 +427,9 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             // Command objects (Transparent tile, Scroll stopper, Tile eraser, …) render no/clear
             // tiles — mark them with the same half-transparent command-abbreviation badge.
             drawCommandObjectBadges(ctx, drawObjs)
+            // Objects that stamp no tiles at all get a slate raw-id badge instead of
+            // an empty cell (command objects already have their own badge).
+            drawRawIdObjectBadges(ctx, drawObjs, objectFootprints)
         }
         // Selection-linkage line goes UNDER the marker glyphs so the line's
         // endpoints tuck neatly into each glyph; the line is visible in the
@@ -451,6 +461,9 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // Command sprites (Graphic/Palette Changer, auto-scroll, …) have no cel either —
         // mark them with a half-transparent command-abbreviation badge (command-badges.ts).
         if (spriteAnnotations) drawCommandSpriteBadges(ctx, drawSprs)
+        // Sprites the static renderer can't draw (no cel bounds: bosses, BG3-drawn
+        // platforms, …) and with no other stand-in get a slate raw-id badge.
+        if (spriteAnnotations) drawRawIdSpriteBadges(ctx, drawSprs, spriteBounds)
         // Generator sprites — purple square with the spawned enemy's (cached) thumbnail,
         // plus a red X for stoppers (generator-badges.ts).
         if (spriteAnnotations) drawGeneratorBadges(ctx, drawSprs, generatorThumbs)
@@ -460,7 +473,8 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // the marker live.
         const spawn = spawnOverride ?? level.spawn
         if (spriteAnnotations && spawn) {
-            drawSpawnGlyph(ctx, spawn.x, spawn.y, view.zoom)
+            // Markers sit on Yoshi's feet cell, one below the stored head cell.
+            drawSpawnGlyph(ctx, spawn.x, spawn.y + SPAWN_MARKER_DY, view.zoom)
         }
         // Sprite OUTLINE overlay — 3-state `spriteOutlines` (OutlineMode), mirroring
         // the object outlines. 'detailed' = box + hex-id over every sprite; 'render'
@@ -516,7 +530,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // already; only 'off' (which also disables its hit-test) hides it.
         if (layers.spriteOutlines !== 'off' && spawn) {
             drawSpawnOutline(
-                ctx, spawn.x, spawn.y, hoveredSpawn, primary?.kind === 'spawn', view.zoom
+                ctx, spawn.x, spawn.y + SPAWN_MARKER_DY, hoveredSpawn, primary?.kind === 'spawn', view.zoom
             )
         }
         if (layers.exits) {
@@ -559,7 +573,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // sees where the next Test Level boot will drop Yoshi. App passes a
         // non-null testSpawn only when it belongs to the displayed level.
         if (testSpawn) {
-            drawTestSpawnGlyph(ctx, testSpawn.x, testSpawn.y, view.zoom)
+            drawTestSpawnGlyph(ctx, testSpawn.x, testSpawn.y + SPAWN_MARKER_DY, view.zoom)
         }
         // Collision overlay renders LAST so it's visually on top of every
         // other layer (BG1, grid, outlines, sprites, exits, spawn glyph).

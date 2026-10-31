@@ -19,7 +19,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { buildRom, type BuildResult } from 'snes-framework/build'
+import { buildRom, type BuildOptions, type BuildResult } from 'snes-framework/build'
 import { readExtractionState } from 'snes-framework/state'
 import { applyAudioModuleLayout, audioBlobSizes } from 'snes-framework/audio'
 import {
@@ -37,6 +37,7 @@ import {
   projectBuildDir
 } from './framework-paths'
 import {
+  activeBasePoolMap,
   activeBoundaryMoves,
   activeDecoupled,
   activeFreeRegions,
@@ -44,8 +45,11 @@ import {
   activePatchPoolGeometry,
   activeRelocations,
   activeRemovedLevels,
-  applyActiveLevelDataLayout
+  applyActiveLevelDataLayout,
+  checkActivePoolBudgets,
+  poolViolationMessage
 } from './resources'
+import { explainAsarFailure } from './build-errors'
 import {
   applyProjectPatches,
   asmSymbolDefines,
@@ -335,8 +339,11 @@ export function applyEnabledAsmPatches(treeRoot: string, projectId: string | nul
   const geo = activePatchPoolGeometry(poolBytes)
   if (!geo) {
     throw new Error(
-      'Cannot place asm patches: the patch-pool geometry is unavailable (no built ' +
-        'symbols / pool map yet). Build the base ROM once before enabling asm patches.'
+      activeBasePoolMap()
+        ? 'Cannot place asm patches: they need the free space at the end of bank 0x51, ' +
+            'which only USA V1.0 has. Disable the asm patches for this project.'
+        : 'Cannot place asm patches: the patch-pool geometry is unavailable (no built ' +
+            'symbols / pool map yet). Build the base ROM once before enabling asm patches.'
     )
   }
   writeFileSync(hookPath, generateAsarPatchesAsm(patches, geo), 'utf8')
@@ -372,6 +379,25 @@ function layoutViolationMessage(violations: LayoutViolation[]): string {
   )
 }
 
+/** `buildRom`, with a failed asar run's errors translated into something the
+ *  user can act on (which level pool overflowed, which patch line broke; see
+ *  build-errors.ts). `patchHookPath` is the generated asm-patch hook when this
+ *  build assembles asm patches. Errors without parsed asar diagnostics pass
+ *  through unchanged. */
+async function buildRomExplained(opts: BuildOptions, patchHookPath: string | null): Promise<BuildResult> {
+  try {
+    return await buildRom(opts)
+  } catch (err) {
+    const diagnostics = (err as { diagnostics?: unknown }).diagnostics
+    if (!Array.isArray(diagnostics)) throw err
+    const explained = explainAsarFailure(diagnostics, {
+      patchHook: patchHookPath && existsSync(patchHookPath) ? readFileSync(patchHookPath, 'utf8') : null,
+      poolMap: activeBasePoolMap()
+    })
+    throw explained ? new Error(explained, { cause: err }) : err
+  }
+}
+
 /**
  * Build the active project's ROM. Hybrid: when the overlay has asm edits,
  * materialize the merged build-tree and assemble against it; otherwise use the
@@ -381,6 +407,19 @@ function layoutViolationMessage(violations: LayoutViolation[]): string {
 export async function buildProject(opts: BuildProjectOptions): Promise<BuildResult> {
   const { id, onProgress } = opts
   const outputDir = projectBuildDir(id)
+
+  // Pre-build budget gate (task #14), here at the one chokepoint so every build
+  // (Build, Test Level, Launch, Export) gets it. Saved overlay streams may
+  // exceed a shared bank pool; assembling them would trip an asar boundary
+  // assert. Refuse with the actionable message first. The renderer's Test Level
+  // blocker only sees the pools of the level being edited, so this is the
+  // check that covers every other level.
+  const violations = checkActivePoolBudgets()
+  if (violations.length > 0) {
+    const msg = poolViolationMessage(violations)
+    onProgress?.(`Build blocked: ${msg}`)
+    throw new Error(msg)
+  }
 
   // A grown movable pool's boundary move, a free-space migration (delete +
   // region-append + reclaim), and a de-couple (materialise + Ptrs repoint) all
@@ -461,28 +500,27 @@ export async function buildProject(opts: BuildProjectOptions): Promise<BuildResu
       join(buildTreeRoot(id), 'yi'),
       audioSizes,
       readExtractionState(base)?.romVersion ?? 'YI_U1',
-      { bank50AlreadyReconciled: plan !== null }
+      // The level pass reconciles Bank50 only as FreeRegion50's bank. A map with
+      // no free regions (V1.1) still yields a plan but never touches Bank50.
+      {
+        bank50AlreadyReconciled:
+          plan !== null && activeFreeRegions().some((r) => r.bankFile === 'Banks/Bank50.asm')
+      }
     )
     const asmCount = applyEnabledAsmPatches(buildTreeRoot(id), id)
     if (asmCount > 0) onProgress?.(`Assembling ${asmCount} asm patch(es) into the ROM…`)
     // Inject engine-label addresses (resolved from the build symbols) so asm
     // patches can reference `!CODE_xxxxxx` in the label-less FinalizeROM phase.
     const extraDefines = asmSymbolDefines(id)
-    result = await buildRom({
-      workRoot: buildTreeRoot(id),
-      asarBin: asarBinPath(),
-      outputDir,
-      extraDefines,
-      onProgress
-    })
+    result = await buildRomExplained(
+      { workRoot: buildTreeRoot(id), asarBin: asarBinPath(), outputDir, extraDefines, onProgress },
+      asmCount > 0 ? join(buildTreeRoot(id), 'yi', 'Custom', 'Asar_Patches_YI.asm') : null
+    )
   } else {
-    result = await buildRom({
-      workRoot: frameworkWorkRoot(),
-      asarBin: asarBinPath(),
-      overlayRoot: overlayRoot(id),
-      outputDir,
-      onProgress
-    })
+    result = await buildRomExplained(
+      { workRoot: frameworkWorkRoot(), asarBin: asarBinPath(), overlayRoot: overlayRoot(id), outputDir, onProgress },
+      null
+    )
   }
 
   // Post-build: apply the project's enabled custom patches to the finished ROM

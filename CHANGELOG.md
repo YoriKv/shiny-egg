@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.7 - 2026-10-30
+
+- Canvas: resize objects from the selected-only outline, auto-scroll when dragging near the edge, zooming mid-drag keeps the dragged item in place
+- Sprite improvements and fixes
+- Fixed level bank that wasn't previously migratable
+- New custom patches start empty, broken sample edits removed from existing ones
+
 ## v0.7.6 - 2026-10-25
 
 - Better dropdowns and presets for level header

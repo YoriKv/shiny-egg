@@ -153,7 +153,12 @@ const api = {
   extract: (args: FrameworkExtractArgs): Promise<ExtractResult> =>
     ipcRenderer.invoke('framework:extract', args),
 
-  build: (): Promise<BuildResult> => ipcRenderer.invoke('framework:build'),
+  // Rethrown without Electron's "Error invoking remote method 'framework:build':
+  // Error: " prefix, so the log shows the (possibly multi-line) build error itself.
+  build: (): Promise<BuildResult> =>
+    ipcRenderer.invoke('framework:build').catch((err: Error) => {
+      throw new Error(err.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''))
+    }),
 
   setUnsavedChanges: (unsaved: boolean): void =>
     ipcRenderer.send('app:set-unsaved-changes', unsaved),

@@ -42,6 +42,15 @@ export const EXIT_MARKER_HALF_PX = 8
  *  extends ~9 px up from the cell center, so we offset / size accordingly. */
 export const SPAWN_HIT_HALF_PX = 10
 
+/** Cells between a stored spawn and where its marker draws. The cart seeds
+ *  Player.Y = entrance cell × 16 (`CODE_set_player_entrance_from_exit`, and the
+ *  world-map path in `CODE_01AFA4`), and Yoshi stands two cells tall, so a
+ *  stored spawn cell is his HEAD and his feet land one cell lower. Both spawn
+ *  markers (world-map flag, Test Level egg) draw and hit-test on that feet cell,
+ *  so a marker set on the air just above the ground stands Yoshi on it. Stored
+ *  values (and the Properties panel's numbers) stay the cart's head cell. */
+export const SPAWN_MARKER_DY = 1
+
 /** Half-extent (world px) of an incoming-exit marker's clickable square.
  *  Matches the door icon (normalized to one tile — EXIT_MARKER_HALF_PX). */
 export const INCOMING_HIT_HALF_PX = 8

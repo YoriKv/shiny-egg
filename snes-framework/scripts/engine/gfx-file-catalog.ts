@@ -160,6 +160,9 @@ export const LZ2_SPECIALS: Readonly<Record<number, Lz2SpecialRecord>> = {
 
 /** Special LZ16-table entries (independent id space — see the header rule). */
 export const LZ16_SPECIALS: Readonly<Record<number, { owner: string; description: string }>> = {
+  // Loaded by every level's scene program as a literal (no tileset slot) to
+  // VRAM $F000 = tiles 128-255 of the shared BG1/BG2 char base ($E000).
+  0x19: { owner: 'every level', description: 'Global BG1/BG2 tiles, loaded in every level (VRAM $F000, BG char tiles 128-255)' },
   // Non-level scenes the export walks don't cover (scene-program walk 2026-07-19;
   // dests are VRAM word addresses).
   0x10: { owner: 'retry / game-over (gm$13)', description: 'Retry-screen OBJ sheet (scene program $06E → VRAM word $4000)' },
