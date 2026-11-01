@@ -147,6 +147,15 @@ function patchAsmPath(dir: string, id: string): string {
   return join(dir, `${id}.asm`)
 }
 
+/** Normalize CRLF / lone-CR line endings to LF. Every asm consumer splits on
+ *  `'\n'` and strips comments with `/;.*$/`, which can't match across a trailing
+ *  `\r`, so a CRLF file (a Windows checkout under autocrlf, or a Windows editor)
+ *  keeps its comments and e.g. a `; no freespace` mention trips the build's
+ *  freecode guard. Applied where asm text enters the app (load + import). */
+function toLf(text: string): string {
+  return text.replace(/\r\n?/g, '\n')
+}
+
 function readPatchFile(dir: string, id: string): PatchFile | null {
   const p = join(dir, `${id}.json`)
   if (!existsSync(p)) return null
@@ -176,7 +185,9 @@ function readPatchFile(dir: string, id: string): PatchFile | null {
     // Build-time asm lives in the sibling `<id>.asm` (the on-disk home); fall back
     // to a legacy inline `asm` field so pre-split JSONs keep loading.
     const asmPath = patchAsmPath(dir, id)
-    const asm = existsSync(asmPath) ? readFileSync(asmPath, 'utf8') : raw.asm
+    const rawAsm = existsSync(asmPath) ? readFileSync(asmPath, 'utf8') : raw.asm
+    const asm =
+      rawAsm === undefined ? undefined : Array.isArray(rawAsm) ? rawAsm.map(toLf) : toLf(rawAsm)
     // A patch must do something: binary chunks and/or build-time asm.
     if (chunks.length === 0 && asm === undefined) return null
     return { ...raw, chunks, ...(asm !== undefined ? { asm } : {}) }
@@ -488,7 +499,7 @@ export function importAsm(filePath: string): PatchImportResult {
   if (!projectId) return { ok: false, error: 'No active project to import a patch into.' }
   const read = readImportFile(filePath)
   if (!read.ok) return read
-  const src = read.raw.toString('utf8')
+  const src = toLf(read.raw.toString('utf8'))
 
   const meta = deriveAsmPatchMeta(src, basename(filePath))
   // Reference symbols (base build) drift-proof the converted `org`s; null ⇒ orgs

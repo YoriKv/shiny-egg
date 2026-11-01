@@ -1,0 +1,5 @@
+# Builtin patch sources ship verbatim in the packaged app. Keep them LF on every
+# checkout (the Windows release runner defaults to core.autocrlf=true), so the
+# shipped copies match what the patch tooling is tested against.
+snes-framework/patches/*.asm text eol=lf
+snes-framework/patches/*.json text eol=lf

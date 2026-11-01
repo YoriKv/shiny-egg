@@ -13,12 +13,14 @@
 //       slot 0 = BG1 foreground  ($7C-class LZ2 tilemap) — path, markers, fortress
 //       slot 1 = BG2 background   ($7D-class LZ2 tilemap) — hills, clouds, scenery
 //       slot 2 = BG3 ground       ($7E LZ2 tilemap, 2bpp) — the tan terrain + tree line
-//     BG1+BG2 draw 4bpp from the shared $74/$75/$4C char (base $4000); BG3 draws 2bpp from
-//     the $56 char ($2000). The palette is the per-world overworld CGRAM rows 0-7 (BG) —
-//     M1TE2 holds 128 colors = exactly those rows, so the overworld colors are EXACT.
-//     The overworld is native tilemap data, so every word + CHR byte maps VERBATIM: edits
-//     round-trip placement (→ the $7C/$7D/$7E tilemaps), pixels (→ $74/$75/$4C + $56), and
-//     palette (→ the master blob).
+//     BG1+BG2 draw 4bpp from char base $4000 — the shared $74/$75/$4C terrain char at
+//     $6000-$7FFF plus a per-world-SET band at $8000-$BFFF ($99-$9C, then $9D-$A0 for worlds
+//     1-5 / $95-$98 for world 6); BG3 draws 2bpp from the $56 char ($2000). The palette is
+//     the per-world overworld CGRAM rows 0-7 (BG) — M1TE2 holds 128 colors = exactly those
+//     rows, so the overworld colors are EXACT. The overworld is native tilemap data, so
+//     every word maps VERBATIM: edits round-trip placement (→ the $7C/$7D/$7E tilemaps),
+//     palette (→ the master blob), and pixels of the map's OWN char only (→ $74/$75/$4C +
+//     $56; the per-world-set band is shown but not written — see "which CHR round-trips").
 //
 //   • ICONS — one .M1 with EVERY level-select picture: the 60 per-level icons (6 worlds ×
 //     10 slots, in level order) plus the level MARKER + boss CASTLE shapes. Unlike the
@@ -57,6 +59,26 @@ const GROUND_TM_VRAM = 0x2800; // BG3 ground tilemap ($7E), 64×32, DMA'd here
 const GROUND_TM_FILE_ID = 0x7e; // the $7E LZ2 tilemap gfx-file the BG3 ground round-trips to
 const TILE4 = 32;
 const TILE2 = 16;
+
+// ── which CHR round-trips ────────────────────────────────────────────────────
+// The .M1's two CHR windows are straight VRAM copies (4bpp $4000-$BFFF as tilesets 1-4,
+// 2bpp $2000-$5FFF), so M1TE can SHOW every tile the map draws — but only the map's OWN
+// char files are editable through this surface:
+//   4bpp $6000-$7FFF (tiles 256-511, tilesets 2-3) = the shared $4C/$74/$75 terrain char.
+//   2bpp $2000-$27FF (tiles 0-127)                 = the $56 ground char.
+// Everything else in the windows is display-only and the diff IGNORES edits to it:
+//   • 4bpp tiles 0-255 ($4000-$5FFF): unloaded on the overworld (the ✕ marker below).
+//   • 4bpp tiles 512-1023 ($8000-$BFFF): the per-world-SET terrain band — $99-$9C for every
+//     world, then $9D-$A0 for worlds 1-5 but $95-$98 for world 6. The maps DO reference it
+//     (chars $300+), but a file there is shared by several worlds and swapped per world, so
+//     writing it from one world's .M1 silently repaints the other worlds that load it
+//     (a world-6 band imported through world 1's file broke worlds 2-5 — see the diff).
+//   • 2bpp tiles 128+ ($2800+): not char at all — $2800-$37FF is the $7E ground TILEMAP,
+//     which the 2bpp window merely overlaps. Treating it as tiles wrote stale tilemap bytes
+//     back over an imported ground on the next import.
+const MAP_CHAR_EDIT_FIRST = 0x6000; // 4bpp editable VRAM range [first, end)
+const MAP_CHAR_EDIT_END = 0x8000;
+const GROUND_CHAR_EDIT_END = 0x2800; // 2bpp editable VRAM range [$2000, end)
 
 /** Screen-block word index for cell (col,row) — block 0 = cols 0-31 @ $000, block 1 =
  *  cols 32-63 @ $400 (the SNES SC=01 two-screen layout); identical to world-map-terrain. */
@@ -181,8 +203,13 @@ export interface OverworldM1Diff {
   wordEdits: OverworldWordEdit[];
   /** Changed CGRAM colors (excludes M1TE2's auto-blacked transparent slots). */
   paletteEdits: M1tePaletteEdit[];
-  /** CHR tiles changed but not resolvable to a map gfx file (wrap / unknown). */
+  /** CHR tiles changed inside the editable ranges but not resolvable to a map gfx file. */
   skippedTiles: number;
+  /** CHR tiles changed OUTSIDE the editable ranges (the per-world-set band at $8000+, the
+   *  2bpp window's tilemap overlap; the ✕ band is skipped, not counted) — display-only,
+   *  deliberately not written.
+   *  The importer surfaces the count so a stray edit there isn't lost silently. */
+  ignoredTiles: number;
   /** BG1/BG2 cells referencing tileset 1 (char 0-255 — the unloaded, ✕-marked band).
    *  These still round-trip verbatim, but draw unrelated panel gfx in-game, so the
    *  import surfaces them as an error (see the tileset-1 marker note). */
@@ -202,13 +229,17 @@ export function diffOverworldM1(c: WorldMapTerrainContext, m1Bytes: Uint8Array):
   const ground = groundTilemap(vram);
 
   // ── CHR — 4bpp BG char ($4000 window → $74/$75/$4C) then 2bpp ground char ($2000 → $56).
-  // Tiles 0..255 are the ✕-marked tileset-1 band (no backing file at $4000-$6000), so they
-  // are never editable — skip them so the synthetic marker doesn't read back as a CHR edit.
+  // Only the editable ranges (see the "which CHR round-trips" note) produce edits; a changed
+  // tile anywhere else in either window is counted as ignored. The ✕-marked tileset-1 band
+  // is skipped outright: its tiles are a synthetic marker that ALWAYS differs from VRAM, so
+  // counting them would report 256 "ignored" tiles on every import.
   const chrEdits: OverworldChrEdit[] = [];
   let skippedTiles = 0;
+  let ignoredTiles = 0;
   for (let t = TILESET1_TILES; t < 1024; t++) {
     const vramByte = (MAP_CHAR_BASE + t * TILE4) & 0xffff;
     if (vramByte + TILE4 > vram.length || sameBytes(doc.chr4bpp, t * TILE4, vram, vramByte, TILE4)) continue;
+    if (vramByte < MAP_CHAR_EDIT_FIRST || vramByte >= MAP_CHAR_EDIT_END) { ignoredTiles++; continue; }
     const f = fileForVramByteBpp(manifest, vramByte, TILE4);
     if (!f) { skippedTiles++; continue; }
     chrEdits.push({ format: f.format, fileId: f.fileId, fileTile: f.fileTile, tileBytes: TILE4, bytes: doc.chr4bpp.slice(t * TILE4, t * TILE4 + TILE4) });
@@ -216,6 +247,7 @@ export function diffOverworldM1(c: WorldMapTerrainContext, m1Bytes: Uint8Array):
   for (let t = 0; t < 1024; t++) {
     const vramByte = (GROUND_CHAR_VRAM + t * TILE2) & 0xffff;
     if (vramByte + TILE2 > vram.length || sameBytes(doc.chr2bpp, t * TILE2, vram, vramByte, TILE2)) continue;
+    if (vramByte >= GROUND_CHAR_EDIT_END) { ignoredTiles++; continue; }
     const f = fileForVramByteBpp(manifest, vramByte, TILE2);
     if (!f) { skippedTiles++; continue; }
     chrEdits.push({ format: f.format, fileId: f.fileId, fileTile: f.fileTile, tileBytes: TILE2, bytes: doc.chr2bpp.slice(t * TILE2, t * TILE2 + TILE2) });
@@ -246,7 +278,7 @@ export function diffOverworldM1(c: WorldMapTerrainContext, m1Bytes: Uint8Array):
   }
 
   // ── Palette — changed CGRAM rows 0-7, skipping the auto-blacked transparent slots.
-  return { chrEdits, wordEdits, paletteEdits: diffM1tePalette(doc.palette, cgram), skippedTiles, tileset1Cells };
+  return { chrEdits, wordEdits, paletteEdits: diffM1tePalette(doc.palette, cgram), skippedTiles, ignoredTiles, tileset1Cells };
 }
 
 /** The base (cart) screen-block tilemap bytes for one of an overworld file's tilemap files —

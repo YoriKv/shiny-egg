@@ -2,7 +2,9 @@
 //   1. exportWorldMapM1 emits 6 overworlds (one per world, the full 64×32 screen) + 1 icons
 //      file, each a valid 74000-byte v2 .M1.
 //   2. OVERWORLD: an unedited .M1 round-trips to ZERO edits; a 1-tile CHR edit → exactly
-//      that map-char file edit; a 1-word edit → exactly that tilemap word; a 1-color edit
+//      that map-char file edit; a CHR edit outside the map's own char ($74/$75/$4C/$56 —
+//      i.e. in the per-world-set $8000+ band, the ✕ band, or the 2bpp window's tilemap
+//      overlap) → NO edit, counted as ignored; a 1-word edit → exactly that tilemap word; a 1-color edit
 //      → exactly that CGRAM color; a color RESET-to-vanilla over a prior override → a revert
 //      edit back to base (the diff is relative to the context cgram = base ⊕ existing edits).
 //   3. ICONS: an unedited .M1 round-trips to zero edits; a per-level-icon pixel edit routes
@@ -83,6 +85,24 @@ assert(ov.bg1FileId === terrainLayerFileId(c, 0) && ov.bg2FileId === terrainLaye
   assert(d.chrEdits.length === 1, `a 1-tile overworld CHR edit → exactly one char edit (got ${d.chrEdits.length})`);
   assert(d.chrEdits[0]?.fileTile === 0, `the CHR edit targets tile 0 of the $74 file (vram $7000; got fileTile ${d.chrEdits[0]?.fileTile})`);
   assert(d.wordEdits.length === 0 && d.paletteEdits.length === 0, 'a CHR-only edit reports no word/palette edits');
+}
+
+// Display-only CHR is NOT written: an edit in the per-world-set band ($8000+, tile 0x300 =
+// VRAM $A000, the $9D-$A0 / $95-$98 files other worlds share), in the ✕ band (tile 1), or in
+// the 2bpp window past $2800 (2bpp tile 128 = the $7E ground TILEMAP's bytes) produces zero
+// CHR edits and is counted as ignored — a world-6 band imported through world 1's file used
+// to repaint worlds 2-5, and the tilemap overlap used to write stale ground bytes back.
+{
+  const doc = parseM1te2(ov.bytes);
+  doc.chr4bpp[0x300 * 32] = doc.chr4bpp[0x300 * 32]! ^ 0xff;
+  doc.chr4bpp[1 * 32] = doc.chr4bpp[1 * 32]! ^ 0xff;
+  doc.chr2bpp[128 * 16] = doc.chr2bpp[128 * 16]! ^ 0xff;
+  const d = diffOverworldM1(c, encodeM1te2(doc));
+  assert(d.chrEdits.length === 0 && d.wordEdits.length === 0,
+    `edits in the $8000+ band / ✕ band / 2bpp tilemap overlap → no CHR or word edits (got chr ${d.chrEdits.length}, word ${d.wordEdits.length})`);
+  assert(d.ignoredTiles === 2, `the band + overlap edits are reported as ignored, the ✕ band isn't counted (got ${d.ignoredTiles})`);
+  const d0 = diffOverworldM1(c, ov.bytes);
+  assert(d0.ignoredTiles === 0, 'an unedited .M1 reports no ignored tiles');
 }
 
 // A 1-word edit (BG1 cell 0) → exactly that tilemap word, on the $7C-class file at offset 0.

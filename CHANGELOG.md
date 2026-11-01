@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.8 - 2026-11-01
+
+- Fixed asm patches with Windows line endings
+- World map import only writes the map's own graphics
+
 ## v0.7.7 - 2026-10-30
 
 - Canvas: resize objects from the selected-only outline, auto-scroll when dragging near the edge, zooming mid-drag keeps the dragged item in place

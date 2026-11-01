@@ -808,6 +808,11 @@ export async function importGfxPngsFromDir(
         if (d.tileset1Cells > 0) {
           errors.push(`${ov.file}: ${d.tileset1Cells} cell${d.tileset1Cells === 1 ? '' : 's'} use tileset 1 (the blank char 0–255 band, shown as a ✕ in M1TE) — these draw unrelated panel graphics in-game. Use tilesets 2–4 for overworld map tiles.`)
         }
+        // Display-only CHR (the per-world-set band at $8000+, the 2bpp window's tilemap
+        // overlap) is deliberately not written — say so rather than lose the edit silently.
+        if (d.ignoredTiles > 0) {
+          warnings.push(`${ov.file}: ${d.ignoredTiles} edited tile${d.ignoredTiles === 1 ? '' : 's'} outside the map's own graphics (4bpp tilesets 2–3 and the first 128 2bpp tiles) were ignored — the other tiles are shared with other worlds or aren't graphics.`)
+        }
         // CHR pixels — 4bpp ($74/$75/$4C) + 2bpp ($56) tiles, each at its own stride → reconciler.
         for (const e of d.chrEdits) { reconciler.chrTile(e.format, e.fileId, e.fileTile, e.bytes, e.tileBytes, ov.file, 'World map char'); entryChanged = true }
         // Tilemap words — accumulate per file (a file's screens/worlds write disjoint offsets).
