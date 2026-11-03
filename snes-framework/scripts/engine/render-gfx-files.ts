@@ -331,6 +331,7 @@ export function renderGfxFiles(
       paletteRow: renderPaletteRow,
       srcPC: entry.srcPC,
       vramByteOffset: entry.vramByteOffset,
+      dpSlot: entry.dpSlot,
       tileCount: totalTiles,
       rgba: rendered.rgba,
       width: rendered.width,

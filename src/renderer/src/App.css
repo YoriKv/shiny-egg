@@ -6701,3 +6701,94 @@ h3 { margin: 0; }
   pointer-events: none;
   display: none;
 }
+/* Global sprite tileset-table editor in the Graphics panel. */
+.se-spriteset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  height: 100%;
+}
+.se-spriteset__controls {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.se-spriteset__controls label,
+.se-spriteset__file {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.se-spriteset__controls .se-input,
+.se-spriteset__file .se-input {
+  min-width: 76px;
+}
+.se-spriteset__actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.se-spriteset__status,
+.se-spriteset__hint {
+  min-height: 14px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.se-spriteset__status:empty {
+  display: none;
+}
+.se-spriteset__files {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(64px, 1fr));
+  gap: 6px;
+}
+.se-spriteset__preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 2px;
+}
+.se-spriteset__slot,
+.se-spriteset__sheet {
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+}
+.se-spriteset__slot h3 {
+  margin: 0 0 5px;
+  font-size: 11px;
+}
+.se-spriteset__sheet-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+.se-spriteset__sheet-meta {
+  margin: 2px 0 5px;
+  color: var(--ink-3);
+  font-size: 10px;
+}
+.se-spriteset__canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+.se-spriteset__empty {
+  padding: 8px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.se-spriteset__empty--error {
+  color: var(--danger);
+}

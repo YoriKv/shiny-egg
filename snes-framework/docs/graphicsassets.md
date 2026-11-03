@@ -250,6 +250,12 @@ emits the same tile indices everywhere) but the **file ID** in that slot varies
 per tileset (`docs/tileset-vram-atlas.tsv` SPR rows; `enginecore.md §6.7`). Tiles
 resident for the whole level.
 
+The Graphics panel's **Spritesets** tab edits these 128 six-file rows in
+`Bank00.asm` (`DATA_spriteset_files`, `$00:B039`) through a fixed-size
+`;@editable:spriteset-files` overlay region. It previews the selected row by
+running the regular sprite-gfx renderer against the draft file IDs; saving
+updates the project overlay and the next build writes the table into the ROM.
+
 The **per-sprite GFX-file dependency** is a static table:
 `DATA_sprite_gfx_file_table` (`$0A:A716`, alias `FXDATA_0AA716`) is indexed by
 sprite ID and gives the GFX **file number** that sprite needs (`$0000` ⇒ it draws
@@ -1233,4 +1239,3 @@ the `CHRN` scheme.
 | Sprite dispatch / state machine | `spritestateengine.md` |
 | SuperFX dynamic-tile decode, rasterisers | `mchip.md §3`, `bossengine.md §7.3` |
 | Graphic/palette changer sprites | `renderingpipeline.md §1.1` |
-

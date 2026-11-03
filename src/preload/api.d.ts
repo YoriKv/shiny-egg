@@ -28,6 +28,7 @@ import type {
   PaletteCatalogSwatch,
   PaletteEdit,
   MusicSetsModel,
+  SpritesetFilesModel,
   PoolBudgetReport,
   PoolOverview,
   SaveResourceResult,
@@ -218,6 +219,7 @@ export type {
   UsedMap16,
   MusicSetSettingModel,
   MusicSetsModel,
+  SpritesetFilesModel,
   ValidationIssue,
   ValidationSeverity,
   WorldMapEntrance,
@@ -623,6 +625,7 @@ export interface EditorAPI {
   loadResource(resource: { kind: 'world-map-paths' }): Promise<WorldMapPathsModel>
   loadResource(resource: { kind: 'yoshi-colors' }): Promise<YoshiColorsModel>
   loadResource(resource: { kind: 'music-sets' }): Promise<MusicSetsModel>
+  loadResource(resource: { kind: 'spriteset-files' }): Promise<SpritesetFilesModel>
   loadResource(resource: EditableResource): Promise<unknown>
   /** Per-sprite-type computed read-only properties (Properties panel) — `[]` for
    *  a sprite type with no provider. */

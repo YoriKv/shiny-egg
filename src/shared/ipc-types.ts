@@ -497,6 +497,8 @@ export interface RenderHeaderRequest {
    *  when BG3's palette colors are animated (so the exported colors are one
    *  frame of a cycle). Optional; defaults to 0 (no per-frame palette animation). */
   animationPalette?: number
+  /** Optional six-file row for the sprite tileset editor's live preview. */
+  spritesetOverride?: number[]
 }
 
 export interface RenderMap16Args {
