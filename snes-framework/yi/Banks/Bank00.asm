@@ -4829,6 +4829,7 @@ DATA_bg3_tilesets_files:                           ; Raidenthequick: DATA_bg3_ti
 ; both $6EB6/$6EB8/$6EBA (persistent VRAM-mapping cache) and DP $17/$19/$1B
 ; (used by CODE_load_compressed_gfx_files via the $F4/$F5/$F6 indirections).
 ;-------------------------------------------------------------------------
+;@editable:spriteset-files begin
 DATA_00B039:
 DATA_spriteset_files:                              ; Raidenthequick: DATA_spriteset_files
 	dw $2120,$2B2A,$295E,$2120,$1C5E,$2931,$2C1F,$4036
@@ -4879,6 +4880,7 @@ DATA_spriteset_files:                              ; Raidenthequick: DATA_sprite
 	dw $2322,$6045,$301A,$3C67,$1A55,$291A,$7154,$4C41
 	dw $3764,$AEAD,$B0AF,$6A67,$4755,$4957,$291C,$2B27
 	dw $1C47,$2925,$7127,$311C,$1A1A,$451C,$711F,$2946
+;@editable:spriteset-files end
 
 ;-------------------------------------------------------------------------
 ; CODE_load_level_gfx -- master entry for level/scene graphics

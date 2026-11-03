@@ -40,7 +40,8 @@ import { renderCollisionLayer, renderCollisionPatch } from 'snes-framework/rende
 import { resolveCellGrid, diffCellGrids } from 'snes-framework/cell-grid'
 import { loadSceneRegs, bgLayerBpp } from 'snes-framework/scene-regs'
 import { loadSpritesetFileIds, type GfxFileEntry } from 'snes-framework/load-graphics'
-import { bestStockSpriteset } from 'snes-framework/sprite-tile-base'
+import { bestStockSpriteset, resolveLevelSpriteset } from 'snes-framework/sprite-tile-base'
+import { SPRITE_FILE_CHAINS } from 'snes-framework/sprite-file-sequences'
 import { hex0x } from 'snes-framework/hex'
 import { headerValueUsage, loadLevel } from 'snes-framework/level'
 import { buildPaletteCatalog } from 'snes-framework/palette-catalog'
@@ -49,7 +50,7 @@ import {
   renderWorldMapTerrain
 } from 'snes-framework/world-map-terrain'
 import { frameworkWorkRoot, overlayRoot } from '../framework-paths'
-import { getCurrentProjectId } from '../projects'
+import { getCurrentProjectId, getProjectRemovedLevels } from '../projects'
 import type {
   Bg1LayerResponse,
   BgLayersResult,
@@ -64,6 +65,8 @@ import type {
   PickerThumbnails,
   PickerThumbnailsRequest,
   FitSurfaceRequest,
+  FitSpritesetFilesRequest,
+  FitSpritesetFilesResult,
   FitSpritesetResult,
   FitTileset,
   HeaderGuide,
@@ -80,10 +83,13 @@ import type {
   SpriteLayerResponse
 } from '../../shared/ipc-types'
 import { fitHeightProfile, fitMetadata } from 'snes-framework/surface-fit'
-import type { LevelObject, PaletteEdit } from 'snes-framework/types'
+import type { LevelObject, PaletteEdit, RomTablePatchKind } from 'snes-framework/types'
+import { romTablePatch } from 'snes-framework/rom-table-patches'
+import { spritesetUsageAsync } from '../spriteset-usage-client'
+import { setTablePreview } from '../table-preview-cache'
 import { getEmulator } from '../emulator/registry'
 import { liveSceneProvenance, LIVE_WRAM_BASE, LIVE_WRAM_LEN } from '../render/palette-live'
-import { loadRomAndSymbols } from '../render/rom-cache'
+import { liveTablesKey, loadRomAndSymbols } from '../render/rom-cache'
 import { gfxLiveEdits, gfxLiveRevision } from '../gfx-live-cache'
 import {
   resolveLevel,
@@ -689,6 +695,82 @@ export function registerRenderIpc(): void {
     async (_e, spriteNums: number[]): Promise<FitSpritesetResult> => {
       const { rom, symbols } = loadRomAndSymbols()
       return bestStockSpriteset(rom, symbols, spriteNums.map((num) => ({ num })))
+    }
+  )
+  // Unsaved draft of a fixed-size cart table (ROM_TABLE_PATCHES) for live
+  // preview: written over the saved table in the render ROM (rom-cache.ts).
+  // `model` null clears it. Resolves true iff the bytes the render ROM applies
+  // changed (the renderer then re-renders): clearing a draft that equals the
+  // saved table, or re-pushing the same draft, resolves false.
+  ipcMain.handle(
+    'render:setTablePreview',
+    async (_e, kind: RomTablePatchKind, model: unknown): Promise<boolean> => {
+      const before = liveTablesKey()
+      setTablePreview(kind, model === null ? null : romTablePatch(kind).fromModel(model))
+      return liveTablesKey() !== before
+    }
+  )
+  // The six gfx file ids a sprite tileset row holds in the render ROM (table
+  // previews included). Cheap, so the renderer refetches it on every render
+  // refresh; the picker's sprite "missing gfx" check reads it (the rest of the
+  // validity verdicts don't depend on the table and stay on their own refetch).
+  ipcMain.handle('render:spritesetRowFiles', async (_e, row: number): Promise<number[]> => {
+    const { rom, symbols } = loadRomAndSymbols()
+    return loadSpritesetFileIds(rom, symbols, row)
+  })
+  // Which rooms use each sprite tileset row (header field 7) in the project's
+  // saved levels, removed levels excluded. `byRow[row]` = record ids. Runs in a
+  // worker thread, stat-cached per level file (spriteset-usage.ts).
+  ipcMain.handle('render:spritesetUsage', async (): Promise<number[][]> =>
+    spritesetUsageAsync(frameworkWorkRoot(), currentOverlayRoot(), getProjectRemovedLevels(getCurrentProjectId()))
+  )
+  ipcMain.handle(
+    'render:fitSpritesetFiles',
+    async (_e, req: FitSpritesetFilesRequest): Promise<FitSpritesetFilesResult> => {
+      if (!Number.isInteger(req.spriteTileset) || req.spriteTileset < 0 || req.spriteTileset > 0x7f) {
+        throw new RangeError(`Sprite tileset ${req.spriteTileset} is outside 0x00–0x7F.`)
+      }
+      if (
+        req.files.length !== 6 ||
+        req.files.some((file) => !Number.isInteger(file) || file < 0 || file > 0xff)
+      ) {
+        throw new RangeError('Fit spriteset requires six file IDs in the range 0x00–0xFF.')
+      }
+      // Metadata lists are unordered required-file sets; slot ORDER comes only
+      // from the engine's curated SPRITE_FILE_CHAINS (see sprite-file-sequences.ts
+      // for why the metadata lists can't serve as adjacency rules).
+      const requirements = new Map<number, number[]>()
+      const sequences = new Map<number, number[][]>()
+      for (const num of new Set(req.spriteNums)) {
+        const chain = SPRITE_FILE_CHAINS.get(num)
+        if (chain) sequences.set(num, [[...chain]])
+      }
+      for (const item of req.spriteFileRequirements ?? []) {
+        if (
+          !Number.isInteger(item.spriteNum) || item.spriteNum < 0 || item.spriteNum >= 0x1ba ||
+          !req.spriteNums.includes(item.spriteNum) ||
+          item.files.some((file) => !Number.isInteger(file) || file < 0 || file > 0xff)
+        ) {
+          throw new RangeError('Fit spriteset file requirements must reference a placed sprite and contain byte-sized file IDs.')
+        }
+        requirements.set(item.spriteNum, item.files)
+      }
+      const { rom, symbols } = loadRomAndSymbols()
+      const resolved = resolveLevelSpriteset(
+        rom,
+        symbols,
+        { spriteTileset: req.spriteTileset },
+        req.spriteNums.map((num) => ({ num })),
+        requirements,
+        req.files,
+        sequences
+      )
+      return {
+        files: resolved.files,
+        requiredFiles: resolved.required,
+        overflowFiles: [...new Set([...resolved.overflow, ...resolved.slotConflicts])].sort((a, b) => a - b),
+        sequenceConflicts: resolved.sequenceConflicts
+      }
     }
   )
 

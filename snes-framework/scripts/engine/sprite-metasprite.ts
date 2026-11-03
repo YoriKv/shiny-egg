@@ -143,8 +143,11 @@ function palFor(ctx: MetaspriteContext, row: number): Uint32Array {
   return p;
 }
 
-/** The 6 spriteset file ids loaded for this header's sprite tileset. */
+/** The 6 spriteset file ids loaded for this header's sprite tileset: the
+ *  header's `spritesetOverride` when present (as `loadLevelGfx` loads it), else
+ *  the cart table row. */
 function spritesetFiles(ctx: MetaspriteContext): number[] {
+  if (ctx.header.spritesetOverride) return Array.from(ctx.header.spritesetOverride, (v) => v & 0xff);
   const base = ctx.symbols.pc('DATA_spriteset_files') + ctx.header.spriteTileset * 6;
   return [0, 1, 2, 3, 4, 5].map((i) => ctx.rom[base + i]!);
 }

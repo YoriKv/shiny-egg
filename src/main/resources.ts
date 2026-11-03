@@ -68,6 +68,7 @@ import type {
   PaletteEdit,
   PoolBudgetReport,
   PoolOverview,
+  SpritesetFilesModel,
   RomVersion
 } from 'snes-framework/types'
 import type { GfxEditEntry, GfxEditKind, GfxFileRole, ResetGfxEditResult, ResetLevelResult, SetExitDestResult, SetExitEntranceResult } from '../shared/ipc-types'
@@ -75,7 +76,7 @@ import { countChangedUnits } from './gfx-import-conflict'
 import { readGfxEditChanges, recordGfxEditChange, removeGfxEditChange } from './gfx-edit-meta'
 import { loadLevelGfx } from 'snes-framework/load-graphics'
 import { isWorld6Record } from 'snes-framework/level'
-import { loadRomAndSymbols } from './render/rom-cache'
+import { loadSavedRomAndSymbols } from './render/rom-cache'
 import type { GfxFileEntry } from 'snes-framework/types'
 import {
   levelNameSlotLabels,
@@ -116,6 +117,11 @@ import {
   parseMusicSets,
   serializeMusicSets
 } from 'snes-framework/music-sets'
+import {
+  SPRITESET_FILES_BANK_FILE,
+  parseSpritesetFiles,
+  serializeSpritesetFiles
+} from 'snes-framework/spriteset-files'
 import {
   parseWorldMapPaths,
   serializeWorldMapPaths,
@@ -822,7 +828,7 @@ function gfxRoleIndex(): Map<string, Set<string>> {
   const map = new Map<string, Set<string>>()
   const add = (key: string, role: string): void => { (map.get(key) ?? map.set(key, new Set()).get(key)!).add(role) }
   try {
-    const { rom, symbols } = loadRomAndSymbols()
+    const { rom, symbols } = loadSavedRomAndSymbols() // cart-structural: saved tables, no drafts
     for (const header of distinctSceneHeaders()) {
       const manifest: GfxFileEntry[] = []
       try { loadLevelGfx(rom, symbols, header as never, new Uint8Array(0x10000), manifest) } catch { continue }
@@ -852,7 +858,7 @@ export function gfxSizeRegistry(): Map<string, GfxSizeEntry> {
   if (gfxSizeCache) return gfxSizeCache
   const map = new Map<string, GfxSizeEntry>()
   try {
-    const { rom, symbols } = loadRomAndSymbols()
+    const { rom, symbols } = loadSavedRomAndSymbols() // cart-structural: saved tables, no drafts
     for (const header of distinctSceneHeaders()) {
       const manifest: GfxFileEntry[] = []
       try { loadLevelGfx(rom, symbols, header as never, new Uint8Array(0x10000), manifest) } catch { continue }
@@ -1543,6 +1549,8 @@ export async function loadResource(resource: EditableResource): Promise<unknown>
       return loadYoshiColorsResource()
     case 'music-sets':
       return loadMusicSetsResource()
+    case 'spriteset-files':
+      return loadSpritesetFilesResource()
     default: {
       const _never: never = resource
       throw new Error(`Unknown resource: ${JSON.stringify(_never)}`)
@@ -1588,6 +1596,31 @@ export async function saveMusicSetsResource(model: unknown): Promise<SaveResourc
     files.push(MUSIC_SETS_BANK01_FILE)
   }
   return { ok: true, files }
+}
+
+/** Load the global sprite tileset table (overlay-first). */
+export function loadSpritesetFilesResource(): SpritesetFilesModel {
+  const { contentText, baseText } = readOverlayFirst(SPRITESET_FILES_BANK_FILE)
+  return {
+    ...parseSpritesetFiles(contentText),
+    referenceRows: parseSpritesetFiles(baseText).rows
+  }
+}
+
+/** Save the sprite tileset rows into the active project's Bank00 overlay. */
+export async function saveSpritesetFilesResource(model: unknown): Promise<SaveResourceResult> {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+
+  const { contentText } = readOverlayFirst(SPRITESET_FILES_BANK_FILE)
+  const result = serializeSpritesetFiles(contentText, model as SpritesetFilesModel)
+  if (!result.ok) return { ok: false, error: result.error }
+  if (result.text === contentText) return { ok: true, files: [] }
+
+  await saveOverlayFile(projectId, SPRITESET_FILES_BANK_FILE, result.text)
+  return { ok: true, files: [SPRITESET_FILES_BANK_FILE] }
 }
 
 // ── World-map entrance table ───────────────────────────────────────────────
@@ -1829,6 +1862,8 @@ export async function saveResource(
       return saveYoshiColorsResource(model)
     case 'music-sets':
       return saveMusicSetsResource(model)
+    case 'spriteset-files':
+      return saveSpritesetFilesResource(model)
     default: {
       const _never: never = resource
       return { ok: false, error: `Unknown resource: ${JSON.stringify(_never)}` }
@@ -2107,4 +2142,3 @@ async function saveOverlayFile(projectId: string, file: string, text: string): P
   await mkdir(path.dirname(dest), { recursive: true })
   await writeAtomic(dest, text)
 }
-

@@ -10,6 +10,8 @@
 
 import type { HeaderGuide } from '../../../preload/api'
 import type { EnumOption } from '../data/property-schema'
+import { getLevel } from '../data/levels'
+import { hex0x } from './hex'
 
 /** How the panel names a record in a usage summary. `order` sorts the groups
  *  (world-map order for levels; orphans after). */
@@ -26,6 +28,14 @@ export interface UsageSummary {
   text: string
   /** Every group, one per line — the line's tooltip. */
   full: string
+}
+
+/** How a usage summary names a record: world-map levels by slot, in map order;
+ *  anything else by id, after them. */
+export function usageLabel(recordId: number): UsageLabel {
+  const l = getLevel(recordId)
+  if (l) return { short: l.slot, long: `${l.slot} ${l.name}`, order: l.translevelId ?? 0x100 + recordId }
+  return { short: hex0x(recordId), long: `Room ${hex0x(recordId)}`, order: 0x200 + recordId }
 }
 
 /** Groups visible in `text` before it collapses to "+N more". */

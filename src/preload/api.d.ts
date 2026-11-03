@@ -28,6 +28,9 @@ import type {
   PaletteCatalogSwatch,
   PaletteEdit,
   MusicSetsModel,
+  SpritesetFilesModel,
+  RomTablePatchKind,
+  RomTableModels,
   PoolBudgetReport,
   PoolOverview,
   SaveResourceResult,
@@ -65,6 +68,8 @@ import type {
   EntityValidityRequest,
   FindInstanceKind,
   FitSpritesetResult,
+  FitSpritesetFilesRequest,
+  FitSpritesetFilesResult,
   FitSurfaceRequest,
   FitTileset,
   FrameworkExtractArgs,
@@ -218,6 +223,9 @@ export type {
   UsedMap16,
   MusicSetSettingModel,
   MusicSetsModel,
+  SpritesetFilesModel,
+  RomTablePatchKind,
+  RomTableModels,
   ValidationIssue,
   ValidationSeverity,
   WorldMapEntrance,
@@ -573,6 +581,19 @@ export interface RenderAPI {
   /** Pick the stock sprite tileset (header[7]) that best covers the given placed
    *  sprites' graphics. `spriteNums` are the level's sprite ids. */
   fitSpriteset: (spriteNums: number[]) => Promise<FitSpritesetResult>
+  /** Fit a level's sprites into the six files in the selected editable row. */
+  fitSpritesetFiles: (req: FitSpritesetFilesRequest) => Promise<FitSpritesetFilesResult>
+  /** Push (or clear, with `null`) an unsaved draft of a fixed-size cart table
+   *  so every render previews it without a save or rebuild. `model` is the
+   *  table's resource model. Resolves true iff the bytes the render ROM applies
+   *  changed, i.e. the caller should re-render. */
+  setTablePreview: <K extends RomTablePatchKind>(kind: K, model: RomTableModels[K] | null) => Promise<boolean>
+  /** The six gfx file ids sprite tileset `row` holds in the render ROM (saved
+   *  table edits and unsaved table previews included). */
+  spritesetRowFiles: (row: number) => Promise<number[]>
+  /** Rooms using each sprite tileset row (header field 7) in the project's
+   *  saved levels: `byRow[row]` = level record ids. */
+  spritesetUsage: () => Promise<number[][]>
   /** Level Header guide: shipped-level usage of every header value (base cart,
    *  cached) + whether `levelRecordId` reads the World-6 palette tables. */
   headerGuide: (levelRecordId: number) => Promise<HeaderGuide>
@@ -623,6 +644,7 @@ export interface EditorAPI {
   loadResource(resource: { kind: 'world-map-paths' }): Promise<WorldMapPathsModel>
   loadResource(resource: { kind: 'yoshi-colors' }): Promise<YoshiColorsModel>
   loadResource(resource: { kind: 'music-sets' }): Promise<MusicSetsModel>
+  loadResource(resource: { kind: 'spriteset-files' }): Promise<SpritesetFilesModel>
   loadResource(resource: EditableResource): Promise<unknown>
   /** Per-sprite-type computed read-only properties (Properties panel) — `[]` for
    *  a sprite type with no provider. */

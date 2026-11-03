@@ -8,6 +8,8 @@ import {formatBytes as sizeLabel} from '../lib/format-bytes'
 import {YychrTab} from './YychrTab'
 import {M1teMapsTab} from './M1teMapsTab'
 import {ArtworkTab} from './ArtworkTab'
+import {SpritesetFilesTab} from './SpritesetFilesTab'
+import type {SpritesetFilesEditorApi} from '../edit-session/useSpritesetFilesEditor'
 // The "Map16 Blocks" tab is removed from the UI for now: its structural edits (reassigning a
 // block's quadrant tiles / palette / flip) don't live-preview on the canvas — only a rebuild
 // shows them — and BG1 *pixel* edits already preview via the BG1-area editor. The implementation
@@ -47,7 +49,7 @@ const folderName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop()
 /** The panel's tabs: the Level BGs export/import body, and the three per-project
  *  folder browsers. Active tab persisted per the localStorage convention
  *  (v2: the 'extract' member became 'export'; 'export' now = the Level BGs tab). */
-type PanelTab = 'export' | 'artwork' | 'yychr' | 'm1te'
+type PanelTab = 'export' | 'artwork' | 'yychr' | 'm1te' | 'spritesets'
 const TAB_STORE = persistedState<{ tab: PanelTab }>('shinyEgg.graphicsPanel.v2', {tab: 'export'})
 
 /** What the export dropdown writes. `worldmap`/`systemscreens`/`metasprites` are
@@ -114,6 +116,8 @@ interface Props {
     onStartRegionPick: () => void
     /** Clear the captured BG1 area. */
     onClearRegion: () => void
+    /** App-owned overlay draft for the cart's sprite tileset file table. */
+    spritesetEditor: SpritesetFilesEditorApi
 }
 
 /**
@@ -126,7 +130,7 @@ interface Props {
  * separate tab — removed from the UI for now; see the note at the top of this file.)
  */
 export function GraphicsBody({
-    level, projectScope, onMutated, onPaletteImported, paletteEditCount, onResetPalette, bg1RegionRect, pickingRegion, onStartRegionPick, onClearRegion
+    level, projectScope, onMutated, onPaletteImported, paletteEditCount, onResetPalette, bg1RegionRect, pickingRegion, onStartRegionPick, onClearRegion, spritesetEditor
 }: Props): JSX.Element {
     const [busy, setBusy] = useState(false)
     const [edits, setEdits] = useState<GfxEditEntry[]>([])
@@ -445,10 +449,8 @@ export function GraphicsBody({
                 {yychrError && <span className="se-graphics__log-error">⚠ {yychrError}</span>}
             </div>
 
-            {/* Four tabs: the (level-dependent) Level BGs body and the three fixed
-                project-folder browsers — YY-CHR sheets, M1TE maps, PNG/Aseprite misc art
-                (the 'artwork' tab key + folder keep the old internal name).
-                (A restored Map16 tab — see the top-of-file note — would slot in here.) */}
+            {/* Graphics export/import, project-folder browsers, and the global
+                spriteset table editor. */}
             <div className="se-tabs se-graphics__tabs">
                 <button
                     className={`se-tab${tab === 'export' ? ' is-active' : ''}`}
@@ -474,8 +476,20 @@ export function GraphicsBody({
                 >
                     Misc Art
                 </button>
+                <button
+                    className={`se-tab${tab === 'spritesets' ? ' is-active' : ''}`}
+                    onClick={() => pickTab('spritesets')}
+                >
+                    Spritesets
+                </button>
             </div>
-            {tab === 'yychr' ? (
+            {tab === 'spritesets' ? (
+                <SpritesetFilesTab
+                    editor={spritesetEditor}
+                    level={level}
+                    projectActive={projectScope !== null}
+                />
+            ) : tab === 'yychr' ? (
                 // Remounted per project (key) so browser state never leaks across a switch.
                 <YychrTab
                     key={projectScope ?? ''}

@@ -250,6 +250,22 @@ emits the same tile indices everywhere) but the **file ID** in that slot varies
 per tileset (`docs/tileset-vram-atlas.tsv` SPR rows; `enginecore.md §6.7`). Tiles
 resident for the whole level.
 
+The table is `DATA_spriteset_files` (`$00:B039`, `Bank00.asm`): 128 rows × 6
+byte file IDs, stored as `dw` pairs (low byte = the even slot). It is wrapped in
+a fixed-size `;@editable:spriteset-files` region; the row count is fixed (the
+header's sprite-tileset field indexes it directly, 0x00–0x7F).
+
+**Multi-file sprites need consecutive slots.** Some sprites' files must sit
+adjacent and in order in the row: every shipped row holding such a sprite does
+this. The presumed mechanism (not yet traced in the draw code) is that their tiles
+run past their own file's 32-tile slot into the next one. Examples
+are Lunge Fish `$32→$33→$34`, Goonie `$2A→$2B`, the Para Koopas `$2B→$47`, Poochy
+`$3A→$3B`, the caged/dangling ghosts `$42→$43`, Kamek `$6A→$6C` and Big Boo
+`$61→$48`. Other sprites that use several files don't need them adjacent: Dr.
+Freezegood, Rogger's pot and the falling icicle all ship with their files apart.
+The engine's list is `SPRITE_FILE_CHAINS`
+(`scripts/engine/sprite-file-sequences.ts`).
+
 The **per-sprite GFX-file dependency** is a static table:
 `DATA_sprite_gfx_file_table` (`$0A:A716`, alias `FXDATA_0AA716`) is indexed by
 sprite ID and gives the GFX **file number** that sprite needs (`$0000` ⇒ it draws
@@ -1233,4 +1249,3 @@ the `CHRN` scheme.
 | Sprite dispatch / state machine | `spritestateengine.md` |
 | SuperFX dynamic-tile decode, rasterisers | `mchip.md §3`, `bossengine.md §7.3` |
 | Graphic/palette changer sprites | `renderingpipeline.md §1.1` |
-

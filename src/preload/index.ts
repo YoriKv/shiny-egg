@@ -25,6 +25,8 @@ import type {
   EntityValidityRequest,
   FindInstanceKind,
   FitSpritesetResult,
+  FitSpritesetFilesRequest,
+  FitSpritesetFilesResult,
   HeaderGuide,
   FitSurfaceRequest,
   FitTileset,
@@ -130,6 +132,8 @@ import type {
   PaletteEdit,
   PoolBudgetReport,
   PoolOverview,
+  RomTableModels,
+  RomTablePatchKind,
   SaveResourceResult
 } from 'snes-framework/types'
 
@@ -237,6 +241,17 @@ const api = {
     /** Best-covering stock sprite tileset (header[7]) for the given placed sprites. */
     fitSpriteset: (spriteNums: number[]): Promise<FitSpritesetResult> =>
       ipcRenderer.invoke('render:fitSpriteset', spriteNums),
+    /** Fit the current level's sprites into a six-file row while preserving
+     *  graphics already pinned to slots by sprite cels. */
+    fitSpritesetFiles: (req: FitSpritesetFilesRequest): Promise<FitSpritesetFilesResult> =>
+      ipcRenderer.invoke('render:fitSpritesetFiles', req),
+    /** Live-preview draft of a fixed-size cart table (null clears). */
+    setTablePreview: <K extends RomTablePatchKind>(kind: K, model: RomTableModels[K] | null): Promise<boolean> =>
+      ipcRenderer.invoke('render:setTablePreview', kind, model),
+    /** The six gfx file ids a sprite tileset row holds in the render ROM. */
+    spritesetRowFiles: (row: number): Promise<number[]> => ipcRenderer.invoke('render:spritesetRowFiles', row),
+    /** Rooms using each sprite tileset row in the project's saved levels. */
+    spritesetUsage: (): Promise<number[][]> => ipcRenderer.invoke('render:spritesetUsage'),
     /** Header-value usage across shipped levels + the level's World-6 flag. */
     headerGuide: (levelRecordId: number): Promise<HeaderGuide> =>
       ipcRenderer.invoke('render:headerGuide', levelRecordId),

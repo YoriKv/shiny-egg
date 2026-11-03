@@ -29,6 +29,7 @@ import {
 } from './framework-paths'
 import { getSettings, updateSettings } from './settings'
 import { clearGfxLiveCache, gfxLiveEdits } from './gfx-live-cache'
+import { clearTablePreviews } from './table-preview-cache'
 import { restoreGfxLiveCache } from './gfx-live-persist'
 import type { ProjectInfo, ProjectSummary, RelocationState } from '../shared/ipc-types'
 
@@ -226,6 +227,7 @@ export function setCurrentProject(id: string): ProjectSummary | null {
   updateSettings({ lastProjectId: id })
   clearGfxLiveCache() // switching projects: drop the previous project's live gfx edits
   restoreGfxLiveCache(id) // …and load THIS project's, so its gfx edits preview immediately
+  clearTablePreviews() // unsaved table drafts belong to the previous project's documents
   return pf
 }
 
@@ -258,6 +260,7 @@ export function createProject(name?: string): ProjectSummary {
   writeProjectFile(pf)
   updateSettings({ lastProjectId: id })
   clearGfxLiveCache() // new project: don't leak the previous project's live gfx edits
+  clearTablePreviews()
   return pf
 }
 
@@ -311,6 +314,7 @@ export function ensureCurrentProject(): ProjectSummary {
     const next = remaining[0]
     updateSettings({ lastProjectId: next.id })
     clearGfxLiveCache() // drop the vanished project's live gfx edits…
+    clearTablePreviews()
     restoreGfxLiveCache(next.id) // …and load the recovered project's, if any
     return next
   }
@@ -466,5 +470,6 @@ export function deleteProject(id: string): void {
     const remaining = listProjects()
     updateSettings({ lastProjectId: remaining[0]?.id })
     clearGfxLiveCache() // deleted the active project: drop its live gfx edits
+    clearTablePreviews()
   }
 }

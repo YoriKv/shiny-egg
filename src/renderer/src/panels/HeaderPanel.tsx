@@ -35,22 +35,13 @@ import {
   type HeaderSwatch
 } from '../data/header-schema'
 import type { FieldKind } from '../data/property-schema'
-import { getLevel } from '../data/levels'
 import { BG_PRESETS, presetEdits, presetMatches } from '../lib/bg-setup'
 import { useSpcPlayer } from '../hooks/useSpcPlayer'
 import { bgr15ToHex } from '../lib/bgr15'
 import { gradientOffset, GRADIENT_STOPS } from '../lib/gradient'
-import { guideOptions, recordHeaders, summarizeUsage, usageName, type UsageLabel } from '../lib/header-guide'
+import { guideOptions, recordHeaders, summarizeUsage, usageLabel, usageName } from '../lib/header-guide'
 import { hex, hex0x } from '../lib/hex'
 import { FieldRow } from './field-widgets'
-
-/** How a usage summary names a record: world-map levels by slot, in map order;
- *  anything else by id, after them. */
-function usageLabel(recordId: number): UsageLabel {
-  const l = getLevel(recordId)
-  if (l) return { short: l.slot, long: `${l.slot} ${l.name}`, order: l.translevelId ?? 0x100 + recordId }
-  return { short: hex0x(recordId), long: `Room ${hex0x(recordId)}`, order: 0x200 + recordId }
-}
 
 /** The guide index for a level — refetched per level (the usage half is cached
  *  main-side, so only the World-6 flag costs anything after the first call). */

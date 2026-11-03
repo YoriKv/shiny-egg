@@ -24,7 +24,7 @@ import { bestStockSpriteset } from 'snes-framework/sprite-tile-base'
 import { frameworkWorkRoot } from './framework-paths'
 import { getCurrentProjectId } from './projects'
 import { saveLevelResource } from './resources'
-import { loadRomAndSymbols } from './render/rom-cache'
+import { loadSavedRomAndSymbols } from './render/rom-cache'
 import type {
   GbaImportApplyResult,
   GbaImportApplySelection,
@@ -118,8 +118,10 @@ export async function applyGbaImport(sel: GbaImportApplySelection): Promise<GbaI
   const map = loadLevelMapPublic(frameworkWorkRoot())
   // For the spriteset fit (the copied GBA header[7] is meaningless on SNES — the
   // two games have unrelated spriteset tables — so we pick the SNES stock set that
-  // best covers the imported sprites). Reads the base V1.0 cart tables.
-  const { rom, symbols } = loadRomAndSymbols()
+  // best covers the imported sprites). Reads the tileset table as the next
+  // build will hold it: saved edits, never an unsaved Spritesets-tab draft
+  // (the pick is written to disk with the imported level).
+  const { rom, symbols } = loadSavedRomAndSymbols()
   const applied: Array<{ sublevelId: number; targetRecordId: number; warnings: string[] }> = []
   const failed: Array<{ targetRecordId: number; error: string }> = []
 

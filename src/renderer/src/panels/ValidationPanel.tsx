@@ -19,6 +19,9 @@ export interface ValidationPanelProps {
   levelRecordId: number | null
   /** Navigate to a level + cell (loads the level, focuses the cell). */
   onJump: (levelRecordId: number, x: number, y: number) => void
+  /** App's render-refresh counter: refetches the sprite tileset files the
+   *  "missing gfx" check reads when a table edit changes them. */
+  renderRefresh: number
 }
 
 const hx = (n: number): string => `0x${n.toString(16).toUpperCase()}`
@@ -146,7 +149,8 @@ const bySeverity = (a: ValidationIssue, b: ValidationIssue): number =>
 export function ValidationPanel({
   level,
   levelRecordId,
-  onJump
+  onJump,
+  renderRefresh
 }: ValidationPanelProps): JSX.Element {
   const loaded = level && !level.empty && !level.special ? level : null
 
@@ -154,7 +158,7 @@ export function ValidationPanel({
   const counts = useMemo(() => (loaded ? countCollectibles(loaded) : null), [loaded])
 
   // Per-placement render-validity for the current level (async probe).
-  const view = useEntityRenderValidity(loaded)
+  const view = useEntityRenderValidity(loaded, renderRefresh)
 
   // The check waits until the level is FULLY loaded: its data is the selected
   // record AND the render-validity probe (deferred to idle, so it lags the load)

@@ -53,6 +53,7 @@ import { useWorldMapEditor } from './edit-session/useWorldMapEditor'
 import { useWorldMapPathsEditor } from './edit-session/useWorldMapPathsEditor'
 import { useYoshiColorsEditor } from './edit-session/useYoshiColorsEditor'
 import { useMusicSetsEditor } from './edit-session/useMusicSetsEditor'
+import { useSpritesetFilesEditor } from './edit-session/useSpritesetFilesEditor'
 import { WorldMapBody } from './panels/WorldMapPanel'
 import { PickerBody } from './panels/PickerPanel'
 import { ExitsBody } from './panels/ExitsPanel'
@@ -1109,6 +1110,13 @@ export default function App(): JSX.Element {
   // build dirty; auto-registers with the EditSession (saveAll) and undo via
   // its doc key; listed in closeDocs('audio') so closing the window prompts.
   const musicSetsEditor = useMusicSetsEditor(projectScope, markRomDirty, docHistory)
+  // The global sprite tileset file table (Bank00.asm) is edited from Graphics;
+  // its unsaved draft previews on the canvas (useTablePreview → render ROM).
+  const onSpritesetFilesSaved = useCallback(() => {
+    markRomDirty()
+    bumpRenderRefresh()
+  }, [markRomDirty, bumpRenderRefresh])
+  const spritesetFilesEditor = useSpritesetFilesEditor(projectScope, onSpritesetFilesSaved, docHistory, bumpRenderRefresh)
   // Cross-panel "open the Audio panel at a tab" request (the Header panel's
   // Edit-sets button); seq bumps so a repeat click re-applies.
   const [audioTabRequest, setAudioTabRequest] = useState<{ tab: 'sets'; seq: number } | null>(null)
@@ -1162,8 +1170,10 @@ export default function App(): JSX.Element {
             ? [worldMapEditor, yoshiColorsEditor, worldMapPathsEditor]
             : kind === 'audio'
               ? [musicSetsEditor]
+              : kind === 'graphics'
+                ? [spritesetFilesEditor]
               : [],
-    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor, yoshiColorsEditor, worldMapPathsEditor, musicSetsEditor]
+    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor, yoshiColorsEditor, worldMapPathsEditor, musicSetsEditor, spritesetFilesEditor]
   )
   const requestCloseWindow = useCallback(
     (w: WindowDef): void => {
@@ -1846,6 +1856,7 @@ export default function App(): JSX.Element {
                   selectedLevelRecordId={selectedLevelRecordId}
                   usage={tileUsage}
                   highlightBlockIds={selectedObjectBlockIds}
+                  renderRefresh={renderRefresh}
                 />
               ) : w.kind === 'palette' ? (
                 <PaletteBody
@@ -1949,6 +1960,7 @@ export default function App(): JSX.Element {
                   level={levelState.level}
                   levelRecordId={selectedLevelRecordId}
                   onJump={(rec, x, y) => jumpToInstance({ levelRecordId: rec, x, y })}
+                  renderRefresh={renderRefresh}
                 />
               ) : w.kind === 'graphics' ? (
                 <GraphicsBody
@@ -1962,6 +1974,7 @@ export default function App(): JSX.Element {
                   pickingRegion={pickingRegion}
                   onStartRegionPick={() => setPickingRegion(true)}
                   onClearRegion={() => setBg1RegionRect(null)}
+                  spritesetEditor={spritesetFilesEditor}
                 />
 
               ) : (

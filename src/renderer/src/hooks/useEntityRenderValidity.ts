@@ -73,8 +73,16 @@ function spriteCatalog(): number[] {
  *
  * Returns null until the first result resolves (callers show no badges and
  * must not filter), and for empty/special levels.
+ *
+ * The sprite check's six spriteset files are the exception: they come from the
+ * sprite tileset table, which can change without a header change (a saved or
+ * previewed Spritesets-tab edit). They're refetched separately, cheaply, on
+ * every `renderRefresh` bump.
  */
-export function useEntityRenderValidity(level: LevelData | null): EntityValidityView | null {
+export function useEntityRenderValidity(
+  level: LevelData | null,
+  renderRefresh = 0
+): EntityValidityView | null {
   // `forRecordId` pins the result to the level it was probed for, so a consumer
   // can detect when the view still reflects the previous level (mid-switch).
   const [result, setResult] = useState<{ data: EntityRenderValidity; forRecordId: number } | null>(null)
@@ -141,6 +149,23 @@ export function useEntityRenderValidity(level: LevelData | null): EntityValidity
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordId, headerKey])
 
+  // Live spriteset files for the header's row (see the doc comment).
+  const spriteRow = recordId !== null ? (level?.header[7] ?? 0) : null
+  const [liveFiles, setLiveFiles] = useState<{ row: number; files: number[] } | null>(null)
+  useEffect(() => {
+    if (spriteRow === null) return
+    let cancelled = false
+    void window.shinyEgg.render
+      .spritesetRowFiles(spriteRow)
+      .then((files) => {
+        if (!cancelled) setLiveFiles({ row: spriteRow, files })
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [recordId, spriteRow, renderRefresh])
+
   return useMemo(() => {
     if (!result) return null
     const { data } = result
@@ -149,7 +174,9 @@ export function useEntityRenderValidity(level: LevelData | null): EntityValidity
     const extended = new Map<number, ObjectRenderVerdict>()
     for (const [k, v] of Object.entries(data.extended)) extended.set(parseInt(k, 16), v)
     const levelFiles: ReadonlySet<number> = new Set(
-      data.spritesetFiles.map((s) => parseInt(s, 16))
+      liveFiles && liveFiles.row === spriteRow
+        ? liveFiles.files
+        : data.spritesetFiles.map((s) => parseInt(s, 16))
     )
     return {
       levelRecordId: result.forRecordId,
@@ -179,5 +206,5 @@ export function useEntityRenderValidity(level: LevelData | null): EntityValidity
       spriteValidity: (num: number) =>
         resolveSpriteValidity(getSprite(num).spritesetFiles, levelFiles)
     }
-  }, [result, effectiveTs, animTileset])
+  }, [result, effectiveTs, animTileset, liveFiles, spriteRow])
 }

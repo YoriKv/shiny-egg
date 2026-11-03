@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.9 - 2026-11-03
+
+- Graphics: new Spritesets tab to edit sprite tilesets
+
 ## v0.7.8 - 2026-11-01
 
 - Fixed asm patches with Windows line endings

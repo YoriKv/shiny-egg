@@ -24,7 +24,24 @@ export type EditableResource =
   | { kind: 'world-map' }
   | { kind: 'world-map-paths' }
   | { kind: 'yoshi-colors' }
-  | { kind: 'music-sets' };
+  | { kind: 'music-sets' }
+  | { kind: 'spriteset-files' };
+
+/** The editor model of each fixed-size cart table that can be patched into a
+ *  built ROM image without reassembling (`rom-table-patches.ts`), keyed by its
+ *  resource kind. */
+export interface RomTableModels {
+  'spriteset-files': SpritesetFilesModel;
+}
+export type RomTablePatchKind = keyof RomTableModels;
+
+/** The cart's 128 sprite tilesets. Each row selects six 8-bit graphics file
+ *  IDs from `DATA_spriteset_files` in Bank00.asm. */
+export interface SpritesetFilesModel {
+  rows: number[][];
+  /** Rows from the extracted reference cart, used by the reset-to-reference action. */
+  referenceRows?: number[][];
+}
 
 /** The per-level Yoshi-color table (`DATA_yoshi_level_colors` in Bank02.asm):
  *  one color id per translevel slot (index = world*12+level, the same slot space
@@ -507,6 +524,8 @@ export interface GfxFileBlock {
   srcPC?: number;
   /** Destination offset in VRAM. */
   vramByteOffset: number;
+  /** DP slot used by indirect scene-gfx entries (7–12 are sprite file slots). */
+  dpSlot?: number;
   /** Tile count rendered. */
   tileCount: number;
   /** RGBA8888 pixels of the block (tile grid, no header). */

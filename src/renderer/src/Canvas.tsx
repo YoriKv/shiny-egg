@@ -655,7 +655,7 @@ export function Canvas({
   // Render-validity for the loaded level (gfx-missing markers on placed
   // entities). Header-keyed + main-side cached, so it refetches only on a
   // level/header change — not per edit commit.
-  const renderValidity = useEntityRenderValidity(level)
+  const renderValidity = useEntityRenderValidity(level, renderRefresh)
   // Cached enemy thumbnails for the generator badges (purple square + spawned-enemy
   // icon). Header-keyed + main-side cached (same thumbnail LRU as the picker).
   const generatorThumbs = useGeneratorThumbnails(level)

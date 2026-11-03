@@ -254,6 +254,10 @@ assert(ov.overflow.join(',') === [0x61, 0x68].join(','), `mint overflow = the 2 
 // (Egg-Plant $0F4 needs 0x1F, absent from 0x29) into a free slot WITHOUT touching slot 3.
 const booSet = resolveLevelSpriteset(rom, sym, { spriteTileset: 0x29 }, [{ num: 0x105 }]);
 assert(booSet.files[3] === 0x3d && !booSet.minted, `boo-guy slot 3 keeps authored 0x3D, not minted (got 0x${booSet.files[3]?.toString(16)} minted=${booSet.minted})`);
+const draftFiles = [0x2a, 0x2b, 0x2c, 0x44, 0x2d, 0x2e];
+const draftSet = resolveLevelSpriteset(rom, sym, { spriteTileset: 0x29 }, [{ num: 0x105 }], undefined, draftFiles);
+assert(draftSet.files[3] === 0x44 && !draftSet.minted,
+  `fit honors draft-authored slot 3 = 0x44 (got 0x${draftSet.files[3]?.toString(16)} minted=${draftSet.minted})`);
 const mixSet = resolveLevelSpriteset(rom, sym, { spriteTileset: 0x29 }, [{ num: 0x105 }, { num: 0xf4 }]);
 assert(mixSet.files[3] === 0x3d && mixSet.files.includes(0x1f) && mixSet.minted, `swap missing 0x1F into a free slot, keep boo slot 3 (got [${mixSet.files.map((f) => f.toString(16))}] minted=${mixSet.minted})`);
 

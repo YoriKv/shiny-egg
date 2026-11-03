@@ -497,6 +497,8 @@ export interface RenderHeaderRequest {
    *  when BG3's palette colors are animated (so the exported colors are one
    *  frame of a cycle). Optional; defaults to 0 (no per-frame palette animation). */
   animationPalette?: number
+  /** Optional six-file row for the sprite tileset editor's live preview. */
+  spritesetOverride?: number[]
 }
 
 export interface RenderMap16Args {
@@ -530,6 +532,27 @@ export interface RenderGfxFilesArgs {
   cellsPerRow?: number
   /** Sprite palette row (0..7 = CGRAM rows 8..15). Default 0. */
   spritePaletteRow?: number
+}
+
+/** Request to fit a level's placed sprites into the six slots of one editable
+ *  sprite tileset row. `files` is the current (possibly unsaved) slot mapping. */
+export interface FitSpritesetFilesRequest {
+  spriteNums: number[]
+  spriteTileset: number
+  files: number[]
+  /** Per-sprite ordered graphics-file lists sourced from sprite metadata. */
+  spriteFileRequirements?: Array<{ spriteNum: number; files: number[] }>
+}
+
+export interface FitSpritesetFilesResult {
+  /** Slot-preserving six-file mapping after satisfying the level's needs. */
+  files: number[]
+  /** Distinct variable graphics files required by the placed sprites. */
+  requiredFiles: number[]
+  /** Requirements that cannot fit in the six-slot mapping. */
+  overflowFiles: number[]
+  /** Ordered multi-slot groups that conflict with locked slot assignments. */
+  sequenceConflicts: number[]
 }
 
 // ── Render results ──────────────────────────────────────────────────────────

@@ -22,6 +22,10 @@ interface TilesBodyProps {
   usage: LevelTileUsage | null
   /** Map16 IDs the selected object stamps — outlined in the Used view. */
   highlightBlockIds: Set<number> | null
+  /** App's render-refresh counter. The Files and Header tabs read the sprite
+   *  tileset table, which can change (saved or previewed table edit) without a
+   *  header change, so they refetch on it. */
+  renderRefresh: number
 }
 
 type Mode = 'used' | 'files' | 'header'
@@ -323,7 +327,7 @@ function HeaderInfo({
  *
  * Mode is persisted to `localStorage["shinyEgg.tilesPanel.v1"]`.
  */
-export function TilesBody({ level, selectedLevelRecordId, usage, highlightBlockIds }: TilesBodyProps): JSX.Element {
+export function TilesBody({ level, selectedLevelRecordId, usage, highlightBlockIds, renderRefresh }: TilesBodyProps): JSX.Element {
   const [status, setStatus] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [state, setState] = useState<PanelState>(() => {
@@ -355,7 +359,8 @@ export function TilesBody({ level, selectedLevelRecordId, usage, highlightBlockI
   // Files-mode block list (rendered as a stack of labeled canvases).
   const [fileBlocks, setFileBlocks] = useState<GfxFileBlock[] | null>(null)
 
-  // Re-render the Files tab whenever header / sprite-palette change. (The Map16
+  // Re-render the Files tab whenever header / sprite-palette / a table edit
+  // (renderRefresh) change. (The Map16
   // Pages tab renders from `usage`, which App fetches.)
   useEffect(() => {
     if (state.mode !== 'files') return
@@ -384,11 +389,12 @@ export function TilesBody({ level, selectedLevelRecordId, usage, highlightBlockI
     return () => {
       cancelled = true
     }
-  }, [header, state.mode, state.spritePaletteRow])
+  }, [header, state.mode, state.spritePaletteRow, renderRefresh])
 
   // Header-tab gfx manifest. Fetched only while the Header tab is active, and
-  // re-fetched only when the header bytes change (not on every object edit) —
-  // the manifest depends solely on the header's tileset fields. `override` is
+  // re-fetched only when the header bytes or the tileset tables (renderRefresh)
+  // change, not on every object edit: the manifest depends solely on the
+  // header's tileset fields and the tables they index. `override` is
   // the live level, so unsaved header edits are reflected. `headerSig` gates
   // the re-fetch; `levelRef` supplies the override without widening deps.
   const [manifest, setManifest] = useState<GfxFileEntry[] | null>(null)
@@ -417,7 +423,7 @@ export function TilesBody({ level, selectedLevelRecordId, usage, highlightBlockI
     return () => {
       cancelled = true
     }
-  }, [state.mode, selectedLevelRecordId, headerSig])
+  }, [state.mode, selectedLevelRecordId, headerSig, renderRefresh])
 
   const usedStatus = useMemo(() => {
     if (!usage) return ''

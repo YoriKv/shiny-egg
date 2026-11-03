@@ -160,6 +160,33 @@ function buildPaletteForRecord(ctx: MetaspriteContext, row: number): Uint32Array
   return buildPaletteRow(ctx.cgram, 8 + row, true);
 }
 
+// 4. A header's spritesetOverride pins the six slot files: the metasprite set
+//    and every unit's gfx file follow the override, not the cart table row
+//    (the export writes the pinned header so an import is immune to a later
+//    tileset-table edit).
+{
+  console.log('\nspritesetOverride pin');
+  const base = loadLevel({ workRoot: FRAMEWORK_ROOT, levelRecordId: 0x00 });
+  const header = headerFromLevel(base.header, 0x00);
+  const row = symbols.pc('DATA_spriteset_files') + header.spriteTileset * 6;
+  const files = Array.from(rom.subarray(row, row + 6));
+  const plain = buildMetaspriteContext(rom, symbols, header);
+  const pinned = buildMetaspriteContext(rom, symbols, { ...header, spritesetOverride: files });
+  assert(JSON.stringify(metaspriteSpriteIds(plain)) === JSON.stringify(metaspriteSpriteIds(pinned)),
+    'override equal to the cart row ⇒ same metasprite set');
+  const zeroed = rom.slice();
+  zeroed.fill(0, row, row + 6); // the table row changes after "export"…
+  const pinnedLater = buildMetaspriteContext(zeroed, symbols, { ...header, spritesetOverride: files });
+  assert(JSON.stringify(metaspriteSpriteIds(pinnedLater)) === JSON.stringify(metaspriteSpriteIds(plain)),
+    '…the pinned context ignores the changed row');
+  const id = metaspriteSpriteIds(plain).find((i) => renderMetasprite(plain, i)?.records.some((r) => r.units));
+  if (id !== undefined) {
+    const unitFiles = (ctx: MetaspriteContext): string =>
+      JSON.stringify(renderMetasprite(ctx, id)!.records.flatMap((r) => (r.units ?? []).map((u) => u.fileId)));
+    assert(unitFiles(pinnedLater) === unitFiles(plain), `sprite 0x${id.toString(16)} units map to the pinned files`);
+  }
+}
+
 assert(totalIds > 0, `enumerated metasprites across levels (${totalIds})`);
 assert(totalFaithful > 0, `some metasprites are faithful (${totalFaithful})`);
 assert(totalRecordsChecked > 0, `records round-trip-checked (${totalRecordsChecked})`);

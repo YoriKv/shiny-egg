@@ -41,6 +41,7 @@ import { app } from 'electron'
 import { canvasIndexedPng } from 'snes-framework/png'
 import { collectYychrExport, yychrReadme } from './gfx-yychr-io'
 import type { RenderHeaderRequest, ExportGfxOptions, GfxExportTrack } from '../shared/ipc-types'
+import { loadSpritesetFileIds } from 'snes-framework/load-graphics'
 import { loadRomAndSymbols } from './render/rom-cache'
 import { fileChecksum } from './gfx-import-conflict'
 import { gfxLiveEdits } from './gfx-live-cache'
@@ -171,6 +172,15 @@ export function exportGfxPngsToDir(
   // so a reset reflects here too — not the last build. (Raw-`.bin` CHR — scenery, sprite glyphs,
   // per-level icons — is handled separately by the raw-overlay splice in `romWithLiveOverlays`.)
   const rom = romWithLiveOverlays(builtRom, symbols)
+  // Level-dependent tracks pin the sprite tileset's six slot files into the
+  // header used for the export AND written to the manifest the import rebuilds
+  // from. Unpinned, the import re-reads the tileset table, so a table edit (or
+  // an unsaved table preview) between export and import would map the edited
+  // pixels onto whichever files sit in those slots by then.
+  const levelHeader: RenderHeaderRequest | null = header && {
+    ...header,
+    spritesetOverride: header.spritesetOverride ?? loadSpritesetFileIds(rom, symbols, header.spriteTileset)
+  }
   // Limit to the selected track(s); no filter ⇒ both tracks.
   const want = (t: GfxExportTrack): boolean => !opts.tracks || opts.tracks.includes(t)
   // Level-DEPENDENT tracks (metasprites + glyphs) need the loaded level's header +
@@ -257,7 +267,7 @@ export function exportGfxPngsToDir(
   // sprite loadable under this level's header. Faithful → editable (metasprite/);
   // the rest preview-only (metasprite/preview/). Edits route to the sprite sheets.
   // `format:'aseprite'` writes each faithful metasprite as a single-image `.aseprite`.
-  const metas = wantLevel('metasprites') ? exportMetasprites(rom, symbols, header!, { gfxOverride: gfxLiveEdits(), aseprite: aseFmt }) : []
+  const metas = wantLevel('metasprites') ? exportMetasprites(rom, symbols, levelHeader!, { gfxOverride: gfxLiveEdits(), aseprite: aseFmt }) : []
   const metaManifest: MetaspriteManifestEntry[] = []
   for (const m of metas) {
     const idHex = m.spriteId.toString(16).toUpperCase().padStart(3, '0')
@@ -272,7 +282,7 @@ export function exportGfxPngsToDir(
   // Dynamic-sprite glyphs (the GSU-rasterized sprites' meta-equivalent) — the
   // byte-validated bank-$54 glyphs as editable PNGs; edits write back to the raw
   // glyph .bin via saveRawChrEdit (the raw-CHR write-back path). Global / level-invariant.
-  const glyphs = wantLevel('metasprites') ? exportSpriteGlyphs(rom, symbols, header!) : []
+  const glyphs = wantLevel('metasprites') ? exportSpriteGlyphs(rom, symbols, levelHeader!) : []
   const glyphManifest: GlyphManifestEntry[] = []
   for (const gl of glyphs) {
     const idHex = gl.spriteNum.toString(16).toUpperCase().padStart(3, '0')
@@ -486,8 +496,8 @@ export function exportGfxPngsToDir(
         exportedBy: app.getVersion(),
         checksums,
         entries: manifest,
-        metasprites: { header, sprites: metaManifest },
-        glyphs: { header, sprites: glyphManifest },
+        metasprites: { header: levelHeader, sprites: metaManifest },
+        glyphs: { header: levelHeader, sprites: glyphManifest },
         mapIcons: mapIconManifest,
         levelIcons: levelIconManifest,
         bossArena: bossArenaManifest,

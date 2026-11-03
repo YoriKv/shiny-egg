@@ -145,6 +145,7 @@ These buttons show/hide the corresponding panel.
 
 Graphics Panels:
 * **Graphics** - Export graphics into a variety of formats to allow editing and importing them back in as changes.
+  * **Spritesets** tab - Edit the six graphics files in each of the game's 128 sprite tilesets, with a live preview. **Fit to level** rearranges the selected tileset so the current level's sprites have the graphics they need, and warns when they can't all fit. Unsaved changes already show on the level. Tilesets are shared: a change affects every level that uses that tileset, and the tab lists which rooms use the selected one (the tileset dropdown shows each one's room count, and marks unused tilesets). **Reset to reference** restores a tileset's original files.
 * **Tiles** - View the level's loaded Map16 blocks, tilesets, spritesets, and more detailed level header data. Not currently very useful, mostly informational.
 * **Palette** - View and edit level and global colors with live preview in editor for level colors and sync to emulator for other colors. Level gradient editing is also here.
 
