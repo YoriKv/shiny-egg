@@ -254,7 +254,17 @@ The Graphics panel's **Spritesets** tab edits these 128 six-file rows in
 `Bank00.asm` (`DATA_spriteset_files`, `$00:B039`) through a fixed-size
 `;@editable:spriteset-files` overlay region. It previews the selected row by
 running the regular sprite-gfx renderer against the draft file IDs; saving
-updates the project overlay and the next build writes the table into the ROM.
+updates the project overlay and immediately applies that table to the editor's
+render ROM (the next build writes it into the ROM). The tab can also fit a
+selected row to a level's placed sprites, while reporting any graphics files
+that exceed the six-slot hardware limit or conflict with slot-pinned sprites.
+The fit uses each sprite's ordered `spritesetFiles` metadata directly: all
+listed files are required, and multi-file lists must occupy adjacent slots in
+the listed order. This covers sprites such as Lunge Fish (`$32→$33→$34`),
+Goonie (`$2A→$2B`), Para Koopa (`$2B→$47`), Poochy (`$3A→$3B`), and Caged
+Ghost (`$42→$43`). It warns if another sprite's slot-bound graphics prevent a
+required sequence from being placed.
+Reset-to-reference restores that row's six file IDs from the extracted cart.
 
 The **per-sprite GFX-file dependency** is a static table:
 `DATA_sprite_gfx_file_table` (`$0A:A716`, alias `FXDATA_0AA716`) is indexed by

@@ -40,7 +40,7 @@ import { renderCollisionLayer, renderCollisionPatch } from 'snes-framework/rende
 import { resolveCellGrid, diffCellGrids } from 'snes-framework/cell-grid'
 import { loadSceneRegs, bgLayerBpp } from 'snes-framework/scene-regs'
 import { loadSpritesetFileIds, type GfxFileEntry } from 'snes-framework/load-graphics'
-import { bestStockSpriteset } from 'snes-framework/sprite-tile-base'
+import { bestStockSpriteset, resolveLevelSpriteset } from 'snes-framework/sprite-tile-base'
 import { hex0x } from 'snes-framework/hex'
 import { headerValueUsage, loadLevel } from 'snes-framework/level'
 import { buildPaletteCatalog } from 'snes-framework/palette-catalog'
@@ -64,6 +64,8 @@ import type {
   PickerThumbnails,
   PickerThumbnailsRequest,
   FitSurfaceRequest,
+  FitSpritesetFilesRequest,
+  FitSpritesetFilesResult,
   FitSpritesetResult,
   FitTileset,
   HeaderGuide,
@@ -689,6 +691,49 @@ export function registerRenderIpc(): void {
     async (_e, spriteNums: number[]): Promise<FitSpritesetResult> => {
       const { rom, symbols } = loadRomAndSymbols()
       return bestStockSpriteset(rom, symbols, spriteNums.map((num) => ({ num })))
+    }
+  )
+  ipcMain.handle(
+    'render:fitSpritesetFiles',
+    async (_e, req: FitSpritesetFilesRequest): Promise<FitSpritesetFilesResult> => {
+      if (!Number.isInteger(req.spriteTileset) || req.spriteTileset < 0 || req.spriteTileset > 0x7f) {
+        throw new RangeError(`Sprite tileset ${req.spriteTileset} is outside 0x00–0x7F.`)
+      }
+      if (
+        req.files.length !== 6 ||
+        req.files.some((file) => !Number.isInteger(file) || file < 0 || file > 0xff)
+      ) {
+        throw new RangeError('Fit spriteset requires six file IDs in the range 0x00–0xFF.')
+      }
+      const requirements = new Map<number, number[]>()
+      const sequences = new Map<number, number[][]>()
+      for (const item of req.spriteFileRequirements ?? []) {
+        if (
+          !Number.isInteger(item.spriteNum) || item.spriteNum < 0 || item.spriteNum >= 0x1ba ||
+          !req.spriteNums.includes(item.spriteNum) ||
+          item.files.some((file) => !Number.isInteger(file) || file < 0 || file > 0xff)
+        ) {
+          throw new RangeError('Fit spriteset file requirements must reference a placed sprite and contain byte-sized file IDs.')
+        }
+        requirements.set(item.spriteNum, item.files)
+        if (item.files.length > 1) sequences.set(item.spriteNum, [item.files])
+      }
+      const { rom, symbols } = loadRomAndSymbols()
+      const resolved = resolveLevelSpriteset(
+        rom,
+        symbols,
+        { spriteTileset: req.spriteTileset },
+        req.spriteNums.map((num) => ({ num })),
+        requirements,
+        req.files,
+        sequences
+      )
+      return {
+        files: resolved.files,
+        requiredFiles: resolved.required,
+        overflowFiles: [...new Set([...resolved.overflow, ...resolved.slotConflicts])].sort((a, b) => a - b),
+        sequenceConflicts: resolved.sequenceConflicts
+      }
     }
   )
 

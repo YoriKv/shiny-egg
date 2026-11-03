@@ -43,6 +43,7 @@ import { SYNTHESIZED_CELS, SYNTHESIZED_CEL_PARITY_Y } from './sprite-synth-cel.t
 import { parityIndex, SPRITE_PARITY_PALETTE } from './sprite-parity.ts';
 import { REST_FRAME, FORMAT_A_NUMS } from './sprite-render-facts.ts';
 import { u16le } from './rom-read.ts';
+import { placeOrderedSpritesetFiles } from './sprite-file-sequences.ts';
 
 /** First **ambient** sprite ID (`!Define_YI_AmbSpr1BA` / `AmbientSpriteIDs.asm`).
  *  IDs `>= $1BA` are auto-scroll/gfx-palette-swap triggers ($1BA-$1C9, no-visual
@@ -182,8 +183,11 @@ export function mintSpriteset(
  * then for each `gfx_file_table`-required file not already present, swap it into a slot
  * that is NEITHER cel-read NOR already required (so a needed file is never evicted).
  * `minted` = the authored set was changed; `overflow` = required files with no free
- * slot (the 6-slot hardware ceiling). Feed `files` as `GfxHeader.spritesetOverride`
- * only when `minted` (else keep the authored set, i.e. pass no override).
+ * slot (the 6-slot hardware ceiling); `slotConflicts` = competing files requested
+ * for the same hardcoded slot; `sequenceConflicts` = ordered multi-slot graphics
+ * groups that could not be kept adjacent. Feed `files` as
+ * `GfxHeader.spritesetOverride` only when `minted` (else keep the authored set,
+ * i.e. pass no override).
  */
 export function resolveLevelSpriteset(
   rom: Uint8Array,
@@ -196,10 +200,30 @@ export function resolveLevelSpriteset(
   // $47 on top of their own $2B). The 1-entry cart table can't express this; the
   // caller (e.g. the defunct-levels gallery) sources it from obj-metadata's curated
   // spritesetFiles. Omitted ⇒ unchanged behaviour.
-  extraRequiredFiles?: ReadonlyMap<number, readonly number[]>
-): { files: number[]; required: number[]; overflow: number[]; minted: boolean } {
+  extraRequiredFiles?: ReadonlyMap<number, readonly number[]>,
+  authoredFiles?: readonly number[],
+  orderedFileSequences?: ReadonlyMap<number, readonly (readonly number[])[]>
+): {
+  files: number[];
+  required: number[];
+  overflow: number[];
+  slotConflicts: number[];
+  sequenceConflicts: number[];
+  minted: boolean;
+} {
   const base = symbols.pc('DATA_spriteset_files') + (header.spriteTileset ?? 0) * 6;
-  const files = [0, 1, 2, 3, 4, 5].map((i) => rom[base + i]!); // authored, slot-indexed
+  if (authoredFiles && (authoredFiles.length !== 6 || authoredFiles.some(
+    (file) => !Number.isInteger(file) || file < 0 || file > 0xff
+  ))) {
+    throw new RangeError('resolveLevelSpriteset: authoredFiles must contain six byte-sized file IDs');
+  }
+  const files = authoredFiles
+    ? [...authoredFiles]
+    : [0, 1, 2, 3, 4, 5].map((i) => rom[base + i]!); // authored, slot-indexed
+  const celHeader: Pick<GfxHeader, 'spriteTileset' | 'spritesetOverride'> = {
+    spriteTileset: header.spriteTileset,
+    spritesetOverride: files
+  }
   // One pass over the sprites collects: the slots any cel reads (its spriteset-region
   // tiles, resolved against the AUTHORED set — so a gfx_file_table=0 synth/absolute cel
   // that hard-codes a slot, boo guys → slot 3, tap-tap → slot 5, locks the authored file
@@ -211,6 +235,7 @@ export function resolveLevelSpriteset(
   const required = new Set<number>();
   const count = new Map<number, number>();
   const pinRequests = new Map<number, Set<number>>(); // contested slot → gotcha files wanting it
+  const sequences: number[][] = [];
   let minted = false;
   for (const s of sprites) {
     const needs = new Set<number>();
@@ -218,13 +243,24 @@ export function resolveLevelSpriteset(
     if (rf != null) { required.add(rf); needs.add(rf); }
     const extra = extraRequiredFiles?.get(s.num);
     if (extra) for (const f of extra) { required.add(f); needs.add(f); }
+    for (const sequence of orderedFileSequences?.get(s.num) ?? []) {
+      if (sequence.length < 2 || sequence.some((file) => !Number.isInteger(file) || file < 0 || file > 0xff)) {
+        throw new RangeError(`resolveLevelSpriteset: invalid ordered file sequence for sprite 0x${s.num.toString(16)}`);
+      }
+      sequences.push([...sequence]);
+      for (const f of sequence) { required.add(f); needs.add(f); }
+    }
     let cel: ReturnType<typeof resolveSpriteCel>;
-    try { cel = resolveSpriteCel(rom, symbols, header, s.num, undefined, FORMAT_A_NUMS.has(s.num), undefined, undefined, undefined, REST_FRAME.get(s.num)); }
+    try { cel = resolveSpriteCel(rom, symbols, celHeader, s.num, undefined, FORMAT_A_NUMS.has(s.num), undefined, undefined, undefined, REST_FRAME.get(s.num)); }
     catch { cel = null; }
     if (cel) for (const t of cel.cel) {
       if (t.tile >= OBJ_LOWER_PAGE_TILES && t.tile < DYNAMIC_OBJ_TILE_BASE) {
         const slot = ((t.tile - OBJ_LOWER_PAGE_TILES) / 32) | 0;
-        usedSlots.add(slot);
+        // File-backed sprites resolve their tile base from the slot containing
+        // their required file, so these slot indices move with that file. Only
+        // common-page sprites without authored multi-file requirements are
+        // genuinely tied to the current slot contents.
+        if (rf == null && !extra?.length) usedSlots.add(slot);
         // Slot-hardcoded gotcha sprites (gotcha #9): a sprite whose caller declares exactly
         // ONE file (its DATA_sprite_gfx_file_table is 0, so the mint can't see the need)
         // reads a FIXED slot that MUST hold that file — e.g. the Tap-Taps' body tiles
@@ -244,6 +280,7 @@ export function resolveLevelSpriteset(
     for (const f of needs) count.set(f, (count.get(f) ?? 0) + 1);
   }
   const overflow: number[] = [];
+  const slotConflicts = new Set<number>();
   // Apply the deferred gotcha pins: per contested slot the file serving the MOST sprites
   // wins (count, then lower file id); a competing loser file OVERFLOWS — the slot can't hold
   // both at once, so the multi-pass renderer (resolveLevelSpritesetPasses) draws the loser
@@ -252,8 +289,15 @@ export function resolveLevelSpriteset(
   for (const [slot, wanted] of pinRequests) {
     const winner = [...wanted].sort((a, b) => (count.get(b)! - count.get(a)!) || a - b)[0]!;
     if (files[slot] !== winner) { files[slot] = winner; minted = true; }
-    for (const f of wanted) if (f !== winner) overflow.push(f);
+    for (const f of wanted) {
+      if (f === winner) continue;
+      overflow.push(f);
+      slotConflicts.add(f);
+    }
   }
+  const ordered = placeOrderedSpritesetFiles(files, sequences, usedSlots, required);
+  if (ordered.changed) minted = true;
+  const sequenceConflicts = ordered.conflicts;
   // Place missing required files MOST-NEEDED first; when no slot is free, evict the
   // present file serving the FEWEST sprites (if fewer than this one) — so a high-traffic
   // sprite (the 7 bandits, file $4E) wins a slot over a 2-instance piranha file ($29).
@@ -272,7 +316,14 @@ export function resolveLevelSpriteset(
   }
   // Dedupe + drop any overflow file that ended up placed (a pin loser that also won elsewhere).
   const overflowFinal = [...new Set(overflow)].filter((f) => !files.includes(f));
-  return { files, required: [...required].sort((a, b) => a - b), overflow: overflowFinal.sort((a, b) => a - b), minted };
+  return {
+    files,
+    required: [...required].sort((a, b) => a - b),
+    overflow: overflowFinal.sort((a, b) => a - b),
+    slotConflicts: [...slotConflicts].sort((a, b) => a - b),
+    sequenceConflicts,
+    minted
+  };
 }
 
 /**

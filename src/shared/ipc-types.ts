@@ -534,6 +534,27 @@ export interface RenderGfxFilesArgs {
   spritePaletteRow?: number
 }
 
+/** Request to fit a level's placed sprites into the six slots of one editable
+ *  sprite tileset row. `files` is the current (possibly unsaved) slot mapping. */
+export interface FitSpritesetFilesRequest {
+  spriteNums: number[]
+  spriteTileset: number
+  files: number[]
+  /** Per-sprite ordered graphics-file lists sourced from sprite metadata. */
+  spriteFileRequirements?: Array<{ spriteNum: number; files: number[] }>
+}
+
+export interface FitSpritesetFilesResult {
+  /** Slot-preserving six-file mapping after satisfying the level's needs. */
+  files: number[]
+  /** Distinct variable graphics files required by the placed sprites. */
+  requiredFiles: number[]
+  /** Requirements that cannot fit in the six-slot mapping. */
+  overflowFiles: number[]
+  /** Ordered multi-slot groups that conflict with locked slot assignments. */
+  sequenceConflicts: number[]
+}
+
 // ── Render results ──────────────────────────────────────────────────────────
 
 export interface RenderImage {

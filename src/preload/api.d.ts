@@ -66,6 +66,8 @@ import type {
   EntityValidityRequest,
   FindInstanceKind,
   FitSpritesetResult,
+  FitSpritesetFilesRequest,
+  FitSpritesetFilesResult,
   FitSurfaceRequest,
   FitTileset,
   FrameworkExtractArgs,
@@ -575,6 +577,8 @@ export interface RenderAPI {
   /** Pick the stock sprite tileset (header[7]) that best covers the given placed
    *  sprites' graphics. `spriteNums` are the level's sprite ids. */
   fitSpriteset: (spriteNums: number[]) => Promise<FitSpritesetResult>
+  /** Fit a level's sprites into the six files in the selected editable row. */
+  fitSpritesetFiles: (req: FitSpritesetFilesRequest) => Promise<FitSpritesetFilesResult>
   /** Level Header guide: shipped-level usage of every header value (base cart,
    *  cached) + whether `levelRecordId` reads the World-6 palette tables. */
   headerGuide: (levelRecordId: number) => Promise<HeaderGuide>

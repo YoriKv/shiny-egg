@@ -6741,6 +6741,9 @@ h3 { margin: 0; }
 .se-spriteset__status:empty {
   display: none;
 }
+.se-spriteset__status.is-warning {
+  color: var(--warn);
+}
 .se-spriteset__files {
   display: grid;
   grid-template-columns: repeat(6, minmax(64px, 1fr));

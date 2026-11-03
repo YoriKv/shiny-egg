@@ -31,6 +31,8 @@ export type EditableResource =
  *  IDs from `DATA_spriteset_files` in Bank00.asm. */
 export interface SpritesetFilesModel {
   rows: number[][];
+  /** Rows from the extracted reference cart, used by the reset-to-reference action. */
+  referenceRows?: number[][];
 }
 
 /** The per-level Yoshi-color table (`DATA_yoshi_level_colors` in Bank02.asm):

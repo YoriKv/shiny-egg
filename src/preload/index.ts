@@ -25,6 +25,8 @@ import type {
   EntityValidityRequest,
   FindInstanceKind,
   FitSpritesetResult,
+  FitSpritesetFilesRequest,
+  FitSpritesetFilesResult,
   HeaderGuide,
   FitSurfaceRequest,
   FitTileset,
@@ -237,6 +239,10 @@ const api = {
     /** Best-covering stock sprite tileset (header[7]) for the given placed sprites. */
     fitSpriteset: (spriteNums: number[]): Promise<FitSpritesetResult> =>
       ipcRenderer.invoke('render:fitSpriteset', spriteNums),
+    /** Fit the current level's sprites into a six-file row while preserving
+     *  graphics already pinned to slots by sprite cels. */
+    fitSpritesetFiles: (req: FitSpritesetFilesRequest): Promise<FitSpritesetFilesResult> =>
+      ipcRenderer.invoke('render:fitSpritesetFiles', req),
     /** Header-value usage across shipped levels + the level's World-6 flag. */
     headerGuide: (levelRecordId: number): Promise<HeaderGuide> =>
       ipcRenderer.invoke('render:headerGuide', levelRecordId),

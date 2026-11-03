@@ -91,3 +91,13 @@ describe('spawnedOnly flag', () => {
     }
   })
 })
+
+describe('ordered spriteset file requirements', () => {
+  it('keeps the complete ordered graphics requirements for multi-file sprites', () => {
+    expect(getSprite(0x02c).spritesetFiles).toEqual(['0x32', '0x33', '0x34'])
+    expect(getSprite(0x0e8).spritesetFiles).toEqual(['0x2A', '0x2B'])
+    expect(getSprite(0x16e).spritesetFiles).toEqual(['0x2B', '0x47'])
+    expect(getSprite(0x0ff).spritesetFiles).toEqual(['0x3A', '0x3B'])
+    expect(getSprite(0x193).spritesetFiles).toEqual(['0x42', '0x43'])
+  })
+})

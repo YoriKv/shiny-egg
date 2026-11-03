@@ -71,6 +71,7 @@
     "./bg1-band-gfx": "./scripts/engine/bg1-band-gfx.ts",
     "./sprite-cel": "./scripts/engine/sprite-cel.ts",
     "./sprite-tile-base": "./scripts/engine/sprite-tile-base.ts",
+    "./sprite-file-sequences": "./scripts/engine/sprite-file-sequences.ts",
     "./sprite-parity": "./scripts/engine/sprite-parity.ts",
     "./sprite-metasprite": "./scripts/engine/sprite-metasprite.ts",
     "./sprite-glyph": "./scripts/engine/sprite-glyph.ts",

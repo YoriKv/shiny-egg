@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { GfxFileBlock, LevelData, RenderHeaderRequest } from '../../../preload/api'
+import { DiscardChangesModal } from '../DiscardChangesModal'
 import { blitRgba } from '../lib/blit'
+import { getSprite } from '../data/obj-metadata'
 import type { SpritesetFilesEditorApi } from '../edit-session/useSpritesetFilesEditor'
 import { headerFromLevel } from './TilesPanel'
 
@@ -32,11 +34,21 @@ interface Props {
 }
 
 export function SpritesetFilesTab({ editor, level, projectActive }: Props): JSX.Element {
-  const [selected, setSelected] = useState(0)
+  const [selected, setSelected] = useState(level?.header[7] ?? 0)
   const [paletteRow, setPaletteRow] = useState(0)
   const [blocks, setBlocks] = useState<GfxFileBlock[] | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [actionStatus, setActionStatus] = useState<string | null>(null)
+  const [fitBusy, setFitBusy] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
   const tableRow = editor.model?.rows[selected]
+  const referenceRow = editor.model?.referenceRows?.[selected]
+  const canFit = !!level && !level.empty && !level.special
+
+  useEffect(() => {
+    if (level && !level.empty && !level.special) setSelected(level.header[7] ?? 0)
+  }, [level?.recordId, level?.header[7]])
+
   const header = useMemo<RenderHeaderRequest>(() => headerFromLevel(level) ?? ({
     bgColor: 0,
     bg1Tileset: 0,
@@ -85,6 +97,66 @@ export function SpritesetFilesTab({ editor, level, projectActive }: Props): JSX.
 
   const hasSlotLabels = blocks?.some((block) => block.dpSlot !== undefined) ?? false
 
+  async function fitCurrentLevel(): Promise<void> {
+    if (!canFit || !level || !tableRow) return
+    setFitBusy(true)
+    setActionStatus(null)
+    try {
+      const result = await window.shinyEgg.render.fitSpritesetFiles({
+        spriteNums: level.sprites.map((sprite) => sprite.num),
+        spriteTileset: selected,
+        files: tableRow.slice(),
+        spriteFileRequirements: level.sprites.flatMap((sprite) => {
+          const requirements = getSprite(sprite.num).spritesetFiles
+          return requirements && requirements.length > 0
+            ? [{
+              spriteNum: sprite.num,
+              files: requirements.map((file) => Number.parseInt(file, 16))
+            }]
+            : []
+        })
+      })
+      editor.setRow(selected, result.files)
+      if (result.overflowFiles.length > 0 || result.sequenceConflicts.length > 0) {
+        const files = result.overflowFiles.map(hex2).join(', ')
+        const reasons = []
+        if (result.requiredFiles.length > FILES_PER_ROW) {
+          reasons.push(
+            `${result.requiredFiles.length} distinct gfx files exceed the six-slot limit. ` +
+              `Uncovered: ${files}.`
+          )
+        } else if (result.overflowFiles.length > 0) {
+          reasons.push(`Slot-bound graphics conflict with the six-slot mapping. Uncovered: ${files}.`)
+        }
+        if (result.sequenceConflicts.length > 0) {
+          reasons.push(
+            `Ordered multi-slot graphics could not be kept adjacent because of slot-bound graphics: ` +
+              `${result.sequenceConflicts.map(hex2).join(', ')}.`
+          )
+        }
+        setActionStatus(`Partial fit: ${reasons.join(' ')} Sprites may render incorrectly.`)
+      } else if (result.requiredFiles.length === 0) {
+        setActionStatus('No variable gfx files are required; existing slot-based assignments were kept.')
+      } else {
+        setActionStatus(
+          `Fitted row ${hex2(selected)} to all ${result.requiredFiles.length} required gfx files ` +
+            `for ${level.sprites.length} placed sprite${level.sprites.length === 1 ? '' : 's'}. Save to apply.`
+        )
+      }
+    } catch (error) {
+      setActionStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setFitBusy(false)
+    }
+  }
+
+  function resetToReference(): void {
+    if (!referenceRow) return
+    editor.setRow(selected, referenceRow)
+    setActionStatus(`Row ${hex2(selected)} reset in the draft. Save to persist the reference-cart values.`)
+    setConfirmReset(false)
+  }
+
   return (
     <div className="se-spriteset">
       <div className="se-spriteset__controls">
@@ -93,7 +165,10 @@ export function SpritesetFilesTab({ editor, level, projectActive }: Props): JSX.
           <select
             className="se-input"
             value={selected}
-            onChange={(event) => setSelected(Number(event.target.value))}
+            onChange={(event) => {
+              setSelected(Number(event.target.value))
+              setActionStatus(null)
+            }}
           >
             {Array.from({ length: SPRITESET_COUNT }, (_, id) => (
               <option key={id} value={id}>{hex2(id)}</option>
@@ -116,6 +191,24 @@ export function SpritesetFilesTab({ editor, level, projectActive }: Props): JSX.
           <button
             type="button"
             className="se-banks__act"
+            onClick={() => void fitCurrentLevel()}
+            disabled={!canFit || !tableRow || fitBusy || editor.saving}
+            title={canFit ? 'Fit this row to the placed sprites in the current level' : 'Load a regular level to fit its sprites'}
+          >
+            {fitBusy ? 'Fitting…' : 'Fit to level'}
+          </button>
+          <button
+            type="button"
+            className="se-banks__act se-banks__act--danger"
+            onClick={() => setConfirmReset(true)}
+            disabled={!referenceRow || editor.saving}
+            title="Stage this row's reference-cart values"
+          >
+            Reset to reference…
+          </button>
+          <button
+            type="button"
+            className="se-banks__act"
             onClick={() => editor.discard()}
             disabled={!editor.dirty || editor.saving}
           >
@@ -133,9 +226,9 @@ export function SpritesetFilesTab({ editor, level, projectActive }: Props): JSX.
         </div>
       </div>
 
-      <div className="se-spriteset__status">
+      <div className={`se-spriteset__status${actionStatus && /Partial fit:/.test(actionStatus) ? ' is-warning' : ''}`}>
         {editor.error ?? editor.saveError ?? previewError ??
-          (editor.status || (editor.dirty ? 'Unsaved sprite tileset edits' : ''))}
+          (actionStatus ?? (editor.status || (editor.dirty ? 'Unsaved sprite tileset edits' : '')))}
       </div>
       {!projectActive && (
         <div className="se-spriteset__hint">Open a project to save sprite tileset changes.</div>
@@ -148,7 +241,10 @@ export function SpritesetFilesTab({ editor, level, projectActive }: Props): JSX.
               className="se-input"
               value={tableRow?.[slot] ?? 0}
               disabled={!tableRow}
-              onChange={(event) => editor.setFileId(selected, slot, Number(event.target.value))}
+              onChange={(event) => {
+                editor.setFileId(selected, slot, Number(event.target.value))
+                setActionStatus(null)
+              }}
             >
               {Array.from({ length: FILE_ID_COUNT }, (_, fileId) => (
                 <option key={fileId} value={fileId}>{hex2(fileId)}</option>
@@ -183,6 +279,15 @@ export function SpritesetFilesTab({ editor, level, projectActive }: Props): JSX.
           blocks.map((block, index) => <SpriteSheet key={`${index}-${block.vramByteOffset}`} block={block} />)
         )}
       </div>
+      <DiscardChangesModal
+        open={confirmReset}
+        title={`Reset spriteset ${hex2(selected)}?`}
+        body={`Replace all six file IDs in row ${hex2(selected)} with their reference-cart values. This only changes the editor draft; use Save to persist it. Other row edits will be left unchanged.`}
+        confirmLabel="Reset row"
+        danger
+        onDiscard={resetToReference}
+        onCancel={() => setConfirmReset(false)}
+      />
     </div>
   )
 }

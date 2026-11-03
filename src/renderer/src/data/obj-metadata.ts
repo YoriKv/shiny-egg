@@ -247,22 +247,22 @@ interface StoredSpriteInfo {
   //      files), and null-but-placed sprites filled from the cart's static
   //      tile-base table `DATA_sprite_gfx_file_table` (host-confirmed). ──
   /**
-   * GFX file IDs the sprite's own tiles need present in the level's *variable*
-   * spriteset (header field 7 → the 6 files in `DATA_spriteset_files`). The
-   * editor re-checks rendering when a level's spriteset changes: the sprite
-   * still renders iff the new spriteset's 6 files ⊇ this set.
+   * Ordered GFX file IDs the sprite's own tiles need in the level's *variable*
+   * spriteset (header field 7 → the 6 files in `DATA_spriteset_files`). For
+   * multi-file sprites, the files must occupy consecutive slots in this order.
+   * The editor re-checks rendering when a level's spriteset changes.
    *   `[]`   ⇒ needs no variable-spriteset file: tiles are in the always-loaded
    *            global sheet (portable), streamed from the dynamic SuperFX region,
    *            or the sprite has no graphics → renders under any spriteset.
    *   `null` ⇒ the sprite never appears in a level, so nothing could be derived.
    * Trace-derived values are exact (observed). Static-fallback values are a
    * safe over-approximation: "appears in a level" ≠ "renders correctly there",
-   * so an incidental placement can drop a real file, and a single-appearance
+   * so an incidental placement can include extra files, and a single-appearance
    * sprite lists its whole spriteset (can't be narrowed).
    * Stored as hex file-id strings (e.g. `"0x28"`); parse with `parseInt(s, 16)`
    * when comparing against a spriteset's numeric file IDs.
    */
-  spritesetFiles?: string[] | null
+   spritesetFiles?: string[] | null
   // NB: the asm-fixed render facts `cel` ('A'/'B'), `settledPaletteRow` (SP4) and `restFrame`
   // (SP3) used to live here; they moved to the engine (snes-framework sprite-render-facts.ts)
   // since they're determined by the cart, not editable — see that file + research notes.

@@ -1600,8 +1600,11 @@ export async function saveMusicSetsResource(model: unknown): Promise<SaveResourc
 
 /** Load the global sprite tileset table (overlay-first). */
 export function loadSpritesetFilesResource(): SpritesetFilesModel {
-  const { contentText } = readOverlayFirst(SPRITESET_FILES_BANK_FILE)
-  return parseSpritesetFiles(contentText)
+  const { contentText, baseText } = readOverlayFirst(SPRITESET_FILES_BANK_FILE)
+  return {
+    ...parseSpritesetFiles(contentText),
+    referenceRows: parseSpritesetFiles(baseText).rows
+  }
 }
 
 /** Save the sprite tileset rows into the active project's Bank00 overlay. */

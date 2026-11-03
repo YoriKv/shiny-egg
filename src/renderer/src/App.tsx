@@ -1111,7 +1111,11 @@ export default function App(): JSX.Element {
   // its doc key; listed in closeDocs('audio') so closing the window prompts.
   const musicSetsEditor = useMusicSetsEditor(projectScope, markRomDirty, docHistory)
   // The global sprite tileset file table (Bank00.asm) is edited from Graphics.
-  const spritesetFilesEditor = useSpritesetFilesEditor(projectScope, markRomDirty, docHistory)
+  const onSpritesetFilesSaved = useCallback(() => {
+    markRomDirty()
+    bumpRenderRefresh()
+  }, [markRomDirty, bumpRenderRefresh])
+  const spritesetFilesEditor = useSpritesetFilesEditor(projectScope, onSpritesetFilesSaved, docHistory)
   // Cross-panel "open the Audio panel at a tab" request (the Header panel's
   // Edit-sets button); seq bumps so a repeat click re-applies.
   const [audioTabRequest, setAudioTabRequest] = useState<{ tab: 'sets'; seq: number } | null>(null)

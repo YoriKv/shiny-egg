@@ -17,6 +17,7 @@ export interface SpritesetFilesEditorApi {
   saveError: string | null
   save: () => Promise<boolean>
   discard: () => void
+  setRow: (row: number, files: number[]) => void
   setFileId: (row: number, slot: number, fileId: number) => void
 }
 
@@ -36,22 +37,34 @@ export function useSpritesetFilesEditor(
     history
   })
 
-  const setFileId = useCallback((row: number, slot: number, fileId: number) => {
+  const setRow = useCallback((row: number, files: number[]) => {
     const current = doc.read()
     if (
       !current ||
       !Number.isInteger(row) || row < 0 || row >= current.rows.length ||
-      !Number.isInteger(slot) || slot < 0 || slot >= 6 ||
-      !Number.isInteger(fileId) || fileId < 0 || fileId > 0xff
+      files.length !== 6 ||
+      files.some((fileId) => !Number.isInteger(fileId) || fileId < 0 || fileId > 0xff)
     ) return
     const currentRow = current.rows[row]
-    if (!currentRow || currentRow[slot] === fileId) return
+    if (!currentRow || JSON.stringify(currentRow) === JSON.stringify(files)) return
     const rows = current.rows.slice()
-    const nextRow = currentRow.slice()
-    nextRow[slot] = fileId
-    rows[row] = nextRow
+    rows[row] = files.slice()
     doc.commit({ ...current, rows })
   }, [doc])
+
+  const setFileId = useCallback((row: number, slot: number, fileId: number) => {
+    const current = doc.read()
+    const currentRow = current?.rows[row]
+    if (
+      !currentRow ||
+      !Number.isInteger(slot) || slot < 0 || slot >= 6 ||
+      !Number.isInteger(fileId) || fileId < 0 || fileId > 0xff ||
+      currentRow[slot] === fileId
+    ) return
+    const nextRow = currentRow.slice()
+    nextRow[slot] = fileId
+    setRow(row, nextRow)
+  }, [doc, setRow])
 
   return {
     model: doc.draft,
@@ -62,6 +75,7 @@ export function useSpritesetFilesEditor(
     saveError: doc.saveError,
     save: doc.save,
     discard: doc.discard,
+    setRow,
     setFileId
   }
 }

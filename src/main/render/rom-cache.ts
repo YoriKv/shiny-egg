@@ -2,15 +2,19 @@
 // + WLA symbol map once at first request and caches them, re-reading when any
 // artifact file's mtime changes (so a rebuild mid-session invalidates the cache
 // automatically). Prefers the active project’s build dir, falling back to the
-// shared base build. Extracted from ipc/render.ts as a cohesive unit. (NOT the
-// dev-side loadDevCart, which targets the fixed V1.0 build for engine tools.)
+// shared base build. The saved sprite-tileset table overlay is patched into the
+// render copy so its level preview updates without rebuilding. Extracted from
+// ipc/render.ts as a cohesive unit. (NOT the dev-side loadDevCart, which targets
+// the fixed V1.0 build for engine tools.)
 
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { mergeSymbolMaps, parseWlaSymbolMap, type SymbolMap } from 'snes-framework/symbol-map'
 import { outputSfcName } from 'snes-framework/rom-versions'
 import { readExtractionState } from 'snes-framework/state'
-import { builtArtifactDir, frameworkWorkRoot } from '../framework-paths'
+import { findRegion } from 'snes-framework/markers'
+import { parseSpritesetFiles, SPRITESET_FILES_BANK_FILE, SPRITESET_FILES_REGION } from 'snes-framework/spriteset-files'
+import { builtArtifactDir, frameworkWorkRoot, overlayRoot } from '../framework-paths'
 import { getCurrentProjectId } from '../projects'
 
 export interface RomCache {
@@ -20,13 +24,20 @@ export interface RomCache {
   cartMtime: number
   symMtime: number
   fxSymMtime: number
+  spritesetOverlayPath: string | null
+  spritesetOverlayRevision: string
   rom: Uint8Array
   symbols: SymbolMap
 }
 
 let cache: RomCache | null = null
 
-function resolveBuildPaths(): { cartPath: string; symPath: string; fxSymPath: string } {
+function resolveBuildPaths(): {
+  cartPath: string
+  symPath: string
+  fxSymPath: string
+  spritesetOverlayPath: string | null
+} {
   // Pick whichever rom version was most recently extracted/built. If no
   // extraction state yet, fall back to V1.0 (`YI_U1`).
   //
@@ -44,11 +55,15 @@ function resolveBuildPaths(): { cartPath: string; symPath: string; fxSymPath: st
   // engine/collision.ts).
   const symName = sfcName.replace(/\.sfc$/i, '.sym')
   const fxSymName = sfcName.replace(/\.sfc$/i, '-superfx.sym')
-  const dir = builtArtifactDir(getCurrentProjectId(), sfcName)
+  const projectId = getCurrentProjectId()
+  const dir = builtArtifactDir(projectId, sfcName)
   return {
     cartPath: join(dir, sfcName),
     symPath: join(dir, symName),
-    fxSymPath: join(dir, fxSymName)
+    fxSymPath: join(dir, fxSymName),
+    spritesetOverlayPath: projectId
+      ? join(overlayRoot(projectId), SPRITESET_FILES_BANK_FILE)
+      : null
   }
 }
 
@@ -72,6 +87,13 @@ export function loadRomAndSymbols(): RomCache {
   }
   const cartStat = statSync(paths.cartPath)
   const symStat = statSync(paths.symPath)
+  const spritesetOverlayStat =
+    paths.spritesetOverlayPath && existsSync(paths.spritesetOverlayPath)
+      ? statSync(paths.spritesetOverlayPath)
+      : null
+  const spritesetOverlayRevision = spritesetOverlayStat
+    ? `${spritesetOverlayStat.mtimeMs}/${spritesetOverlayStat.ctimeMs}/${spritesetOverlayStat.size}`
+    : ''
   // FX sym is optional — older builds may not produce it. statSync throws
   // on missing files, so guard explicitly.
   let fxSymMtime = 0
@@ -81,6 +103,8 @@ export function loadRomAndSymbols(): RomCache {
     cache.cartPath === paths.cartPath &&
     cache.symPath === paths.symPath &&
     cache.fxSymPath === paths.fxSymPath &&
+    cache.spritesetOverlayPath === paths.spritesetOverlayPath &&
+    cache.spritesetOverlayRevision === spritesetOverlayRevision &&
     cache.cartMtime === cartStat.mtimeMs &&
     cache.symMtime === symStat.mtimeMs &&
     cache.fxSymMtime === fxSymMtime
@@ -94,6 +118,20 @@ export function loadRomAndSymbols(): RomCache {
     const fxSym = parseWlaSymbolMap(readFileSync(paths.fxSymPath, 'utf8'))
     symbols = mergeSymbolMaps(mainSym, fxSym)
   }
+  if (paths.spritesetOverlayPath && spritesetOverlayRevision) {
+    const source = readFileSync(paths.spritesetOverlayPath, 'utf8')
+    // Older overlays without this region cannot contain an editor-made table
+    // change; leave their built-ROM table untouched until the overlay upgrade.
+    if (findRegion(source, SPRITESET_FILES_REGION)) {
+      const { rows } = parseSpritesetFiles(source)
+      const tablePC = symbols.pc('DATA_spriteset_files')
+      const fileIds = rows.flat()
+      if (tablePC < 0 || tablePC + fileIds.length > rom.length) {
+        throw new Error('Spriteset table overlay does not fit within the built ROM.')
+      }
+      rom.set(fileIds, tablePC)
+    }
+  }
   cache = {
     cartPath: paths.cartPath,
     symPath: paths.symPath,
@@ -101,6 +139,8 @@ export function loadRomAndSymbols(): RomCache {
     cartMtime: cartStat.mtimeMs,
     symMtime: symStat.mtimeMs,
     fxSymMtime,
+    spritesetOverlayPath: paths.spritesetOverlayPath,
+    spritesetOverlayRevision,
     rom,
     symbols
   }
