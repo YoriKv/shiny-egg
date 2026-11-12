@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent, type JSX } from 'react'
-import { formatLevelId, getLevel, isRemovedRecord, useLevelsCatalog } from './data/levels'
+import { formatLevelId, getLevel, getLevelByTranslevel, isRemovedRecord, useLevelsCatalog } from './data/levels'
 import { useDropdown } from './hooks/useDropdown'
 
 export interface LevelMenuProps {
   selectedId: number | null
-  onSelect: (id: number) => void
+  selectedTranslevelId: number | null
+  onSelect: (id: number, translevelId?: number) => void
 }
 
 /** Records are indexed into the cart `Ptrs` table — a single byte (0x00–0xFF). */
@@ -20,7 +21,7 @@ function parseRecordId(raw: string): number | null {
   return n
 }
 
-export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element {
+export function LevelMenu({ selectedId, selectedTranslevelId, onSelect }: LevelMenuProps): JSX.Element {
   const { open, setOpen, containerRef } = useDropdown()
   const [gotoText, setGotoText] = useState('')
   // null = no error; a string is the message shown under the field (bad id, or a
@@ -69,7 +70,8 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
     selectedRef.current?.scrollIntoView({ block: 'nearest' })
   }, [open])
 
-  const selected = selectedId !== null ? getLevel(selectedId) : null
+  const selected = selectedTranslevelId !== null ? getLevelByTranslevel(selectedTranslevelId) :
+    selectedId !== null ? getLevel(selectedId) : null
 
   return (
     <div className="se-levelmenu" ref={containerRef}>
@@ -131,7 +133,8 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
                 // null id (e.g. the Prologue intro slot): catalogued but not an
                 // editable level — render disabled, no selectable hex id.
                 const lid = l.recordId
-                const isActive = lid !== null && lid === selectedId
+                const isActive = lid !== null && (selectedTranslevelId !== null
+                  ? l.translevelId === selectedTranslevelId : lid === selectedId)
                 return (
                   <button
                     key={`${l.world}:${l.slot}`}
@@ -146,7 +149,7 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
                     }
                     onClick={() => {
                       if (lid === null) return
-                      onSelect(lid)
+                      onSelect(lid, l.translevelId)
                       setOpen(false)
                     }}
                   >

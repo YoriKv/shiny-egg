@@ -1,19 +1,18 @@
 // Shared warp-exit graph traversal. YI levels connect via screen-exit "warp"
 // records (pipe / door / water), and two editor features walk that graph:
 //
-//   • Sub-room discovery + incoming markers (hooks/useSubLevelBFS) — every
-//     non-catalog level reachable from a translevel root, plus the reverse
-//     adjacency ("who warps into here").
+//   • Sub-room discovery + incoming markers (hooks/useSubLevelBFS) — roomGraph
+//     derives reachability and reverse adjacency from a project-wide index.
 //   • Test Level's sub-room boot (App.onTestLevel) — the shortest chain of warp
 //     records from the root to a chosen sub-room, replayed by the Lua harness.
 //
 // Both used to inline their own BFS over `loadResource(...).exits`; they now
 // share `walkWarpGraph` below so the edge shape, the de-dup, and the traversal
 // order live in one place (and can't drift apart). Each consumer keeps only its
-// own concern: discovery prunes at catalog boundaries and records incoming;
-// chain-find expands everything and stops at a target.
+// own concern: discovery records all incoming links; chain-find stops at a target.
 
 import type { ScreenExit } from '../../../preload/api'
+import type { IncomingExit } from '../types'
 
 /** One hop the cart can replay: land in `destLevelRecordId` at (`destX`,`destY`) with
  *  the given entrance/spawn state. The 4 fields the Lua harness needs per warp. */
@@ -36,8 +35,12 @@ export interface WarpEdge extends WarpStep {
  *  their own loader. */
 export async function loadWarpEdges(id: number): Promise<WarpEdge[]> {
   const data = await window.shinyEgg.editor.loadResource({ kind: 'level', recordId: id })
+  return warpEdgesFor(id, data.exits)
+}
+
+export function warpEdgesFor(id: number, exits: readonly ScreenExit[]): WarpEdge[] {
   const edges: WarpEdge[] = []
-  for (const ex of data.exits as ScreenExit[]) {
+  for (const ex of exits) {
     if (ex.variant !== 'warp') continue
     edges.push({
       sourceLevelRecordId: id,
@@ -49,6 +52,58 @@ export async function loadWarpEdges(id: number): Promise<WarpEdge[]> {
     })
   }
   return edges
+}
+
+export function withLiveWarpEdges(edges: readonly WarpEdge[], id: number, exits: readonly ScreenExit[]): WarpEdge[] {
+  return [...edges.filter((e) => e.sourceLevelRecordId !== id), ...warpEdgesFor(id, exits)]
+}
+
+/** One project snapshot supplies all incoming markers. Stage names are labels,
+ * never graph boundaries. External sources need not expand their entire stage. */
+export function roomGraph(root: number, selected: number | null, edges: readonly WarpEdge[]): {
+  subLevels: number[]
+  edges: WarpEdge[]
+  incomingByLevel: Map<number, IncomingExit[]>
+} {
+  const outgoing = new Map<number, WarpEdge[]>()
+  const incomingByLevel = new Map<number, IncomingExit[]>()
+  for (const edge of edges) {
+    const list = outgoing.get(edge.sourceLevelRecordId) ?? []
+    list.push(edge)
+    outgoing.set(edge.sourceLevelRecordId, list)
+    const incoming = incomingByLevel.get(edge.destLevelRecordId) ?? []
+    incoming.push({
+      sourceLevelRecordId: edge.sourceLevelRecordId,
+      sourceScreenIndex: edge.sourceScreenIndex,
+      destX: edge.destX,
+      destY: edge.destY,
+      entranceType: edge.entranceType
+    })
+    incomingByLevel.set(edge.destLevelRecordId, incoming)
+  }
+  const subLevels = [root]
+  const seen = new Set(subLevels)
+  const expand = (): void => {
+    for (let i = 0; i < subLevels.length; i++) {
+      for (const edge of outgoing.get(subLevels[i]) ?? []) {
+        if (seen.has(edge.destLevelRecordId)) continue
+        seen.add(edge.destLevelRecordId)
+        subLevels.push(edge.destLevelRecordId)
+      }
+    }
+  }
+  expand()
+  // Keep a currently viewed room visible even if a live edit disconnected it.
+  if (selected !== null && !seen.has(selected)) {
+    seen.add(selected)
+    subLevels.push(selected)
+    expand()
+  }
+  return {
+    subLevels,
+    edges: edges.filter((e) => seen.has(e.sourceLevelRecordId) || seen.has(e.destLevelRecordId)),
+    incomingByLevel
+  }
 }
 
 /** One yielded step of the walk: a warp `edge`, the `chain` of `WarpStep`s from

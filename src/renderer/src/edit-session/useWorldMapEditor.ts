@@ -7,18 +7,20 @@
 // renderer), EXCEPT spawn X/Y, whose marker is drawn renderer-side from this
 // draft (move the glyph, no IPC). See WorldMapPanel.tsx + scripts/world-map.ts.
 
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import type { WorldMapEntrance, WorldMapMidwayEntrance, WorldMapModel } from '../../../preload/api'
 import { useOverlayDocument, type DocHistory } from './useOverlayDocument'
 import { hex0x } from '../lib/hex'
+import { setWorldMapCatalogDraft } from '../data/levels'
 
-/** Last (highest-index) entrance record whose level-data id matches — mirrors the
- *  extract-time "last write wins" that produced `LevelData.spawn`, so the marker
- *  the canvas shows and the record this edits are the same one. -1 when the level
- *  has no world-map entrance (sub-rooms). */
+/** Default wired entrance for callers without an explicit record identity.
+ * Canvas markers use their individual entrance indexes for shared rooms. */
 function spawnRecordIndex(m: WorldMapModel, levelDataId: number): number {
   let idx = -1
-  for (const e of m.entrances) if (e.levelDataId === levelDataId) idx = e.index
+  const active = new Set(Object.values(m.translevelToRecordIndex))
+  for (const e of m.entrances) {
+    if (active.has(e.index) && e.levelDataId === levelDataId) idx = e.index
+  }
   return idx
 }
 
@@ -129,6 +131,10 @@ export function useWorldMapEditor(
     },
     [doc.draft]
   )
+
+  useEffect(() => {
+    setWorldMapCatalogDraft(doc.draft)
+  }, [doc.draft])
 
   const previewSpawn = useCallback(
     (levelDataId: number, x: number, y: number) => {

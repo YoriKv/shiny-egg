@@ -66,6 +66,7 @@ import { PatchesBody } from './panels/PatchesBody'
 import { AudioBody } from './panels/AudioBody'
 import { ValidationPanel } from './panels/ValidationPanel'
 import { useSubLevelBFS } from './hooks/useSubLevelBFS'
+import { worldMapSpawns } from './lib/world-map-spawns'
 import { useFloatingWindows, type WindowDef } from './hooks/useFloatingWindows'
 import { useLevelTileUsage } from './hooks/useLevelTileUsage'
 import { influenceBlockIds, useSelectedObjectInfluence } from './hooks/useSelectedObjectInfluence'
@@ -73,7 +74,7 @@ import { useUnifiedHistory } from './hooks/useUnifiedHistory'
 import { useEmulatorActions } from './hooks/useEmulatorActions'
 import { useTransientMessage } from './hooks/useTransientMessage'
 import { useLevelNavigation } from './hooks/useLevelNavigation'
-import { getAllLevels, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
+import { getAllLevels, getLevelByTranslevel, refreshLevelsCatalog, useLevelsCatalog } from './data/levels'
 import { persistedState } from './lib/persisted-state'
 import { ColorAlphaButton } from './toolbar/ColorAlphaButton'
 import { LiveColorInput } from './LiveColorInput'
@@ -326,11 +327,11 @@ export default function App(): JSX.Element {
   // last main-dropdown pick — anchors the BFS that discovers sub-rooms.
   const [selectedLevelRecordId, setSelectedLevelRecordId] = useState<number | null>(null)
   const [rootLevelRecordId, setRootLevelRecordId] = useState<number | null>(null)
+  const [rootTranslevelId, setRootTranslevelId] = useState<number | null>(null)
   // Bumped after a successful level save / ROM import so the warp-graph walk
   // re-reads disk (cross-level incoming markers + the Exits panel refresh).
   const [warpGraphRefresh, setWarpGraphRefresh] = useState(0)
-  const { subLevels, loading: subLevelsLoading, incomingByLevel, edges: warpEdges } =
-    useSubLevelBFS(rootLevelRecordId, warpGraphRefresh)
+  const refreshWarpGraph = useCallback(() => setWarpGraphRefresh((n) => n + 1), [])
 
   // Canvas selection — an ARRAY so a multi-select (objects + sprites) is just a
   // length > 1 selection. Single-entity behaviours (move/resize/arrow-nudge,
@@ -378,32 +379,10 @@ export default function App(): JSX.Element {
   // dirty + dispatch `saved`. Canvas reads `level` and `dispatchLevel`
   // through props.
   const [levelState, dispatchLevel] = useReducer(levelReducer, INITIAL_LEVEL_STATE)
-  // Live overlay (task: exit↔entrance marker sync): the loaded level's OWN warp
-  // exits replace its on-disk contributions in the incoming map, so placing an
-  // exit or editing destX/destY/destLevel moves/creates/removes the matching
-  // entrance marker in the same commit — no stale "incoming entrance" visuals.
-  const liveIncomingByLevel = useMemo(() => {
-    const lvl = levelState.level
-    if (!lvl || lvl.empty || lvl.special) return incomingByLevel
-    const out = new Map<number, IncomingExit[]>()
-    for (const [dest, list] of incomingByLevel) {
-      const kept = list.filter((i) => i.sourceLevelRecordId !== lvl.recordId)
-      if (kept.length > 0) out.set(dest, kept)
-    }
-    for (const e of lvl.exits) {
-      if (e.variant !== 'warp') continue
-      const list = out.get(e.destLevelRecordId) ?? []
-      list.push({
-        sourceLevelRecordId: lvl.recordId,
-        sourceScreenIndex: e.screenIndex,
-        destX: e.destX,
-        destY: e.destY,
-        entranceType: e.entranceType
-      })
-      out.set(e.destLevelRecordId, list)
-    }
-    return out
-  }, [incomingByLevel, levelState.level])
+  const { subLevels, loading: subLevelsLoading, incomingByLevel, edges: warpEdges,
+    allEdges: allWarpEdges, recordSavedLevel } =
+    useSubLevelBFS(rootLevelRecordId, selectedLevelRecordId, levelState.level,
+      `${project?.id ?? ''}#${projectRev}`, warpGraphRefresh)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState<boolean>(false)
   // Shared synchronous save/build gate: Save (Ctrl+S) and the emulator chains
@@ -754,6 +733,7 @@ export default function App(): JSX.Element {
         levelState.level
       )
       if (result.ok) {
+        recordSavedLevel(levelState.level)
         dispatchLevel({ type: 'saved' })
         setNeedsBuild(true)
         // Saved exits are now on disk — re-walk the warp graph so OTHER levels'
@@ -767,7 +747,7 @@ export default function App(): JSX.Element {
       setSaveError((err as Error).message)
       return false
     }
-  }, [levelState.level, setNeedsBuild])
+  }, [levelState.level, setNeedsBuild, recordSavedLevel])
 
   // Save every dirty document (level + string tables) — the toolbar Save button
   // and the Ctrl+S shortcut. Each document's save marks the build dirty as needed.
@@ -805,12 +785,13 @@ export default function App(): JSX.Element {
   } = useUnifiedHistory({
       commits: levelState.commits,
       selectedLevelRecordId,
-      rootLevelRecordId,
-      incomingByLevel: liveIncomingByLevel,
+      projectScope: `${project?.id ?? ''}#${projectRev}`,
+      incomingByLevel,
       dispatchLevel,
       appendLog,
       setNeedsBuild,
-      setSelection
+      setSelection,
+      onCrossLevelSaved: refreshWarpGraph
     })
 
   // Incoming-marker drag: when the marker's SOURCE is the level being edited
@@ -872,12 +853,14 @@ export default function App(): JSX.Element {
       }
       const data = await window.shinyEgg.editor.loadResource({ kind: 'level', recordId: lvl.recordId })
       dispatchLevel({ type: 'load', data })
+      recordSavedLevel(data)
       setSelection([])
+      refreshWarpGraph()
       if (r.removed) setNeedsBuild(true)
     } catch (err) {
       appendLog(`Reset level 0x${lvl.recordId.toString(16)}: failed — ${(err as Error).message}`)
     }
-  }, [levelState.level, appendLog, setNeedsBuild])
+  }, [levelState.level, appendLog, setNeedsBuild, refreshWarpGraph, recordSavedLevel])
 
   // After a ROM import wrote overlays: a rebuild is needed; refresh the catalog so
   // imported level names show in the dropdown (now overlay-aware), and reload the
@@ -961,6 +944,9 @@ export default function App(): JSX.Element {
     dirty,
     saveCurrent,
     selectedLevelRecordId,
+    rootLevelRecordId,
+    rootTranslevelId,
+    setRootTranslevelId,
     setSelectedLevelRecordId,
     setRootLevelRecordId
   })
@@ -1128,26 +1114,31 @@ export default function App(): JSX.Element {
   // re-entry record) and focus the camera at the cell. Reuses the finder-jump
   // primitive (anchors the owning translevel, loads, focuses).
   const onWorldMapJump = useCallback(
-    (recordId: number, x: number, y: number) => jumpToInstance({ levelRecordId: recordId, x, y }),
+    (recordId: number, x: number, y: number, translevelId?: number) =>
+      jumpToInstance({ levelRecordId: recordId, x, y }, undefined, translevelId),
     [jumpToInstance]
   )
-  // Live spawn cell for the loaded level from the entrance-table draft — drives
-  // the canvas marker override + the Properties spawn fields (so a spawn edit
-  // moves the marker live). Null when the level has no world-map entrance.
-  // Memoised on the draft + level so its object identity is stable across
-  // unrelated renders (spawnFor builds a fresh object) — else the canvas would
-  // redraw every render.
+  // Every wired world-map entrance in this room has its own marker and edit
+  // identity. The selected marker alone supplies the Properties fields.
   const worldMapModel = worldMapEditor.model
-  const worldMapSpawn = useMemo(
-    () => (selectedLevelRecordId !== null ? worldMapEditor.spawnFor(selectedLevelRecordId) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- spawnFor is keyed on worldMapModel
+  const worldMapSpawnMarkers = useMemo(
+    () => selectedLevelRecordId !== null ? worldMapSpawns(worldMapModel, selectedLevelRecordId) : [],
     [worldMapModel, selectedLevelRecordId]
   )
+  const worldMapSpawn = primarySelection?.kind === 'spawn'
+    ? worldMapSpawnMarkers.find((s) => s.entranceIndex === primarySelection.spawn.entranceIndex) ?? null
+    : null
+  const worldMapSpawnLabel = worldMapSpawn && worldMapModel ?
+    Object.entries(worldMapModel.translevelToRecordIndex)
+      .filter(([, index]) => index === worldMapSpawn.entranceIndex)
+      .map(([key]) => getLevelByTranslevel(parseInt(key, 16)))
+      .filter((entry) => entry !== undefined)
+      .map((entry) => `${entry.slot} ${entry.name}`).join(', ') : undefined
   const onSpawnCommit = useCallback(
-    (x: number, y: number) => {
-      if (selectedLevelRecordId !== null) worldMapEditor.commitSpawn(selectedLevelRecordId, x, y)
+    (x: number, y: number, entranceIndex = worldMapSpawn?.entranceIndex) => {
+      if (entranceIndex !== undefined) worldMapEditor.setEntranceField(entranceIndex, { spawnX: x, spawnY: y })
     },
-    [worldMapEditor, selectedLevelRecordId]
+    [worldMapEditor, worldMapSpawn?.entranceIndex]
   )
 
   // Closing the Palette / Strings window prompts to save or discard that editor's
@@ -1296,6 +1287,7 @@ export default function App(): JSX.Element {
     blockers,
     selectedLevelRecordId,
     rootLevelRecordId,
+    rootTranslevelId,
     testSpawn,
     testInventory,
     appendLog,
@@ -1306,7 +1298,13 @@ export default function App(): JSX.Element {
   // Subscribe App to catalog mutations so a post-extract refresh propagates
   // re-renders down to every getLevel()-reading child (Canvas, SubLevelMenu,
   // PropertiesPanel, etc.) without each having to subscribe separately.
-  useLevelsCatalog()
+  const levelsCatalog = useLevelsCatalog()
+  // A stage identity survives entrance remaps and rooms shared by other stages.
+  useEffect(() => {
+    if (rootTranslevelId === null) return
+    const recordId = getLevelByTranslevel(rootTranslevelId)?.recordId
+    if (recordId !== undefined && recordId !== null) setRootLevelRecordId(recordId)
+  }, [levelsCatalog, rootTranslevelId])
 
   // One-shot: try to pull the cart-derived catalog at boot. Silent no-op if
   // no extraction has happened yet — the catalog stays empty until extract.
@@ -1514,7 +1512,7 @@ export default function App(): JSX.Element {
         />
 
         <div className="se-toolbar__levels">
-          <LevelMenu selectedId={rootLevelRecordId} onSelect={selectRootLevel} />
+          <LevelMenu selectedId={rootLevelRecordId} selectedTranslevelId={rootTranslevelId} onSelect={selectRootLevel} />
           <SubLevelMenu
             rootLevelRecordId={rootLevelRecordId}
             currentLevelRecordId={selectedLevelRecordId}
@@ -1812,7 +1810,7 @@ export default function App(): JSX.Element {
           }
           onSetTestSpawn={onSetTestSpawn}
           onClearTestSpawn={onClearTestSpawn}
-          spawnOverride={worldMapSpawn}
+          spawnOverride={worldMapSpawnMarkers}
           onSpawnCommit={onSpawnCommit}
           paletteOverride={paletteEditor.draft}
           gradientOverride={gradientOverride}
@@ -1886,6 +1884,7 @@ export default function App(): JSX.Element {
                   yoshi={yoshiColorsEditor}
                   paths={worldMapPathsEditor}
                   paletteDraft={paletteEditor.draftMap}
+                  warpEdges={allWarpEdges}
                   onJump={onWorldMapJump}
                 />
               ) : w.kind === 'picker' ? (
@@ -1919,6 +1918,7 @@ export default function App(): JSX.Element {
                   selection={selection}
                   subLevels={subLevels}
                   edges={warpEdges}
+                  incoming={incoming}
                   loading={subLevelsLoading}
                   onSelectExit={(uid) => {
                     setSelection([{ kind: 'exit', uid }])
@@ -1983,9 +1983,12 @@ export default function App(): JSX.Element {
                   level={levelState.level}
                   currentLevelRecordId={selectedLevelRecordId}
                   rootLevelRecordId={rootLevelRecordId}
+                  rootTranslevelId={rootTranslevelId}
                   selectedObjectInfluence={selectedObjectInfluence}
                   dispatchLevel={dispatchLevel}
                   worldMapSpawn={worldMapSpawn}
+                  worldMapSpawnLabel={worldMapSpawnLabel}
+                  incoming={incoming}
                   onSpawnCommit={onSpawnCommit}
                   onIncomingEntranceCommit={onSetIncomingEntranceLive}
                 />

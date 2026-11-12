@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import type { RefObject } from 'react'
 import type { TestInventory } from '../../../preload/api'
 import { gates, type Blocker } from '../lib/level-blockers'
-import { getAllLevels, getLevel } from '../data/levels'
+import { getAllLevels, getLevel, getLevelByTranslevel } from '../data/levels'
 import { findWarpChain } from '../lib/warp-graph'
 import { hex } from '../lib/hex'
 
@@ -32,6 +32,7 @@ export interface EmulatorActionsParams {
   blockers: Blocker[]
   selectedLevelRecordId: number | null
   rootLevelRecordId: number | null
+  rootTranslevelId: number | null
   testSpawn: { levelRecordId: number; x: number; y: number } | null
   /** Items to seed into Yoshi's egg trail on Test Level boot (toolbar dropdown). */
   testInventory: TestInventory
@@ -69,6 +70,7 @@ export function useEmulatorActions({
   blockers,
   selectedLevelRecordId,
   rootLevelRecordId,
+  rootTranslevelId,
   testSpawn,
   testInventory,
   appendLog,
@@ -159,7 +161,8 @@ export function useEmulatorActions({
       //      warp to the record id. The cart's warp re-entry (CODE_load_level_data_pointers)
       //      indexes the level-data pointer table by id directly, so any backed
       //      record loads — including ones unreachable from the world map.
-      const targetEntry = getLevel(selectedLevelRecordId)
+      const targetEntry = selectedLevelRecordId === rootLevelRecordId && rootTranslevelId !== null
+        ? getLevelByTranslevel(rootTranslevelId) : getLevel(selectedLevelRecordId)
       let bootTranslevelId: number
       let warps:
         | Array<{ destLevelRecordId: number; destX: number; destY: number; entranceType: number }>
@@ -187,10 +190,10 @@ export function useEmulatorActions({
           const e = getAllLevels().find((l) => l.translevelId === tlId)
           return e != null && e.world !== 'Intro'
         }
-        const rootTranslevelId =
-          rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId : null
+        const rootSlot =
+          rootTranslevelId ?? (rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId : null)
         const parentTranslevelId =
-          (isBootableParent(rootTranslevelId) ? rootTranslevelId : null) ??
+          (isBootableParent(rootSlot) ? rootSlot : null) ??
           getAllLevels().find((l) => l.translevelId != null && l.world !== 'Intro')
             ?.translevelId ??
           null
@@ -268,6 +271,7 @@ export function useEmulatorActions({
     [
       selectedLevelRecordId,
       rootLevelRecordId,
+      rootTranslevelId,
       saveAndBuildIfNeeded,
       blockers,
       testSpawn,

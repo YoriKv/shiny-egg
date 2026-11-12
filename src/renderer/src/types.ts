@@ -144,12 +144,19 @@ export interface IncomingExit {
 // stays valid as the stream reindexes under add/delete and across undo/redo.
 // Resolve uid → live entity against the current `LevelData`. Incoming markers
 // and the spawn flag aren't stream entities, so they carry their data inline.
+export interface WorldMapSpawn {
+  x: number
+  y: number
+  /** Stable identity when several world-map entrances share a room. */
+  entranceIndex?: number
+}
+
 export type Selection =
   | { kind: 'object'; uid: number }
   | { kind: 'sprite'; uid: number }
   | { kind: 'exit'; uid: number }
   | { kind: 'incoming'; incoming: IncomingExit }
-  | { kind: 'spawn'; spawn: { x: number; y: number } }
+  | { kind: 'spawn'; spawn: WorldMapSpawn }
 
 /**
  * An entity armed in the Add-picker for click-to-place on the canvas. Objects

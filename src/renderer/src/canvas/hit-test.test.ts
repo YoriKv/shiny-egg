@@ -103,6 +103,19 @@ describe('spawn hit-test override', () => {
     expect(spawnHit(hitTestAll(level, view, layers, noIncoming, rect, 88, 104, bounds, footprints, null))).toBeUndefined()
   })
 
+  test('shared-room spawns remain separately selectable, even when overlapping', () => {
+    const spawns = [
+      { x: 10, y: 10, entranceIndex: 0 },
+      { x: 10, y: 10, entranceIndex: 1 }
+    ]
+    const hits = hitTestAll(level, view, layers, noIncoming, rect, 168, 184, bounds, footprints, spawns)
+      .filter((h) => h.kind === 'spawn')
+    expect(hits).toEqual(spawns.map((spawn) => ({ kind: 'spawn', spawn })))
+    expect(unionSelections([], hits)).toHaveLength(2)
+    expect(hitTestSpawn(level, view, layers, rect, 168, 184, spawns)).toBe(true)
+    expect(hitTestSpawn(level, view, layers, rect, 88, 104, [])).toBe(false)
+  })
+
   test('hitTestSpawn (hover) honours the override', () => {
     expect(hitTestSpawn(level, view, layers, rect, 168, 184, { x: 10, y: 10 })).toBe(true)
     expect(hitTestSpawn(level, view, layers, rect, 88, 104, { x: 10, y: 10 })).toBe(false)

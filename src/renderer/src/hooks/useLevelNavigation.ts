@@ -3,7 +3,7 @@ import type { Dispatch, RefObject, SetStateAction } from 'react'
 import type { FindInstanceKind } from '../../../preload/api'
 import { INITIAL_VIEW, type View } from '../canvas/view'
 import { useNavHistory, type NavEntry } from './useNavHistory'
-import { formatLevelId, getAllLevels, getLevel, isRemovedRecord } from '../data/levels'
+import { formatLevelId, getAllLevels, getLevel, getLevelByTranslevel, isRemovedRecord } from '../data/levels'
 import { findOwningTranslevel } from '../lib/warp-graph'
 
 /** Refusal message when a navigation targets a removed record (shared by the
@@ -39,6 +39,9 @@ export interface LevelNavigationParams {
   /** The currently loaded record — lets `focusCell` pan in place (camera-only,
    *  no nav record / discard prompt) instead of a full jump. */
   selectedLevelRecordId: number | null
+  rootLevelRecordId: number | null
+  rootTranslevelId: number | null
+  setRootTranslevelId: Dispatch<SetStateAction<number | null>>
   setSelectedLevelRecordId: Dispatch<SetStateAction<number | null>>
   setRootLevelRecordId: Dispatch<SetStateAction<number | null>>
 }
@@ -46,16 +49,17 @@ export interface LevelNavigationParams {
 export interface LevelNavigationApi {
   /** Forward-navigation entry point: record history + set the level ids. Returns
    *  false (and navigates nowhere) if `selected` is a removed record. */
-  navigateTo: (root: number | null, selected: number | null) => boolean
+  navigateTo: (root: number | null, selected: number | null, translevelId?: number | null) => boolean
   /** Run `action` now, or hold it behind the discard modal when the level is dirty. */
   requestNav: (action: () => void) => void
   /** Main-dropdown / "Go to room": anchor the owning translevel + load the record. */
-  selectRootLevel: (id: number) => void
+  selectRootLevel: (id: number, translevelId?: number) => void
   /** Object-finder jump: anchor owner, load level, focus the cell, and (when
    *  `select` is given) select the matching entity once it loads. */
   jumpToInstance: (
     inst: { levelRecordId: number; x: number; y: number },
-    select?: { kind: FindInstanceKind; id: number }
+    select?: { kind: FindInstanceKind; id: number },
+    translevelId?: number
   ) => void
   onBack: () => void
   onForward: () => void
@@ -98,6 +102,9 @@ export function useLevelNavigation({
   dirty,
   saveCurrent,
   selectedLevelRecordId,
+  rootLevelRecordId,
+  rootTranslevelId,
+  setRootTranslevelId,
   setSelectedLevelRecordId,
   setRootLevelRecordId
 }: LevelNavigationParams): LevelNavigationApi {
@@ -138,11 +145,12 @@ export function useLevelNavigation({
     }
     setNavNotice(null)
     setRootLevelRecordId(e.rootLevelRecordId)
+    setRootTranslevelId(e.rootTranslevelId)
     setSelectedLevelRecordId(e.selectedLevelRecordId)
     if (e.selectedLevelRecordId != null) {
       setCameraReq({ levelRecordId: e.selectedLevelRecordId, view: e.view, nonce: ++cameraNonceRef.current })
     }
-  }, [setRootLevelRecordId, setSelectedLevelRecordId])
+  }, [setRootLevelRecordId, setRootTranslevelId, setSelectedLevelRecordId])
   const nav = useNavHistory({ readCamera, applyEntry: applyNavEntry })
   // Run `action` now, or hold it behind the discard-changes modal when the level
   // has unsaved edits.
@@ -194,18 +202,21 @@ export function useLevelNavigation({
   // double-clicks, the warp-network panel, and Banks jumps. (Back/forward and
   // project-switch clears don't route through here, by design.)
   const navigateTo = useCallback(
-    (root: number | null, selected: number | null): boolean => {
+    (root: number | null, selected: number | null, translevelId?: number | null): boolean => {
       if (selected != null && isRemovedRecord(selected)) {
         setNavNotice(removedRoomNotice(selected))
         return false
       }
       setNavNotice(null)
-      nav.record(root, selected)
+      const slot = translevelId !== undefined ? translevelId : root === rootLevelRecordId
+        ? rootTranslevelId : root === null ? null : getLevel(root)?.translevelId ?? null
+      nav.record(root, selected, slot)
       setRootLevelRecordId(root)
+      setRootTranslevelId(slot)
       setSelectedLevelRecordId(selected)
       return true
     },
-    [nav, setRootLevelRecordId, setSelectedLevelRecordId]
+    [nav, rootLevelRecordId, rootTranslevelId, setRootLevelRecordId, setRootTranslevelId, setSelectedLevelRecordId]
   )
 
   // Resolve the discovery anchor (root) for a record the user opened directly.
@@ -220,7 +231,7 @@ export function useLevelNavigation({
     const roots = getAllLevels()
       .map((l) => (l.translevelId != null ? l.recordId : null))
       .filter((r): r is number => r != null)
-    const owner = await findOwningTranslevel(id, roots, { shouldExpand: (x) => !getLevel(x) })
+    const owner = await findOwningTranslevel(id, roots)
     return owner ?? id
   }, [])
 
@@ -233,10 +244,10 @@ export function useLevelNavigation({
   // sub-rooms reverse-resolve their parent first. Distinct from sub-level
   // navigation (which only moves selectedLevelRecordId).
   const selectRootLevel = useCallback(
-    (id: number) => {
+    (id: number, translevelId?: number) => {
       requestNav(() => {
         if (getLevel(id)?.translevelId != null) {
-          navigateTo(id, id)
+          navigateTo(id, id, translevelId ?? getLevel(id)?.translevelId)
           return
         }
         setResolvingRoot(true)
@@ -254,13 +265,14 @@ export function useLevelNavigation({
   const jumpToInstance = useCallback(
     (
       inst: { levelRecordId: number; x: number; y: number; zoom?: number },
-      select?: { kind: FindInstanceKind; id: number }
+      select?: { kind: FindInstanceKind; id: number },
+      translevelId?: number
     ) => {
       requestNav(() => {
-        const focus = (root: number): void => {
+        const focus = (root: number, slot?: number): void => {
           // Refused (removed record) ⇒ don't issue a focus for a level that
           // won't load (it would strand a pending-focus in Canvas).
-          if (!navigateTo(root, inst.levelRecordId)) return
+          if (!navigateTo(root, inst.levelRecordId, slot)) return
           setFocusReq({
             levelRecordId: inst.levelRecordId,
             x: inst.x,
@@ -273,13 +285,17 @@ export function useLevelNavigation({
             nonce: ++focusNonceRef.current
           })
         }
+        if (translevelId !== undefined) {
+          focus(getLevelByTranslevel(translevelId)?.recordId ?? inst.levelRecordId, translevelId)
+          return
+        }
         if (getLevel(inst.levelRecordId)?.translevelId != null) {
           focus(inst.levelRecordId)
           return
         }
         setResolvingRoot(true)
         void resolveAnchorRoot(inst.levelRecordId)
-          .then(focus)
+          .then((root) => focus(root))
           .finally(() => setResolvingRoot(false))
       })
     },
@@ -315,9 +331,10 @@ export function useLevelNavigation({
   // level", and clear the nav trail (it belonged to the old project).
   const clearLevelSelection = useCallback(() => {
     setRootLevelRecordId(null)
+    setRootTranslevelId(null)
     setSelectedLevelRecordId(null)
     nav.clear()
-  }, [nav, setRootLevelRecordId, setSelectedLevelRecordId])
+  }, [nav, setRootLevelRecordId, setRootTranslevelId, setSelectedLevelRecordId])
 
   /** Pan/zoom to a cell. Same level ⇒ camera-only (no history entry, no
    *  unsaved-changes prompt — Canvas pans in place via focusReq); another
@@ -330,9 +347,12 @@ export function useLevelNavigation({
         setFocusReq({ levelRecordId, x, y, zoom, nonce: ++focusNonceRef.current })
         return
       }
-      jumpToInstance({ levelRecordId, x, y, zoom })
+      requestNav(() => {
+        if (!navigateTo(rootLevelRecordId ?? levelRecordId, levelRecordId)) return
+        setFocusReq({ levelRecordId, x, y, zoom, nonce: ++focusNonceRef.current })
+      })
     },
-    [jumpToInstance]
+    [requestNav, navigateTo, rootLevelRecordId]
   )
 
   return {

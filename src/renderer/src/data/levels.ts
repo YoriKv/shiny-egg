@@ -17,11 +17,14 @@ import { useSyncExternalStore } from 'react'
 import type {
   LevelCatalogEntry,
   LevelCatalogGroup,
-  LevelsCatalog
+  LevelsCatalog,
+  WorldMapModel
 } from '../../../preload/api'
 import { hex0x } from '../lib/hex'
 
 let current: LevelsCatalog = { groups: [] }
+let savedCatalog = current
+let worldMapDraft: WorldMapModel | null = null
 let byId = indexById(current)
 let byTranslevel = indexByTranslevel(current)
 const listeners = new Set<() => void>()
@@ -59,7 +62,15 @@ function indexById(cat: LevelsCatalog): Map<number, LevelCatalogEntry> {
   // Only real-data entries are keyed by id; null-id slots (bonus / mini-game /
   // intro) are excluded so they can't collide with or shadow a real level.
   for (const group of cat.groups) {
-    for (const lvl of group.levels) if (lvl.recordId !== null) out.set(lvl.recordId, lvl)
+    for (const lvl of group.levels) {
+      if (lvl.recordId === null) continue
+      const previous = out.get(lvl.recordId)
+      // A remapped world-map stage can also occur in the baked unused-room
+      // group. Its stage name takes precedence over the generic room entry.
+      if (!previous || (previous.translevelId === undefined && lvl.translevelId !== undefined)) {
+        out.set(lvl.recordId, lvl)
+      }
+    }
   }
   return out
 }
@@ -145,9 +156,33 @@ function notify(): void {
 
 /** Replace the active catalog and notify subscribers. */
 export function setCatalog(next: LevelsCatalog): void {
-  current = next
-  byId = indexById(next)
-  byTranslevel = indexByTranslevel(next)
+  savedCatalog = next
+  publishCatalog()
+}
+
+/** Project the entrance draft onto the saved catalog, including undo/discard. */
+export function setWorldMapCatalogDraft(model: WorldMapModel | null): void {
+  worldMapDraft = model
+  publishCatalog()
+}
+
+function publishCatalog(): void {
+  const entrances = new Map(worldMapDraft?.entrances.map((e) => [e.index, e]))
+  current = {
+    ...savedCatalog,
+    groups: savedCatalog.groups.map((g) => ({
+      ...g,
+      levels: g.levels.map((l) => {
+        if (!worldMapDraft || l.translevelId === undefined || l.recordId === null) return l
+        const key = hex0x(l.translevelId, 2)
+        const index = worldMapDraft.translevelToRecordIndex[key]
+        const entrance = index === undefined ? undefined : entrances.get(index)
+        return { ...l, recordId: entrance?.levelDataId ?? null }
+      })
+    }))
+  }
+  byId = indexById(current)
+  byTranslevel = indexByTranslevel(current)
   notify()
 }
 

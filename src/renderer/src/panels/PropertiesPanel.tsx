@@ -62,11 +62,14 @@ export interface PropertiesBodyProps {
    *  is the play context's `CurrentLevelFromMap` — needed by sprite providers like
    *  the message box, whose behaviour keys off the translevel, not the sub-room. */
   rootLevelRecordId: number | null
+  rootTranslevelId: number | null
   /** Dispatch field edits for the selected entity. */
   dispatchLevel: Dispatch<LevelAction>
   /** Live world-map spawn cell for the loaded level (entrance-table draft), shown
    *  + edited when a spawn is selected. Null when the level has no entrance. */
   worldMapSpawn?: { x: number; y: number } | null
+  worldMapSpawnLabel?: string
+  incoming?: IncomingExit[]
   /** Commit an absolute spawn cell to the entrance-table document. Absent → the
    *  spawn shows read-only. */
   onSpawnCommit?: (x: number, y: number) => void
@@ -80,9 +83,12 @@ export function PropertiesBody({
   level,
   currentLevelRecordId,
   rootLevelRecordId,
+  rootTranslevelId,
   selectedObjectInfluence,
   dispatchLevel,
   worldMapSpawn,
+  worldMapSpawnLabel,
+  incoming,
   onSpawnCommit,
   onIncomingEntranceCommit
 }: PropertiesBodyProps): JSX.Element {
@@ -115,8 +121,8 @@ export function PropertiesBody({
       // The play context's translevel = the root (world-map) level's slot;
       // CurrentLevelFromMap persists across sub-room warps, so a sub-room's own
       // (missing) translevel is irrelevant.
-      const translevelId =
-        rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId ?? null : null
+      const translevelId = rootTranslevelId ??
+        (rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId ?? null : null)
       return spr ? (
         <SpriteProps
           spr={spr}
@@ -132,8 +138,16 @@ export function PropertiesBody({
       const exit = level?.exits.find((e) => e.uid === sel.uid)
       return exit ? <ExitProps exit={exit} dispatchLevel={dispatchLevel} /> : nothing
     }
-    case 'incoming': return <IncomingProps incoming={sel.incoming} onEntranceCommit={onIncomingEntranceCommit} />
-    case 'spawn':    return <SpawnProps spawn={worldMapSpawn ?? sel.spawn} onCommit={onSpawnCommit} />
+    case 'incoming': {
+      const marker = incoming === undefined ? sel.incoming : incoming.find((i) =>
+        i.sourceLevelRecordId === sel.incoming.sourceLevelRecordId &&
+        i.sourceScreenIndex === sel.incoming.sourceScreenIndex)
+      return marker ? <IncomingProps incoming={marker} onEntranceCommit={onIncomingEntranceCommit} /> : nothing
+    }
+    case 'spawn': {
+      const spawn = worldMapSpawn === undefined ? sel.spawn : worldMapSpawn
+      return spawn ? <SpawnProps spawn={spawn} label={worldMapSpawnLabel} onCommit={onSpawnCommit} /> : nothing
+    }
   }
 }
 
@@ -432,11 +446,13 @@ function IncomingProps({
 
 function SpawnProps({
   spawn,
+  label,
   onCommit
 }: {
   /** Effective spawn cell — the world-map draft when editing (so live edits show
    *  here), else the selection's base position. */
   spawn: { x: number; y: number }
+  label?: string
   /** Commit an absolute spawn cell to the entrance-table document. Absent when
    *  the document isn't available (no project / not loaded) → read-only. */
   onCommit?: (x: number, y: number) => void
@@ -445,6 +461,7 @@ function SpawnProps({
     <dl className="se-props__list">
       <dt>Kind</dt>
       <dd><span className="se-props__id-kind">World-map spawn</span></dd>
+      {label && <><dt>Stage</dt><dd>{label}</dd></>}
       {onCommit ? (
         <>
           <FieldRow

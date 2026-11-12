@@ -1,98 +1,66 @@
-// BFS over warp exits starting from a root translevel. Streams incremental
-// results so the UI can render partial lists as discovery progresses.
-//
-// A "sub-room" is any reachable level that is NOT itself a catalog entry in
-// the main level dropdown. Catalog entries (other translevels) are pruned
-// from BOTH the result list AND BFS expansion — they're reachable via the
-// main menu and shouldn't get treated as sub-rooms of the current translevel.
-//
-// Side product: `incomingByLevel` is the reverse adjacency — "which sibling
-// rooms warp INTO this destination". Built alongside subLevels so the
-// canvas can show entry markers for one-way connections.
-
-import { useEffect, useState } from 'react'
-import { getLevel } from '../data/levels'
-import { walkWarpGraph, type WarpEdge } from '../lib/warp-graph'
+// A project-wide warp index makes incoming markers independent of the stage
+// used to open a room. Room lists follow actual outgoing links.
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { LevelData } from '../../../preload/api'
+import { useLevelsCatalog, useRemovedRecords } from '../data/levels'
+import { loadWarpEdges, roomGraph, withLiveWarpEdges, type WarpEdge } from '../lib/warp-graph'
 import type { IncomingExit } from '../types'
 
 export interface SubLevelBFS {
-  /** Discovered sub-room IDs in BFS order. Root included at index 0. */
   subLevels: number[]
-  /** True while BFS is still in flight. */
   loading: boolean
-  /** Reverse map keyed by destination level ID. */
   incomingByLevel: Map<number, IncomingExit[]>
-  /** Every warp edge seen during the walk, in BFS order — the forward view the
-   *  Exits panel's network section renders (source → dest per room). */
   edges: WarpEdge[]
+  allEdges: WarpEdge[]
+  recordSavedLevel: (level: LevelData) => void
 }
 
-const EMPTY: SubLevelBFS = {
-  subLevels: [],
-  loading: false,
-  incomingByLevel: new Map(),
-  edges: []
-}
-
-export function useSubLevelBFS(rootLevelRecordId: number | null, refreshToken = 0): SubLevelBFS {
-  const [subLevels, setSubLevels] = useState<number[]>([])
-  const [loading, setLoading] = useState<boolean>(false)
-  const [incomingByLevel, setIncomingByLevel] = useState<Map<number, IncomingExit[]>>(
-    () => new Map()
-  )
-  const [edges, setEdges] = useState<WarpEdge[]>([])
+export function useSubLevelBFS(
+  root: number | null,
+  selected: number | null,
+  liveLevel: LevelData | null,
+  scope: string,
+  refreshToken = 0
+): SubLevelBFS {
+  const catalog = useLevelsCatalog()
+  const removed = useRemovedRecords()
+  const count = catalog.recordCount ?? 0x100
+  const enabled = catalog.groups.length > 0
+  const [snapshot, setSnapshot] = useState<{ scope: string; edges: WarpEdge[] } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const recordSavedLevel = useCallback((level: LevelData) => {
+    setSnapshot((previous) => ({ scope, edges: withLiveWarpEdges(
+      previous?.scope === scope ? previous.edges : [], level.recordId, level.exits) }))
+  }, [scope])
 
   useEffect(() => {
-    if (rootLevelRecordId === null) {
-      setSubLevels([])
-      setIncomingByLevel(new Map())
-      setEdges([])
-      setLoading(false)
-      return
-    }
+    if (!enabled) return
     let cancelled = false
-    setSubLevels([rootLevelRecordId])
-    setIncomingByLevel(new Map())
-    setEdges([])
     setLoading(true)
-    const result: number[] = [rootLevelRecordId]
-    const incomingBuild = new Map<number, IncomingExit[]>()
-    const edgesBuild: WarpEdge[] = []
-    ;(async () => {
-      // Shared warp-graph walk (lib/warp-graph). `shouldExpand` prunes catalog
-      // destinations — they're full translevels, not sub-rooms, so we don't
-      // descend into their sub-graph either.
-      for await (const { edge, expanded } of walkWarpGraph(rootLevelRecordId, {
-        shouldExpand: (id) => !getLevel(id)
-      })) {
+    void (async () => {
+      const edges: WarpEdge[] = []
+      // Bound IPC concurrency. Include orphan/unused rooms for one-way links.
+      for (let start = 0; start < count; start += 8) {
         if (cancelled) return
-        // Record the incoming-reference for EVERY warp edge (independent of the
-        // catalog/visited gates that govern expansion) so one-way markers show.
-        const list = incomingBuild.get(edge.destLevelRecordId) ?? []
-        list.push({
-          sourceLevelRecordId: edge.sourceLevelRecordId,
-          destX: edge.destX,
-          destY: edge.destY,
-          sourceScreenIndex: edge.sourceScreenIndex,
-          entranceType: edge.entranceType
-        })
-        incomingBuild.set(edge.destLevelRecordId, list)
-        edgesBuild.push(edge)
-        // A newly-seen, expandable (non-catalog) destination is a sub-room.
-        if (expanded) result.push(edge.destLevelRecordId)
-        setSubLevels([...result])
-        setIncomingByLevel(new Map(incomingBuild))
-        setEdges([...edgesBuild])
+        const batch = await Promise.all(
+          Array.from({ length: Math.min(8, count - start) }, (_, i) => start + i)
+            .map(async (id) => removed.has(id) ? [] : loadWarpEdges(id).catch(() => []))
+        )
+        edges.push(...batch.flat())
       }
-      if (!cancelled) setLoading(false)
+      if (cancelled) return
+      setSnapshot({ scope, edges })
+      setLoading(false)
     })()
-    return () => {
-      cancelled = true
-    }
-    // refreshToken: bumped after a level save / ROM import so the walk re-reads
-    // the now-changed disk state (cross-level incoming markers refresh).
-  }, [rootLevelRecordId, refreshToken])
+    return () => { cancelled = true }
+  }, [enabled, scope, count, removed, refreshToken])
 
-  if (rootLevelRecordId === null) return EMPTY
-  return { subLevels, loading, incomingByLevel, edges }
+  return useMemo(() => {
+    let edges = enabled && snapshot?.scope === scope ? snapshot.edges : []
+    if (liveLevel && !liveLevel.empty && !liveLevel.special && liveLevel.recordId === selected) {
+      edges = withLiveWarpEdges(edges, liveLevel.recordId, liveLevel.exits)
+    }
+    if (root === null) return { subLevels: [], edges: [], allEdges: edges, incomingByLevel: new Map(), loading, recordSavedLevel }
+    return { ...roomGraph(root, selected, edges), allEdges: edges, loading, recordSavedLevel }
+  }, [root, selected, liveLevel, snapshot, scope, loading, enabled, recordSavedLevel])
 }

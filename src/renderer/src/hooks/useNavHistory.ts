@@ -12,6 +12,7 @@ import type { View } from '../canvas/view'
 
 export interface NavEntry {
   rootLevelRecordId: number | null
+  rootTranslevelId: number | null
   selectedLevelRecordId: number | null
   /** Camera at the moment we last left this entry (snapshot-on-navigate-away). */
   view: View
@@ -22,7 +23,7 @@ export interface NavHistory {
    *  leaving, then push `{root, selected}` as a new entry (truncating any
    *  forward history). A repeat of the current location collapses to a camera
    *  update — no duplicate entry. */
-  record: (rootLevelRecordId: number | null, selectedLevelRecordId: number | null) => void
+  record: (rootLevelRecordId: number | null, selectedLevelRecordId: number | null, rootTranslevelId?: number | null) => void
   back: () => void
   forward: () => void
   canBack: boolean
@@ -54,18 +55,19 @@ export function useNavHistory({ readCamera, applyEntry }: UseNavHistoryOptions):
   }, [readCamera])
 
   const record = useCallback(
-    (rootLevelRecordId: number | null, selectedLevelRecordId: number | null) => {
+    (rootLevelRecordId: number | null, selectedLevelRecordId: number | null, rootTranslevelId: number | null = null) => {
       const list = entries.current
       const i = index.current
       const cur = i >= 0 ? list[i] : null
-      if (cur && cur.rootLevelRecordId === rootLevelRecordId && cur.selectedLevelRecordId === selectedLevelRecordId) {
+      if (cur && cur.rootLevelRecordId === rootLevelRecordId && cur.selectedLevelRecordId === selectedLevelRecordId &&
+        cur.rootTranslevelId === rootTranslevelId) {
         // Same location — just refresh its camera, don't push a duplicate.
         list[i] = { ...cur, view: readCamera() }
         return
       }
       snapshot()
       const next = list.slice(0, i + 1)
-      next.push({ rootLevelRecordId, selectedLevelRecordId, view: readCamera() })
+      next.push({ rootLevelRecordId, rootTranslevelId, selectedLevelRecordId, view: readCamera() })
       const overflow = next.length - MAX_ENTRIES
       entries.current = overflow > 0 ? next.slice(overflow) : next
       index.current = entries.current.length - 1

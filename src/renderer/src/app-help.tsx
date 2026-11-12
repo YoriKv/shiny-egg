@@ -66,14 +66,14 @@ export const ROOM_LIST_HELP = (
     <p>
       <b>Adding a room:</b> place a screen exit (Place panel &rarr; Exits) in
       any room of the level and point its <b>Destination Level</b> (Properties
-      panel) at the room you want. The walk re-reads saved data, so the new
-      room appears after you <b>Save</b>.
+      panel) at the room you want. The room list and Exits Map update as you
+      edit, including before you Save.
     </p>
     <p>
-      <b>What&rsquo;s excluded:</b> a destination that is itself a level in the
-      main Level dropdown is not listed (and its own rooms aren&rsquo;t
-      descended into) &mdash; it&rsquo;s a full level in its own right, not a
-      sub-room of this one.
+      <b>Shared rooms:</b> rooms can belong to several world-map stages. The
+      list follows every warp, including into another stage&rsquo;s entry room.
+      Incoming markers show all exits landing in the current room, including
+      one-way connections from rooms outside this list.
     </p>
     <p>
       <b>Removed rooms:</b> a room removed in Level Banks still shows here

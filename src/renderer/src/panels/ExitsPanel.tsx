@@ -9,12 +9,12 @@
 //    level selects it (Properties); on any other grid it jumps there.
 //  • Entrance cells: amber outline on the screen a warp lands in — the same
 //    amber as the canvas's incoming-entrance markers.
-//  • External destinations (warps that leave the cluster into another catalog
-//    level) render as compact label stubs, clickable to navigate.
+//  • Incoming sources outside the reachable rooms render as compact clickable
+//    stubs, keeping their entrances visible without expanding another stage.
 //
 // The LOADED level's outgoing edges come from its live (possibly unsaved)
 // `level.exits`, so a just-placed exit shows immediately; every other level's
-// edges come from the BFS walk (`useSubLevelBFS.edges`, on-disk state).
+// edges come from the project-wide index (`useSubLevelBFS.edges`).
 
 import type { JSX } from 'react'
 import type { LevelData, ScreenExit } from '../../../preload/api'
@@ -83,7 +83,7 @@ function layoutNodes(subLevels: number[], edges: WarpEdge[]): Map<number, Node> 
   }
   for (const id of subLevels) if (!depth.has(id)) depth.set(id, 0)
   // External stubs share the column after their (shallowest) source.
-  const stubIds = [...new Set(edges.map((e) => e.destLevelRecordId))].filter(
+  const stubIds = [...new Set(edges.flatMap((e) => [e.sourceLevelRecordId, e.destLevelRecordId]))].filter(
     (id) => !inCluster.has(id)
   )
 
@@ -140,6 +140,7 @@ export function ExitsBody({
   selection,
   subLevels,
   edges,
+  incoming,
   loading,
   onSelectExit,
   onSelectIncoming,
@@ -151,6 +152,7 @@ export function ExitsBody({
   subLevels: number[]
   /** Every warp edge of the cluster (BFS order, on-disk state). */
   edges: WarpEdge[]
+  incoming: IncomingExit[]
   loading: boolean
   onSelectExit: (uid: number) => void
   /** Select an incoming-entrance marker of the LOADED level (Properties opens). */
@@ -188,7 +190,12 @@ export function ExitsBody({
   const allEdges = [
     ...edges.filter((e) => e.sourceLevelRecordId !== level.recordId),
     ...liveEdges
-  ]
+  ].map((edge) => {
+    if (edge.destLevelRecordId !== level.recordId) return edge
+    const marker = incoming.find((i) => i.sourceLevelRecordId === edge.sourceLevelRecordId &&
+      i.sourceScreenIndex === edge.sourceScreenIndex)
+    return marker ? { ...edge, destX: marker.destX, destY: marker.destY, entranceType: marker.entranceType } : edge
+  })
 
   const nodes = layoutNodes(subLevels, allEdges)
   const width = Math.max(...[...nodes.values()].map((n) => n.x + GRID_W), 0) + PAD
