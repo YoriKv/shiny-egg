@@ -35,6 +35,8 @@ import { MAX_LEVEL_SPRITES, clampCell, clampGroupMove, clampObjectMove, clampObj
 import { formatLevelId, getLevel } from './data/levels'
 import { hex0x } from './lib/hex'
 import type { IncomingExit, LayerVisibility, PlacementItem, Selection, WorldMapSpawn } from './types'
+import { incomingIdentity } from '../../shared/room-network'
+import { getRoomMetadata, useRoomMetadata } from './data/room-metadata'
 import { useObjectInfluence } from './hooks/useObjectInfluence'
 import { usePlacementFootprint } from './hooks/usePlacementFootprint'
 import { useObjectCells } from './hooks/useObjectCells'
@@ -289,6 +291,7 @@ export function Canvas({
   // chosen 1×–4×.
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraSettings, setCameraSettings] = useState<CameraPreview>(() => CAMERA_SETTINGS_STORE.load())
+  const roomMetadata = useRoomMetadata()
   useEffect(() => {
     CAMERA_SETTINGS_STORE.save(cameraSettings)
   }, [cameraSettings])
@@ -1004,7 +1007,8 @@ export function Canvas({
     previewCell,
     cameraOn,
     cameraSettings,
-    renderOnly
+    renderOnly,
+    roomMetadata
   ])
 
   /**
@@ -1251,12 +1255,12 @@ export function Canvas({
           }
         }
       }
-      if (!placing && sel && sel.kind === 'incoming') {
+      if (!placing && sel && sel.kind === 'incoming' && sel.incoming.kind !== 'rotating-door') {
         // Drag the selected incoming marker — match it in the live array by its
         // (source level, source screen) identity so we grab it where it's drawn.
-        const key = `${sel.incoming.sourceLevelRecordId}:${sel.incoming.sourceScreenIndex}`
+        const key = incomingIdentity(sel.incoming)
         const inc = incomingRef.current.find(
-          (i) => `${i.sourceLevelRecordId}:${i.sourceScreenIndex}` === key
+          (i) => incomingIdentity(i) === key
         )
         const wrap = wrapRef.current
         if (inc && wrap) {
@@ -1681,7 +1685,7 @@ export function Canvas({
         const key = `${d.sourceLevelRecordId}:${d.sourceScreenIndex}`
         if (ov && ov.key === key && (ov.x !== d.baseX || ov.y !== d.baseY)) {
           const inc = incomingRef.current.find(
-            (i) => `${i.sourceLevelRecordId}:${i.sourceScreenIndex}` === key
+            (i) => incomingIdentity(i) === key
           )
           if (inc) onMoveIncomingRef.current(inc, ov.x, ov.y)
         }
@@ -1836,10 +1840,13 @@ export function Canvas({
             endDrag()
             return
           }
-          const incHit = hits.find(
+          const incomingHits = hits.filter(
             (h): h is { kind: 'incoming'; incoming: IncomingExit } =>
               h.kind === 'incoming'
           )
+          const selectedIncoming = selectionRef.current.find((s) => s.kind === 'incoming')
+          const incHit = (selectedIncoming?.kind === 'incoming' ? incomingHits.find((h) =>
+            incomingIdentity(h.incoming) === incomingIdentity(selectedIncoming.incoming)) : undefined) ?? incomingHits[0]
           if (incHit) {
             // Source exit lives at the screen-center of its sourceScreenIndex.
             // Convert to cell coords for focusViewFor (which adds the half-cell
@@ -2305,7 +2312,9 @@ function buildStatusLine(
   // Slot label: the catalog slot ("1-3") for a playable level; the record id
   // ("0x3D") for a warp-reached sub-room (not in the catalog, so getLevel →
   // undefined — which used to fall through to "no level selected").
-  const slot = levelInfo?.slot ?? formatLevelId(selectedLevelRecordId)
+  const name = getRoomMetadata(selectedLevelRecordId)?.name
+  const slot = name ? `${name} (${formatLevelId(selectedLevelRecordId)})` :
+    levelInfo?.slot ?? formatLevelId(selectedLevelRecordId)
   if (!level) return `loading ${slot}…`
   if (level.empty) return `${slot} · empty slot`
   if (level.special) return `${slot} · hardcoded level`

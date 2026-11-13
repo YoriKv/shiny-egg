@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { ScreenExit } from '../../../preload/api'
-import { roomGraph, withLiveWarpEdges, type WarpEdge } from './warp-graph'
+import { roomGraph, rotatingDoorEdges, withLiveWarpEdges, type WarpEdge } from './warp-graph'
+import { incomingIdentity } from '../../../shared/room-network'
 
 function edge(source: number, dest: number, screen = 0): WarpEdge {
   return { sourceLevelRecordId: source, destLevelRecordId: dest,
@@ -8,6 +9,26 @@ function edge(source: number, dest: number, screen = 0): WarpEdge {
 }
 
 describe('project room graph', () => {
+  test('rotating-door sprites add all four table-defined links with distinct identities', () => {
+    const destinations = [0xb8, 0xc6, 0xcd, 0xd3].map((id) => ({
+      destLevelRecordId: id, destX: 5, destY: 119, entranceType: 0
+    }))
+    const sprite = { num: 0x1f, index: 2, x: 40, y: 20 }
+    const doors = rotatingDoorEdges(0, [sprite], destinations)
+    expect(doors).toHaveLength(4)
+    expect(new Set(doors.map(incomingIdentity)).size).toBe(4)
+    expect(doors.every((e) => e.sourceScreenIndex === 0x12)).toBe(true)
+    const graph = roomGraph(0, 0, doors)
+    expect(graph.subLevels).toEqual([0, 0xb8, 0xc6, 0xcd, 0xd3])
+    expect(graph.incomingByLevel.get(0xb8)?.[0].kind).toBe('rotating-door')
+    expect(graph.incomingByLevel.get(0xb8)?.[0].doorIndex).toBe(0)
+    expect(withLiveWarpEdges(doors, 0, [], [], destinations)).toEqual([]) // deleting the sprite removes links
+    expect(rotatingDoorEdges(0, [{ ...sprite, num: 0x20 }], destinations)).toEqual([])
+    const ordinary = { sourceLevelRecordId: 0, sourceScreenIndex: 0x12 }
+    expect(doors.map(incomingIdentity)).not.toContain(incomingIdentity(ordinary))
+    const live = withLiveWarpEdges([], 0, [], [sprite], destinations)
+    expect(roomGraph(0, 0, live).subLevels).toEqual(graph.subLevels) // unsaved placement
+  })
   test('shared rooms expose every entrance regardless of the selected stage', () => {
     const edges = [edge(0, 9), edge(1, 9), edge(9, 10), edge(20, 9), edge(30, 31)]
     const first = roomGraph(0, 9, edges)

@@ -753,6 +753,12 @@ h3 { margin: 0; }
   line-height: 1;
 }
 
+.se-rooms-list { display: grid; gap: 4px; max-height: 55vh; overflow: auto; }
+.se-rooms-row > button { width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.se-room-metadata { display: grid; gap: 12px; }
+.se-room-metadata label { display: grid; gap: 6px; }
+.se-room-metadata textarea { resize: vertical; }
+
 /* Right-click context menu (ContextMenu.tsx). */
 .se-ctxmenu {
   position: fixed;

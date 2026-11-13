@@ -7,6 +7,8 @@
 // LevelData) come through the preload `.d.ts` and are *not* re-exported here;
 // import them from '../../preload/api' as before.
 
+import type { WarpOrigin } from '../../shared/room-network'
+
 /**
  * Background-grid overlay mode — a 3-state toolbar toggle, cycled by the grid
  * button (off → screen → tile → off):
@@ -116,7 +118,7 @@ export interface LayerVisibility {
  * for one-way connections (where a sibling room exits into this one but the
  * current room has no return exit).
  */
-export interface IncomingExit {
+export interface IncomingExit extends WarpOrigin {
   /** Level ID of the room whose outgoing exit lands here. */
   sourceLevelRecordId: number
   /** Cell-grid position where the player materializes in THIS level. */

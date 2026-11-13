@@ -15,6 +15,7 @@ import type {
     ScreenExit
 } from '../../../../preload/api'
 import type {IncomingExit, LayerVisibility, PlacementItem, Selection, WorldMapSpawn} from '../../types'
+import { incomingIdentity } from '../../../../shared/room-network'
 import type {View} from '../view'
 import type {SpriteBoundsMap} from '../hit-test'
 import {LEVEL_PX_W, LEVEL_PX_H, SPAWN_MARKER_DY, type ObjectOutlineBox} from '../geometry'
@@ -553,7 +554,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             let drawIncomingArr = incoming
             if (incomingOverlay) {
                 const idx = incoming.findIndex(
-                    (i) => `${i.sourceLevelRecordId}:${i.sourceScreenIndex}` === incomingOverlay.key
+                    (i) => incomingIdentity(i) === incomingOverlay.key
                 )
                 if (idx >= 0) {
                     drawIncomingArr = incoming.slice()

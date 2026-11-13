@@ -140,7 +140,7 @@ export function useUnifiedHistory({
       for (const [key, patch] of patches) {
         const [source, screen] = key.split(':').map(Number)
         const marker = [...incomingByLevel.values()].flat().find((i) =>
-          i.sourceLevelRecordId === source && i.sourceScreenIndex === screen)
+          i.kind !== 'rotating-door' && i.sourceLevelRecordId === source && i.sourceScreenIndex === screen)
         if (source === selectedLevelRecordId || (marker &&
           (patch.x === undefined || patch.x === marker.destX) &&
           (patch.y === undefined || patch.y === marker.destY) &&
@@ -162,7 +162,7 @@ export function useUnifiedHistory({
       // Entries sourced from the LOADED level are live (App overlays its
       // in-memory exits), so a leftover optimistic patch for them is stale by
       // definition — the disk edit it mirrored was read back at level load.
-      if (inc.sourceLevelRecordId === selectedLevelRecordId) return inc
+      if (inc.kind === 'rotating-door' || inc.sourceLevelRecordId === selectedLevelRecordId) return inc
       const p = incomingPatch.get(`${inc.sourceLevelRecordId}:${inc.sourceScreenIndex}`)
       if (!p) return inc
       const next = { ...inc }
@@ -347,6 +347,7 @@ export function useUnifiedHistory({
   // selection snapshot would otherwise show the stale "Lands at").
   const onMoveIncoming = useCallback(
     async (inc: IncomingExit, destX: number, destY: number) => {
+      if (inc.kind === 'rotating-door') return
       if (inc.destX === destX && inc.destY === destY) return
       const edit: CrossLevelEdit = {
         sourceLevelRecordId: inc.sourceLevelRecordId,
@@ -368,6 +369,7 @@ export function useUnifiedHistory({
   // a snapshot, so the dropdown would otherwise show the stale entrance).
   const onSetIncomingEntrance = useCallback(
     async (inc: IncomingExit, entranceType: number) => {
+      if (inc.kind === 'rotating-door') return
       if (inc.entranceType === entranceType) return
       const edit: CrossLevelEntranceEdit = {
         sourceLevelRecordId: inc.sourceLevelRecordId,

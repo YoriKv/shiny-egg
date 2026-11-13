@@ -14,11 +14,14 @@ import {
   deleteProject,
   ensureCurrentProject,
   getProjectInfo,
+  isValidProjectName,
   listProjects,
   renameProject,
   setCurrentProject
 } from '../projects'
 import { applyOverlayUpgrades, detectOutdatedOverlays } from '../overlay-upgrade'
+import { patchRoomMetadata, readEditorMetadata } from '../project-metadata'
+import type { RoomMetadataPatch } from '../../shared/project-metadata'
 import type {
   OverlayDriftReport,
   OverlayUpgradeResult,
@@ -32,6 +35,13 @@ import type {
 } from '../../shared/ipc-types'
 
 export function registerProjectsIpc(): void {
+  const metadataRoot = (id: string): string => {
+    if (typeof id !== 'string' || !isValidProjectName(id) || !getProjectInfo(id)) throw new Error(`Project "${id}" not found.`)
+    return projectRoot(id)
+  }
+  ipcMain.handle('project:metadata', (_e, id: string) => readEditorMetadata(metadataRoot(id)))
+  ipcMain.handle('project:patchRoomMetadata', (_e, id: string, recordId: number, patch: RoomMetadataPatch) =>
+    patchRoomMetadata(metadataRoot(id), recordId, patch))
   ipcMain.handle('project:list', async (): Promise<ProjectSummary[]> => listProjects())
 
   ipcMain.handle('project:ensureCurrent', async (): Promise<ProjectSummary> =>

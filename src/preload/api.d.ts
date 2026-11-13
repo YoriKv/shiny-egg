@@ -405,6 +405,9 @@ export interface SettingsAPI {
 }
 
 export interface ProjectsAPI {
+  metadata: (id: string) => Promise<import('../shared/project-metadata').ProjectEditorMetadata>
+  patchRoomMetadata: (id: string, recordId: number, patch: import('../shared/project-metadata').RoomMetadataPatch) =>
+    Promise<import('../shared/project-metadata').ProjectEditorMetadata>
   list: () => Promise<ProjectSummary[]>
   /** Current project, auto-creating the default `new-shiny-00` if none. */
   ensureCurrent: () => Promise<ProjectSummary>
@@ -637,6 +640,7 @@ export interface RenderAPI {
 /** Generic editable-resource load/save (the registry). The level editor and
  *  all new tools (strings, …) load and save through this. */
 export interface EditorAPI {
+  rotatingDoorEntrances: () => Promise<import('../shared/room-network').RoomWarpDestination[]>
   /** Load a resource's model. `{kind:'level'}` resolves to `LevelData`; other
    *  kinds return `unknown` (the caller narrows). */
   loadResource(resource: { kind: 'level'; recordId: number }): Promise<LevelData>

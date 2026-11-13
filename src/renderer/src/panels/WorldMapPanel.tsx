@@ -27,7 +27,7 @@ import type {
   WorldMapMidwayEntrance,
   WorldMapModel
 } from '../../../preload/api'
-import { getAllLevels, getLevel, getLevelByTranslevel, getRecordCount, useLevelsCatalog } from '../data/levels'
+import { getAllLevels, getLevel, getLevelByTranslevel, getRecordCount, roomLabel, useLevelsCatalog } from '../data/levels'
 import { roomGraph, type WarpEdge } from '../lib/warp-graph'
 import { ENTRANCE_TYPES } from '../data/property-schema'
 import { EnumField, LevelPicker, NumberField } from './field-widgets'
@@ -231,7 +231,7 @@ function slotShapeLabel(world: number, pos: number, translevelId: number): strin
 /** Display name for the record a slot plays (catalog name, else the raw id —
  *  removed records aren't in the catalog but stay editable here). */
 function recordName(recordId: number): string {
-  return getLevel(recordId)?.name ?? `record ${hex0x(recordId, 2)}`
+  return roomLabel(recordId)
 }
 
 /** A world-map slot's display name, resolved by TRANSLEVEL slot — the name is a

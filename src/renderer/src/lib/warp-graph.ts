@@ -11,7 +11,8 @@
 // order live in one place (and can't drift apart). Each consumer keeps only its
 // own concern: discovery records all incoming links; chain-find stops at a target.
 
-import type { ScreenExit } from '../../../preload/api'
+import type { ScreenExit, LevelSprite } from '../../../preload/api'
+import type { RoomWarpDestination, WarpOrigin } from '../../../shared/room-network'
 import type { IncomingExit } from '../types'
 
 /** One hop the cart can replay: land in `destLevelRecordId` at (`destX`,`destY`) with
@@ -25,7 +26,7 @@ export interface WarpStep {
 
 /** A warp edge in the graph: a `WarpStep` plus where it came FROM (the source
  *  level + its screen index), which the incoming-marker reverse map needs. */
-export interface WarpEdge extends WarpStep {
+export interface WarpEdge extends WarpStep, WarpOrigin {
   sourceLevelRecordId: number
   sourceScreenIndex: number
 }
@@ -33,9 +34,19 @@ export interface WarpEdge extends WarpStep {
 /** Load one level's warp exits as graph edges (skips minibattle exits). The
  *  default edge source for the walker; injectable so tests / callers can supply
  *  their own loader. */
-export async function loadWarpEdges(id: number): Promise<WarpEdge[]> {
+export async function loadWarpEdges(id: number, destinations?: RoomWarpDestination[]): Promise<WarpEdge[]> {
   const data = await window.shinyEgg.editor.loadResource({ kind: 'level', recordId: id })
-  return warpEdgesFor(id, data.exits)
+  const doors = destinations ?? (data.sprites.some((s) => s.num === 0x01f)
+    ? await window.shinyEgg.editor.rotatingDoorEntrances() : [])
+  return [...warpEdgesFor(id, data.exits), ...rotatingDoorEdges(id, data.sprites, doors)]
+}
+
+export function rotatingDoorEdges(id: number, sprites: readonly LevelSprite[], destinations: readonly RoomWarpDestination[]): WarpEdge[] {
+  return sprites.filter((s) => s.num === 0x01f).flatMap((sprite) => destinations.map((dest, doorIndex) => ({
+    ...dest, sourceLevelRecordId: id,
+    sourceScreenIndex: ((sprite.y >> 4) << 4) | (sprite.x >> 4),
+    kind: 'rotating-door' as const, sourceSpriteIndex: sprite.index, doorIndex
+  })))
 }
 
 export function warpEdgesFor(id: number, exits: readonly ScreenExit[]): WarpEdge[] {
@@ -54,8 +65,10 @@ export function warpEdgesFor(id: number, exits: readonly ScreenExit[]): WarpEdge
   return edges
 }
 
-export function withLiveWarpEdges(edges: readonly WarpEdge[], id: number, exits: readonly ScreenExit[]): WarpEdge[] {
-  return [...edges.filter((e) => e.sourceLevelRecordId !== id), ...warpEdgesFor(id, exits)]
+export function withLiveWarpEdges(edges: readonly WarpEdge[], id: number, exits: readonly ScreenExit[],
+  sprites: readonly LevelSprite[] = [], doors: readonly RoomWarpDestination[] = []): WarpEdge[] {
+  return [...edges.filter((e) => e.sourceLevelRecordId !== id), ...warpEdgesFor(id, exits),
+    ...rotatingDoorEdges(id, sprites, doors)]
 }
 
 /** One project snapshot supplies all incoming markers. Stage names are labels,
@@ -73,6 +86,7 @@ export function roomGraph(root: number, selected: number | null, edges: readonly
     outgoing.set(edge.sourceLevelRecordId, list)
     const incoming = incomingByLevel.get(edge.destLevelRecordId) ?? []
     incoming.push({
+      ...(edge.kind ? { kind: edge.kind, sourceSpriteIndex: edge.sourceSpriteIndex, doorIndex: edge.doorIndex } : {}),
       sourceLevelRecordId: edge.sourceLevelRecordId,
       sourceScreenIndex: edge.sourceScreenIndex,
       destX: edge.destX,

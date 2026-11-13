@@ -4,6 +4,7 @@
 
 import type { LevelData, LevelObject, LevelSprite, SpriteCelBounds } from '../../../preload/api'
 import type { IncomingExit, LayerVisibility, Selection, WorldMapSpawn } from '../types'
+import { incomingIdentity } from '../../../shared/room-network'
 import { isLayerVisible } from './draw/objects'
 import { spriteCelBoundsFor, spriteOutlineBox } from './draw/sprites'
 import {
@@ -121,7 +122,7 @@ export function selectionKey(sel: Selection): string {
     case 'object': return `o:${sel.uid}`
     case 'sprite': return `s:${sel.uid}`
     case 'exit': return `e:${sel.uid}`
-    case 'incoming': return `i:${sel.incoming.sourceLevelRecordId}:${sel.incoming.sourceScreenIndex}`
+    case 'incoming': return `i:${incomingIdentity(sel.incoming)}`
     case 'spawn': return `sp:${sel.spawn.entranceIndex ?? ''}`
   }
 }

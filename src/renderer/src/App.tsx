@@ -36,6 +36,8 @@ import { ProjectMenu } from './ProjectMenu'
 import { useEditDocument, useEditSession } from './edit-session/EditSession'
 import type { DocHistory } from './edit-session/useOverlayDocument'
 import { ContextMenu } from './ContextMenu'
+import { RoomsDialog, RoomMetadataDialog, type RoomContextHandler } from './RoomsDialog'
+import { refreshRoomMetadata, useRoomMetadata } from './data/room-metadata'
 import { DiscardChangesModal } from './DiscardChangesModal'
 import { OverlayUpgradeModal } from './OverlayUpgradeModal'
 import { FloatingWindow } from './FloatingWindow'
@@ -800,6 +802,7 @@ export default function App(): JSX.Element {
   // the unsaved in-memory copy. Other sources keep the disk path.
   const onMoveIncomingLive = useCallback(
     async (inc: IncomingExit, destX: number, destY: number) => {
+      if (inc.kind === 'rotating-door') return
       const lvl = levelState.level
       if (lvl && inc.sourceLevelRecordId === lvl.recordId) {
         const exit = lvl.exits.find(
@@ -822,6 +825,7 @@ export default function App(): JSX.Element {
   // diverge from the unsaved in-memory copy); other sources take the disk path.
   const onSetIncomingEntranceLive = useCallback(
     async (inc: IncomingExit, entranceType: number) => {
+      if (inc.kind === 'rotating-door') return
       const lvl = levelState.level
       if (lvl && inc.sourceLevelRecordId === lvl.recordId) {
         const exit = lvl.exits.find(
@@ -1009,6 +1013,21 @@ export default function App(): JSX.Element {
   // place of the bare projectId — those consumers use it only as a reload key /
   // effect trigger, never for IPC (which reads the active project main-side).
   const projectScope = projectId === null ? null : `${projectId}#${projectRev}`
+  useRoomMetadata()
+  const [allRoomsOpen, setAllRoomsOpen] = useState(false)
+  const [editingRoom, setEditingRoom] = useState<number | null>(null)
+  const [roomMenu, setRoomMenu] = useState<{ x: number; y: number; id: number } | null>(null)
+  const onRoomContextMenu: RoomContextHandler = useCallback((e, id) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setRoomMenu({ x: e.clientX, y: e.clientY, id })
+  }, [])
+  useEffect(() => {
+    setEditingRoom(null)
+    setAllRoomsOpen(false)
+    setRoomMenu(null)
+    void refreshRoomMetadata(projectId).catch((e) => appendLog(`Room metadata: ${(e as Error).message}`))
+  }, [projectId, projectRev, appendLog])
   // Shared overlay-document history channel (strings now, palette next) — a
   // stable handle so each document can record undo steps + register its applier.
   const docHistory = useMemo<DocHistory>(
@@ -1512,8 +1531,10 @@ export default function App(): JSX.Element {
         />
 
         <div className="se-toolbar__levels">
-          <LevelMenu selectedId={rootLevelRecordId} selectedTranslevelId={rootTranslevelId} onSelect={selectRootLevel} />
+          <LevelMenu selectedId={rootLevelRecordId} selectedTranslevelId={rootTranslevelId} onSelect={selectRootLevel}
+            onViewAll={() => setAllRoomsOpen(true)} onRoomContextMenu={onRoomContextMenu} />
           <SubLevelMenu
+            onRoomContextMenu={onRoomContextMenu}
             rootLevelRecordId={rootLevelRecordId}
             currentLevelRecordId={selectedLevelRecordId}
             subLevels={subLevels}
@@ -1914,6 +1935,7 @@ export default function App(): JSX.Element {
                 />
               ) : w.kind === 'exits' ? (
                 <ExitsBody
+                  onRoomContextMenu={onRoomContextMenu}
                   level={levelState.level}
                   selection={selection}
                   subLevels={subLevels}
@@ -2035,6 +2057,13 @@ export default function App(): JSX.Element {
             </div>
           </div>
         )}
+        {allRoomsOpen && editingRoom === null && <RoomsDialog onClose={() => setAllRoomsOpen(false)}
+          onSelect={selectRootLevel} onContextMenu={onRoomContextMenu} />}
+        {editingRoom !== null && projectId && <RoomMetadataDialog key={`${projectId}:${editingRoom}`}
+          recordId={editingRoom} projectId={projectId} onClose={() => setEditingRoom(null)} />}
+        {roomMenu && <ContextMenu x={roomMenu.x} y={roomMenu.y}
+          items={[{ label: 'Edit Room Metadata…', disabled: !projectId, onClick: () => setEditingRoom(roomMenu.id) }]}
+          onClose={() => setRoomMenu(null)} />}
         {panelMenu && (
           <ContextMenu
             x={panelMenu.x}

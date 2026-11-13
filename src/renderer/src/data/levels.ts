@@ -21,6 +21,7 @@ import type {
   WorldMapModel
 } from '../../../preload/api'
 import { hex0x } from '../lib/hex'
+import { getRoomMetadata } from './room-metadata'
 
 let current: LevelsCatalog = { groups: [] }
 let savedCatalog = current
@@ -143,11 +144,20 @@ export type LevelLabelFallback = 'hex' | 'subroom' | 'dash'
  * catalog (sub-rooms, raw records) render per `fallback`.
  */
 export function levelLabel(id: number, fallback: LevelLabelFallback = 'hex'): string {
+  const name = getRoomMetadata(id)?.name
+  if (name) return `${name} (${hex0x(id, 2)})`
   const l = getLevel(id)
   if (l) return `${l.slot} ${l.name}`
   if (fallback === 'dash') return '—'
   if (fallback === 'subroom') return `sub-room ${hex0x(id, 2)}`
   return hex0x(id, 2)
+}
+
+/** A room label with its ID, including when the fallback is a stage name. */
+export function roomLabel(id: number): string {
+  if (getRoomMetadata(id)?.name) return levelLabel(id)
+  const stage = getLevel(id)
+  return stage?.translevelId !== undefined ? `${stage.slot} ${stage.name} (${hex0x(id, 2)})` : `Room ${hex0x(id, 2)}`
 }
 
 function notify(): void {

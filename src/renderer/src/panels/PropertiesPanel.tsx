@@ -8,7 +8,7 @@ import type {
   ScreenExit,
   SpriteProperty
 } from '../../../preload/api'
-import { getLevel } from '../data/levels'
+import { getLevel, roomLabel } from '../data/levels'
 import { getObjectInfo, getSprite, getSpriteNeighborDeps } from '../data/obj-metadata'
 import { neighborSummary } from '../data/sprite-neighbor-text'
 import { parityVariantRows } from '../data/sprite-parity-variants'
@@ -35,6 +35,7 @@ import { FieldRow, NumberField } from './field-widgets'
 import type { LevelAction } from '../canvas/level-reducer'
 import { spriteSpinDirection } from '../canvas/draw/sprite-variant-hints'
 import type { IncomingExit, Selection } from '../types'
+import { incomingIdentity } from '../../../shared/room-network'
 import { hex } from '../lib/hex'
 
 
@@ -140,9 +141,9 @@ export function PropertiesBody({
     }
     case 'incoming': {
       const marker = incoming === undefined ? sel.incoming : incoming.find((i) =>
-        i.sourceLevelRecordId === sel.incoming.sourceLevelRecordId &&
-        i.sourceScreenIndex === sel.incoming.sourceScreenIndex)
-      return marker ? <IncomingProps incoming={marker} onEntranceCommit={onIncomingEntranceCommit} /> : nothing
+        incomingIdentity(i) === incomingIdentity(sel.incoming))
+      return marker ? <IncomingProps incoming={marker}
+        onEntranceCommit={marker.kind === 'rotating-door' ? undefined : onIncomingEntranceCommit} /> : nothing
     }
     case 'spawn': {
       const spawn = worldMapSpawn === undefined ? sel.spawn : worldMapSpawn
@@ -401,15 +402,14 @@ function IncomingProps({
   onEntranceCommit?: (inc: IncomingExit, entranceType: number) => void
 }): JSX.Element {
   const screen = `${incoming.sourceScreenIndex & 0x0f},${(incoming.sourceScreenIndex >> 4) & 0x0f}`
-  const source = getLevel(incoming.sourceLevelRecordId)
   return (
     <dl className="se-props__list">
       <dt>Kind</dt>
-      <dd><span className="se-props__id-kind">Incoming entrance</span></dd>
+      <dd><span className="se-props__id-kind">{incoming.kind === 'rotating-door'
+        ? `Rotating door ${(incoming.doorIndex ?? 0) + 1} entrance (table-defined)` : 'Incoming entrance'}</span></dd>
       <dt>From level</dt>
       <dd>
-        {source ? `${source.slot} ${source.name}` : '—'}{' '}
-        <code>0x{hex(incoming.sourceLevelRecordId)}</code>
+        {roomLabel(incoming.sourceLevelRecordId)}
       </dd>
       <dt>From screen</dt>
       <dd>

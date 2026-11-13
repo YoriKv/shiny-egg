@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { FindInstanceKind, ObjectInstance } from '../../../preload/api'
 import { hex0x } from '../lib/hex'
+import { roomLabel } from '../data/levels'
 
 // Debug navigator: type an object/sprite id, jump through every level instance
 // of it with Prev/Next. Backed by the base-cart instance index spliced with the
@@ -160,7 +161,7 @@ export function ObjectFinderBody({
       <div className="se-finder__current">
         {cur ? (
           <>
-            → level {hex0x(cur.levelRecordId)} @ ({cur.x}, {cur.y}) · @{cur.offset.toString(16).toUpperCase()}
+            → {roomLabel(cur.levelRecordId)} @ ({cur.x}, {cur.y}) · @{cur.offset.toString(16).toUpperCase()}
             {currentLevelRecordId === cur.levelRecordId && <span className="se-finder__here"> · here</span>}
           </>
         ) : has ? (

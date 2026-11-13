@@ -346,6 +346,11 @@ const api = {
   // (lastProjectId) and reopened on launch; `ensureCurrent` auto-creates the
   // default `new-shiny-00` when none exists.
   projects: {
+    metadata: (id: string): Promise<import('../shared/project-metadata').ProjectEditorMetadata> =>
+      ipcRenderer.invoke('project:metadata', id),
+    patchRoomMetadata: (id: string, recordId: number, patch: import('../shared/project-metadata').RoomMetadataPatch):
+      Promise<import('../shared/project-metadata').ProjectEditorMetadata> =>
+      ipcRenderer.invoke('project:patchRoomMetadata', id, recordId, patch),
     list: (): Promise<ProjectSummary[]> => ipcRenderer.invoke('project:list'),
     ensureCurrent: (): Promise<ProjectSummary> =>
       ipcRenderer.invoke('project:ensureCurrent'),
@@ -377,6 +382,8 @@ const api = {
   // Generic editable-resource load/save (the registry). The level editor and
   // all new tools (strings, …) use this for both load and save.
   editor: {
+    rotatingDoorEntrances: (): Promise<import('../shared/room-network').RoomWarpDestination[]> =>
+      ipcRenderer.invoke('editor:rotatingDoorEntrances'),
     // Return type left to inference (invoke → Promise<any>) so this satisfies
     // the contract's typed `loadResource({kind:'level'})` → Promise<LevelData>
     // overload as well as the generic Promise<unknown> form.
