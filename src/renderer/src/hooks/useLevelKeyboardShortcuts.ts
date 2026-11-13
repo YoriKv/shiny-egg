@@ -9,7 +9,7 @@ import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction }
 import type { LevelObject, LevelSprite } from '../../../preload/api'
 import type { LevelAction, LevelState } from '../canvas/level-reducer'
 import type { PlacementItem, Selection } from '../types'
-import { MAX_LEVEL_SPRITES } from '../canvas/limits'
+import { MAX_LEVEL_SPRITES, stepObjectResize } from '../canvas/limits'
 import { objectSizeMode } from '../data/object-record'
 import { LEVEL_SCREENS_H, LEVEL_SCREENS_W, screenCol, screenRow } from '../canvas/geometry'
 import { isCellOnScreen, viewportCenterCell, type View } from '../canvas/view'
@@ -172,7 +172,7 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
       // (`negWAllowed`/`negHAllowed` are informational only, unenforced elsewhere).
       // The extent is left UNCLAMPED and may go negative (an anchor-relative
       // "grow back" extent), exactly like the placed-object resize + drag handles;
-      // App.onPlaceAt's clampObjectResize bounds it (sign-preserving) at the drop.
+      // The reducer validates the signed size and loader walk at the drop.
       // Sprites/exits have no size, so it's a no-op. Claims Shift+Arrow entirely in
       // place mode so it never leaks to a lingering selection's resize.
       if (placementRef.current && e.shiftKey && e.key.startsWith('Arrow')) {
@@ -184,11 +184,14 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
           const vert = e.key === 'ArrowUp' || e.key === 'ArrowDown'
           setPlacement((prev) => {
             if (!prev || prev.kind !== 'object') return prev
+            // No drop anchor exists yet; probe zero at an interior position.
+            const probe: LevelObject = { ...prev, x: 64, y: 64, index: 0, raw: [] }
+            const header = levelStateRef.current.level?.header
             if (horiz && (sm === 'w' || sm === 'wh')) {
-              return { ...prev, w: prev.w + (e.key === 'ArrowRight' ? 1 : -1) }
+              return { ...prev, w: stepObjectResize(probe, 'w', e.key === 'ArrowRight' ? 1 : -1, header) }
             }
             if (vert && (sm === 'h' || sm === 'wh')) {
-              return { ...prev, h: prev.h + (e.key === 'ArrowDown' ? 1 : -1) }
+              return { ...prev, h: stepObjectResize(probe, 'h', e.key === 'ArrowDown' ? 1 : -1, header) }
             }
             return prev
           })
@@ -354,10 +357,10 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
             const sm = objectSizeMode(o.num, o.exnum, propTable)
             if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && (sm === 'w' || sm === 'wh')) {
               const dw = e.key === 'ArrowRight' ? 1 : -1
-              dispatchLevel({ type: 'setObjectFields', uid: o.uid!, patch: { w: o.w + dw } })
+              dispatchLevel({ type: 'setObjectFields', uid: o.uid!, patch: { w: stepObjectResize(o, 'w', dw, levelStateRef.current.level?.header) } })
             } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && (sm === 'h' || sm === 'wh')) {
               const dh = e.key === 'ArrowDown' ? 1 : -1
-              dispatchLevel({ type: 'setObjectFields', uid: o.uid!, patch: { h: o.h + dh } })
+              dispatchLevel({ type: 'setObjectFields', uid: o.uid!, patch: { h: stepObjectResize(o, 'h', dh, levelStateRef.current.level?.header) } })
             }
           }
           return

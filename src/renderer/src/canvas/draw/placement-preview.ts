@@ -17,6 +17,7 @@ import { spriteOutlineBox } from './sprites'
 import { drawAnchorDot } from './selection'
 import { beginIdLabels, drawIdLabel } from './text'
 import { hex } from '../../lib/hex'
+import { clampObjectPlacement, isObjectPlacementSafe, objectCellBox } from '../limits'
 
 const PREVIEW_ACCENT = 'rgba(120, 220, 255, 0.95)'
 const PREVIEW_FILL = 'rgba(120, 220, 255, 0.14)'
@@ -42,8 +43,22 @@ export function drawPlacementPreview(
   cx: number,
   cy: number,
   zoom: number,
-  spriteBounds: SpriteBoundsMap
+  spriteBounds: SpriteBoundsMap,
+  header: readonly number[] = []
 ): void {
+  let objectBox: ReturnType<typeof objectVisualBox> | null = null
+  if (item.kind === 'object') {
+    const object = clampObjectPlacement({ ...item, x: cx, y: cy, index: 0, raw: [] }, header)
+    if (!isObjectPlacementSafe(object, header)) return
+    cx = object.x
+    cy = object.y
+    if (item.num === 0) {
+      const b = objectCellBox(object)
+      objectBox = { x0: b.x0 * CELL_PX, y0: b.y0 * CELL_PX, w: b.w * CELL_PX, h: b.h * CELL_PX }
+    } else {
+      objectBox = objectVisualBox(object)
+    }
+  }
   ctx.save()
 
   // Exits are per-screen singletons — a click adds the exit to the clicked
@@ -68,7 +83,7 @@ export function drawPlacementPreview(
   // cel / 1-cell box, both anchored at the cursor cell.
   const box =
     item.kind === 'object'
-      ? objectVisualBox({ x: cx, y: cy, w: item.w, h: item.h })
+      ? objectBox!
       : spriteOutlineBox({ num: item.num, x: cx, y: cy } as LevelSprite, spriteBounds)
 
   const inset = 0.75 / zoom

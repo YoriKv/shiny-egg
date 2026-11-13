@@ -178,6 +178,7 @@ export function intraObjectWalker(state: DecodeState): void {
 function latchCell(state: DecodeState, byteOffset: number): void {
   const off = byteOffset & 0xffff;
   state.zp1D = off;
+  state.visitCell?.(off);
   const lo = state.levelDataBuffer[off] ?? 0;
   const hi = state.levelDataBuffer[(off + 1) & 0xffff] ?? 0;
   state.zp12 = lo | (hi << 8);
