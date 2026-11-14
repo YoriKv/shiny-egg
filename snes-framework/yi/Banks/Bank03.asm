@@ -4946,6 +4946,21 @@ CODE_03A37D:
 	STA.w !EXRAM_YI_Level_NorSpr_GenericTable701902|!EXRAMBankMirror,y
 CODE_03A395:
 CODE_spawn_sprite_clear_slot_fields:                 ; cold-zero ~30 per-slot fields (speeds, scratch tables, timers, OAM defaults) before ID-specific init
+;-------------------------------------------------------------------------
+; After the zeroing, the slot's per-ID PROPERTIES are seeded from the sprite
+; property tables in SuperFX Bank0A (each 442 words, indexed by ID*2; the
+; table headers in yi/SuperFX/Banks/Bank0A.asm carry the bit legends):
+;   DATA_0AA716 gfx-file id   -> $7180 OBJ tile base (via the $6EB5 spriteset-slot search)
+;   DATA_0A9F1A hi EOR $20    -> $7042 OAM attribute;  lo -> $74A2 draw priority
+;   DATA_0AA318 lo (signed)   -> $7542 Y accel step;   hi (signed) * 16 -> $75E2 Y target speed
+;   DATA_0A9B1C               -> $7040 behaviour word (draw method, despawn class, burn/freeze/
+;                                bubble/instant-swallow bits, OAM record count)
+;   DATA_0A971E               -> $6FA2 terrain-behaviour / class word
+;   DATA_0A9320               -> $6FA0 collision / contact word; its low 5 bits pick the
+;   DATA_0A9220 hitbox shape  -> $7B56/$7B58 center offset, $7BB6/$7BB8 half-extents
+; The per-ID Init handler then runs (state $02) and may override any of these.
+; CODE_check_new_sprites (level-stream spawns) performs the same seeding.
+;-------------------------------------------------------------------------
 	LDA.w #$0000
 	STA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,y
 	STA.w !EXRAM_YI_Level_NorSpr_YSpeedLo|!EXRAMBankMirror,y
@@ -5318,6 +5333,7 @@ CODE_03A64B:
 	RTL
 
 DATA_03A655:
+DATA_sprite_stomp_reaction_ptrs:                     ; Yoshi lands on a sprite: dispatch on ($0FA0 >> 11) & 7 (DATA_0A9320 bits 11-13); entry 6 forced while Yoshi is rising
 	dw CODE_03A66D
 	dw CODE_03A6B5
 	dw CODE_03A6B5
@@ -5328,12 +5344,14 @@ DATA_03A655:
 	dw CODE_03A789
 
 DATA_03A665:
+DATA_sprite_side_contact_ptrs:                       ; Yoshi touches a sprite from the side: dispatch on $0FA0 >> 14 (DATA_0A9320 bits 14-15)
 	dw CODE_03A7AB
 	dw CODE_03A7A4
 	dw CODE_03A806
 	dw CODE_03A80B
 
 CODE_03A66D:
+CODE_stomp_defeat_or_hurt:                           ; stomp reaction 0: if Yoshi is jumping ($60C0) the sprite is defeated (status $0E) and Yoshi bounces, else Yoshi is hurt
 	LDA.w $60C0
 	BNE.b CODE_03A675
 	JMP.w CODE_03A7A4
@@ -5367,6 +5385,7 @@ CODE_03A6B4:
 	RTS
 
 CODE_03A6B5:
+CODE_stomp_head_bop:                                 ; stomp reaction 1-3: SFX $3A, status $0E (runs the per-id StompRt), zero velocities, Yoshi bounces
 	LDX.b $12
 	LDY.b #!Define_YI_SoundID3A_StompShyGuy
 	JSL.l CODE_03A0E7
@@ -5381,6 +5400,7 @@ CODE_03A6B5:
 	RTS
 
 CODE_03A6D6:
+CODE_stomp_pop:                                      ; stomp reaction 4: Yoshi bounces, sprite pops (CODE_03B4D6) and despawns
 	LDA.w #$FC00
 	STA.w $60AA
 	LDA.w #$8001
@@ -5395,6 +5415,7 @@ DATA_03A6F1:
 	dw $0180,$0060
 
 CODE_03A6F5:
+CODE_stomp_platform:                                 ; stomp reaction 6: sprite is a platform -- snap Yoshi's feet to the hitbox top, carry via $72C0, claim $61B6
 	LDX.b $12
 	LDA.w $60D4
 	BEQ.b CODE_03A707
@@ -5468,6 +5489,7 @@ CODE_03A787:
 	RTL
 
 CODE_03A789:
+CODE_stomp_kill:                                     ; stomp reaction 7: sprite killed by the stomp (CODE_03B51F), Yoshi bounces
 	LDX.b $12
 	JSL.l CODE_03B51F
 	LDA.w #$FC00
@@ -5485,11 +5507,13 @@ DATA_03A7A0:
 	dw $0100,$FF00
 
 CODE_03A7A4:
+CODE_contact_hurt_yoshi:                             ; stomp reaction 5 / side reaction 1: hurt Yoshi (CODE_03A858); Super Baby Mario kills the sprite instead
 	LDX.b $12
 	JSL.l CODE_03A858
 	RTS
 
 CODE_03A7AB:
+CODE_side_push:                                      ; side reaction 0: solid push -- exchange/zero Yoshi's and the sprite's X speeds, bump SFX
 	LDX.b $12
 	LDA.w $60A8
 	ORA.w !EXRAM_YI_Level_NorSpr_XSpeedLo|!EXRAMBankMirror,x
@@ -5542,10 +5566,12 @@ CODE_03A7FF:
 	RTS
 
 CODE_03A806:
+CODE_side_knock_away:                                ; side reaction 2: sprite knocked away (-> CODE_03A1D6: sprite X speed = Yoshi's / 4, Yoshi's halved, upward Y)
 	LDX.b $12
 	JMP.w CODE_03A1D6
 
 CODE_03A80B:
+CODE_side_no_contact:                                ; side reaction 3: no contact
 	LDX.b $12
 	PLA
 	RTL

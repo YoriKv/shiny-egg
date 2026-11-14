@@ -6,6 +6,7 @@ import type {
   ValidationSeverity
 } from '../../../preload/api'
 import { levelLabel } from '../data/levels'
+import { useRoomMetadata } from '../data/room-metadata'
 import {
   useEntityRenderValidity,
   type EntityValidityView
@@ -223,9 +224,10 @@ export function ValidationPanel({
   }, [])
 
   // Recompute the sweep from cached inputs.
+  const metadata = useRoomMetadata()
   const allResult: AllLevelsValidationResult | null = useMemo(
     () => (allInputs ? validateAll(allInputs, (rec) => levelLabel(rec, 'hex')) : null),
-    [allInputs]
+    [allInputs, metadata]
   )
 
   const currentResult =

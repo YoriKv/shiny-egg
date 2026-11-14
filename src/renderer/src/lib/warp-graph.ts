@@ -1,19 +1,28 @@
-// Shared warp-exit graph traversal. YI levels connect via screen-exit "warp"
-// records (pipe / door / water), and two editor features walk that graph:
+// Shared warp-exit graph. YI levels connect via screen-exit "warp" records
+// (pipe / door / water) plus the rotating-door sprite's fixed destinations.
+// One project-wide edge index (hooks/useSubLevelBFS, built from
+// `loadWarpEdges`) is the only graph source; every consumer reads it:
 //
-//   • Sub-room discovery + incoming markers (hooks/useSubLevelBFS) — every
-//     non-catalog level reachable from a translevel root, plus the reverse
-//     adjacency ("who warps into here").
-//   • Test Level's sub-room boot (App.onTestLevel) — the shortest chain of warp
-//     records from the root to a chosen sub-room, replayed by the Lua harness.
+//   • Room list + incoming markers — `roomGraph` derives reachability and
+//     reverse adjacency from the index.
+//   • Test Level's sub-room boot (hooks/useEmulatorActions) — `findWarpChain`,
+//     the shortest chain of warp records from the root to a chosen sub-room,
+//     replayed by the Lua harness.
+//   • Owner lookup for a directly opened room (hooks/useLevelNavigation) —
+//     `findOwningTranslevel`.
 //
-// Both used to inline their own BFS over `loadResource(...).exits`; they now
-// share `walkWarpGraph` below so the edge shape, the de-dup, and the traversal
-// order live in one place (and can't drift apart). Each consumer keeps only its
-// own concern: discovery prunes at catalog boundaries and records incoming;
-// chain-find expands everything and stops at a target.
+// The walkers take their edges through `loadEdges`; `edgeLoader` adapts the
+// in-memory index, so a chain the user sees is the chain Test Level replays.
 
-import type { ScreenExit } from '../../../preload/api'
+import type { ScreenExit, LevelSprite, RoomWarpDestination } from '../../../preload/api'
+import type { IncomingExit, WarpOrigin } from '../types'
+
+/** Stable identity of an incoming marker. Screen exits use their screen;
+ *  rotating-door exits also need the door sprite and door slot. */
+export function incomingIdentity(origin: WarpOrigin): string {
+  const base = `${origin.sourceLevelRecordId}:${origin.sourceScreenIndex}`
+  return origin.kind === 'rotating-door' ? `${base}:door:${origin.sourceSpriteIndex}:${origin.doorIndex}` : base
+}
 
 /** One hop the cart can replay: land in `destLevelRecordId` at (`destX`,`destY`) with
  *  the given entrance/spawn state. The 4 fields the Lua harness needs per warp. */
@@ -26,18 +35,41 @@ export interface WarpStep {
 
 /** A warp edge in the graph: a `WarpStep` plus where it came FROM (the source
  *  level + its screen index), which the incoming-marker reverse map needs. */
-export interface WarpEdge extends WarpStep {
+export interface WarpEdge extends WarpStep, WarpOrigin {
   sourceLevelRecordId: number
   sourceScreenIndex: number
 }
 
-/** Load one level's warp exits as graph edges (skips minibattle exits). The
- *  default edge source for the walker; injectable so tests / callers can supply
- *  their own loader. */
-export async function loadWarpEdges(id: number): Promise<WarpEdge[]> {
+/** Load one level's warp edges from disk (skips minibattle exits): its screen
+ *  exits plus one edge per rotating-door destination for each door sprite.
+ *  The edge-index builder's per-record read. */
+export async function loadWarpEdges(id: number, destinations: readonly RoomWarpDestination[]): Promise<WarpEdge[]> {
   const data = await window.shinyEgg.editor.loadResource({ kind: 'level', recordId: id })
+  return withLiveWarpEdges([], id, data.exits, data.sprites, destinations)
+}
+
+/** Adapt an in-memory edge list to the walkers' `loadEdges` (by source record). */
+export function edgeLoader(edges: readonly WarpEdge[]): (id: number) => Promise<WarpEdge[]> {
+  const bySource = new Map<number, WarpEdge[]>()
+  for (const edge of edges) {
+    const list = bySource.get(edge.sourceLevelRecordId)
+    if (list) list.push(edge)
+    else bySource.set(edge.sourceLevelRecordId, [edge])
+  }
+  return (id) => Promise.resolve(bySource.get(id) ?? [])
+}
+
+export function rotatingDoorEdges(id: number, sprites: readonly LevelSprite[], destinations: readonly RoomWarpDestination[]): WarpEdge[] {
+  return sprites.filter((s) => s.num === 0x01f).flatMap((sprite) => destinations.map((dest, doorIndex) => ({
+    ...dest, sourceLevelRecordId: id,
+    sourceScreenIndex: ((sprite.y >> 4) << 4) | (sprite.x >> 4),
+    kind: 'rotating-door' as const, sourceSpriteIndex: sprite.index, doorIndex
+  })))
+}
+
+export function warpEdgesFor(id: number, exits: readonly ScreenExit[]): WarpEdge[] {
   const edges: WarpEdge[] = []
-  for (const ex of data.exits as ScreenExit[]) {
+  for (const ex of exits) {
     if (ex.variant !== 'warp') continue
     edges.push({
       sourceLevelRecordId: id,
@@ -49,6 +81,61 @@ export async function loadWarpEdges(id: number): Promise<WarpEdge[]> {
     })
   }
   return edges
+}
+
+export function withLiveWarpEdges(edges: readonly WarpEdge[], id: number, exits: readonly ScreenExit[],
+  sprites: readonly LevelSprite[] = [], doors: readonly RoomWarpDestination[] = []): WarpEdge[] {
+  return [...edges.filter((e) => e.sourceLevelRecordId !== id), ...warpEdgesFor(id, exits),
+    ...rotatingDoorEdges(id, sprites, doors)]
+}
+
+/** One project snapshot supplies all incoming markers. Stage names are labels,
+ * never graph boundaries. External sources need not expand their entire stage. */
+export function roomGraph(root: number, selected: number | null, edges: readonly WarpEdge[]): {
+  subLevels: number[]
+  edges: WarpEdge[]
+  incomingByLevel: Map<number, IncomingExit[]>
+} {
+  const outgoing = new Map<number, WarpEdge[]>()
+  const incomingByLevel = new Map<number, IncomingExit[]>()
+  for (const edge of edges) {
+    const list = outgoing.get(edge.sourceLevelRecordId) ?? []
+    list.push(edge)
+    outgoing.set(edge.sourceLevelRecordId, list)
+    const incoming = incomingByLevel.get(edge.destLevelRecordId) ?? []
+    incoming.push({
+      ...(edge.kind ? { kind: edge.kind, sourceSpriteIndex: edge.sourceSpriteIndex, doorIndex: edge.doorIndex } : {}),
+      sourceLevelRecordId: edge.sourceLevelRecordId,
+      sourceScreenIndex: edge.sourceScreenIndex,
+      destX: edge.destX,
+      destY: edge.destY,
+      entranceType: edge.entranceType
+    })
+    incomingByLevel.set(edge.destLevelRecordId, incoming)
+  }
+  const subLevels = [root]
+  const seen = new Set(subLevels)
+  const expand = (): void => {
+    for (let i = 0; i < subLevels.length; i++) {
+      for (const edge of outgoing.get(subLevels[i]) ?? []) {
+        if (seen.has(edge.destLevelRecordId)) continue
+        seen.add(edge.destLevelRecordId)
+        subLevels.push(edge.destLevelRecordId)
+      }
+    }
+  }
+  expand()
+  // Keep a currently viewed room visible even if a live edit disconnected it.
+  if (selected !== null && !seen.has(selected)) {
+    seen.add(selected)
+    subLevels.push(selected)
+    expand()
+  }
+  return {
+    subLevels,
+    edges: edges.filter((e) => seen.has(e.sourceLevelRecordId) || seen.has(e.destLevelRecordId)),
+    incomingByLevel
+  }
 }
 
 /** One yielded step of the walk: a warp `edge`, the `chain` of `WarpStep`s from
@@ -65,15 +152,14 @@ export interface WarpVisit {
 }
 
 export interface WalkWarpOptions {
-  /** Whether to traverse INTO a destination once first seen. Discovery prunes
-   *  catalog entries (`(id) => !getLevel(id)`); chain-find expands everything
-   *  (the default). */
+  /** Whether to traverse INTO a destination once first seen. Defaults to
+   *  expanding everything, matching `roomGraph`'s room list. */
   shouldExpand?: (destLevelRecordId: number) => boolean
   /** Cap the chain length to avoid runaway loops in pathological graphs. */
   maxDepth?: number
-  /** Edge source — defaults to `loadWarpEdges`. Injectable for tests. A loader
+  /** Edge source: `edgeLoader(index)` in the app, a stub in tests. A loader
    *  that throws for an id (empty / special slot) drops that node silently. */
-  loadEdges?: (id: number) => Promise<WarpEdge[]>
+  loadEdges: (id: number) => Promise<WarpEdge[]>
 }
 
 /**
@@ -86,11 +172,11 @@ export interface WalkWarpOptions {
  */
 export async function* walkWarpGraph(
   root: number,
-  opts: WalkWarpOptions = {}
+  opts: WalkWarpOptions
 ): AsyncGenerator<WarpVisit> {
   const shouldExpand = opts.shouldExpand ?? (() => true)
   const maxDepth = opts.maxDepth ?? Infinity
-  const loadEdges = opts.loadEdges ?? loadWarpEdges
+  const loadEdges = opts.loadEdges
   const visited = new Set<number>([root])
   const queue: { id: number; chain: WarpStep[] }[] = [{ id: root, chain: [] }]
   while (queue.length > 0) {
@@ -134,7 +220,7 @@ export async function* walkWarpGraph(
 export async function findWarpChain(
   root: number,
   target: number,
-  opts: { maxDepth?: number; loadEdges?: (id: number) => Promise<WarpEdge[]> } = {}
+  opts: { maxDepth?: number; loadEdges: (id: number) => Promise<WarpEdge[]> }
 ): Promise<WarpStep[] | null> {
   for await (const { edge, chain } of walkWarpGraph(root, {
     maxDepth: opts.maxDepth ?? 16,
@@ -147,9 +233,8 @@ export async function findWarpChain(
 
 /**
  * Reverse parent lookup: of the catalog translevel `roots`, return the first
- * whose forward warp graph reaches `target` under the same catalog-pruning
- * `shouldExpand` as sub-room discovery — i.e. the translevel whose SubLevelMenu
- * lists `target`. Returns null if none own it (a true orphan), and `target`
+ * whose forward warp graph reaches `target` — with the default `shouldExpand`,
+ * the translevel whose room list (`roomGraph`) contains `target`. Returns null if none own it (a true orphan), and `target`
  * itself if it's one of the roots.
  *
  * Multi-source BFS: all roots are seeded into one queue sharing a `visited` set,
@@ -162,12 +247,12 @@ export async function findWarpChain(
 export async function findOwningTranslevel(
   target: number,
   roots: number[],
-  opts: WalkWarpOptions = {}
+  opts: WalkWarpOptions
 ): Promise<number | null> {
   if (roots.includes(target)) return target
   const shouldExpand = opts.shouldExpand ?? (() => true)
   const maxDepth = opts.maxDepth ?? Infinity
-  const loadEdges = opts.loadEdges ?? loadWarpEdges
+  const loadEdges = opts.loadEdges
   const visited = new Set<number>(roots)
   const queue: { id: number; source: number; depth: number }[] = roots.map((r) => ({
     id: r,

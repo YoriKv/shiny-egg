@@ -105,7 +105,7 @@ BNE skip                                    ;
   LDA #$0E : STA $105F                     ;   jump straight to death state
   LDA $6FA0,x : AND #$F9DF : STA $6FA0,x   ;   clear SuperFX render flags
   LDA $6FA2,x : AND #$FFE0 : STA $6FA2,x   ;   clear OAM priority bits
-  STZ $7542,x                              ;   clear X-velocity
+  STZ $7542,x                              ;   zero the Y acceleration step (no gravity pull)
 skip:
 REP #$20
 RTL

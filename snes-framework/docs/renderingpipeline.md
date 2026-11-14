@@ -106,7 +106,8 @@ selected by the level's **LevelMode** field (level-header byte 10,
 
 | Label | Address | Shape | Role |
 |---|---|---|---|
-| `DATA_scene_layout_indices` | `$00:BBAF` | 22 × `dw` | Word-offset index into the layout table, stride 20. `scene_layout_indices[LevelMode] = scene_register_layout + LevelMode*20`. |
+| `DATA_scene_layout_indices` | `$00:BBAF` | 22 × `dw` | Word-offset index into the layout table, stride 20. Indexed by `X` (a **byte** offset), so entry `i` = `scene_register_layout + i*20`. In-level callers pass `X = DATA_levelmode_index[LevelMode] = LevelMode*2 + 4`, i.e. **LevelMode `N` → row `N+2`** (see `bg23rendering.md §3`). Entries 19-21 are not in row order. |
+| `DATA_levelmode_index` | `$01:AF80` | 16 × `db` | `LevelMode ($00-$0F) → LevelMode*2 + 4`, the `X` handed to `CODE_init_scene_regs`. |
 | `DATA_reg_mirror_mapping` | `$00:BBDB` | 15 × `db` | The 15 PPU register low-bytes corresponding to mirror bytes 0..14 in the WRAM block at `$7E:095E-$096C`. See §2.3. |
 | `DATA_scene_register_layout` | `$00:BBEA` | 22 × 20 B | The actual per-LevelMode preset. See §2.2. |
 
@@ -196,7 +197,9 @@ Per `--callers`:
 For **normal in-level loads** (LevelMode `$00`-`$08`), the gm$0C
 chain runs `init_scene_regs` indirectly via the `.load_scene`
 sub-block in `gm0c_level_fadein_and_name`. The level header's
-LevelMode byte indexes `DATA_scene_layout_indices` to pick the row.
+LevelMode byte indexes `DATA_levelmode_index` (`$01:AF80`), whose
+value is the byte offset into `DATA_scene_layout_indices` — so the
+selected row is `LevelMode + 2`, not `LevelMode`.
 
 ### 2.6 Trace-harness gotcha (sprite-render learned this the hard way)
 

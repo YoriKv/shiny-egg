@@ -11,6 +11,7 @@
 import type { HeaderGuide } from '../../../preload/api'
 import type { EnumOption } from '../data/property-schema'
 import { getLevel } from '../data/levels'
+import { getRoomMetadata } from '../data/room-metadata'
 import { hex0x } from './hex'
 
 /** How the panel names a record in a usage summary. `order` sorts the groups
@@ -34,6 +35,9 @@ export interface UsageSummary {
  *  anything else by id, after them. */
 export function usageLabel(recordId: number): UsageLabel {
   const l = getLevel(recordId)
+  const name = getRoomMetadata(recordId)?.name
+  if (name) return { short: `${name} (${hex0x(recordId)})`, long: `${name} (${hex0x(recordId)})`,
+    order: l?.translevelId ?? 0x100 + recordId }
   if (l) return { short: l.slot, long: `${l.slot} ${l.name}`, order: l.translevelId ?? 0x100 + recordId }
   return { short: hex0x(recordId), long: `Room ${hex0x(recordId)}`, order: 0x200 + recordId }
 }

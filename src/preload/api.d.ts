@@ -158,8 +158,11 @@ import type {
   Settings,
   SpriteLayerResponse,
   SpriteProperty,
-  SpritePropertiesRequest
+  SpritePropertiesRequest,
+  ProjectEditorMetadata,
+  RoomMetadataPatch
 } from '../shared/ipc-types'
+import type { RoomWarpDestination } from 'snes-framework/types'
 
 // ── Re-exported data shapes ─────────────────────────────────────────────────
 // The renderer imports these from this contract (single import surface). Each
@@ -384,7 +387,10 @@ export type {
   AudioSfxUi,
   AudioSongImportPreviewResult,
   AudioSongImportRunResult,
-  AudioSongImportStateResult
+  AudioSongImportStateResult,
+  ProjectEditorMetadata,
+  RoomMetadata,
+  RoomMetadataPatch
 } from '../shared/ipc-types'
 export type {
   AramImportBudget,
@@ -394,7 +400,8 @@ export type {
   SongTimeline,
   TimedNote,
   TimedVcmd,
-  VoiceTimeline
+  VoiceTimeline,
+  RoomWarpDestination
 } from 'snes-framework/types'
 
 // ── API surface (method-bearing; contract-only, no data analogue) ───────────
@@ -405,6 +412,10 @@ export interface SettingsAPI {
 }
 
 export interface ProjectsAPI {
+  /** Editor-only project metadata (room names / notes); never written to the ROM. */
+  metadata: (id: string) => Promise<ProjectEditorMetadata>
+  /** Set or clear one room's name / notes; resolves to the updated metadata. */
+  patchRoomMetadata: (id: string, recordId: number, patch: RoomMetadataPatch) => Promise<ProjectEditorMetadata>
   list: () => Promise<ProjectSummary[]>
   /** Current project, auto-creating the default `new-shiny-00` if none. */
   ensureCurrent: () => Promise<ProjectSummary>
@@ -637,6 +648,8 @@ export interface RenderAPI {
 /** Generic editable-resource load/save (the registry). The level editor and
  *  all new tools (strings, …) load and save through this. */
 export interface EditorAPI {
+  /** The rotating-door sprite's four fixed warp destinations (overlay-first). */
+  rotatingDoorEntrances: () => Promise<RoomWarpDestination[]>
   /** Load a resource's model. `{kind:'level'}` resolves to `LevelData`; other
    *  kinds return `unknown` (the caller narrows). */
   loadResource(resource: { kind: 'level'; recordId: number }): Promise<LevelData>

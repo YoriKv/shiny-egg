@@ -1400,7 +1400,8 @@ DATA_shy_guy_palette_indices:
 ; Shared Init for shy-guy ($01E) and lantern ghost ($133). Both use the
 ; same state-machine layout and OAM template; they only differ in tile
 ; / palette selection (decided in Main).
-; Sets up: gravity flags ($6FA0/A2 = 0x0060/0x4000), draw priority $7040 = 5,
+; Sets up: collision word $6FA0 = $0060 (projectile-immune + not tongueable, DATA_0A9320
+; bits 5-6) and terrain word $6FA2 = $4000 (DATA_0A971E), behaviour word $7040 = 5,
 ; despawn-on-screen-edge sentinel $74A2 = $00FF, zero head-bonk counter,
 ; shifts pixel-X by +8 to match the visual centre.
 ; Raidenthequick: init_shy_guy.
@@ -1752,7 +1753,7 @@ CODE_048C16:
 	BNE.b sprite_thrown_hit_filter
 	JMP.w CODE_048CED
 
-sprite_thrown_hit_filter:                         ; candidate must be a live thrown projectile ($6FA0,y bit $0200, status $10, $7D38,y nonzero = thrown by Yoshi); Cactus Jack ignored, Shy-Guy-likes/Spike kill both, others knock this sprite into a tumble
+sprite_thrown_hit_filter:                         ; candidate must be a sprite-collision target ($6FA0,y bit $0200 = DATA_0A9320 bit 9) with status $10, $7D38,y nonzero = thrown by Yoshi); Cactus Jack ignored, Shy-Guy-likes/Spike kill both, others knock this sprite into a tumble
 CODE_048C23:
 	LDA.w $6FA0,y
 	AND.w #$0200

@@ -2092,7 +2092,15 @@ CODE_098C70:
 	STW (R0)
 	IWT R15, #CODE_098AE5 : INC R10
 
+;-------------------------------------------------------------------------
+; DATA_098C87 -- sprite off-screen DESPAWN margins (X, Y px), 3 entries indexed
+; by (slot word $1000/$1040 & $000C) - 4, i.e. DATA_0A9B1C / DATA_0AB312 bits 2-3
+; (class 0 = never despawns). (Original source: ENCLEAR_SIZE.) A slot survives
+; while -X <= x-camX <= $F0+X and -Y <= y-camY <= $C8+Y (FXCODE_098925).
+;   class 1: $60,$60   class 2: $90,$60   class 3: $90,$A0 (BG3-layer sprites)
+;-------------------------------------------------------------------------
 DATA_098C87:
+DATA_sprite_despawn_margins:                         ; descriptive alias
 	dw $0060,$0060,$0090,$0060,$0090,$00A0
 
 CODE_098C93:

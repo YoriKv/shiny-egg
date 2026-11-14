@@ -3,6 +3,7 @@ import { formatLevelId, levelLabel, useRemovedRecords } from './data/levels'
 import { useDropdown } from './hooks/useDropdown'
 import { HelpDialog } from './HelpDialog'
 import { ROOM_LIST_HELP, RoomListHelpPref } from './app-help'
+import type { RoomContextHandler } from './RoomsDialog'
 
 export interface SubLevelMenuProps {
   /** The root level RECORD id (the LevelMenu pick) — anchors the BFS. */
@@ -15,6 +16,7 @@ export interface SubLevelMenuProps {
   /** True while BFS is still in flight. */
   loading: boolean
   onSelect: (id: number) => void
+  onRoomContextMenu?: RoomContextHandler
   /** Hide the "Room List — Help" entry at the bottom of the dropdown. App owns
    *  the preference (persisted); the checkbox inside the help dialog — mirrored
    *  in the Level Editor Help, which is how it comes back — drives it. */
@@ -34,6 +36,7 @@ export function SubLevelMenu({
   subLevels,
   loading,
   onSelect,
+  onRoomContextMenu,
   helpHidden,
   onHelpHiddenChange
 }: SubLevelMenuProps): JSX.Element | null {
@@ -81,7 +84,8 @@ export function SubLevelMenu({
     // Static chip — no dropdown to open.
     return (
       <div className="se-sublevelmenu" ref={containerRef}>
-        <div className="se-sublevelmenu__trigger is-static" title="No sub-rooms in this translevel.">
+        <div className="se-sublevelmenu__trigger is-static" title="No sub-rooms in this translevel."
+          onContextMenu={(e) => { if (currentLevelRecordId !== null) onRoomContextMenu?.(e, currentLevelRecordId) }}>
           <span className="se-sublevelmenu__tag">Room</span>
           <span className="se-sublevelmenu__name">{triggerLabel}</span>
           <span className="se-sublevelmenu__count">{indicator}</span>
@@ -97,6 +101,7 @@ export function SubLevelMenu({
         type="button"
         className={`se-sublevelmenu__trigger${open ? ' is-open' : ''}`}
         onClick={() => setOpen((o) => !o)}
+        onContextMenu={(e) => { if (currentLevelRecordId !== null) onRoomContextMenu?.(e, currentLevelRecordId) }}
         title={`Sub-rooms reachable from translevel root ${formatLevelId(rootLevelRecordId)}`}
       >
         <span className="se-sublevelmenu__tag">Room</span>
@@ -133,6 +138,7 @@ export function SubLevelMenu({
                   isRemoved ? ' is-removed' : ''
                 }`}
                 disabled={isRemoved}
+                onContextMenu={(e) => onRoomContextMenu?.(e, id)}
                 title={isRemoved ? 'Removed — restore it in Level Banks to open it' : undefined}
                 onClick={() => {
                   onSelect(id)

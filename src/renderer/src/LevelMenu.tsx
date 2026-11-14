@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent, type JSX } from 'react'
-import { formatLevelId, getLevel, isRemovedRecord, useLevelsCatalog } from './data/levels'
+import { formatLevelId, getLevel, getLevelByTranslevel, isRemovedRecord, useLevelsCatalog } from './data/levels'
 import { useDropdown } from './hooks/useDropdown'
+import type { RoomContextHandler } from './RoomsDialog'
+import { getRoomMetadata, useRoomMetadata } from './data/room-metadata'
 
 export interface LevelMenuProps {
   selectedId: number | null
-  onSelect: (id: number) => void
+  selectedTranslevelId: number | null
+  onSelect: (id: number, translevelId?: number) => void
+  onViewAll?: () => void
+  onRoomContextMenu?: RoomContextHandler
 }
 
 /** Records are indexed into the cart `Ptrs` table — a single byte (0x00–0xFF). */
@@ -20,7 +25,7 @@ function parseRecordId(raw: string): number | null {
   return n
 }
 
-export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element {
+export function LevelMenu({ selectedId, selectedTranslevelId, onSelect, onViewAll, onRoomContextMenu }: LevelMenuProps): JSX.Element {
   const { open, setOpen, containerRef } = useDropdown()
   const [gotoText, setGotoText] = useState('')
   // null = no error; a string is the message shown under the field (bad id, or a
@@ -28,6 +33,7 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
   const [gotoError, setGotoError] = useState<string | null>(null)
   const selectedRef = useRef<HTMLButtonElement>(null)
   const catalog = useLevelsCatalog()
+  useRoomMetadata()
 
   // Jump to any data record by id — including rooms not in the catalog or
   // reachable as sub-rooms. loadLevel reports empty/unbacked records, so we
@@ -69,7 +75,8 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
     selectedRef.current?.scrollIntoView({ block: 'nearest' })
   }, [open])
 
-  const selected = selectedId !== null ? getLevel(selectedId) : null
+  const selected = selectedTranslevelId !== null ? getLevelByTranslevel(selectedTranslevelId) :
+    selectedId !== null ? getLevel(selectedId) : null
 
   return (
     <div className="se-levelmenu" ref={containerRef}>
@@ -82,7 +89,8 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
           {selected ? selected.slot : 'LEVEL'}
         </span>
         <span className="se-levelmenu__name">
-          {selected ? selected.name : 'Select level…'}
+          {selected ? `${selected.name}${selected.recordId !== null && getRoomMetadata(selected.recordId)?.name
+            ? ` · ${getRoomMetadata(selected.recordId)!.name}` : ''}` : 'Select level…'}
         </span>
         <svg
           className="se-levelmenu__chevron"
@@ -118,20 +126,22 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
                 autoComplete="off"
                 title="Open any data record by id (0x00–0xFF), including rooms not listed below"
               />
+              <button type="button" className="se-btn" onClick={() => { setOpen(false); onViewAll?.() }}>View All</button>
             </form>
             {gotoError && <div className="se-levelmenu__gotoerror">{gotoError}</div>}
           </div>
-          {catalog.groups.map((group) => (
+          {catalog.groups.filter((g) => g.levels.some((l) => l.translevelId !== undefined)).map((group) => (
             <div className="se-levelmenu__group" key={group.label}>
               <div className="se-levelmenu__grouphead">{group.label}</div>
               {/* Bonus slots (the GameMode $2A minigame code scenes) are catalogued
                   for the World Map panel but have no level data — hide them here
                   rather than show a permanently disabled row. */}
-              {group.levels.filter((l) => l.slot !== 'Bonus').map((l) => {
+              {group.levels.filter((l) => l.translevelId !== undefined && l.slot !== 'Bonus').map((l) => {
                 // null id (e.g. the Prologue intro slot): catalogued but not an
                 // editable level — render disabled, no selectable hex id.
                 const lid = l.recordId
-                const isActive = lid !== null && lid === selectedId
+                const isActive = lid !== null && (selectedTranslevelId !== null
+                  ? l.translevelId === selectedTranslevelId : lid === selectedId)
                 return (
                   <button
                     key={`${l.world}:${l.slot}`}
@@ -141,17 +151,19 @@ export function LevelMenu({ selectedId, onSelect }: LevelMenuProps): JSX.Element
                       lid === null ? ' is-nodata' : ''
                     }`}
                     disabled={lid === null}
+                    onContextMenu={(e) => { if (lid !== null) onRoomContextMenu?.(e, lid) }}
                     title={
                       lid === null ? 'No level data — not an editable level' : undefined
                     }
                     onClick={() => {
                       if (lid === null) return
-                      onSelect(lid)
+                      onSelect(lid, l.translevelId)
                       setOpen(false)
                     }}
                   >
                     <span className="se-levelmenu__rowslot">{l.slot}</span>
-                    <span className="se-levelmenu__rowname">{l.name}</span>
+                    <span className="se-levelmenu__rowname">{l.name}{lid !== null && getRoomMetadata(lid)?.name
+                      ? ` · ${getRoomMetadata(lid)!.name}` : ''}</span>
                     <span className="se-levelmenu__rowid">
                       {lid === null ? '—' : formatLevelId(lid)}
                     </span>

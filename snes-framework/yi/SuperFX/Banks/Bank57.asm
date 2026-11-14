@@ -4,8 +4,7 @@
 ; "H-flipped variants of the $56 background map characters" — that is BYTE-DISPROVEN
 ; (a flip is a permutation and preserves the byte histogram; $57's histogram matches
 ; no window of $56 or any other chunky bank). The bank is INDEPENDENT bitmap data of
-; unverified purpose (map-render-adjacent by consumer locality). See
-; docs/graphics-survey/11-vram-loading.md §4.
+; unverified purpose (map-render-adjacent by consumer locality).
 
 %SuperFXBankStart(!FXBank57)
 

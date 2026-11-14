@@ -29,7 +29,7 @@ Source of truth: the `.asm` files in `global/` and `yi/`. Extracted game assets 
 | `mchip.md` | SuperFX/GSU-2: register conventions, decompressors, player physics |
 | `leveldataengine.md` | Bank12/13: object dispatch, Map16 walker, page-table cart location |
 | `levelloader.md` | Bank17/0F: gamemode chain, level-load pipeline, world-map dispatcher |
-| `spritestateengine.md` | Bank03: 9-state sprite dispatcher, per-sprite pointer tables |
+| `spritestateengine.md` | Bank03: 9-state sprite dispatcher, per-sprite pointer tables, the per-ID property tables (hitbox, gravity, contact, terrain, burn/freeze, despawn) |
 | `renderingpipeline.md` | How a level's BG/sprite layers are assembled |
 | `bg23rendering.md` | BG2/BG3 reconstruction: per-LevelMode PPU config, parallax scroll math, HDMA/SuperFX layer effects |
 | `family-*.md` (23) | Per-sprite-family deep-dives covering every regular sprite |

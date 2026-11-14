@@ -1394,7 +1394,7 @@ DATA_ambient_sprite_routines:                      ; Raidenthequick: DATA_ambien
 ;-------------------------------------------------------------------------
 ; CODE_handle_ambient_sprites -- per-frame driver for ambient-sprite slots.
 ; Raidenthequick: CODE_handle_ambient_sprites.
-; Iterates 60 ambient-sprite slots (X = $3C down to 0); for each live slot
+; Iterates the 16 ambient-sprite slots (X = byte offset $3C down to 0, stride 4); for each live slot
 ; (existence flag != 0), dispatches via CODE_execute_ambient_sprite_routine
 ; which indexes DATA_ambient_sprite_routines using the slot's routine-ID byte.
 ; $0B8F is the "frozen-this-frame" combined flag (used by individual ambient
@@ -1520,9 +1520,12 @@ CODE_008B20:
 ; INPUTS:   A = ambient sprite ID; X = caller's slot ID (preserved); slots
 ;           at !EXRAM_YI_Level_AmbSpr_SpriteExistsFlag stride 4.
 ; OUTPUTS:  Y = allocated slot index; all per-slot fields zeroed;
-;           SpriteID stored; FXDATA_0AB?12 lookup populates default OAM
-;           tile / palette / size / X-Y-offset / collision-shape fields.
-; MODIFIES: A, X, Y; 60 ExRAM slots at the chosen Y; M-width restored on exit.
+;           SpriteID stored; the six per-id tables DATA_0AAF12..DATA_0AB912
+;           (indexed by id-$1BA, see their header in SuperFX/Banks/Bank0A.asm)
+;           seed OBJ tile base $1140, OAM attr $1002 (EOR #$30), draw priority
+;           $1462, Y accel $1502 / target Y speed $15A2, and the mode words
+;           $0F60 (unused) / $0F62 (terrain) / $1000 (draw + cull).
+; MODIFIES: A, X, Y; the 16 ExRAM slot pages at the chosen Y; M-width restored on exit.
 ; CALLERS:  whenever a visual-only sprite spawns -- coin collection, splash
 ;           on water entry, smoke puffs after enemy stomp, score popups.
 ;-------------------------------------------------------------------------
@@ -8196,13 +8199,12 @@ DATA_00CC58:
 
 ; Credits staff-roll OAM letter streams — 35 pages (some table slots share a
 ; body), consumed by the scroller above from the WRAM-relocated copy. Stream
-; format (fully traced; docs/graphics-survey/09-font-hud-messages.md §4b):
+; format (fully traced):
 ; header word = X,Y; then (letterByte, advance) pairs — letterByte bit 4 picks
 ; OBJ palette 6/7 (= the glyph plane / the font code's high bit), advance = the
 ; 1bpp font's proportional width (word gaps folded in); $FF + $00 end / $01 new
-; line (header word follows). Edited by the Strings panel Credits tab
-; (scripts/asm/credits-staff.ts); total stream bytes must not grow (the streams
-; live inside the fixed-size relocated block).
+; line (header word follows). The total stream byte count must not grow: the
+; streams live inside the fixed-size relocated block.
 ;@editable:credits-staff begin
 DATA_00CC5C:
 	dw $A857,$08DA,$08B5,$0498,$07B9,$077C,$087A,$08BB

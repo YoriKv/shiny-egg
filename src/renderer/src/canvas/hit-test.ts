@@ -3,7 +3,8 @@
 // point. No React, no DOM events.
 
 import type { LevelData, LevelObject, LevelSprite, SpriteCelBounds } from '../../../preload/api'
-import type { IncomingExit, LayerVisibility, Selection } from '../types'
+import type { IncomingExit, LayerVisibility, Selection, WorldMapSpawn } from '../types'
+import { incomingIdentity } from '../lib/warp-graph'
 import { isLayerVisible } from './draw/objects'
 import { spriteCelBoundsFor, spriteOutlineBox } from './draw/sprites'
 import {
@@ -121,8 +122,8 @@ export function selectionKey(sel: Selection): string {
     case 'object': return `o:${sel.uid}`
     case 'sprite': return `s:${sel.uid}`
     case 'exit': return `e:${sel.uid}`
-    case 'incoming': return `i:${sel.incoming.sourceLevelRecordId}:${sel.incoming.sourceScreenIndex}`
-    case 'spawn': return 'sp' // singleton per level
+    case 'incoming': return `i:${incomingIdentity(sel.incoming)}`
+    case 'spawn': return `sp:${sel.spawn.entranceIndex ?? ''}`
   }
 }
 
@@ -201,7 +202,7 @@ export function hitTestAll(
   /** Effective spawn cell — the world-map entrance-table DRAFT position when
    *  editing, so the moved marker stays clickable before save+reload. Defaults to
    *  `level.spawn` (the base, extract-time position) when omitted. */
-  spawnPos?: { x: number; y: number } | null
+  spawnPos?: WorldMapSpawn | WorldMapSpawn[] | null
 ): Selection[] {
   if (!level || level.empty || level.special) return []
   const { wx, wy } = clientToWorld(rect, view, clientX, clientY)
@@ -240,8 +241,8 @@ export function hitTestAll(
   // layer, its selectable outline rides Sprite Editing. It's cycled before the
   // sprite list to keep the exits → incoming → spawn → sprites → objects order.
   if (layers.spriteOutlines !== 'off') {
-    const spawn = spawnPos !== undefined ? spawnPos : level.spawn
-    if (spawn) {
+    const positions = spawnPos !== undefined ? spawnPos : level.spawn
+    for (const spawn of Array.isArray(positions) ? positions : positions ? [positions] : []) {
       const sx = (spawn.x + 0.5) * CELL_PX
       const sy = (spawn.y + SPAWN_MARKER_DY + 0.5) * CELL_PX
       if (
@@ -447,16 +448,13 @@ export function hitTestSpawn(
   clientX: number,
   clientY: number,
   /** Effective spawn cell (entrance-table draft); defaults to `level.spawn`. */
-  spawnPos?: { x: number; y: number } | null
+  spawnPos?: WorldMapSpawn | WorldMapSpawn[] | null
 ): boolean {
   if (!level || level.empty || level.special || layers.spriteOutlines === 'off') return false
-  const spawn = spawnPos !== undefined ? spawnPos : level.spawn
-  if (!spawn) return false
+  const positions = spawnPos !== undefined ? spawnPos : level.spawn
+  const spawns = Array.isArray(positions) ? positions : positions ? [positions] : []
   const { wx, wy } = clientToWorld(rect, view, clientX, clientY)
-  const sx = (spawn.x + 0.5) * CELL_PX
-  const sy = (spawn.y + SPAWN_MARKER_DY + 0.5) * CELL_PX
-  return (
-    Math.abs(wx - sx) <= SPAWN_HIT_HALF_PX &&
-    Math.abs(wy - sy) <= SPAWN_HIT_HALF_PX
-  )
+  return spawns.some((spawn) =>
+    Math.abs(wx - (spawn.x + 0.5) * CELL_PX) <= SPAWN_HIT_HALF_PX &&
+    Math.abs(wy - (spawn.y + SPAWN_MARKER_DY + 0.5) * CELL_PX) <= SPAWN_HIT_HALF_PX)
 }

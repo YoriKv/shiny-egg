@@ -163,7 +163,9 @@ function walkLabeledEntries<E extends { label: string; labels: string[] }>(
   for (const rawLine of inner.split('\n')) {
     const lineStart = offset
     offset += rawLine.length + 1 // account for the consumed '\n'
-    const code = stripComment(rawLine)
+    // Parse without the CR in Windows line endings, but retain the original
+    // raw line and offsets so saves preserve the source formatting.
+    const code = stripComment(rawLine.replace(/\r$/, ''))
     const trimmed = code.trim()
     if (trimmed === '') continue
     const label = LABEL_RE.exec(trimmed)?.[1]
@@ -845,7 +847,7 @@ function parseCreditsRegion(inner: string): CreditsParsedEntry[] {
         rowBytes.push(v & 0xff, (v >> 8) & 0xff)
       }
       if (e.bodyStart < 0) e.bodyStart = lineStart
-      e.bodyEnd = lineStart + rawLine.length
+      e.bodyEnd = lineStart + rawLine.replace(/\r$/, '').length
       e.bytes.push(...rowBytes)
     }
   )
@@ -925,14 +927,14 @@ export function parseCreditsStaff(
 }
 
 /** Format a page's stream bytes as `dw` rows (8 words per row, original shape). */
-function creditsBytesToDwRows(bytes: readonly number[]): string {
+function creditsBytesToDwRows(bytes: readonly number[], newline: string): string {
   const words: string[] = []
   for (let i = 0; i + 1 < bytes.length; i += 2) {
     words.push(`$${((bytes[i]! | (bytes[i + 1]! << 8)) >>> 0).toString(16).toUpperCase().padStart(4, '0')}`)
   }
   const rows: string[] = []
   for (let i = 0; i < words.length; i += 8) rows.push(`\tdw ${words.slice(i, i + 8).join(',')}`)
-  return rows.join('\n')
+  return rows.join(newline)
 }
 
 /** Serialize edited credits pages: a changed page re-encodes (letters from the
@@ -968,7 +970,11 @@ export function serializeCreditsStaff(
       if (!enc.ok) return { error: `"${edited?.name ?? baseEntry.label}": ${enc.error}` }
       return {
         cost: enc.bytes.length,
-        edits: [{ start: baseEntry.bodyStart, end: baseEntry.bodyEnd, replacement: creditsBytesToDwRows(enc.bytes) }]
+        edits: [{
+          start: baseEntry.bodyStart,
+          end: baseEntry.bodyEnd,
+          replacement: creditsBytesToDwRows(enc.bytes, contentText.includes('\r\n') ? '\r\n' : '\n')
+        }]
       }
     }
   })
@@ -1001,6 +1007,8 @@ export function serializeMessageText(
   const baseBytes = messageRegionBytes(budgetRegion.inner, ft)
   const headroom = Math.max(0, opts.headroomBytes ?? 0)
   const budget = baseBytes + headroom
+  // Re-emitted bodies follow the region's own line ending, so a CRLF file stays CRLF.
+  const eol = region.inner.includes('\r\n') ? '\r\n' : '\n'
   const edits: TextEdit[] = []
   let newTotal = 0
   for (const e of contentEntries) {
@@ -1019,7 +1027,7 @@ export function serializeMessageText(
     edits.push({
       start: e.bodyStart,
       end: e.bodyEnd,
-      replacement: bytesToMessageDirectives(enc.bytes, fontMap) + '\n'
+      replacement: (bytesToMessageDirectives(enc.bytes, fontMap) + '\n').replace(/\n/g, eol)
     })
   }
 

@@ -45,7 +45,7 @@ const bank09 = readFileSync(path.join(FRAMEWORK_ROOT, 'yi', 'SuperFX', 'Banks', 
   const at = bank09.indexOf('DATA_09BC2F:')
   const widths: number[] = []
   for (const line of bank09.slice(at).split('\n').slice(1)) {
-    const m = /^\s*db\s+(\S.*)$/.exec(line)
+    const m = /^\s*db\s+(\S.*)$/.exec(line.replace(/\r$/, ''))
     if (!m) break
     for (const tok of m[1].split(',')) widths.push(parseInt(tok.trim().replace('$', ''), 16))
   }

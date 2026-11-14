@@ -79,8 +79,14 @@ off-screen (scroll-as-occlusion). BG3 keeps its indices within its char chunk.
 ## 3. Per-LevelMode scene configuration (THE map)
 
 Each LevelMode selects a row of `DATA_scene_register_layout` (`$00:BBEA`, 22×20,
-indexed via `DATA_scene_layout_indices` `$00:BBAF` — flat `mode*20` for all 15 used
-modes). `CODE_init_scene_regs` (`$00:BDA2`) copies the row's 15 register mirrors
+indexed via `DATA_scene_layout_indices` `$00:BBAF`). **LevelMode `N` selects row `N+2`,
+not row `N`** — the in-level call sites go through a second table:
+`LDY LevelMode : LDX DATA_levelmode_index,y : JSL CODE_init_scene_regs`
+(`$01:B084`, `$01:B1BC`), where `DATA_levelmode_index` (`$01:AF80`) holds
+`mode*2 + 4` and `X` is a **byte** offset into the **word** table. So mode `$05` (1-1's)
+lands on row 7 (`TM = $15`, BG3 on), not row 5 (`TM = $11`, which is mode `$03`'s
+offset-per-tile row). The mode → row column in the table below is the verified mapping.
+`CODE_init_scene_regs` (`$00:BDA2`) copies the row's 15 register mirrors
 (`$7E:095E–096C`) to the PPU once per scene-load. **But `irq_normal_level_mode`
 rewrites BGMODE/TM/CGWSEL + every scroll register each frame at scanline `$DC`
 (§4)** — so the *in-level-area* config differs from the scene-table preset.

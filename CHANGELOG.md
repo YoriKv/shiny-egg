@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.7.10 - 2026-11-14
+
+- Merged in: https://github.com/YoriKv/shiny-egg/pull/4
+-   Fixed the intro story, ending text and credits string editors showing empty on Windows
+- Merged in: https://github.com/YoriKv/shiny-egg/pull/5
+-   Rooms can be given names and notes, and a new All Rooms list makes it easy to jump to any room
+-   Exits map shows every link into a room
+-   Each stage that starts in a shared room gets its own spawn marker
+
 ## v0.7.9 - 2026-11-03
 
 - Graphics: new Spritesets tab to edit sprite tilesets

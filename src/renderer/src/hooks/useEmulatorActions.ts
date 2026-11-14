@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react'
 import type { RefObject } from 'react'
 import type { TestInventory } from '../../../preload/api'
 import { gates, type Blocker } from '../lib/level-blockers'
-import { getAllLevels, getLevel } from '../data/levels'
-import { findWarpChain } from '../lib/warp-graph'
+import { getAllLevels, getLevel, getLevelByTranslevel } from '../data/levels'
+import { edgeLoader, findWarpChain, type WarpEdge } from '../lib/warp-graph'
 import { hex } from '../lib/hex'
 
 // Best-effort spawn cell for an orphan-room Test Level boot — a room with no
@@ -32,6 +32,10 @@ export interface EmulatorActionsParams {
   blockers: Blocker[]
   selectedLevelRecordId: number | null
   rootLevelRecordId: number | null
+  rootTranslevelId: number | null
+  /** The project warp index (useSubLevelBFS.readEdges), live edits included,
+   *  so the replayed chain is the one the room list shows. */
+  readWarpEdges: () => Promise<WarpEdge[]>
   testSpawn: { levelRecordId: number; x: number; y: number } | null
   /** Items to seed into Yoshi's egg trail on Test Level boot (toolbar dropdown). */
   testInventory: TestInventory
@@ -69,6 +73,8 @@ export function useEmulatorActions({
   blockers,
   selectedLevelRecordId,
   rootLevelRecordId,
+  rootTranslevelId,
+  readWarpEdges,
   testSpawn,
   testInventory,
   appendLog,
@@ -159,7 +165,8 @@ export function useEmulatorActions({
       //      warp to the record id. The cart's warp re-entry (CODE_load_level_data_pointers)
       //      indexes the level-data pointer table by id directly, so any backed
       //      record loads — including ones unreachable from the world map.
-      const targetEntry = getLevel(selectedLevelRecordId)
+      const targetEntry = selectedLevelRecordId === rootLevelRecordId && rootTranslevelId !== null
+        ? getLevelByTranslevel(rootTranslevelId) : getLevel(selectedLevelRecordId)
       let bootTranslevelId: number
       let warps:
         | Array<{ destLevelRecordId: number; destX: number; destY: number; entranceType: number }>
@@ -187,10 +194,10 @@ export function useEmulatorActions({
           const e = getAllLevels().find((l) => l.translevelId === tlId)
           return e != null && e.world !== 'Intro'
         }
-        const rootTranslevelId =
-          rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId : null
+        const rootSlot =
+          rootTranslevelId ?? (rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId : null)
         const parentTranslevelId =
-          (isBootableParent(rootTranslevelId) ? rootTranslevelId : null) ??
+          (isBootableParent(rootSlot) ? rootSlot : null) ??
           getAllLevels().find((l) => l.translevelId != null && l.world !== 'Intro')
             ?.translevelId ??
           null
@@ -201,7 +208,8 @@ export function useEmulatorActions({
         bootTranslevelId = parentTranslevelId
         const chain =
           rootLevelRecordId !== null && rootLevelRecordId !== selectedLevelRecordId
-            ? await findWarpChain(rootLevelRecordId, selectedLevelRecordId, { maxDepth: 16 })
+            ? await findWarpChain(rootLevelRecordId, selectedLevelRecordId,
+              { maxDepth: 16, loadEdges: edgeLoader(await readWarpEdges()) })
             : null
         if (chain) {
           // (2) Reachable sub-room — replay the real route.
@@ -268,6 +276,8 @@ export function useEmulatorActions({
     [
       selectedLevelRecordId,
       rootLevelRecordId,
+      rootTranslevelId,
+      readWarpEdges,
       saveAndBuildIfNeeded,
       blockers,
       testSpawn,

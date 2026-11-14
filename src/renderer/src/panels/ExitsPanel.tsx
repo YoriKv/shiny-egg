@@ -9,16 +9,18 @@
 //    level selects it (Properties); on any other grid it jumps there.
 //  • Entrance cells: amber outline on the screen a warp lands in — the same
 //    amber as the canvas's incoming-entrance markers.
-//  • External destinations (warps that leave the cluster into another catalog
-//    level) render as compact label stubs, clickable to navigate.
+//  • Incoming sources outside the reachable rooms render as compact clickable
+//    stubs, keeping their entrances visible without expanding another stage.
 //
 // The LOADED level's outgoing edges come from its live (possibly unsaved)
 // `level.exits`, so a just-placed exit shows immediately; every other level's
-// edges come from the BFS walk (`useSubLevelBFS.edges`, on-disk state).
+// edges come from the project-wide index (`useSubLevelBFS.edges`).
 
 import type { JSX } from 'react'
 import type { LevelData, ScreenExit } from '../../../preload/api'
-import { getLevel } from '../data/levels'
+import { roomLabel } from '../data/levels'
+import type { RoomContextHandler } from '../RoomsDialog'
+import { incomingIdentity } from '../lib/warp-graph'
 import type { IncomingExit, Selection } from '../types'
 import type { WarpEdge } from '../lib/warp-graph'
 import { hex0x } from '../lib/hex'
@@ -47,8 +49,12 @@ const ACCENT = '#d4e157'
 
 /** Friendly label for a record: catalog "slot name", else "Room 0xNN". */
 function levelLabel(recordId: number): string {
-  const cat = getLevel(recordId)
-  return cat ? `${cat.slot} ${cat.name}` : `Room ${hex0x(recordId, 2)}`
+  return roomLabel(recordId)
+}
+
+function nodeLabel(recordId: number): string {
+  const full = levelLabel(recordId)
+  return full.length > 32 ? `${full.slice(0, 21)}… (${hex0x(recordId, 2)})` : full
 }
 
 interface Node {
@@ -83,7 +89,7 @@ function layoutNodes(subLevels: number[], edges: WarpEdge[]): Map<number, Node> 
   }
   for (const id of subLevels) if (!depth.has(id)) depth.set(id, 0)
   // External stubs share the column after their (shallowest) source.
-  const stubIds = [...new Set(edges.map((e) => e.destLevelRecordId))].filter(
+  const stubIds = [...new Set(edges.flatMap((e) => [e.sourceLevelRecordId, e.destLevelRecordId]))].filter(
     (id) => !inCluster.has(id)
   )
 
@@ -140,17 +146,21 @@ export function ExitsBody({
   selection,
   subLevels,
   edges,
+  incoming,
   loading,
   onSelectExit,
   onSelectIncoming,
-  onJump
+  onJump,
+  onRoomContextMenu
 }: {
   level: LevelData | null
+  onRoomContextMenu?: RoomContextHandler
   selection: Selection[]
   /** The root cluster in BFS order (root first). */
   subLevels: number[]
   /** Every warp edge of the cluster (BFS order, on-disk state). */
   edges: WarpEdge[]
+  incoming: IncomingExit[]
   loading: boolean
   onSelectExit: (uid: number) => void
   /** Select an incoming-entrance marker of the LOADED level (Properties opens). */
@@ -173,22 +183,12 @@ export function ExitsBody({
     onJump(recordId, (col << 4) + 8, (row << 4) + 8)
   }
 
-  // The loaded level's edges from its LIVE exits (unsaved placements show);
-  // everything else from the BFS walk.
-  const liveEdges: WarpEdge[] = level.exits
-    .filter((e): e is Extract<ScreenExit, { variant: 'warp' }> => e.variant === 'warp')
-    .map((e) => ({
-      sourceLevelRecordId: level.recordId,
-      sourceScreenIndex: e.screenIndex,
-      destLevelRecordId: e.destLevelRecordId,
-      destX: e.destX,
-      destY: e.destY,
-      entranceType: e.entranceType
-    }))
-  const allEdges = [
-    ...edges.filter((e) => e.sourceLevelRecordId !== level.recordId),
-    ...liveEdges
-  ]
+  // The project index already includes the loaded level's live exits/sprites.
+  const allEdges = edges.map((edge) => {
+    if (edge.destLevelRecordId !== level.recordId) return edge
+    const marker = incoming.find((i) => incomingIdentity(i) === incomingIdentity(edge))
+    return marker ? { ...edge, destX: marker.destX, destY: marker.destY, entranceType: marker.entranceType } : edge
+  })
 
   const nodes = layoutNodes(subLevels, allEdges)
   const width = Math.max(...[...nodes.values()].map((n) => n.x + GRID_W), 0) + PAD
@@ -203,7 +203,7 @@ export function ExitsBody({
     exitCells.get(e.sourceLevelRecordId)?.push({
       screen: e.sourceScreenIndex,
       variant: 'warp',
-      tip: `Screen ${hex0x(e.sourceScreenIndex, 2)} → ${levelLabel(e.destLevelRecordId)} at (${e.destX}, ${e.destY})`
+      tip: `${e.kind === 'rotating-door' ? `Rotating door ${(e.doorIndex ?? 0) + 1}` : `Screen ${hex0x(e.sourceScreenIndex, 2)}`} → ${levelLabel(e.destLevelRecordId)} at (${e.destX}, ${e.destY})`
     })
   }
   exitCells.set(
@@ -218,6 +218,11 @@ export function ExitsBody({
           : `Screen ${hex0x(e.screenIndex, 2)} → Minibattle ${hex0x(e.minibattleId, 2)} (returns to ${levelLabel(e.returnLevelRecordId)})`
     }))
   )
+  for (const edge of allEdges) {
+    if (edge.sourceLevelRecordId !== level.recordId || edge.kind !== 'rotating-door') continue
+    exitCells.get(level.recordId)?.push({ screen: edge.sourceScreenIndex, variant: 'warp',
+      tip: `Rotating door ${(edge.doorIndex ?? 0) + 1} → ${levelLabel(edge.destLevelRecordId)} at (${edge.destX}, ${edge.destY})` })
+  }
   // Per level: landing SCREEN → the warp edges that land there (an entrance
   // screen can aggregate several warps; clicking selects the first marker).
   const entranceScreens = new Map<number, Map<number, WarpEdge[]>>()
@@ -244,11 +249,11 @@ export function ExitsBody({
         : { x: dst.x, y: dst.y + STUB_H / 2 }
     const isSelected =
       (selectedExit?.variant === 'warp' &&
+        !e.kind &&
         e.sourceLevelRecordId === level.recordId &&
         e.sourceScreenIndex === selectedExit.screenIndex) ||
       (selectedIncoming !== null &&
-        e.sourceLevelRecordId === selectedIncoming.sourceLevelRecordId &&
-        e.sourceScreenIndex === selectedIncoming.sourceScreenIndex)
+        incomingIdentity(e) === incomingIdentity(selectedIncoming))
     // Horizontal-biased cubic; self/same-column links bow outward.
     const dx = Math.max(24, Math.abs(b.x - a.x) / 2)
     const d = `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`
@@ -277,14 +282,14 @@ export function ExitsBody({
               the small cells. */}
           {[...nodes.values()].map((n) =>
             n.kind === 'grid' ? (
-              <g key={n.id}>
+              <g key={n.id} onContextMenu={(e) => onRoomContextMenu?.(e, n.id)}>
                 <text
                   x={n.x}
                   y={n.y + LABEL_H - 4}
                   className={`se-exits__svglabel${n.id === level.recordId ? ' is-current' : ''}`}
                   onClick={() => onJump(n.id, 128, 64)}
                 >
-                  {levelLabel(n.id)}
+                  <title>{levelLabel(n.id)}</title>{nodeLabel(n.id)}
                 </text>
                 <rect
                   x={n.x}
@@ -307,9 +312,10 @@ export function ExitsBody({
                 />
               </g>
             ) : (
-              <g key={n.id} onClick={() => onJump(n.id, 128, 64)} className="se-exits__stub">
+              <g key={n.id} onClick={() => onJump(n.id, 128, 64)} className="se-exits__stub"
+                onContextMenu={(e) => onRoomContextMenu?.(e, n.id)}>
                 <rect x={n.x} y={n.y} width={STUB_W} height={STUB_H} rx={3} />
-                <text x={n.x + 6} y={n.y + STUB_H - 5}>{levelLabel(n.id)}</text>
+                <text x={n.x + 6} y={n.y + STUB_H - 5}>{nodeLabel(n.id)}</text>
                 <title>{levelLabel(n.id)} — outside this cluster; click to open</title>
               </g>
             )
@@ -351,6 +357,7 @@ export function ExitsBody({
                         // Other levels: jump to the clicked screen.
                         if (n.id === level.recordId) {
                           onSelectIncoming({
+                            ...(first.kind ? { kind: first.kind, sourceSpriteIndex: first.sourceSpriteIndex, doorIndex: first.doorIndex } : {}),
                             sourceLevelRecordId: first.sourceLevelRecordId,
                             sourceScreenIndex: first.sourceScreenIndex,
                             destX: first.destX,
@@ -365,7 +372,7 @@ export function ExitsBody({
                     >
                       <title>
                         {`Screen ${hex0x(screen, 2)} — ${landers.length === 1 ? 'a warp lands' : `${landers.length} warps land`} here: ${landers
-                          .map((l) => `${levelLabel(l.sourceLevelRecordId)} screen ${hex0x(l.sourceScreenIndex, 2)}`)
+                          .map((l) => `${levelLabel(l.sourceLevelRecordId)} screen ${hex0x(l.sourceScreenIndex, 2)}${l.kind === 'rotating-door' ? ` door ${(l.doorIndex ?? 0) + 1}` : ''}`)
                           .join(', ')}`}
                       </title>
                     </rect>

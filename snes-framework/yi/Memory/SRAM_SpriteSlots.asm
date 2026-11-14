@@ -60,23 +60,50 @@
 !EXRAM_YI_Level_NorSpr_AngleOfStoodOnGround = !EXRAM_YI_Level_NorSpr_CurrentStatus+$02
 
 ;-------------------------------------------------------------------------
-; Page 2 ($0F60 / $0FA0) -- Tongue / hitbox flags (regular); terrain flags (ambient)
+; Page 2 ($0F60 / $0FA0) -- Collision/contact word + terrain-behaviour/class word (regular); terrain word (ambient)
 ;-------------------------------------------------------------------------
-; Regular byte 1: tc?hhhhh  t=can-be-tongued, c=tongue-collision-ignored, h=hitbox-index
-; Regular byte 2: unknown
-; Regular byte 3: terrain collision flags
-; Regular byte 4: ???s????  s=inedible / cannot-swallow
+; Both regular words are seeded per sprite ID at spawn and only overridden by handlers
+; afterwards: word 1 from DATA_0A9320[id], word 2 from DATA_0A971E[id] (SuperFX/Banks/
+; Bank0A.asm; the headers there carry the full legends and evidence).
+; Regular word 1 ($0FA0):
+;   byte 1: inphhhhh  h=hitbox shape index into DATA_0A9220, p=projectile-immune
+;                     (eggs / thrown sprites don't kill it), n=NOT tongueable (the
+;                     tongue pass skips it), i=inedible (tongue bounces off, SoundID3C)
+;   byte 2: ssttteEc  c=freed+hidden when Yoshi dies, E=sprite-vs-sprite collision
+;                     target, e=sprite-vs-sprite collision checker (result in $1D36),
+;                     t=stomp reaction 0-7 (DATA_sprite_stomp_reaction_ptrs),
+;                     s=side-contact reaction 0-3 (DATA_sprite_side_contact_ptrs)
+; Regular word 2 ($0FA2):
+;   byte 3: swyiiiii  i=terrain point-set index into DATA_0ACECB (0 = no terrain
+;                     collision), y=keep Y speed on landing, w=turn at wall, s=stop at wall
+;   byte 4: nbacklzt  t=turn at ledge, z=stop at ledge, l=zero X speed on turn,
+;                     k=can be knocked out by other sprites, c=cannot be swallowed
+;                     (held until spat), a/b=class (00 enemy, b=contact-kill immune,
+;                     ab=item/collectible), n=no egg when swallowed
+; Ambient word 1 ($0F60): DATA_0AAF12 copy; seeded, never read.
+; Ambient word 2 ($0F62): DATA_0AB112 copy; same layout as regular word 2 (ambient data
+;                     only uses the point-set index).
 !EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags #= $000FA0|!SRAMBankBaseAddress
+!EXRAM_YI_Level_NorSpr_CollisionFlags = !EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags	; alias named by verified behaviour (see DATA_0A9320 header in SuperFX/Banks/Bank0A.asm)
 !EXRAM_YI_Level_NorSpr_TerrainCollisionFlags = !EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags+$02
-!EXRAM_YI_Level_NorSpr_InedibleFlag = !EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags+$03
+!EXRAM_YI_Level_NorSpr_InedibleFlag = !EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags+$03	; legacy name: this byte holds the class / cannot-swallow / no-egg bits; the tongue-reject "inedible" bit is word 1 bit 7
+!EXRAM_YI_Level_NorSpr_SpriteClassFlags = !EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags+$03	; alias named by verified behaviour
 
 ;-------------------------------------------------------------------------
-; Page 3 ($1000 / $1040) -- Behavior + OAM flags (regular)
+; Page 3 ($1000 / $1040) -- Behavior + OAM flags (regular and ambient, same layout)
 ;-------------------------------------------------------------------------
-; Regular byte 1: sf?bddmm  s=auto-swallow, f=can-be-frozen, b=can-be-burned,
-;                           d=despawn-threshold-index ($00=no despawn), m=draw-method-index
-; Regular byte 2: OAM bytes count (size in OAM buffer)
-; Regular byte 3: partial OAM-low-table mirror: yx00ccc0  c=palette 0-7, x/y = flip
+; Word 1 is seeded per sprite ID at spawn from DATA_0A9B1C[id] (regular) / DATA_0AB312[id-$1BA]
+; (ambient), bytes 3-4 from DATA_0A9F1A[id] hi EOR $20 (regular) / DATA_0AB512 hi EOR $30
+; (ambient). Full legends + evidence: the table headers in SuperFX/Banks/Bank0A.asm.
+; Regular byte 1: sfBbddmm  s=swallowed at once when caught, f=can-be-frozen (icy melon),
+;                           B=launched by the air bubble, b=can-be-burned (melon flame),
+;                           d=off-screen despawn range class ($00=never; DATA_098C87),
+;                           m=draw method (0 single OAM record, 1 cel walker, 2 handler-filled, 3 walker+32)
+; Regular byte 2: cccccrra  c=OAM record count (walker emits (byte & $F8) >> 3 records),
+;                           r=defeat reward request (3 = 1-up; reader unverified),
+;                           a=egg-aim target (only reader is unreachable)
+; Regular byte 3: OAM attribute vhoopppN  v/h=Y/X flip, oo=OBJ priority (bit 5 stored inverted),
+;                           ppp=palette 0-7, N=tile bit 8
 ;                 Hot field: ~367 raw $7042 / $1042 sites across Bank01-11 + SuperFX banks.
 !EXRAM_YI_Level_NorSpr_BehaviorFlags #= $001040|!SRAMBankBaseAddress
 !EXRAM_YI_Level_NorSpr_OAMByteCount = !EXRAM_YI_Level_NorSpr_BehaviorFlags+$01
@@ -97,7 +124,8 @@
 ;-------------------------------------------------------------------------
 ; Page 5 ($1140 / $1180) -- Y position
 ;-------------------------------------------------------------------------
-; Regular byte 1: OBJ tile index override
+; Ambient byte 1: OBJ tile-base index seeded from DATA_0AB912[id-$1BA] at spawn (x8 = OBJ tile); byte 2: Y subpixel
+; Regular byte 1: OBJ tile index override (seeded from DATA_0AA716[id] at spawn)
 ; Regular byte 2: Y subpixel
 ; Regular byte 3: Y pixel
 ; Regular byte 4: Y screen
@@ -152,17 +180,23 @@
 ;-------------------------------------------------------------------------
 ; Page 10 ($1460 / $14A0) -- Stage-wide ID + layer + priority
 ;-------------------------------------------------------------------------
-; Byte 1: stage-wide ID ($FF = no respawn)
+; Byte 1: stage-wide ID ($FF = no respawn; ambient slots are always $FF)
 ; Byte 2: BG layer for this sprite
-; Byte 3: sprite priority 0-7 (higher = further back, $FF disables drawing)
+; Byte 3: sprite priority 0-7 (higher = further back, $FF disables drawing).
+;         Seeded at spawn from DATA_0A9F1A[id] lo byte (regular) / DATA_0AB512[id-$1BA] lo byte (ambient);
+;         the OAM pass draws level 0 first, then 1, ... (CODE_0989C1).
 ; Byte 4: unused
 !EXRAM_YI_Level_NorSpr_StageID #= $0014A0|!SRAMBankBaseAddress
 !EXRAM_YI_Level_NorSpr_BGLayer = !EXRAM_YI_Level_NorSpr_StageID+$01
 !EXRAM_YI_Level_NorSpr_DrawPriority = !EXRAM_YI_Level_NorSpr_StageID+$02
 
 ;-------------------------------------------------------------------------
-; Page 11 ($1500 / $1540) -- Acceleration (X word, Y word) -- gravity / friction
+; Page 11 ($1500 / $1540) -- Acceleration STEP (X word, Y word), signed
 ;-------------------------------------------------------------------------
+; Each frame the GSU integrator FXCODE_09884C moves the speed by +/- this step toward the
+; Page 12 target. Y step is seeded at spawn from DATA_0AA318[id] lo (regular) / DATA_0AB712
+; (ambient); X step is zeroed. The default Y step is $0040. Handlers also use the Y step as a
+; state marker (< $40 = egg "power shot").
 !EXRAM_YI_Level_AmbSpr_XAccelLo #= $001500|!SRAMBankBaseAddress
 !EXRAM_YI_Level_AmbSpr_XAccelHi = !EXRAM_YI_Level_AmbSpr_XAccelLo+$01
 !EXRAM_YI_Level_AmbSpr_YAccelLo = !EXRAM_YI_Level_AmbSpr_XAccelLo+$02
@@ -173,8 +207,12 @@
 !EXRAM_YI_Level_NorSpr_YAccelHi = !EXRAM_YI_Level_NorSpr_YAccelLo+$01
 
 ;-------------------------------------------------------------------------
-; Page 12 ($15A0 / $15E0) -- Acceleration ceiling (max-speed cap)
+; Page 12 ($15A0 / $15E0) -- TARGET speed (X word, Y word), signed
 ;-------------------------------------------------------------------------
+; The speed the Page 11 step walks toward; it is a target, not a clamp (no saturation, the
+; speed dithers within one step). Y target is seeded at spawn from DATA_0AA318[id] hi * 16
+; (regular, default $0400 = normal gravity; negative = rises) / DATA_0AB712 (ambient); X is
+; zeroed. The define names (AccelCeil) predate this finding.
 !EXRAM_YI_Level_AmbSpr_XAccelCeilLo #= $0015A0|!SRAMBankBaseAddress
 !EXRAM_YI_Level_AmbSpr_XAccelCeilHi = !EXRAM_YI_Level_AmbSpr_XAccelCeilLo+$01
 !EXRAM_YI_Level_AmbSpr_YAccelCeilLo = !EXRAM_YI_Level_AmbSpr_XAccelCeilLo+$02
@@ -224,8 +262,7 @@
 ;-------------------------------------------------------------------------
 ; Ambient byte 1: ???????G  G=on-ground flag
 ; Ambient byte 2: unknown
-; Ambient byte 3: init $FF (unknown semantics)
-; Ambient byte 4: init $1F (unknown semantics)
+; Ambient bytes 3-4: water-state word, seeded $1FFF at spawn (original source name CEXWATR; semantics unverified)
 ; Regular word 1: terrain LRUD flags (low byte: ????LRUD), high byte unused
 ; Regular word 2: lava/water flags (low byte: ??LW????)  L=lava, W=water
 !EXRAM_YI_Level_AmbSpr_OnGroundFlag #= $001820|!SRAMBankBaseAddress
@@ -358,7 +395,7 @@
 ; Page 28 ($1D36) -- Collision state
 ;-------------------------------------------------------------------------
 ; Byte 1: slot # of currently-colliding sprite + 1 ($FF for Yoshi)
-; Byte 2: unknown -- something with the most-recent collision
+; Byte 2: round-robin start index of the sprite-vs-sprite collision scan (GSU CODE_09817F; plausible, original source name CENCRPT)
 ; Byte 3: collision state:
 ;           $00 = may collide with Yoshi body/tongue/other sprites
 ;           $01 = may not collide with Yoshi body/other sprites but may be tongued

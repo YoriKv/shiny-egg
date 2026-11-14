@@ -3,3 +3,9 @@
 # shipped copies match what the patch tooling is tested against.
 snes-framework/patches/*.asm text eol=lf
 snes-framework/patches/*.json text eol=lf
+# The framework asm/data tree ships verbatim too, and the editor's overlay
+# parsers splice it as text. Disable EOL conversion so every checkout gets the
+# committed bytes: the editor-parsed banks are LF, a few upstream files are
+# committed CRLF, and a Windows autocrlf checkout must not turn LF into CRLF.
+snes-framework/yi/** -text
+snes-framework/global/** -text

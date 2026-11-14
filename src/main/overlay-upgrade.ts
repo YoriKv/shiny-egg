@@ -15,7 +15,9 @@
 // those markers existed carry marker-less overlays, so `migrateInlineDataOverlays`
 // (run before every detect/upgrade) rebuilds them = base ⊕ edits-read-from-the-old-
 // overlay, in the marker format — otherwise the freshly-added base regions would
-// read as drift and an "upgrade" would wipe those edits. Per-file confirm + a
+// read as drift and an "upgrade" would wipe those edits. `migrateOverlayLineEndings`
+// runs first and converts CRLF overlays saved by older Windows builds back to LF,
+// to match the base. Per-file confirm + a
 // "duplicate as a backup project" step live in the IPC/renderer layer.
 
 import { existsSync, readFileSync } from 'node:fs'
@@ -42,6 +44,27 @@ function* candidateOverlayFiles(
     const basePath = join(frameworkWorkRoot(), rel)
     const overlayPath = join(overlayRoot(projectId), rel)
     if (existsSync(basePath) && existsSync(overlayPath)) yield { rel, basePath, overlayPath }
+  }
+}
+
+/**
+ * One-time, idempotent line-ending migration. Windows builds before the
+ * `-text` rule in `.gitattributes` shipped the framework asm with CRLF, so
+ * overlays saved there are CRLF while the current base is LF. Rewrites such an
+ * overlay to LF, so its EOLs match base again: the drift check and every
+ * overlay parser then see what they see on Linux. Only an all-LF base qualifies;
+ * an overlay of a file committed CRLF is left alone.
+ */
+export function migrateOverlayLineEndings(projectId: string): void {
+  for (const { basePath, overlayPath } of candidateOverlayFiles(projectId)) {
+    try {
+      const overlayText = readFileSync(overlayPath, 'utf8')
+      if (!overlayText.includes('\r\n')) continue // already LF
+      if (readFileSync(basePath, 'utf8').includes('\r')) continue // base isn't pure LF
+      writeFileAtomicSync(overlayPath, overlayText.replace(/\r\n/g, '\n'))
+    } catch {
+      // Leave the file untouched; the overlay parsers tolerate CRLF, so it stays usable.
+    }
   }
 }
 
@@ -83,6 +106,7 @@ export function migrateInlineDataOverlays(projectId: string): void {
  * Cheap enough to run on every project launch.
  */
 export function detectOutdatedOverlays(projectId: string): OverlayDriftReport {
+  migrateOverlayLineEndings(projectId)
   migrateInlineDataOverlays(projectId)
   const files: OverlayDriftFile[] = []
   for (const { rel, basePath, overlayPath } of candidateOverlayFiles(projectId)) {
@@ -111,6 +135,7 @@ export function detectOutdatedOverlays(projectId: string): OverlayDriftReport {
  * upgraded so far. The caller has already prompted for a backup.
  */
 export function applyOverlayUpgrades(projectId: string, relFiles: string[]): OverlayUpgradeResult {
+  migrateOverlayLineEndings(projectId)
   migrateInlineDataOverlays(projectId) // defensive: never adopt-base over an un-migrated inline overlay
   const want = new Set(relFiles)
   const upgraded: string[] = []

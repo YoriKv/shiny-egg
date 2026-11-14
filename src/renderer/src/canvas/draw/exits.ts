@@ -6,7 +6,8 @@
 // text — the click action just jumps to the destination level.
 
 import type { ScreenExit } from '../../../../preload/api'
-import { getLevel } from '../../data/levels'
+import { roomLabel } from '../../data/levels'
+import { incomingIdentity } from '../../lib/warp-graph'
 import type { IncomingExit, Selection } from '../../types'
 import {
   CELL_PX,
@@ -107,8 +108,7 @@ export function drawExits(
     // beats legibility there (the incoming labels match).
     let label: string
     if (e.variant === 'warp') {
-      const dest = getLevel(e.destLevelRecordId)
-      label = dest ? `to ${dest.slot} ${dest.name}` : `to ${hex0x(e.destLevelRecordId)}`
+      label = `to ${roomLabel(e.destLevelRecordId)}`
     } else {
       label = `Minibattle ${hex0x(e.minibattleId)}`
     }
@@ -147,7 +147,7 @@ export function drawIncomingExits(
   if (incoming.length === 0) return
   const selKey =
     selection && selection.kind === 'incoming'
-      ? `${selection.incoming.sourceLevelRecordId}:${selection.incoming.sourceScreenIndex}`
+      ? incomingIdentity(selection.incoming)
       : null
   ctx.save()
   // Normalized to the same size as the outgoing exit door (one tile).
@@ -161,7 +161,7 @@ export function drawIncomingExits(
   for (const e of incoming) {
     const cx = (e.destX + 0.5) * CELL_PX
     const cy = (e.destY + 0.5) * CELL_PX
-    const isSelected = selKey === `${e.sourceLevelRecordId}:${e.sourceScreenIndex}`
+    const isSelected = selKey === incomingIdentity(e)
     const stroke = isSelected ? lime : amber
 
     // Entry-door glyph (arrow entering) at the exact landing cell — amber to keep
@@ -170,7 +170,7 @@ export function drawIncomingExits(
 
     // Tiny "from <id>" label below the marker — drawn at every zoom, matching
     // the outgoing "to …" labels.
-    const label = `from ${hex0x(e.sourceLevelRecordId)}`
+    const label = `from ${roomLabel(e.sourceLevelRecordId)}${e.kind === 'rotating-door' ? ` · door ${(e.doorIndex ?? 0) + 1}` : ''}`
     const padX = 3 / zoom
     const padY = 1.5 / zoom
     const lw = label.length * adv + padX * 2

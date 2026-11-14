@@ -2662,81 +2662,538 @@ CODE_0A91E0:
 	OR R4
 	STOP : NOP
 
+;-------------------------------------------------------------------------
+; DATA_0A9220 -- per-sprite HITBOX SHAPE table: 32 shapes x 4 words (stride 8).
+; (Original source `chip/ys_msub0.asm`: ENCRDT, "OBJ cross check point data".)
+; Indexed by (DATA_0A9320[spriteID] & $1F) * 8. The spawn routines
+; (CODE_check_new_sprites $03:9628, CODE_spawn_sprite_clear_slot_fields
+; $03:A395, GSU CODE_0ADF33 / CODE_0BF01A) copy one entry into the slot:
+;   +0 -> $1B56  hitbox center X offset from the slot X position
+;   +2 -> $1B58  hitbox center Y offset from the slot Y position
+;   +4 -> $1BB6  hitbox half-width
+;   +6 -> $1BB8  hitbox half-height
+; Signed pixels; (8,8) is the middle of a 16x16 sprite. The GSU collision
+; pass (FXCODE_098084) adds the offsets to the position each frame
+; ($1CD6/$1CD8) and box-tests with the half-extents (inclusive, so the
+; effective box is 1 px larger than 2*hw x 2*hh). Handlers may rewrite the
+; four slot words later; this table only supplies the spawn default.
+; Shape $00 (12x12) is used by 346 of 442 sprites; $05 and $0B are unused.
+; The per-row notes are the dominant users, not exhaustive lists.
+;-------------------------------------------------------------------------
 DATA_0A9220:
-	dw $0008,$0008,$0006,$0006,$0008,$0008,$0007,$000C
-	dw $0008,$0008,$000C,$000C,$0008,$FFFC,$0006,$0004
-	dw $0008,$0003,$0008,$000C,$0008,$0008,$0000,$0018
-	dw $0008,$0004,$0006,$000A,$0008,$FFF9,$0010,$0016
-	dw $0008,$0000,$0006,$000E,$0008,$0008,$000A,$000A
-	dw $0008,$0008,$0007,$0007,$0008,$0010,$000C,$0008
-	dw $0008,$0008,$0018,$0018,$0008,$FFF8,$0006,$0012
-	dw $0008,$0004,$0006,$000C,$0008,$0008,$0002,$0002
-	dw $0008,$0008,$0008,$000C,$0008,$0000,$000E,$0016
-	dw $0008,$0008,$000A,$000C,$0008,$0008,$0020,$0020
-	dw $0008,$0008,$0018,$0008,$0008,$0008,$0008,$0018
-	dw $0008,$0004,$0006,$000A,$0008,$0000,$000C,$000E
-	dw $0008,$000E,$0006,$000A,$0008,$0008,$0011,$0018
-	dw $0008,$0008,$0018,$0018,$0008,$0008,$0010,$0010
-	dw $0008,$0008,$000C,$000C,$0008,$0008,$0004,$0004
-	dw $0008,$0009,$0008,$000A,$0008,$000C,$000C,$000C
+DATA_sprite_hitbox_shapes:                           ; descriptive alias (main-side: FXDATA_0A9220)
+	dw $0008,$0008,$0006,$0006	; [$00] 12x12 px default (346 sprites)
+	dw $0008,$0008,$0007,$000C	; [$01] 14x24 px tall 2x4 (Stretch $124)
+	dw $0008,$0008,$000C,$000C	; [$02] 24x24 px 4x4 (crates, Bucket, Dr. Freezegood on lift)
+	dw $0008,$FFFC,$0006,$0004	; [$03] 12x8 px LungeFish $02C
+	dw $0008,$0003,$0008,$000C	; [$04] 16x24 px RogersPot $034
+	dw $0008,$0008,$0000,$0018	; [$05] 0x48 px unused
+	dw $0008,$0004,$0006,$000A	; [$06] 12x20 px Bullet Bill shooters $078-$07A
+	dw $0008,$FFF9,$0010,$0016	; [$07] 32x44 px BalloonPump $073
+	dw $0008,$0000,$0006,$000E	; [$08] 12x28 px Ptooie $09F
+	dw $0008,$0008,$000A,$000A	; [$09] 20x20 px Clawdaddy $070, BigBoo $071
+	dw $0008,$0008,$0007,$0007	; [$0A] 14x14 px egg blocks $068-$06A
+	dw $0008,$0010,$000C,$0008	; [$0B] 24x16 px unused
+	dw $0008,$0008,$0018,$0018	; [$0C] 48x48 px Hookbill $0AE
+	dw $0008,$FFF8,$0006,$0012	; [$0D] 12x36 px stilts $0F2
+	dw $0008,$0004,$0006,$000C	; [$0E] 12x24 px Slugger $0F5, GreenGlove $11A, Grunts $159/$15A
+	dw $0008,$0008,$0002,$0002	; [$0F] 4x4 px melon seeds / tiny shots
+	dw $0008,$0008,$0008,$000C	; [$10] 16x24 px ZeusGuy $0FD
+	dw $0008,$0000,$000E,$0016	; [$11] 28x44 px pulley body $126
+	dw $0008,$0008,$000A,$000C	; [$12] 20x24 px fat guy $12B
+	dw $0008,$0008,$0020,$0020	; [$13] 64x64 px FuzzyFart $0B3 (puff cloud)
+	dw $0008,$0008,$0018,$0008	; [$14] 48x16 px flipper $13C
+	dw $0008,$0008,$0008,$0018	; [$15] 16x48 px flipper $144
+	dw $0008,$0004,$0006,$000A	; [$16] 12x20 px Flutter $152, CrazeeDayzee $181
+	dw $0008,$0000,$000C,$000E	; [$17] 24x28 px giant eggs $026, $029-$02B
+	dw $0008,$000E,$0006,$000A	; [$18] 12x20 px koopa 2x3 $169-$16C
+	dw $0008,$0008,$0011,$0018	; [$19] 34x48 px KeyholeCork $1A4
+	dw $0008,$0008,$0018,$0018	; [$1A] 48x48 px Raphael $00C, TapTap $03C, LargeMilde $0D3
+	dw $0008,$0008,$0010,$0010	; [$1B] 32x32 px TeleportSprite $084
+	dw $0008,$0008,$000C,$000C	; [$1C] 24x24 px eggs $022-$025, Key $027
+	dw $0008,$0008,$0004,$0004	; [$1D] 8x8 px cactus bullet $0F9
+	dw $0008,$0009,$0008,$000A	; [$1E] 16x20 px coins $065/$115/$1AF
+	dw $0008,$000C,$000C,$000C	; [$1F] 24x24 px WatermelonFlame $018
 
+;-------------------------------------------------------------------------
+; DATA_0A9320 -- per-sprite COLLISION / CONTACT-BEHAVIOUR word, one word per
+; sprite ID (indexed by ID*2). (Original source: ENMODE0 -> slot ENMOD0.)
+; Copied verbatim into slot word $0FA0 (!EXRAM_YI_Level_NorSpr_TongueAndHitboxFlags
+; / alias !EXRAM_YI_Level_NorSpr_CollisionFlags) at spawn by
+; CODE_spawn_sprite_clear_slot_fields and CODE_check_new_sprites; handlers then
+; set/clear bits at runtime (e.g. CODE_head_bop_common turns bits 9-10 off).
+;   bits 0-4   ($001F) hitbox shape index into DATA_0A9220 (read at spawn only)
+;   bit 5      ($0020) projectile-immune: thrown eggs / thrown sprites / the
+;                      Fuzzy puff do not kill it (CODE_03B0DF, Bank04 thrown filter)
+;   bit 6      ($0040) NOT tongueable: the GSU tongue pass (CODE_098294) skips it.
+;                      Eggs toggle it (AND #$FFBF = catchable, ORA #$0040 = not).
+;   bit 7      ($0080) inedible: the tongue bounces off it with SoundID3C (GSU
+;                      CODE_09831E tests it as the sign of the low byte: LDW/SEX/BPL)
+;   bit 8      ($0100) freed + hidden when Yoshi dies (game mode $11, CODE_108E8F);
+;                      set only on the BG-layer ghosts/bosses $010,$016,$035,$057,
+;                      $090,$0D6,$0D7,$193
+;   bit 9      ($0200) sprite-vs-sprite collision TARGET: other slots' scans test
+;                      it (GSU CODE_0981D3)
+;   bit 10     ($0400) sprite-vs-sprite collision CHECKER: this slot runs the scan
+;                      (GSU CODE_09817F; skipped on a frame the slot touches Yoshi);
+;                      hit -> $1D36 = other slot+1, $1C76/$1C78 = deltas.
+;                      Bits 9-10 travel as a pair: AND #$F9FF off, ORA #$0600 on.
+;   bits 11-13 ($3800) Yoshi-lands-on-top (stomp) reaction, jump table
+;                      DATA_sprite_stomp_reaction_ptrs ($03:A655):
+;                      0 defeated if Yoshi is jumping, else hurts Yoshi
+;                      1-3 head-bopped (status $0E -> per-id StompRt; only 1 used)
+;                      4 vanishes in a pop     5 hurts Yoshi (exempt from dash knock-off)
+;                      6 platform (Yoshi stands on it)   7 killed by the stomp
+;   bits 14-15 ($C000) side-contact reaction, jump table
+;                      DATA_sprite_side_contact_ptrs ($03:A665):
+;                      0 solid push   1 hurts Yoshi   2 knocked away   3 no contact
+; Yoshi-vs-sprite contact itself is NOT gated here (every slot with status >= 3
+; is box-tested); these bits only pick the reaction.
+;-------------------------------------------------------------------------
 DATA_0A9320:
-	dw $0040,$0060,$0060,$0062,$0060,$8420,$0262,$8420
-	dw $0060,$8420,$7660,$68A0,$687A,$0060,$0060,$0060
-	dw $0160,$0060,$0060,$0060,$0060,$0200,$0560,$4400
-	dw $027F,$0000,$0040,$0040,$4480,$0042,$4E00,$0460
-	dw $FC20,$0462,$003C,$003C,$003C,$003C,$0037,$023C
-	dw $003C,$0037,$0037,$0037,$EC43,$EC40,$E840,$0260
-	dw $4E00,$6C00,$0260,$4E60,$0044,$0140,$0040,$2400
-	dw $68A0,$0040,$7E00,$7E00,$6C7A,$0060,$0060,$EC40
-	dw $0460,$0460,$0060,$4E02,$4E02,$0462,$0060,$0660
-	dw $0060,$00A0,$68A0,$68A0,$6C60,$0060,$0060,$0060
-	dw $0040,$0040,$0060,$0060,$BE00,$0060,$0060,$0160
-	dw $EE00,$0060,$68A0,$FC20,$0060,$B46A,$0040,$0040
-	dw $6860,$F620,$4E00,$7480,$0060,$047E,$BE00,$C060
-	dw $F46A,$F46A,$F46A,$0460,$0060,$6CA0,$6CA0,$0060
-	dw $74A9,$6CA9,$6E60,$0067,$7E00,$6860,$68A0,$68A0
-	dw $F466,$F466,$F466,$6860,$6860,$6860,$0060,$6860
-	dw $6C20,$6C20,$6CA0,$0060,$007B,$7E00,$8060,$0060
-	dw $0060,$0060,$0060,$6C00,$0060,$7C00,$0662,$0060
-	dw $0160,$0060,$3420,$0060,$B46A,$0460,$0460,$0060
-	dw $0060,$6C00,$F060,$7E00,$0060,$0060,$04A2,$6EA8
-	dw $0460,$B620,$6861,$0060,$0060,$0060,$6C60,$6860
-	dw $6C60,$0060,$0060,$0060,$0060,$B460,$6E6C,$0460
-	dw $0460,$0460,$0460,$0673,$0460,$0460,$0460,$0460
-	dw $0460,$0460,$0460,$0460,$0460,$0460,$0460,$0460
-	dw $0460,$0460,$0460,$0460,$0460,$0460,$0460,$0460
-	dw $0460,$0460,$0060,$0460,$0460,$0020,$0060,$0060
-	dw $007C,$0060,$0060,$4EBA,$4EA2,$0060,$0160,$0560
-	dw $0060,$0420,$0460,$0060,$04A2,$0060,$0060,$6E00
-	dw $6E00,$6C80,$06A0,$06A0,$6860,$6C00,$260F,$7482
-	dw $6C20,$6C00,$7C00,$7C00,$6E00,$6E00,$6860,$6860
-	dw $6C20,$0060,$4C2D,$4E20,$0060,$78AE,$7C82,$7480
-	dw $6CA0,$6E1D,$0462,$6C20,$6C20,$4C10,$6C6F,$F462
-	dw $0402,$0060,$0060,$0060,$7E80,$0060,$0060,$066F
-	dw $7C00,$6C20,$6C20,$6C20,$68A2,$0060,$0062,$6860
-	dw $0462,$0600,$0060,$7E00,$006F,$043E,$00A0,$0060
-	dw $0062,$7622,$7C8E,$7C00,$0600,$6C00,$0020,$0020
-	dw $0422,$0062,$0462,$0462,$7401,$0460,$6CB1,$6CA0
-	dw $06A0,$0400,$4E00,$4E32,$6E20,$0060,$0060,$6CA0
-	dw $6CA0,$0060,$7E0F,$4E00,$06A2,$7E80,$7E80,$0460
-	dw $0460,$0460,$0460,$0060,$04B4,$FE00,$FE00,$7E00
-	dw $7E00,$7E00,$7E00,$74A0,$04B5,$4E20,$4E20,$007C
-	dw $0060,$0460,$0460,$0460,$0460,$0460,$0460,$0460
-	dw $0460,$0460,$0436,$6C20,$0060,$7422,$6E82,$4C00
-	dw $74A2,$7C2E,$7C2E,$6E00,$3440,$3440,$0060,$3060
-	dw $3060,$0060,$3440,$6E00,$6600,$6E00,$4C00,$0620
-	dw $0620,$6618,$6618,$4E38,$4E38,$4E38,$4E38,$4E38
-	dw $C660,$ACA0,$ACA0,$0420,$0420,$0460,$0461,$0460
-	dw $0420,$0460,$0420,$0420,$0420,$0420,$0460,$0460
-	dw $0060,$4416,$0060,$0060,$2600,$0060,$0060,$0060
-	dw $0060,$0060,$0060,$0060,$0060,$0060,$0060,$0062
-	dw $6C40,$0060,$4C00,$0160,$6C40,$0060,$0060,$0060
-	dw $0060,$04A0,$4E20,$2600,$2600,$4E20,$6600,$4E20
-	dw $04A0,$04A0,$0620,$6620,$F479,$C200,$C200,$C200
-	dw $C200,$C200,$6EA0,$6E20,$0060,$46A0,$6CA0,$047E
-	dw $0060,$006F,$0400,$0240,$0060,$0440,$0040,$0660
-	dw $0060,$0660
+DATA_sprite_collision_flags_table:                   ; descriptive alias (main-side: FXDATA_0A9320)
+	dw $0040	; $000 LavaLog
+	dw $0060	; $001 ClosedDoor
+	dw $0060	; $002 NavalPiranhaVines
+	dw $0062	; $003 CrateWithKey
+	dw $0060	; $004 HitSuperBabyMarioBlock
+	dw $8420	; $005 IcyWatermelon
+	dw $0262	; $006 WatermelonFreeze
+	dw $8420	; $007 Watermelon
+	dw $0060	; $008 FallingRubble
+	dw $8420	; $009 FireWatermelon
+	dw $7660	; $00A Kaboomba
+	dw $68A0	; $00B Cannonball
+	dw $687A	; $00C RaphaelTheRaven
+	dw $0060	; $00D GoalRing
+	dw $0060	; $00E GOALLetters
+	dw $0060	; $00F BonusChallengeSign
+	dw $0160	; $010 RoundedCagedGhost
+	dw $0060	; $011 ItemCard
+	dw $0060	; $012 BossDoor
+	dw $0060	; $013 BossExplosion
+	dw $0060	; $014 KeyFromBoss
+	dw $0200	; $015 SubmarineTorpedo
+	dw $0560	; $016 BiggerBoo
+	dw $4400	; $017 FrogPirate
+	dw $027F	; $018 WatermelonFlame
+	dw $0000	; $019 Bubble
+	dw $0040	; $01A SkiLift
+	dw $0040	; $01B VerticalLavaLog
+	dw $4480	; $01C DrFreezegood
+	dw $0042	; $01D DrFreezegoodOnSkiLift
+	dw $4E00	; $01E Shyguy
+	dw $0460	; $01F RotatingDoors
+	dw $FC20	; $020 Bandit
+	dw $0462	; $021 Bucket
+	dw $003C	; $022 FlashingEgg
+	dw $003C	; $023 RedEgg
+	dw $003C	; $024 YellowEgg
+	dw $003C	; $025 GreenEgg
+	dw $0037	; $026 BowserFightGiantEgg
+	dw $023C	; $027 Key
+	dw $003C	; $028 HuffinPuffin
+	dw $0037	; $029 GiantEgg
+	dw $0037	; $02A RedGiantEgg
+	dw $0037	; $02B GreenGiantEgg
+	dw $EC43	; $02C LungeFish
+	dw $EC40	; $02D SalvoTheSlime
+	dw $E840	; $02E EyesOfSalvoTheSlime
+	dw $0260	; $02F LittleMouserHole
+	dw $4E00	; $030 LittleMouser
+	dw $6C00	; $031 PottedSpikedFunGuy
+	dw $0260	; $032 PeekingLittleMouser
+	dw $4E60	; $033 LittleMouserExitingNest
+	dw $0044	; $034 RogersPot
+	dw $0140	; $035 RogerThePottedGhost
+	dw $0040	; $036 FallingWall
+	dw $2400	; $037 GrimLeecher
+	dw $68A0	; $038 PottedGhostFlame
+	dw $0040	; $039 HorizontalRotatingPlank
+	dw $7E00	; $03A 3MiniRavens
+	dw $7E00	; $03B MiniRaven
+	dw $6C7A	; $03C TapTapTheRedNose
+	dw $0060	; $03D LargeSeesaw
+	dw $0060	; $03E ThinPlatform
+	dw $EC40	; $03F SlimeBlock
+	dw $0460	; $040 BabyLuigi
+	dw $0460	; $041 Stork
+	dw $0060	; $042 VerticalPipeEntrance
+	dw $4E02	; $043 RedGiantShyguy
+	dw $4E02	; $044 GreenGiantShyguy
+	dw $0462	; $045 PrinceFroggy
+	dw $0060	; $046 BurtTheBashful
+	dw $0660	; $047 ShyguyPushingRoger
+	dw $0060	; $048 CutsceneKamek
+	dw $00A0	; $049 ThunderLakituFireBlast1
+	dw $68A0	; $04A ThunderLakituFireBlast2
+	dw $68A0	; $04B ThunderLakituFireBlast3
+	dw $6C60	; $04C UpsidedownBlowHard
+	dw $0060	; $04D UnusedSpriteIndex
+	dw $0060	; $04E LockedDoor
+	dw $0060	; $04F MiddleRing
+	dw $0040	; $050 GreyRotatingWoodenBoard
+	dw $0040	; $051 LargeWheel
+	dw $0060	; $052 BalloonPlatform
+	dw $0060	; $053 KamekSayingOhMy
+	dw $BE00	; $054 UpsideDownPiranhaPlant
+	dw $0060	; $055 4GreenRotatingPlatforms
+	dw $0060	; $056 4PinkRotatingPlatforms
+	dw $0160	; $057 SewerGhostWithPlatform
+	dw $EE00	; $058 GreenToady
+	dw $0060	; $059 StationarySuperStar
+	dw $68A0	; $05A RaphaelSparkAttack
+	dw $FC20	; $05B RedCoinBandit
+	dw $0060	; $05C PinkToady
+	dw $B46A	; $05D GlitchedSprite
+	dw $0040	; $05E BrownWoodenBoard
+	dw $0040	; $05F AutoRotateBrownWoodenBoard
+	dw $6860	; $060 Bomb
+	dw $F620	; $061 BabyMario
+	dw $4E00	; $062 Goomba
+	dw $7480	; $063 MuddyBuddy
+	dw $0060	; $064 4AutoRotatingPinkPlatforms
+	dw $047E	; $065 RedCoin
+	dw $BE00	; $066 PiranhaPlant
+	dw $C060	; $067 RockRevealedHiddenWingedCloud
+	dw $F46A	; $068 FlashingEggBlock
+	dw $F46A	; $069 RedEggBlock
+	dw $F46A	; $06A YellowEggBlock
+	dw $0460	; $06B GreenEggBlock
+	dw $0060	; $06C LargeSpringBall
+	dw $6CA0	; $06D ClockwiseHootieTheBlueFish
+	dw $6CA0	; $06E CounterclockwiseHootieTheBlueFish
+	dw $0060	; $06F SpringBall
+	dw $74A9	; $070 Clawdaddy
+	dw $6CA9	; $071 BigBoo
+	dw $6E60	; $072 TrainBandit
+	dw $0067	; $073 BalloonPump
+	dw $7E00	; $074 Spike
+	dw $6860	; $075 SpikeBall
+	dw $68A0	; $076 ClockwisePiroDangle
+	dw $68A0	; $077 CounterclockwisePiroDangle
+	dw $F466	; $078 RedBulletBillShooter
+	dw $F466	; $079 YellowBulletBillShooter
+	dw $F466	; $07A GreenBulletBillShooter
+	dw $6860	; $07B RedBulletBill
+	dw $6860	; $07C YellowBulletBill
+	dw $6860	; $07D GreenBulletBill
+	dw $0060	; $07E DentOfSquishyPlatform
+	dw $6860	; $07F LogSeesawPlatform
+	dw $6C20	; $080 StraightLavaBubble
+	dw $6C20	; $081 FollowingLavaBubble
+	dw $6CA0	; $082 ChainChomp
+	dw $0060	; $083 BowserFightCloud
+	dw $007B	; $084 TeleportSprite
+	dw $7E00	; $085 HarryHedgehog
+	dw $8060	; $086 GlitchedSprite
+	dw $0060	; $087 MockUpLaidEgg
+	dw $0060	; $088 SuperStar
+	dw $0060	; $089 HorizontalMovingRedPlatform
+	dw $0060	; $08A VerticalMovingPinkPlatform
+	dw $6C00	; $08B MockUp
+	dw $0060	; $08C YoshiAtGoal
+	dw $7C00	; $08D Flyguy
+	dw $0662	; $08E BowserRoomKamek
+	dw $0060	; $08F MonkeySwing
+	dw $0160	; $090 DanglingGhost
+	dw $0060	; $091 4RedToadies
+	dw $3420	; $092 MelonBug
+	dw $0060	; $093 Door
+	dw $B46A	; $094 ExpandingBlock
+	dw $0460	; $095 BlueCheckeredBlock
+	dw $0460	; $096 RedCheckeredBlock
+	dw $0060	; $097 POWBlock
+	dw $0060	; $098 EndTransformationBlock
+	dw $6C00	; $099 SpinyEgg
+	dw $F060	; $09A SwingingGreenPlatform
+	dw $7E00	; $09B MaceGuy
+	dw $0060	; $09C Mace
+	dw $0060	; $09D RedSwitch
+	dw $04A2	; $09E ChompRock
+	dw $6EA8	; $09F PtooiePiranhaPlant
+	dw $0460	; $0A0 Tulip
+	dw $B620	; $0A1 SmallPot
+	dw $6861	; $0A2 ThunderLakituFireball
+	dw $0060	; $0A3 LeftHidingBandit
+	dw $0060	; $0A4 RightHidingBandit
+	dw $0060	; $0A5 NepEnut
+	dw $6C60	; $0A6 IncomingChomp
+	dw $6860	; $0A7 GroupOfIncomingChomps
+	dw $6C60	; $0A8 FallingIncomingChomp
+	dw $0060	; $0A9 IncomingChompShadow
+	dw $0060	; $0AA BackgroundShyguy
+	dw $0060	; $0AB FullEggSpawner
+	dw $0060	; $0AC FallingRockArrowAndShadow
+	dw $B460	; $0AD MessageBox
+	dw $6E6C	; $0AE HookbillTheKoopa
+	dw $0460	; $0AF CarMorphBubble
+	dw $0460	; $0B0 MoleMorphBubble
+	dw $0460	; $0B1 HelicopterMorphBubble
+	dw $0460	; $0B2 TrainMorphBubble
+	dw $0673	; $0B3 FuzzyFart
+	dw $0460	; $0B4 SubmarineMorphBubble
+	dw $0460	; $0B5 HiddenWingedCloud
+	dw $0460	; $0B6 WingedCloudWith8Coins
+	dw $0460	; $0B7 WingedCloudWithBubbled1up
+	dw $0460	; $0B8 WingedCloudWithFlower
+	dw $0460	; $0B9 WingedCloudWithPOW
+	dw $0460	; $0BA WingedCloudWithStairs
+	dw $0460	; $0BB WingedCloudWithPlatform
+	dw $0460	; $0BC WingedCloudWithBandit
+	dw $0460	; $0BD WingedCloudWithCoin
+	dw $0460	; $0BE WingedCloudWith1up
+	dw $0460	; $0BF WingedCloudWithKey
+	dw $0460	; $0C0 WingedCloudWith3Stars
+	dw $0460	; $0C1 WingedCloudWith5Stars
+	dw $0460	; $0C2 WingedCloudWithDoor
+	dw $0460	; $0C3 WingedCloudWithLowerGround
+	dw $0460	; $0C4 WingedCloudWithWatermelon
+	dw $0460	; $0C5 WingedCloudWithFireWatermelon
+	dw $0460	; $0C6 WingedCloudWithIcyWatermelon
+	dw $0460	; $0C7 WingedCloudWith3LeafSunflower
+	dw $0460	; $0C8 WingedCloudWith6LeafSunflower
+	dw $0460	; $0C9 WingedCloudWithCrashGameFeature
+	dw $0060	; $0CA BigBossDoor
+	dw $0460	; $0CB WingedCloudWithCoinOrStar
+	dw $0460	; $0CC WingedCloudWithRedSwitch
+	dw $0020	; $0CD BaronVonZeppelinCarryingGiantEgg
+	dw $0060	; $0CE BowserFire
+	dw $0060	; $0CF BowserRocks
+	dw $007C	; $0D0 HorizontalEntranceToRight
+	dw $0060	; $0D1 SecretPipeEntrance
+	dw $0060	; $0D2 MarchingMilde
+	dw $4EBA	; $0D3 LargeMilde
+	dw $4EA2	; $0D4 MediumMilde
+	dw $0060	; $0D5 BackgroundForHookbillFight
+	dw $0160	; $0D6 FortGhostWithPlatform
+	dw $0560	; $0D7 SluggyTheUnshaven
+	dw $0060	; $0D8 ChompWarningSign
+	dw $0420	; $0D9 FishinLakitu
+	dw $0460	; $0DA FlowerPot
+	dw $0060	; $0DB SoftBlock
+	dw $04A2	; $0DC Snowball
+	dw $0060	; $0DD CloseWallInNavalPiranhaRoom
+	dw $0060	; $0DE FallingRockPlatform
+	dw $6E00	; $0DF PiscatoryPete
+	dw $6E00	; $0E0 PreyingMantas
+	dw $6C80	; $0E1 LochNestor
+	dw $06A0	; $0E2 BooBlah
+	dw $06A0	; $0E3 BooBlahWithPiroDangle
+	dw $6860	; $0E4 HeadingCactus
+	dw $6C00	; $0E5 GreenNeedlenose
+	dw $260F	; $0E6 Gusty
+	dw $7482	; $0E7 Burt
+	dw $6C20	; $0E8 Goonie
+	dw $6C00	; $0E9 3WinglessGoonies
+	dw $7C00	; $0EA VerticalCloudDrop
+	dw $7C00	; $0EB HorizontalCloudDrop
+	dw $6E00	; $0EC JumpingFlamerGuy
+	dw $6E00	; $0ED RunningFlamerGuy
+	dw $6860	; $0EE EggoDil
+	dw $6860	; $0EF EggoDilFace
+	dw $6C20	; $0F0 EggoDilPetal
+	dw $0060	; $0F1 EggPlantShootingBubbles
+	dw $4C2D	; $0F2 ShyguyOnStilts
+	dw $4E20	; $0F3 WoozyGuy
+	dw $0060	; $0F4 EggPlant
+	dw $78AE	; $0F5 Slugger
+	dw $7C82	; $0F6 MotherHuffinPuffin
+	dw $7480	; $0F7 BarneyBubble
+	dw $6CA0	; $0F8 BlowHard
+	dw $6E1D	; $0F9 YellowNeedlenose
+	dw $0462	; $0FA Flower
+	dw $6C20	; $0FB LongSpearGuy
+	dw $6C20	; $0FC ShortSpearGuy
+	dw $4C10	; $0FD ZeusGuy
+	dw $6C6F	; $0FE ZeusGuyBlast
+	dw $F462	; $0FF Poochy
+	dw $0402	; $100 Bubbled1up
+	dw $0060	; $101 RotatingMace
+	dw $0060	; $102 DoubleRotatingMace
+	dw $0060	; $103 BooGuysMovingMace
+	dw $7E80	; $104 JeanDeFillet
+	dw $0060	; $105 BooGuysCarryingBombToLeft
+	dw $0060	; $106 BooGuysCarryingBombToRight
+	dw $066F	; $107 WatermelonSeed
+	dw $7C00	; $108 Milde
+	dw $6C20	; $109 BronzeTapTap
+	dw $6C20	; $10A SilverTapTap
+	dw $6C20	; $10B HoppingSilverTapTap
+	dw $68A2	; $10C ChainedSpikeBall
+	dw $0060	; $10D BooGuyOperatingPulley
+	dw $0062	; $10E CrateWith6Stars
+	dw $6860	; $10F BooManBluff
+	dw $0462	; $110 Flower
+	dw $0600	; $111 GeorgetteJelly
+	dw $0060	; $112 GeorgetteJellyGoo
+	dw $7E00	; $113 Snifit
+	dw $006F	; $114 SnifitBullet
+	dw $043E	; $115 Coin
+	dw $00A0	; $116 BuoyantRoundPlatform
+	dw $0060	; $117 DonutLift
+	dw $0062	; $118 LargeDonutLift
+	dw $7622	; $119 Spooky
+	dw $7C8E	; $11A GreenGlove
+	dw $7C00	; $11B Lakitu
+	dw $0600	; $11C LakituCloud
+	dw $6C00	; $11D SpinyEgg
+	dw $0020	; $11E BrownArrowWheel
+	dw $0020	; $11F BlueArrowWheel
+	dw $0422	; $120 DoubledSidedArrowLift
+	dw $0062	; $121 NumberPlatformExplosion
+	dw $0462	; $122 BucketWithBandit
+	dw $0462	; $123 BucketWithCoins
+	dw $7401	; $124 Stretch
+	dw $0460	; $125 AttackingAndEndingKamek
+	dw $6CB1	; $126 SpikedLogOnPulley
+	dw $6CA0	; $127 PulleyOfSpikedLog
+	dw $06A0	; $128 GroundRippleInBabyBowerRoom
+	dw $0400	; $129 Fuzzy
+	dw $4E00	; $12A ShyGuyBanditTrap
+	dw $4E32	; $12B FatGuy
+	dw $6E20	; $12C FlyOrWhirlyGuy
+	dw $0060	; $12D PrologueCutsceneYoshi
+	dw $0060	; $12E LargePopEffect
+	dw $6CA0	; $12F HorizontalLavaDrop
+	dw $6CA0	; $130 VerticalLavaDrop
+	dw $0060	; $131 LockedDoor
+	dw $7E0F	; $132 LemonDrop
+	dw $4E00	; $133 LanternGhost
+	dw $06A2	; $134 BabyBowser
+	dw $7E80	; $135 CirclingRaven
+	dw $7E80	; $136 CirclingRaven
+	dw $0460	; $137 3x6FallingStone
+	dw $0460	; $138 3x3FallingStone
+	dw $0460	; $139 3x9FallingStone
+	dw $0460	; $13A 6x3FallingStone
+	dw $0060	; $13B StomachAcid
+	dw $04B4	; $13C DownFlippers
+	dw $FE00	; $13D DanglingFang
+	dw $FE00	; $13E FlyingFang
+	dw $7E00	; $13F SwimmingFlopsyFish
+	dw $7E00	; $140 SwimmingAndJumpingFlopsyFish
+	dw $7E00	; $141 SwimmingAndArcJumpingFlopsyFish
+	dw $7E00	; $142 3JumpFlopsyFish
+	dw $74A0	; $143 SprayFish
+	dw $04B5	; $144 RightOrLeftFlippers
+	dw $4E20	; $145 BlueSluggy
+	dw $4E20	; $146 PinkSluggy
+	dw $007C	; $147 HorizontalEntranceToLeft
+	dw $0060	; $148 LargeSpringBall
+	dw $0460	; $149 UpArrowCloud
+	dw $0460	; $14A UpRightArrowCloud
+	dw $0460	; $14B RightArrowCloud
+	dw $0460	; $14C DownRightArrowCloud
+	dw $0460	; $14D DownArrowCloud
+	dw $0460	; $14E DownLeftArrowCloud
+	dw $0460	; $14F LeftArrowCloud
+	dw $0460	; $150 UpLeftArrowCloud
+	dw $0460	; $151 RotatingArrowCloud
+	dw $0436	; $152 Flutter
+	dw $6C20	; $153 GoonieWithShyGuy
+	dw $0060	; $154 SharkChomp
+	dw $7422	; $155 FatGoonie
+	dw $6E82	; $156 CactusJack
+	dw $4C00	; $157 WallLakitu
+	dw $74A2	; $158 BowlingGoonie
+	dw $7C2E	; $159 WalkingGrunt
+	dw $7C2E	; $15A RunningGrunt
+	dw $6E00	; $15B DancingSpearGuy
+	dw $3440	; $15C GreenRotatingPlatformSwitch
+	dw $3440	; $15D RedRotatingPlatformSwitch
+	dw $0060	; $15E 4PinkRotatingPlatformsWithShyGuys
+	dw $3060	; $15F GreenSpikedPlatform
+	dw $3060	; $160 RedSpikedPlatform
+	dw $0060	; $161 RewardItemForDefeatingRoomEnemies
+	dw $3440	; $162 DoubleSpikePlatformWithSwitch
+	dw $6E00	; $163 BouncingNeedlenose
+	dw $6600	; $164 NipperPlant
+	dw $6E00	; $165 NipperSpore
+	dw $4C00	; $166 ThunderLakitu
+	dw $0620	; $167 GreenKoopaShell
+	dw $0620	; $168 RedKoopaShell
+	dw $6618	; $169 GreenNakedKoopa
+	dw $6618	; $16A RedNakedKoopa
+	dw $4E38	; $16B GreenKoopa
+	dw $4E38	; $16C RedKoopa
+	dw $4E38	; $16D GreenParakoopa
+	dw $4E38	; $16E RedHorizontalParakoopa
+	dw $4E38	; $16F RedVerticalParakoopa
+	dw $C660	; $170 AquaLakitu
+	dw $ACA0	; $171 NavalPiranha
+	dw $ACA0	; $172 NavalPiranhaBuds
+	dw $0420	; $173 BaronVonZeppelinCarryingShyGuy
+	dw $0420	; $174 BaronVonZeppelinCarryingNeedlenose
+	dw $0460	; $175 BaronVonZeppelinCarryingBomb
+	dw $0461	; $176 BaronVonZeppelinCarryingBandit
+	dw $0460	; $177 BaronVonZeppelinCarryingLargeSpringBall
+	dw $0420	; $178 BaronVonZeppelinCarrying1up
+	dw $0460	; $179 BaronVonZeppelinCarryingKey
+	dw $0420	; $17A BaronVonZeppelinCarryingCoins
+	dw $0420	; $17B BaronVonZeppelinCarryingWatermelon
+	dw $0420	; $17C BaronVonZeppelinCarryingFireWatermelon
+	dw $0420	; $17D BaronVonZeppelinCarryingIcyWatermelon
+	dw $0460	; $17E BaronVonZeppelinCarryingCrateWith6Stars
+	dw $0460	; $17F BaronVonZeppelin
+	dw $0060	; $180 SpinningLog
+	dw $4416	; $181 CrazeeDayzee
+	dw $0060	; $182 Dragonfly
+	dw $0060	; $183 Butterfly
+	dw $2600	; $184 Bumpty
+	dw $0060	; $185 MovingLineGuidedGreenPlatformLeft
+	dw $0060	; $186 MovingLineGuidedGreenPlatformRight
+	dw $0060	; $187 MovingLineGuidedYellowPlatformLeft
+	dw $0060	; $188 MovingLineGuidedYellowPlatformRight
+	dw $0060	; $189 LineGuidedGreenPlatformLeft
+	dw $0060	; $18A LineGuidedGreenPlatformRight
+	dw $0060	; $18B LineGuidedYellowPlatformLeft
+	dw $0060	; $18C LineGuidedYellowPlatformRight
+	dw $0060	; $18D LineGuidedRedPlatformLeft
+	dw $0060	; $18E LineGuidedGreenPlatformRight
+	dw $0062	; $18F SpiralPlatform
+	dw $6C40	; $190 FallingIcicle
+	dw $0060	; $191 Bird
+	dw $4C00	; $192 PetalGuy
+	dw $0160	; $193 SnakeCagedGhost
+	dw $6C40	; $194 Blargg
+	dw $0060	; $195 SmallUnstableSnowPlatform
+	dw $0060	; $196 UnstableSnowPlatform
+	dw $0060	; $197 ArrowSign
+	dw $0060	; $198 DiagonalArrowSign
+	dw $04A0	; $199 DizzyDandy
+	dw $4E20	; $19A BooGuy
+	dw $2600	; $19B TacklingBumpty
+	dw $2600	; $19C FlyingBumpty
+	dw $4E20	; $19D SkeletonGoonie
+	dw $6600	; $19E WinglessSkeletonGoonie
+	dw $4E20	; $19F SkeletonGoonieCarryingBomb
+	dw $04A0	; $1A0 DoubleFirebar
+	dw $04A0	; $1A1 Firebar
+	dw $0620	; $1A2 HealthStar
+	dw $6620	; $1A3 LittleSkullMouser
+	dw $F479	; $1A4 KeyholeCork
+	dw $C200	; $1A5 RunAwayMonkey
+	dw $C200	; $1A6 MonkeyWithWatermelon
+	dw $C200	; $1A7 HangingMonkeyThrowingBombsOrNeedlenoses
+	dw $C200	; $1A8 TheifMonkey
+	dw $C200	; $1A9 HangingMonkeySpittingSeeds
+	dw $6EA0	; $1AA HotLips
+	dw $6E20	; $1AB BooBalloon
+	dw $0060	; $1AC SmallFrog
+	dw $46A0	; $1AD MagicShootingKamek
+	dw $6CA0	; $1AE MagicShot
+	dw $047E	; $1AF FloatingCoin
+	dw $0060	; $1B0 DeflatingBalloon
+	dw $006F	; $1B1 CoinCannon
+	dw $0400	; $1B2 MinigameCoin
+	dw $0240	; $1B3 GatherCoinsBandit
+	dw $0060	; $1B4 MinigameCheckeredPlatform
+	dw $0440	; $1B5 PoppingBalloonsBandit
+	dw $0040	; $1B6 MinigameBalloon
+	dw $0660	; $1B7 SeedSpittingMinigameBandit
+	dw $0060	; $1B8 WatermelonPot
+	dw $0660	; $1B9 P2SeedSpittingMinigameBandit
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0A9694, incbin, DATA_0A9694_YI_U2.bin)
@@ -2744,63 +3201,486 @@ else
 	%FREE_BYTES($0A9694, 138, $FF)
 endif
 
+;-------------------------------------------------------------------------
+; DATA_0A971E -- per-sprite TERRAIN-BEHAVIOUR / CLASS word, one word per sprite
+; ID (indexed by ID*2). (Original source: ENMODE1 -> slot ENMOD1, "BG check".)
+; Copied into the new slot's $0FA2 (!EXRAM_YI_Level_NorSpr_TerrainCollisionFlags
+; lo / !EXRAM_YI_Level_NorSpr_SpriteClassFlags hi; raw `$6FA2,x`) by
+; CODE_spawn_sprite_clear_slot_fields, CODE_check_new_sprites and the GSU spawns
+; CODE_0ADF33 / CODE_0BF01A. Handlers override bits at runtime (~120 RMW sites);
+; a re-spawn re-seeds from here. Ambient equivalent: DATA_0AB112 -> $0F62.
+;   bits 0-4   ($001F) terrain point-set index 1-31 into DATA_0ACECB. 0 = no
+;                      terrain collision (CODE_0ACFED skips the slot and clears
+;                      its result word $1860). 227 of 442 ids are 0.
+;   bit 5      ($0020) set = keep Y speed on landing; clear = a landing or ledge
+;                      catch forces Y speed to $0100 (sticks the sprite down)
+;   bit 6      ($0040) wall contact: turn around (negate X speed and X target
+;                      $15E0, flip facing $1400) -- CODE_0AD3B0/CODE_0AD3E8
+;   bit 7      ($0080) wall contact: stop (X speed = 0); wins over bit 6
+;   bit 8      ($0100) walked off a ledge: turn around and step back (patrol)
+;   bit 9      ($0200) walked off a ledge: stop at the edge; wins over bit 8
+;   bit 10     ($0400) on a turn (bit 6 / 8) zero X speed instead of negating it
+;   bit 11     ($0800) can be knocked out by other sprites' attacks (Muddy Buddy
+;                      GSU CODE_098F9C, blast CODE_0992D9, Georgette Jelly, Chomp Rock)
+;   bit 12     ($1000) cannot be swallowed: held in the mouth until spat. The
+;                      tongue catch (GSU CODE_098336) copies it to bit 15 of the
+;                      mouth-held word $70:0168, which CODE_0BE55E tests.
+;   bits 13-14 ($6000) class: 0 = enemy; any bit = "not an enemy" (enemy scans,
+;                      item/cloud logic, the camera-event spawn gate CODE_0395E9);
+;                      bit 14 alone also = immune to contact-kill sprites
+;                      (AND #$4000 before CODE_kill_sprite_by_hit_special_cases);
+;                      both = item / collectible (GSU item search CODE_098DDA)
+;   bit 15     ($8000) no egg when swallowed: the catch skips the mouth-hold
+;                      setup and the sprite is consumed when the tongue retracts
+;                      (CODE_039DC5 BPL: Health Star, coins, else despawn)
+; Bits 6-10 are applied by the GSU terrain handlers (DATA_0AD051 kinds 1/5/D/E).
+; Spit-out (CODE_039D09: AND #$F83F / ORA #$0040) forces bits 6-10 to "turn at
+; walls, fall off ledges" for the spat sprite.
+;-------------------------------------------------------------------------
 DATA_0A971E:
-	dw $4484,$4008,$2000,$4003,$4000,$60A0,$2040,$60A0
-	dw $2000,$60A0,$0959,$2021,$20A0,$2000,$2000,$2000
-	dw $2000,$2000,$4008,$2000,$2000,$205C,$2000,$0841
-	dw $205E,$2040,$401E,$405C,$08A5,$405E,$0E81,$2000
-	dw $0801,$4003,$205C,$205C,$205C,$205C,$205C,$6041
-	dw $2081,$205A,$205C,$205C,$0040,$4040,$2060,$2000
-	dw $0941,$0941,$2000,$0000,$2041,$2040,$2041,$0881
-	dw $0040,$4040,$880A,$880A,$2221,$4000,$4000,$4040
-	dw $2001,$2000,$2000,$0857,$0857,$2000,$2040,$A041
-	dw $A000,$2481,$2681,$2681,$0001,$2040,$4008,$2040
-	dw $4040,$4040,$4000,$2040,$8841,$405B,$405B,$4000
-	dw $0881,$2040,$0000,$0801,$4000,$4040,$4040,$4040
-	dw $203B,$604F,$0E81,$0C01,$405B,$2000,$8841,$2000
-	dw $4040,$4040,$4040,$4000,$4001,$080A,$080A,$4001
-	dw $0843,$0000,$0006,$4040,$0D41,$0040,$000B,$000B
-	dw $2041,$2041,$2041,$0040,$0021,$0040,$4040,$4040
-	dw $0020,$0021,$0041,$2000,$2000,$0941,$2040,$2041
-	dw $2041,$4040,$4040,$0061,$2016,$0000,$2019,$0000
-	dw $4000,$C000,$0841,$4008,$404C,$4040,$4040,$4000
-	dw $4000,$0018,$4000,$0D41,$0040,$4001,$400E,$0801
-	dw $2000,$4041,$2018,$0801,$0801,$2000,$2000,$2000
-	dw $2000,$2000,$2000,$2000,$2000,$4040,$2056,$2020
-	dw $2020,$2020,$2020,$2000,$2020,$2020,$2020,$2020
-	dw $2020,$2020,$2020,$2020,$2020,$2020,$2020,$2020
-	dw $2020,$2020,$2020,$2020,$2020,$2020,$2020,$2020
-	dw $2020,$2020,$4008,$2020,$2020,$2061,$2000,$2000
-	dw $2000,$2000,$2401,$001F,$0003,$4000,$4000,$2000
-	dw $4000,$0012,$2001,$4000,$4011,$4000,$4000,$84A1
-	dw $8000,$04A0,$0947,$0947,$0881,$0858,$0800,$0041
-	dw $0800,$0841,$0000,$0000,$0861,$0861,$3001,$1001
-	dw $0000,$2001,$0801,$0841,$2001,$0955,$0943,$0941
-	dw $0801,$2018,$2000,$0941,$0941,$0C99,$0000,$44A3
-	dw $A043,$4000,$4000,$2000,$0006,$2000,$2000,$205D
-	dw $0941,$0841,$0941,$0841,$201C,$2000,$4003,$0000
-	dw $2000,$1149,$2013,$0159,$0000,$E481,$401C,$4000
-	dw $4000,$8E83,$0895,$0000,$C000,$0018,$5003,$5003
-	dw $5003,$4000,$2003,$2003,$0E96,$2000,$401C,$2000
-	dw $2000,$0000,$0C81,$0957,$0000,$2000,$2000,$0000
-	dw $0000,$4008,$0841,$0E81,$2083,$0000,$0000,$4000
-	dw $4000,$4000,$4000,$0000,$4000,$0000,$0000,$8800
-	dw $8800,$8800,$8800,$0000,$4000,$0053,$0053,$2000
-	dw $4001,$2000,$2000,$2000,$2000,$2000,$2000,$2000
-	dw $2000,$2000,$0000,$0000,$2000,$0003,$0000,$0800
-	dw $0003,$0941,$0941,$0941,$4000,$4000,$405B,$4000
-	dw $4000,$2000,$4000,$0041,$0841,$8801,$8000,$1858
-	dw $1858,$0C96,$0E96,$1C96,$1E96,$1856,$1800,$1800
-	dw $0000,$2000,$2000,$0061,$0061,$0060,$0061,$2063
-	dw $2061,$2061,$2061,$2061,$2061,$2061,$2063,$2000
-	dw $4000,$0E81,$2000,$2000,$1E81,$401B,$401B,$401B
-	dw $401B,$401B,$401B,$401B,$401B,$401B,$401B,$401B
-	dw $2026,$2142,$0E81,$4000,$0000,$4000,$4000,$2000
-	dw $2000,$0000,$0941,$1841,$10A0,$0000,$0841,$0000
-	dw $0000,$0000,$E041,$0041,$4000,$0C98,$0C98,$0C98
-	dw $0C98,$0C98,$0000,$0000,$2041,$2499,$201E,$2000
-	dw $2000,$0000,$E061,$0441,$0000,$0441,$0001,$0441
-	dw $0000,$0481
+DATA_sprite_terrain_flags_table:                     ; descriptive alias (main-side: FXDATA_0A971E)
+	dw $4484	; $000 LavaLog
+	dw $4008	; $001 ClosedDoor
+	dw $2000	; $002 NavalPiranhaVines
+	dw $4003	; $003 CrateWithKey
+	dw $4000	; $004 HitSuperBabyMarioBlock
+	dw $60A0	; $005 IcyWatermelon
+	dw $2040	; $006 WatermelonFreeze
+	dw $60A0	; $007 Watermelon
+	dw $2000	; $008 FallingRubble
+	dw $60A0	; $009 FireWatermelon
+	dw $0959	; $00A Kaboomba
+	dw $2021	; $00B Cannonball
+	dw $20A0	; $00C RaphaelTheRaven
+	dw $2000	; $00D GoalRing
+	dw $2000	; $00E GOALLetters
+	dw $2000	; $00F BonusChallengeSign
+	dw $2000	; $010 RoundedCagedGhost
+	dw $2000	; $011 ItemCard
+	dw $4008	; $012 BossDoor
+	dw $2000	; $013 BossExplosion
+	dw $2000	; $014 KeyFromBoss
+	dw $205C	; $015 SubmarineTorpedo
+	dw $2000	; $016 BiggerBoo
+	dw $0841	; $017 FrogPirate
+	dw $205E	; $018 WatermelonFlame
+	dw $2040	; $019 Bubble
+	dw $401E	; $01A SkiLift
+	dw $405C	; $01B VerticalLavaLog
+	dw $08A5	; $01C DrFreezegood
+	dw $405E	; $01D DrFreezegoodOnSkiLift
+	dw $0E81	; $01E Shyguy
+	dw $2000	; $01F RotatingDoors
+	dw $0801	; $020 Bandit
+	dw $4003	; $021 Bucket
+	dw $205C	; $022 FlashingEgg
+	dw $205C	; $023 RedEgg
+	dw $205C	; $024 YellowEgg
+	dw $205C	; $025 GreenEgg
+	dw $205C	; $026 BowserFightGiantEgg
+	dw $6041	; $027 Key
+	dw $2081	; $028 HuffinPuffin
+	dw $205A	; $029 GiantEgg
+	dw $205C	; $02A RedGiantEgg
+	dw $205C	; $02B GreenGiantEgg
+	dw $0040	; $02C LungeFish
+	dw $4040	; $02D SalvoTheSlime
+	dw $2060	; $02E EyesOfSalvoTheSlime
+	dw $2000	; $02F LittleMouserHole
+	dw $0941	; $030 LittleMouser
+	dw $0941	; $031 PottedSpikedFunGuy
+	dw $2000	; $032 PeekingLittleMouser
+	dw $0000	; $033 LittleMouserExitingNest
+	dw $2041	; $034 RogersPot
+	dw $2040	; $035 RogerThePottedGhost
+	dw $2041	; $036 FallingWall
+	dw $0881	; $037 GrimLeecher
+	dw $0040	; $038 PottedGhostFlame
+	dw $4040	; $039 HorizontalRotatingPlank
+	dw $880A	; $03A 3MiniRavens
+	dw $880A	; $03B MiniRaven
+	dw $2221	; $03C TapTapTheRedNose
+	dw $4000	; $03D LargeSeesaw
+	dw $4000	; $03E ThinPlatform
+	dw $4040	; $03F SlimeBlock
+	dw $2001	; $040 BabyLuigi
+	dw $2000	; $041 Stork
+	dw $2000	; $042 VerticalPipeEntrance
+	dw $0857	; $043 RedGiantShyguy
+	dw $0857	; $044 GreenGiantShyguy
+	dw $2000	; $045 PrinceFroggy
+	dw $2040	; $046 BurtTheBashful
+	dw $A041	; $047 ShyguyPushingRoger
+	dw $A000	; $048 CutsceneKamek
+	dw $2481	; $049 ThunderLakituFireBlast1
+	dw $2681	; $04A ThunderLakituFireBlast2
+	dw $2681	; $04B ThunderLakituFireBlast3
+	dw $0001	; $04C UpsidedownBlowHard
+	dw $2040	; $04D UnusedSpriteIndex
+	dw $4008	; $04E LockedDoor
+	dw $2040	; $04F MiddleRing
+	dw $4040	; $050 GreyRotatingWoodenBoard
+	dw $4040	; $051 LargeWheel
+	dw $4000	; $052 BalloonPlatform
+	dw $2040	; $053 KamekSayingOhMy
+	dw $8841	; $054 UpsideDownPiranhaPlant
+	dw $405B	; $055 4GreenRotatingPlatforms
+	dw $405B	; $056 4PinkRotatingPlatforms
+	dw $4000	; $057 SewerGhostWithPlatform
+	dw $0881	; $058 GreenToady
+	dw $2040	; $059 StationarySuperStar
+	dw $0000	; $05A RaphaelSparkAttack
+	dw $0801	; $05B RedCoinBandit
+	dw $4000	; $05C PinkToady
+	dw $4040	; $05D GlitchedSprite
+	dw $4040	; $05E BrownWoodenBoard
+	dw $4040	; $05F AutoRotateBrownWoodenBoard
+	dw $203B	; $060 Bomb
+	dw $604F	; $061 BabyMario
+	dw $0E81	; $062 Goomba
+	dw $0C01	; $063 MuddyBuddy
+	dw $405B	; $064 4AutoRotatingPinkPlatforms
+	dw $2000	; $065 RedCoin
+	dw $8841	; $066 PiranhaPlant
+	dw $2000	; $067 RockRevealedHiddenWingedCloud
+	dw $4040	; $068 FlashingEggBlock
+	dw $4040	; $069 RedEggBlock
+	dw $4040	; $06A YellowEggBlock
+	dw $4000	; $06B GreenEggBlock
+	dw $4001	; $06C LargeSpringBall
+	dw $080A	; $06D ClockwiseHootieTheBlueFish
+	dw $080A	; $06E CounterclockwiseHootieTheBlueFish
+	dw $4001	; $06F SpringBall
+	dw $0843	; $070 Clawdaddy
+	dw $0000	; $071 BigBoo
+	dw $0006	; $072 TrainBandit
+	dw $4040	; $073 BalloonPump
+	dw $0D41	; $074 Spike
+	dw $0040	; $075 SpikeBall
+	dw $000B	; $076 ClockwisePiroDangle
+	dw $000B	; $077 CounterclockwisePiroDangle
+	dw $2041	; $078 RedBulletBillShooter
+	dw $2041	; $079 YellowBulletBillShooter
+	dw $2041	; $07A GreenBulletBillShooter
+	dw $0040	; $07B RedBulletBill
+	dw $0021	; $07C YellowBulletBill
+	dw $0040	; $07D GreenBulletBill
+	dw $4040	; $07E DentOfSquishyPlatform
+	dw $4040	; $07F LogSeesawPlatform
+	dw $0020	; $080 StraightLavaBubble
+	dw $0021	; $081 FollowingLavaBubble
+	dw $0041	; $082 ChainChomp
+	dw $2000	; $083 BowserFightCloud
+	dw $2000	; $084 TeleportSprite
+	dw $0941	; $085 HarryHedgehog
+	dw $2040	; $086 GlitchedSprite
+	dw $2041	; $087 MockUpLaidEgg
+	dw $2041	; $088 SuperStar
+	dw $4040	; $089 HorizontalMovingRedPlatform
+	dw $4040	; $08A VerticalMovingPinkPlatform
+	dw $0061	; $08B MockUp
+	dw $2016	; $08C YoshiAtGoal
+	dw $0000	; $08D Flyguy
+	dw $2019	; $08E BowserRoomKamek
+	dw $0000	; $08F MonkeySwing
+	dw $4000	; $090 DanglingGhost
+	dw $C000	; $091 4RedToadies
+	dw $0841	; $092 MelonBug
+	dw $4008	; $093 Door
+	dw $404C	; $094 ExpandingBlock
+	dw $4040	; $095 BlueCheckeredBlock
+	dw $4040	; $096 RedCheckeredBlock
+	dw $4000	; $097 POWBlock
+	dw $4000	; $098 EndTransformationBlock
+	dw $0018	; $099 SpinyEgg
+	dw $4000	; $09A SwingingGreenPlatform
+	dw $0D41	; $09B MaceGuy
+	dw $0040	; $09C Mace
+	dw $4001	; $09D RedSwitch
+	dw $400E	; $09E ChompRock
+	dw $0801	; $09F PtooiePiranhaPlant
+	dw $2000	; $0A0 Tulip
+	dw $4041	; $0A1 SmallPot
+	dw $2018	; $0A2 ThunderLakituFireball
+	dw $0801	; $0A3 LeftHidingBandit
+	dw $0801	; $0A4 RightHidingBandit
+	dw $2000	; $0A5 NepEnut
+	dw $2000	; $0A6 IncomingChomp
+	dw $2000	; $0A7 GroupOfIncomingChomps
+	dw $2000	; $0A8 FallingIncomingChomp
+	dw $2000	; $0A9 IncomingChompShadow
+	dw $2000	; $0AA BackgroundShyguy
+	dw $2000	; $0AB FullEggSpawner
+	dw $2000	; $0AC FallingRockArrowAndShadow
+	dw $4040	; $0AD MessageBox
+	dw $2056	; $0AE HookbillTheKoopa
+	dw $2020	; $0AF CarMorphBubble
+	dw $2020	; $0B0 MoleMorphBubble
+	dw $2020	; $0B1 HelicopterMorphBubble
+	dw $2020	; $0B2 TrainMorphBubble
+	dw $2000	; $0B3 FuzzyFart
+	dw $2020	; $0B4 SubmarineMorphBubble
+	dw $2020	; $0B5 HiddenWingedCloud
+	dw $2020	; $0B6 WingedCloudWith8Coins
+	dw $2020	; $0B7 WingedCloudWithBubbled1up
+	dw $2020	; $0B8 WingedCloudWithFlower
+	dw $2020	; $0B9 WingedCloudWithPOW
+	dw $2020	; $0BA WingedCloudWithStairs
+	dw $2020	; $0BB WingedCloudWithPlatform
+	dw $2020	; $0BC WingedCloudWithBandit
+	dw $2020	; $0BD WingedCloudWithCoin
+	dw $2020	; $0BE WingedCloudWith1up
+	dw $2020	; $0BF WingedCloudWithKey
+	dw $2020	; $0C0 WingedCloudWith3Stars
+	dw $2020	; $0C1 WingedCloudWith5Stars
+	dw $2020	; $0C2 WingedCloudWithDoor
+	dw $2020	; $0C3 WingedCloudWithLowerGround
+	dw $2020	; $0C4 WingedCloudWithWatermelon
+	dw $2020	; $0C5 WingedCloudWithFireWatermelon
+	dw $2020	; $0C6 WingedCloudWithIcyWatermelon
+	dw $2020	; $0C7 WingedCloudWith3LeafSunflower
+	dw $2020	; $0C8 WingedCloudWith6LeafSunflower
+	dw $2020	; $0C9 WingedCloudWithCrashGameFeature
+	dw $4008	; $0CA BigBossDoor
+	dw $2020	; $0CB WingedCloudWithCoinOrStar
+	dw $2020	; $0CC WingedCloudWithRedSwitch
+	dw $2061	; $0CD BaronVonZeppelinCarryingGiantEgg
+	dw $2000	; $0CE BowserFire
+	dw $2000	; $0CF BowserRocks
+	dw $2000	; $0D0 HorizontalEntranceToRight
+	dw $2000	; $0D1 SecretPipeEntrance
+	dw $2401	; $0D2 MarchingMilde
+	dw $001F	; $0D3 LargeMilde
+	dw $0003	; $0D4 MediumMilde
+	dw $4000	; $0D5 BackgroundForHookbillFight
+	dw $4000	; $0D6 FortGhostWithPlatform
+	dw $2000	; $0D7 SluggyTheUnshaven
+	dw $4000	; $0D8 ChompWarningSign
+	dw $0012	; $0D9 FishinLakitu
+	dw $2001	; $0DA FlowerPot
+	dw $4000	; $0DB SoftBlock
+	dw $4011	; $0DC Snowball
+	dw $4000	; $0DD CloseWallInNavalPiranhaRoom
+	dw $4000	; $0DE FallingRockPlatform
+	dw $84A1	; $0DF PiscatoryPete
+	dw $8000	; $0E0 PreyingMantas
+	dw $04A0	; $0E1 LochNestor
+	dw $0947	; $0E2 BooBlah
+	dw $0947	; $0E3 BooBlahWithPiroDangle
+	dw $0881	; $0E4 HeadingCactus
+	dw $0858	; $0E5 GreenNeedlenose
+	dw $0800	; $0E6 Gusty
+	dw $0041	; $0E7 Burt
+	dw $0800	; $0E8 Goonie
+	dw $0841	; $0E9 3WinglessGoonies
+	dw $0000	; $0EA VerticalCloudDrop
+	dw $0000	; $0EB HorizontalCloudDrop
+	dw $0861	; $0EC JumpingFlamerGuy
+	dw $0861	; $0ED RunningFlamerGuy
+	dw $3001	; $0EE EggoDil
+	dw $1001	; $0EF EggoDilFace
+	dw $0000	; $0F0 EggoDilPetal
+	dw $2001	; $0F1 EggPlantShootingBubbles
+	dw $0801	; $0F2 ShyguyOnStilts
+	dw $0841	; $0F3 WoozyGuy
+	dw $2001	; $0F4 EggPlant
+	dw $0955	; $0F5 Slugger
+	dw $0943	; $0F6 MotherHuffinPuffin
+	dw $0941	; $0F7 BarneyBubble
+	dw $0801	; $0F8 BlowHard
+	dw $2018	; $0F9 YellowNeedlenose
+	dw $2000	; $0FA Flower
+	dw $0941	; $0FB LongSpearGuy
+	dw $0941	; $0FC ShortSpearGuy
+	dw $0C99	; $0FD ZeusGuy
+	dw $0000	; $0FE ZeusGuyBlast
+	dw $44A3	; $0FF Poochy
+	dw $A043	; $100 Bubbled1up
+	dw $4000	; $101 RotatingMace
+	dw $4000	; $102 DoubleRotatingMace
+	dw $2000	; $103 BooGuysMovingMace
+	dw $0006	; $104 JeanDeFillet
+	dw $2000	; $105 BooGuysCarryingBombToLeft
+	dw $2000	; $106 BooGuysCarryingBombToRight
+	dw $205D	; $107 WatermelonSeed
+	dw $0941	; $108 Milde
+	dw $0841	; $109 BronzeTapTap
+	dw $0941	; $10A SilverTapTap
+	dw $0841	; $10B HoppingSilverTapTap
+	dw $201C	; $10C ChainedSpikeBall
+	dw $2000	; $10D BooGuyOperatingPulley
+	dw $4003	; $10E CrateWith6Stars
+	dw $0000	; $10F BooManBluff
+	dw $2000	; $110 Flower
+	dw $1149	; $111 GeorgetteJelly
+	dw $2013	; $112 GeorgetteJellyGoo
+	dw $0159	; $113 Snifit
+	dw $0000	; $114 SnifitBullet
+	dw $E481	; $115 Coin
+	dw $401C	; $116 BuoyantRoundPlatform
+	dw $4000	; $117 DonutLift
+	dw $4000	; $118 LargeDonutLift
+	dw $8E83	; $119 Spooky
+	dw $0895	; $11A GreenGlove
+	dw $0000	; $11B Lakitu
+	dw $C000	; $11C LakituCloud
+	dw $0018	; $11D SpinyEgg
+	dw $5003	; $11E BrownArrowWheel
+	dw $5003	; $11F BlueArrowWheel
+	dw $5003	; $120 DoubledSidedArrowLift
+	dw $4000	; $121 NumberPlatformExplosion
+	dw $2003	; $122 BucketWithBandit
+	dw $2003	; $123 BucketWithCoins
+	dw $0E96	; $124 Stretch
+	dw $2000	; $125 AttackingAndEndingKamek
+	dw $401C	; $126 SpikedLogOnPulley
+	dw $2000	; $127 PulleyOfSpikedLog
+	dw $2000	; $128 GroundRippleInBabyBowerRoom
+	dw $0000	; $129 Fuzzy
+	dw $0C81	; $12A ShyGuyBanditTrap
+	dw $0957	; $12B FatGuy
+	dw $0000	; $12C FlyOrWhirlyGuy
+	dw $2000	; $12D PrologueCutsceneYoshi
+	dw $2000	; $12E LargePopEffect
+	dw $0000	; $12F HorizontalLavaDrop
+	dw $0000	; $130 VerticalLavaDrop
+	dw $4008	; $131 LockedDoor
+	dw $0841	; $132 LemonDrop
+	dw $0E81	; $133 LanternGhost
+	dw $2083	; $134 BabyBowser
+	dw $0000	; $135 CirclingRaven
+	dw $0000	; $136 CirclingRaven
+	dw $4000	; $137 3x6FallingStone
+	dw $4000	; $138 3x3FallingStone
+	dw $4000	; $139 3x9FallingStone
+	dw $4000	; $13A 6x3FallingStone
+	dw $0000	; $13B StomachAcid
+	dw $4000	; $13C DownFlippers
+	dw $0000	; $13D DanglingFang
+	dw $0000	; $13E FlyingFang
+	dw $8800	; $13F SwimmingFlopsyFish
+	dw $8800	; $140 SwimmingAndJumpingFlopsyFish
+	dw $8800	; $141 SwimmingAndArcJumpingFlopsyFish
+	dw $8800	; $142 3JumpFlopsyFish
+	dw $0000	; $143 SprayFish
+	dw $4000	; $144 RightOrLeftFlippers
+	dw $0053	; $145 BlueSluggy
+	dw $0053	; $146 PinkSluggy
+	dw $2000	; $147 HorizontalEntranceToLeft
+	dw $4001	; $148 LargeSpringBall
+	dw $2000	; $149 UpArrowCloud
+	dw $2000	; $14A UpRightArrowCloud
+	dw $2000	; $14B RightArrowCloud
+	dw $2000	; $14C DownRightArrowCloud
+	dw $2000	; $14D DownArrowCloud
+	dw $2000	; $14E DownLeftArrowCloud
+	dw $2000	; $14F LeftArrowCloud
+	dw $2000	; $150 UpLeftArrowCloud
+	dw $2000	; $151 RotatingArrowCloud
+	dw $0000	; $152 Flutter
+	dw $0000	; $153 GoonieWithShyGuy
+	dw $2000	; $154 SharkChomp
+	dw $0003	; $155 FatGoonie
+	dw $0000	; $156 CactusJack
+	dw $0800	; $157 WallLakitu
+	dw $0003	; $158 BowlingGoonie
+	dw $0941	; $159 WalkingGrunt
+	dw $0941	; $15A RunningGrunt
+	dw $0941	; $15B DancingSpearGuy
+	dw $4000	; $15C GreenRotatingPlatformSwitch
+	dw $4000	; $15D RedRotatingPlatformSwitch
+	dw $405B	; $15E 4PinkRotatingPlatformsWithShyGuys
+	dw $4000	; $15F GreenSpikedPlatform
+	dw $4000	; $160 RedSpikedPlatform
+	dw $2000	; $161 RewardItemForDefeatingRoomEnemies
+	dw $4000	; $162 DoubleSpikePlatformWithSwitch
+	dw $0041	; $163 BouncingNeedlenose
+	dw $0841	; $164 NipperPlant
+	dw $8801	; $165 NipperSpore
+	dw $8000	; $166 ThunderLakitu
+	dw $1858	; $167 GreenKoopaShell
+	dw $1858	; $168 RedKoopaShell
+	dw $0C96	; $169 GreenNakedKoopa
+	dw $0E96	; $16A RedNakedKoopa
+	dw $1C96	; $16B GreenKoopa
+	dw $1E96	; $16C RedKoopa
+	dw $1856	; $16D GreenParakoopa
+	dw $1800	; $16E RedHorizontalParakoopa
+	dw $1800	; $16F RedVerticalParakoopa
+	dw $0000	; $170 AquaLakitu
+	dw $2000	; $171 NavalPiranha
+	dw $2000	; $172 NavalPiranhaBuds
+	dw $0061	; $173 BaronVonZeppelinCarryingShyGuy
+	dw $0061	; $174 BaronVonZeppelinCarryingNeedlenose
+	dw $0060	; $175 BaronVonZeppelinCarryingBomb
+	dw $0061	; $176 BaronVonZeppelinCarryingBandit
+	dw $2063	; $177 BaronVonZeppelinCarryingLargeSpringBall
+	dw $2061	; $178 BaronVonZeppelinCarrying1up
+	dw $2061	; $179 BaronVonZeppelinCarryingKey
+	dw $2061	; $17A BaronVonZeppelinCarryingCoins
+	dw $2061	; $17B BaronVonZeppelinCarryingWatermelon
+	dw $2061	; $17C BaronVonZeppelinCarryingFireWatermelon
+	dw $2061	; $17D BaronVonZeppelinCarryingIcyWatermelon
+	dw $2063	; $17E BaronVonZeppelinCarryingCrateWith6Stars
+	dw $2000	; $17F BaronVonZeppelin
+	dw $4000	; $180 SpinningLog
+	dw $0E81	; $181 CrazeeDayzee
+	dw $2000	; $182 Dragonfly
+	dw $2000	; $183 Butterfly
+	dw $1E81	; $184 Bumpty
+	dw $401B	; $185 MovingLineGuidedGreenPlatformLeft
+	dw $401B	; $186 MovingLineGuidedGreenPlatformRight
+	dw $401B	; $187 MovingLineGuidedYellowPlatformLeft
+	dw $401B	; $188 MovingLineGuidedYellowPlatformRight
+	dw $401B	; $189 LineGuidedGreenPlatformLeft
+	dw $401B	; $18A LineGuidedGreenPlatformRight
+	dw $401B	; $18B LineGuidedYellowPlatformLeft
+	dw $401B	; $18C LineGuidedYellowPlatformRight
+	dw $401B	; $18D LineGuidedRedPlatformLeft
+	dw $401B	; $18E LineGuidedGreenPlatformRight
+	dw $401B	; $18F SpiralPlatform
+	dw $2026	; $190 FallingIcicle
+	dw $2142	; $191 Bird
+	dw $0E81	; $192 PetalGuy
+	dw $4000	; $193 SnakeCagedGhost
+	dw $0000	; $194 Blargg
+	dw $4000	; $195 SmallUnstableSnowPlatform
+	dw $4000	; $196 UnstableSnowPlatform
+	dw $2000	; $197 ArrowSign
+	dw $2000	; $198 DiagonalArrowSign
+	dw $0000	; $199 DizzyDandy
+	dw $0941	; $19A BooGuy
+	dw $1841	; $19B TacklingBumpty
+	dw $10A0	; $19C FlyingBumpty
+	dw $0000	; $19D SkeletonGoonie
+	dw $0841	; $19E WinglessSkeletonGoonie
+	dw $0000	; $19F SkeletonGoonieCarryingBomb
+	dw $0000	; $1A0 DoubleFirebar
+	dw $0000	; $1A1 Firebar
+	dw $E041	; $1A2 HealthStar
+	dw $0041	; $1A3 LittleSkullMouser
+	dw $4000	; $1A4 KeyholeCork
+	dw $0C98	; $1A5 RunAwayMonkey
+	dw $0C98	; $1A6 MonkeyWithWatermelon
+	dw $0C98	; $1A7 HangingMonkeyThrowingBombsOrNeedlenoses
+	dw $0C98	; $1A8 TheifMonkey
+	dw $0C98	; $1A9 HangingMonkeySpittingSeeds
+	dw $0000	; $1AA HotLips
+	dw $0000	; $1AB BooBalloon
+	dw $2041	; $1AC SmallFrog
+	dw $2499	; $1AD MagicShootingKamek
+	dw $201E	; $1AE MagicShot
+	dw $2000	; $1AF FloatingCoin
+	dw $2000	; $1B0 DeflatingBalloon
+	dw $0000	; $1B1 CoinCannon
+	dw $E061	; $1B2 MinigameCoin
+	dw $0441	; $1B3 GatherCoinsBandit
+	dw $0000	; $1B4 MinigameCheckeredPlatform
+	dw $0441	; $1B5 PoppingBalloonsBandit
+	dw $0001	; $1B6 MinigameBalloon
+	dw $0441	; $1B7 SeedSpittingMinigameBandit
+	dw $0000	; $1B8 WatermelonPot
+	dw $0481	; $1B9 P2SeedSpittingMinigameBandit
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0A9A92, incbin, DATA_0A9A92_YI_U2.bin)
@@ -2809,77 +3689,490 @@ else
 endif
 
 ;-------------------------------------------------------------------------
-; DATA_sprite_render_control_table -- per-sprite render-control / OAM-parameter
-; word, one word per sprite ID (indexed by ID*2). CODE_check_new_sprites (Bank03,
-; via the main-side alias FXDATA_0A9B1C) copies word[spriteID] into the new
-; slot's render-control word $7040 at spawn time.
-;   HIGH byte = OAMByteCount: the sprite's size in the OAM working buffer. The
-;     sprite-draw walker (CODE_098B85) emits (OAMByteCount & $F8) >> 3 cel
-;     records per frame, i.e. the per-frame OAM-record count. Verified byte-exact
-;     vs runtime OAM: $1E Shyguy = 3, $64 Pink Pinwheel = 17,
-;     $181 Crazee Dayzee = 5.
-;   LOW byte = initial render-control flags. Bits $000C are the "draw normally"
-;     bits: re-derived on reactivation (AND #$000C at $03:9D96) and cleared while
-;     the sprite is held on Yoshi's tongue (CODE_spr_state_tongued, $03:9AC8).
+; DATA_sprite_render_control_table -- per-sprite BEHAVIOUR / RENDER-CONTROL word,
+; one word per sprite ID (indexed by ID*2). (Original source: ENMODE2 -> slot ENMOD2.)
+; Copied into the new slot's $1040 (!EXRAM_YI_Level_NorSpr_BehaviorFlags lo /
+; !EXRAM_YI_Level_NorSpr_OAMByteCount hi; raw `$7040,x`) by CODE_check_new_sprites,
+; CODE_spawn_sprite_clear_slot_fields and the GSU spawns CODE_0ADF33 / CODE_0BF01A.
+; Handlers rewrite bits afterwards (draw method toggles, OAM count resizes, ...).
+; Ambient equivalent: DATA_0AB312 -> $1000 (same layout).
+;   bits 0-1   ($0003) draw method, GSU dispatch DATA_098AD8 (CODE_0989C1):
+;                      0 one OAM record from the DATA_4D0000 frame table (CODE_098B0B)
+;                      1 multi-record walker over DATA_4D048A (CODE_098B85), 341 ids
+;                      2 reserve (count) OAM-buffer bytes only, pointer -> $1322; the
+;                        handler writes the records itself (CODE_098C70), 41 ids
+;                      3 walker with 32 extra records (CODE_098C93); no table entry
+;                        uses it, only init_bowser_flame sets it at runtime
+;   bits 2-3   ($000C) off-screen DESPAWN range class, index into DATA_098C87
+;                      (0 = never despawns; 1 = $60/$60 px margins (283 ids), 2 =
+;                      $90/$60, 3 = $90/$A0). Checked by FXCODE_098925; on failure
+;                      the slot is freed, $14A2 = $FF, its dynamic VRAM cell released
+;                      and its level spawn flag cleared so it can respawn. Cleared
+;                      while held on the tongue (Bank09 BIC #12), re-seeded from this
+;                      table on spit-out (AND #$000C at $03:9D96).
+;   bit 4      ($0010) can be BURNED: the melon flame ($018, main_melon_flame) sets
+;                      status $12 (CODE_spr_state_die_burning) only if this is set
+;   bit 5      ($0020) reacts to the air Bubble ($019): the bubble pops on contact
+;                      and launches the sprite (CODE_0485E5)
+;   bit 6      ($0040) can be FROZEN: the icy-melon chill ($006, main_chill) starts
+;                      the $1D96 frozen timer only if this is set
+;   bit 7      ($0080) swallowed at once when caught: the tongue hit sets the
+;                      auto-swallow timer $1EE to 0 instead of $04B0 (Bank09 ~:590).
+;                      Only $08B Inflating Balloon and $129 Fuzzy.
+;   bit 8      ($0100) egg-aim search target (only reader CODE_0BC649 has no caller;
+;                      handlers still maintain it) -- unverified as used
+;   bits 9-10  ($0600) defeat-reward request, 3 = 1-up (Cactus Jack sets it after 8
+;                      hits); no reader found -- unverified
+;   bits 11-15 ($F800) OAM record count 0-31 (hi byte & $F8): the walker emits
+;                      (hi & $F8) >> 3 cel records per frame. Verified byte-exact vs
+;                      runtime OAM: $1E Shyguy = 3, $64 Pink Pinwheel = 17,
+;                      $181 Crazee Dayzee = 5. Some handlers test the hi byte as a
+;                      mode flag (LDY $7041 : BPL = count >= 16).
 ;-------------------------------------------------------------------------
 DATA_0A9B1C:
 DATA_sprite_render_control_table:                    ; descriptive alias (main-side: FXDATA_0A9B1C)
-	dw $2009,$2005,$2001,$2005,$0804,$0904,$0904,$0904
-	dw $0004,$0904,$3055,$0804,$8001,$6801,$0002,$0002
-	dw $6001,$2001,$2005,$0002,$2001,$0800,$2001,$5001
-	dw $0904,$0804,$2001,$1005,$2115,$2001,$1979,$2801
-	dw $3001,$2805,$0804,$0804,$0804,$0804,$2005,$0800
-	dw $2005,$2005,$2005,$2005,$5001,$0002,$2001,$0804
-	dw $2951,$0954,$1805,$2855,$2801,$1901,$0002,$0954
-	dw $0804,$000A,$3155,$3155,$2801,$0802,$4005,$0002
-	dw $2801,$7001,$0006,$4175,$4175,$3001,$0002,$2001
-	dw $3801,$0006,$3005,$3005,$3105,$2005,$2005,$7006
-	dw $0002,$0002,$2001,$3801,$3D55,$8809,$6809,$3801
-	dw $2801,$0804,$2005,$3001,$0004,$0804,$0002,$0002
-	dw $0804,$1801,$3155,$3155,$8809,$0804,$3D51,$0004
-	dw $2005,$2005,$2005,$0800,$2005,$2155,$2155,$2005
-	dw $4979,$4001,$0804,$6001,$0954,$2105,$3145,$3145
-	dw $2945,$2945,$2945,$2155,$2155,$2155,$0002,$6005
-	dw $2145,$2145,$4105,$4001,$0006,$0974,$2005,$0800
-	dw $0804,$1805,$1805,$2085,$2001,$0106,$3001,$8101
-	dw $6001,$6001,$1905,$2005,$2009,$2005,$2005,$2005
-	dw $2005,$0904,$3009,$0950,$3901,$2005,$2005,$3955
-	dw $5005,$0800,$2005,$3001,$3001,$600D,$0801,$2801
-	dw $0801,$8001,$0805,$0800,$2005,$2005,$3101,$2805
-	dw $2805,$2805,$2805,$0006,$2805,$0006,$2805,$2805
-	dw $2805,$2805,$2805,$2805,$2805,$2805,$2805,$2805
-	dw $2805,$2805,$2805,$2805,$2805,$2805,$2805,$2805
-	dw $2805,$2805,$8005,$2805,$2805,$3805,$2001,$8001
-	dw $0006,$0006,$2001,$C975,$2175,$0002,$6801,$1801
-	dw $2005,$3802,$4805,$0002,$8005,$0002,$0002,$1375
-	dw $0B74,$3375,$3101,$3101,$1805,$0904,$2855,$3151
-	dw $4955,$4955,$1975,$1175,$3945,$3945,$1001,$2001
-	dw $0900,$1805,$4975,$0974,$1805,$3155,$3125,$3125
-	dw $3155,$0904,$2005,$4955,$4155,$3955,$2005,$3801
-	dw $3905,$6001,$C001,$1009,$2145,$0801,$0801,$0804
-	dw $2175,$2975,$2975,$2975,$8801,$1801,$2005,$3805
-	dw $2905,$3905,$0904,$3175,$1105,$0800,$2005,$0804
-	dw $2005,$2101,$3955,$2901,$1051,$0904,$2001,$2001
-	dw $2001,$0002,$2801,$2801,$1079,$3801,$7001,$2101
-	dw $000A,$49D1,$1959,$4159,$0000,$3801,$0000,$1829
-	dw $1825,$2005,$1175,$2979,$5802,$2155,$2155,$9002
-	dw $4802,$D802,$B002,$0804,$4005,$1975,$1971,$2875
-	dw $2875,$2875,$2875,$A906,$4005,$1915,$1915,$0006
-	dw $2005,$3005,$3005,$3005,$3005,$3005,$3005,$3005
-	dw $3005,$3005,$3955,$4955,$2401,$5155,$2151,$1905
-	dw $5155,$3925,$3925,$3955,$0904,$0904,$8809,$4001
-	dw $4001,$0000,$8901,$0804,$1875,$1855,$3101,$0974
-	dw $0974,$3155,$3155,$3155,$3155,$5955,$5959,$595D
-	dw $2105,$A801,$1802,$3005,$2005,$2005,$4005,$3805
-	dw $3E05,$2005,$2005,$2005,$2005,$2005,$6805,$1805
-	dw $2005,$2975,$0804,$0804,$1975,$1805,$1805,$1805
-	dw $1805,$1805,$1805,$1805,$1805,$1805,$1805,$2005
-	dw $2005,$0805,$2959,$6001,$4005,$2005,$800D,$1805
-	dw $1805,$2005,$1155,$1975,$2975,$4155,$2155,$4151
-	dw $380E,$200E,$1801,$2155,$3005,$3875,$3875,$3875
-	dw $3875,$3875,$B006,$3951,$1005,$3001,$1805,$0804
-	dw $0800,$7101,$0904,$3101,$1101,$3101,$2101,$3851
-	dw $0100,$3811
+	dw $2009	; $000 LavaLog
+	dw $2005	; $001 ClosedDoor
+	dw $2001	; $002 NavalPiranhaVines
+	dw $2005	; $003 CrateWithKey
+	dw $0804	; $004 HitSuperBabyMarioBlock
+	dw $0904	; $005 IcyWatermelon
+	dw $0904	; $006 WatermelonFreeze
+	dw $0904	; $007 Watermelon
+	dw $0004	; $008 FallingRubble
+	dw $0904	; $009 FireWatermelon
+	dw $3055	; $00A Kaboomba
+	dw $0804	; $00B Cannonball
+	dw $8001	; $00C RaphaelTheRaven
+	dw $6801	; $00D GoalRing
+	dw $0002	; $00E GOALLetters
+	dw $0002	; $00F BonusChallengeSign
+	dw $6001	; $010 RoundedCagedGhost
+	dw $2001	; $011 ItemCard
+	dw $2005	; $012 BossDoor
+	dw $0002	; $013 BossExplosion
+	dw $2001	; $014 KeyFromBoss
+	dw $0800	; $015 SubmarineTorpedo
+	dw $2001	; $016 BiggerBoo
+	dw $5001	; $017 FrogPirate
+	dw $0904	; $018 WatermelonFlame
+	dw $0804	; $019 Bubble
+	dw $2001	; $01A SkiLift
+	dw $1005	; $01B VerticalLavaLog
+	dw $2115	; $01C DrFreezegood
+	dw $2001	; $01D DrFreezegoodOnSkiLift
+	dw $1979	; $01E Shyguy
+	dw $2801	; $01F RotatingDoors
+	dw $3001	; $020 Bandit
+	dw $2805	; $021 Bucket
+	dw $0804	; $022 FlashingEgg
+	dw $0804	; $023 RedEgg
+	dw $0804	; $024 YellowEgg
+	dw $0804	; $025 GreenEgg
+	dw $2005	; $026 BowserFightGiantEgg
+	dw $0800	; $027 Key
+	dw $2005	; $028 HuffinPuffin
+	dw $2005	; $029 GiantEgg
+	dw $2005	; $02A RedGiantEgg
+	dw $2005	; $02B GreenGiantEgg
+	dw $5001	; $02C LungeFish
+	dw $0002	; $02D SalvoTheSlime
+	dw $2001	; $02E EyesOfSalvoTheSlime
+	dw $0804	; $02F LittleMouserHole
+	dw $2951	; $030 LittleMouser
+	dw $0954	; $031 PottedSpikedFunGuy
+	dw $1805	; $032 PeekingLittleMouser
+	dw $2855	; $033 LittleMouserExitingNest
+	dw $2801	; $034 RogersPot
+	dw $1901	; $035 RogerThePottedGhost
+	dw $0002	; $036 FallingWall
+	dw $0954	; $037 GrimLeecher
+	dw $0804	; $038 PottedGhostFlame
+	dw $000A	; $039 HorizontalRotatingPlank
+	dw $3155	; $03A 3MiniRavens
+	dw $3155	; $03B MiniRaven
+	dw $2801	; $03C TapTapTheRedNose
+	dw $0802	; $03D LargeSeesaw
+	dw $4005	; $03E ThinPlatform
+	dw $0002	; $03F SlimeBlock
+	dw $2801	; $040 BabyLuigi
+	dw $7001	; $041 Stork
+	dw $0006	; $042 VerticalPipeEntrance
+	dw $4175	; $043 RedGiantShyguy
+	dw $4175	; $044 GreenGiantShyguy
+	dw $3001	; $045 PrinceFroggy
+	dw $0002	; $046 BurtTheBashful
+	dw $2001	; $047 ShyguyPushingRoger
+	dw $3801	; $048 CutsceneKamek
+	dw $0006	; $049 ThunderLakituFireBlast1
+	dw $3005	; $04A ThunderLakituFireBlast2
+	dw $3005	; $04B ThunderLakituFireBlast3
+	dw $3105	; $04C UpsidedownBlowHard
+	dw $2005	; $04D UnusedSpriteIndex
+	dw $2005	; $04E LockedDoor
+	dw $7006	; $04F MiddleRing
+	dw $0002	; $050 GreyRotatingWoodenBoard
+	dw $0002	; $051 LargeWheel
+	dw $2001	; $052 BalloonPlatform
+	dw $3801	; $053 KamekSayingOhMy
+	dw $3D55	; $054 UpsideDownPiranhaPlant
+	dw $8809	; $055 4GreenRotatingPlatforms
+	dw $6809	; $056 4PinkRotatingPlatforms
+	dw $3801	; $057 SewerGhostWithPlatform
+	dw $2801	; $058 GreenToady
+	dw $0804	; $059 StationarySuperStar
+	dw $2005	; $05A RaphaelSparkAttack
+	dw $3001	; $05B RedCoinBandit
+	dw $0004	; $05C PinkToady
+	dw $0804	; $05D GlitchedSprite
+	dw $0002	; $05E BrownWoodenBoard
+	dw $0002	; $05F AutoRotateBrownWoodenBoard
+	dw $0804	; $060 Bomb
+	dw $1801	; $061 BabyMario
+	dw $3155	; $062 Goomba
+	dw $3155	; $063 MuddyBuddy
+	dw $8809	; $064 4AutoRotatingPinkPlatforms
+	dw $0804	; $065 RedCoin
+	dw $3D51	; $066 PiranhaPlant
+	dw $0004	; $067 RockRevealedHiddenWingedCloud
+	dw $2005	; $068 FlashingEggBlock
+	dw $2005	; $069 RedEggBlock
+	dw $2005	; $06A YellowEggBlock
+	dw $0800	; $06B GreenEggBlock
+	dw $2005	; $06C LargeSpringBall
+	dw $2155	; $06D ClockwiseHootieTheBlueFish
+	dw $2155	; $06E CounterclockwiseHootieTheBlueFish
+	dw $2005	; $06F SpringBall
+	dw $4979	; $070 Clawdaddy
+	dw $4001	; $071 BigBoo
+	dw $0804	; $072 TrainBandit
+	dw $6001	; $073 BalloonPump
+	dw $0954	; $074 Spike
+	dw $2105	; $075 SpikeBall
+	dw $3145	; $076 ClockwisePiroDangle
+	dw $3145	; $077 CounterclockwisePiroDangle
+	dw $2945	; $078 RedBulletBillShooter
+	dw $2945	; $079 YellowBulletBillShooter
+	dw $2945	; $07A GreenBulletBillShooter
+	dw $2155	; $07B RedBulletBill
+	dw $2155	; $07C YellowBulletBill
+	dw $2155	; $07D GreenBulletBill
+	dw $0002	; $07E DentOfSquishyPlatform
+	dw $6005	; $07F LogSeesawPlatform
+	dw $2145	; $080 StraightLavaBubble
+	dw $2145	; $081 FollowingLavaBubble
+	dw $4105	; $082 ChainChomp
+	dw $4001	; $083 BowserFightCloud
+	dw $0006	; $084 TeleportSprite
+	dw $0974	; $085 HarryHedgehog
+	dw $2005	; $086 GlitchedSprite
+	dw $0800	; $087 MockUpLaidEgg
+	dw $0804	; $088 SuperStar
+	dw $1805	; $089 HorizontalMovingRedPlatform
+	dw $1805	; $08A VerticalMovingPinkPlatform
+	dw $2085	; $08B MockUp
+	dw $2001	; $08C YoshiAtGoal
+	dw $0106	; $08D Flyguy
+	dw $3001	; $08E BowserRoomKamek
+	dw $8101	; $08F MonkeySwing
+	dw $6001	; $090 DanglingGhost
+	dw $6001	; $091 4RedToadies
+	dw $1905	; $092 MelonBug
+	dw $2005	; $093 Door
+	dw $2009	; $094 ExpandingBlock
+	dw $2005	; $095 BlueCheckeredBlock
+	dw $2005	; $096 RedCheckeredBlock
+	dw $2005	; $097 POWBlock
+	dw $2005	; $098 EndTransformationBlock
+	dw $0904	; $099 SpinyEgg
+	dw $3009	; $09A SwingingGreenPlatform
+	dw $0950	; $09B MaceGuy
+	dw $3901	; $09C Mace
+	dw $2005	; $09D RedSwitch
+	dw $2005	; $09E ChompRock
+	dw $3955	; $09F PtooiePiranhaPlant
+	dw $5005	; $0A0 Tulip
+	dw $0800	; $0A1 SmallPot
+	dw $2005	; $0A2 ThunderLakituFireball
+	dw $3001	; $0A3 LeftHidingBandit
+	dw $3001	; $0A4 RightHidingBandit
+	dw $600D	; $0A5 NepEnut
+	dw $0801	; $0A6 IncomingChomp
+	dw $2801	; $0A7 GroupOfIncomingChomps
+	dw $0801	; $0A8 FallingIncomingChomp
+	dw $8001	; $0A9 IncomingChompShadow
+	dw $0805	; $0AA BackgroundShyguy
+	dw $0800	; $0AB FullEggSpawner
+	dw $2005	; $0AC FallingRockArrowAndShadow
+	dw $2005	; $0AD MessageBox
+	dw $3101	; $0AE HookbillTheKoopa
+	dw $2805	; $0AF CarMorphBubble
+	dw $2805	; $0B0 MoleMorphBubble
+	dw $2805	; $0B1 HelicopterMorphBubble
+	dw $2805	; $0B2 TrainMorphBubble
+	dw $0006	; $0B3 FuzzyFart
+	dw $2805	; $0B4 SubmarineMorphBubble
+	dw $0006	; $0B5 HiddenWingedCloud
+	dw $2805	; $0B6 WingedCloudWith8Coins
+	dw $2805	; $0B7 WingedCloudWithBubbled1up
+	dw $2805	; $0B8 WingedCloudWithFlower
+	dw $2805	; $0B9 WingedCloudWithPOW
+	dw $2805	; $0BA WingedCloudWithStairs
+	dw $2805	; $0BB WingedCloudWithPlatform
+	dw $2805	; $0BC WingedCloudWithBandit
+	dw $2805	; $0BD WingedCloudWithCoin
+	dw $2805	; $0BE WingedCloudWith1up
+	dw $2805	; $0BF WingedCloudWithKey
+	dw $2805	; $0C0 WingedCloudWith3Stars
+	dw $2805	; $0C1 WingedCloudWith5Stars
+	dw $2805	; $0C2 WingedCloudWithDoor
+	dw $2805	; $0C3 WingedCloudWithLowerGround
+	dw $2805	; $0C4 WingedCloudWithWatermelon
+	dw $2805	; $0C5 WingedCloudWithFireWatermelon
+	dw $2805	; $0C6 WingedCloudWithIcyWatermelon
+	dw $2805	; $0C7 WingedCloudWith3LeafSunflower
+	dw $2805	; $0C8 WingedCloudWith6LeafSunflower
+	dw $2805	; $0C9 WingedCloudWithCrashGameFeature
+	dw $8005	; $0CA BigBossDoor
+	dw $2805	; $0CB WingedCloudWithCoinOrStar
+	dw $2805	; $0CC WingedCloudWithRedSwitch
+	dw $3805	; $0CD BaronVonZeppelinCarryingGiantEgg
+	dw $2001	; $0CE BowserFire
+	dw $8001	; $0CF BowserRocks
+	dw $0006	; $0D0 HorizontalEntranceToRight
+	dw $0006	; $0D1 SecretPipeEntrance
+	dw $2001	; $0D2 MarchingMilde
+	dw $C975	; $0D3 LargeMilde
+	dw $2175	; $0D4 MediumMilde
+	dw $0002	; $0D5 BackgroundForHookbillFight
+	dw $6801	; $0D6 FortGhostWithPlatform
+	dw $1801	; $0D7 SluggyTheUnshaven
+	dw $2005	; $0D8 ChompWarningSign
+	dw $3802	; $0D9 FishinLakitu
+	dw $4805	; $0DA FlowerPot
+	dw $0002	; $0DB SoftBlock
+	dw $8005	; $0DC Snowball
+	dw $0002	; $0DD CloseWallInNavalPiranhaRoom
+	dw $0002	; $0DE FallingRockPlatform
+	dw $1375	; $0DF PiscatoryPete
+	dw $0B74	; $0E0 PreyingMantas
+	dw $3375	; $0E1 LochNestor
+	dw $3101	; $0E2 BooBlah
+	dw $3101	; $0E3 BooBlahWithPiroDangle
+	dw $1805	; $0E4 HeadingCactus
+	dw $0904	; $0E5 GreenNeedlenose
+	dw $2855	; $0E6 Gusty
+	dw $3151	; $0E7 Burt
+	dw $4955	; $0E8 Goonie
+	dw $4955	; $0E9 3WinglessGoonies
+	dw $1975	; $0EA VerticalCloudDrop
+	dw $1175	; $0EB HorizontalCloudDrop
+	dw $3945	; $0EC JumpingFlamerGuy
+	dw $3945	; $0ED RunningFlamerGuy
+	dw $1001	; $0EE EggoDil
+	dw $2001	; $0EF EggoDilFace
+	dw $0900	; $0F0 EggoDilPetal
+	dw $1805	; $0F1 EggPlantShootingBubbles
+	dw $4975	; $0F2 ShyguyOnStilts
+	dw $0974	; $0F3 WoozyGuy
+	dw $1805	; $0F4 EggPlant
+	dw $3155	; $0F5 Slugger
+	dw $3125	; $0F6 MotherHuffinPuffin
+	dw $3125	; $0F7 BarneyBubble
+	dw $3155	; $0F8 BlowHard
+	dw $0904	; $0F9 YellowNeedlenose
+	dw $2005	; $0FA Flower
+	dw $4955	; $0FB LongSpearGuy
+	dw $4155	; $0FC ShortSpearGuy
+	dw $3955	; $0FD ZeusGuy
+	dw $2005	; $0FE ZeusGuyBlast
+	dw $3801	; $0FF Poochy
+	dw $3905	; $100 Bubbled1up
+	dw $6001	; $101 RotatingMace
+	dw $C001	; $102 DoubleRotatingMace
+	dw $1009	; $103 BooGuysMovingMace
+	dw $2145	; $104 JeanDeFillet
+	dw $0801	; $105 BooGuysCarryingBombToLeft
+	dw $0801	; $106 BooGuysCarryingBombToRight
+	dw $0804	; $107 WatermelonSeed
+	dw $2175	; $108 Milde
+	dw $2975	; $109 BronzeTapTap
+	dw $2975	; $10A SilverTapTap
+	dw $2975	; $10B HoppingSilverTapTap
+	dw $8801	; $10C ChainedSpikeBall
+	dw $1801	; $10D BooGuyOperatingPulley
+	dw $2005	; $10E CrateWith6Stars
+	dw $3805	; $10F BooManBluff
+	dw $2905	; $110 Flower
+	dw $3905	; $111 GeorgetteJelly
+	dw $0904	; $112 GeorgetteJellyGoo
+	dw $3175	; $113 Snifit
+	dw $1105	; $114 SnifitBullet
+	dw $0800	; $115 Coin
+	dw $2005	; $116 BuoyantRoundPlatform
+	dw $0804	; $117 DonutLift
+	dw $2005	; $118 LargeDonutLift
+	dw $2101	; $119 Spooky
+	dw $3955	; $11A GreenGlove
+	dw $2901	; $11B Lakitu
+	dw $1051	; $11C LakituCloud
+	dw $0904	; $11D SpinyEgg
+	dw $2001	; $11E BrownArrowWheel
+	dw $2001	; $11F BlueArrowWheel
+	dw $2001	; $120 DoubledSidedArrowLift
+	dw $0002	; $121 NumberPlatformExplosion
+	dw $2801	; $122 BucketWithBandit
+	dw $2801	; $123 BucketWithCoins
+	dw $1079	; $124 Stretch
+	dw $3801	; $125 AttackingAndEndingKamek
+	dw $7001	; $126 SpikedLogOnPulley
+	dw $2101	; $127 PulleyOfSpikedLog
+	dw $000A	; $128 GroundRippleInBabyBowerRoom
+	dw $49D1	; $129 Fuzzy
+	dw $1959	; $12A ShyGuyBanditTrap
+	dw $4159	; $12B FatGuy
+	dw $0000	; $12C FlyOrWhirlyGuy
+	dw $3801	; $12D PrologueCutsceneYoshi
+	dw $0000	; $12E LargePopEffect
+	dw $1829	; $12F HorizontalLavaDrop
+	dw $1825	; $130 VerticalLavaDrop
+	dw $2005	; $131 LockedDoor
+	dw $1175	; $132 LemonDrop
+	dw $2979	; $133 LanternGhost
+	dw $5802	; $134 BabyBowser
+	dw $2155	; $135 CirclingRaven
+	dw $2155	; $136 CirclingRaven
+	dw $9002	; $137 3x6FallingStone
+	dw $4802	; $138 3x3FallingStone
+	dw $D802	; $139 3x9FallingStone
+	dw $B002	; $13A 6x3FallingStone
+	dw $0804	; $13B StomachAcid
+	dw $4005	; $13C DownFlippers
+	dw $1975	; $13D DanglingFang
+	dw $1971	; $13E FlyingFang
+	dw $2875	; $13F SwimmingFlopsyFish
+	dw $2875	; $140 SwimmingAndJumpingFlopsyFish
+	dw $2875	; $141 SwimmingAndArcJumpingFlopsyFish
+	dw $2875	; $142 3JumpFlopsyFish
+	dw $A906	; $143 SprayFish
+	dw $4005	; $144 RightOrLeftFlippers
+	dw $1915	; $145 BlueSluggy
+	dw $1915	; $146 PinkSluggy
+	dw $0006	; $147 HorizontalEntranceToLeft
+	dw $2005	; $148 LargeSpringBall
+	dw $3005	; $149 UpArrowCloud
+	dw $3005	; $14A UpRightArrowCloud
+	dw $3005	; $14B RightArrowCloud
+	dw $3005	; $14C DownRightArrowCloud
+	dw $3005	; $14D DownArrowCloud
+	dw $3005	; $14E DownLeftArrowCloud
+	dw $3005	; $14F LeftArrowCloud
+	dw $3005	; $150 UpLeftArrowCloud
+	dw $3005	; $151 RotatingArrowCloud
+	dw $3955	; $152 Flutter
+	dw $4955	; $153 GoonieWithShyGuy
+	dw $2401	; $154 SharkChomp
+	dw $5155	; $155 FatGoonie
+	dw $2151	; $156 CactusJack
+	dw $1905	; $157 WallLakitu
+	dw $5155	; $158 BowlingGoonie
+	dw $3925	; $159 WalkingGrunt
+	dw $3925	; $15A RunningGrunt
+	dw $3955	; $15B DancingSpearGuy
+	dw $0904	; $15C GreenRotatingPlatformSwitch
+	dw $0904	; $15D RedRotatingPlatformSwitch
+	dw $8809	; $15E 4PinkRotatingPlatformsWithShyGuys
+	dw $4001	; $15F GreenSpikedPlatform
+	dw $4001	; $160 RedSpikedPlatform
+	dw $0000	; $161 RewardItemForDefeatingRoomEnemies
+	dw $8901	; $162 DoubleSpikePlatformWithSwitch
+	dw $0804	; $163 BouncingNeedlenose
+	dw $1875	; $164 NipperPlant
+	dw $1855	; $165 NipperSpore
+	dw $3101	; $166 ThunderLakitu
+	dw $0974	; $167 GreenKoopaShell
+	dw $0974	; $168 RedKoopaShell
+	dw $3155	; $169 GreenNakedKoopa
+	dw $3155	; $16A RedNakedKoopa
+	dw $3155	; $16B GreenKoopa
+	dw $3155	; $16C RedKoopa
+	dw $5955	; $16D GreenParakoopa
+	dw $5959	; $16E RedHorizontalParakoopa
+	dw $595D	; $16F RedVerticalParakoopa
+	dw $2105	; $170 AquaLakitu
+	dw $A801	; $171 NavalPiranha
+	dw $1802	; $172 NavalPiranhaBuds
+	dw $3005	; $173 BaronVonZeppelinCarryingShyGuy
+	dw $2005	; $174 BaronVonZeppelinCarryingNeedlenose
+	dw $2005	; $175 BaronVonZeppelinCarryingBomb
+	dw $4005	; $176 BaronVonZeppelinCarryingBandit
+	dw $3805	; $177 BaronVonZeppelinCarryingLargeSpringBall
+	dw $3E05	; $178 BaronVonZeppelinCarrying1up
+	dw $2005	; $179 BaronVonZeppelinCarryingKey
+	dw $2005	; $17A BaronVonZeppelinCarryingCoins
+	dw $2005	; $17B BaronVonZeppelinCarryingWatermelon
+	dw $2005	; $17C BaronVonZeppelinCarryingFireWatermelon
+	dw $2005	; $17D BaronVonZeppelinCarryingIcyWatermelon
+	dw $6805	; $17E BaronVonZeppelinCarryingCrateWith6Stars
+	dw $1805	; $17F BaronVonZeppelin
+	dw $2005	; $180 SpinningLog
+	dw $2975	; $181 CrazeeDayzee
+	dw $0804	; $182 Dragonfly
+	dw $0804	; $183 Butterfly
+	dw $1975	; $184 Bumpty
+	dw $1805	; $185 MovingLineGuidedGreenPlatformLeft
+	dw $1805	; $186 MovingLineGuidedGreenPlatformRight
+	dw $1805	; $187 MovingLineGuidedYellowPlatformLeft
+	dw $1805	; $188 MovingLineGuidedYellowPlatformRight
+	dw $1805	; $189 LineGuidedGreenPlatformLeft
+	dw $1805	; $18A LineGuidedGreenPlatformRight
+	dw $1805	; $18B LineGuidedYellowPlatformLeft
+	dw $1805	; $18C LineGuidedYellowPlatformRight
+	dw $1805	; $18D LineGuidedRedPlatformLeft
+	dw $1805	; $18E LineGuidedGreenPlatformRight
+	dw $2005	; $18F SpiralPlatform
+	dw $2005	; $190 FallingIcicle
+	dw $0805	; $191 Bird
+	dw $2959	; $192 PetalGuy
+	dw $6001	; $193 SnakeCagedGhost
+	dw $4005	; $194 Blargg
+	dw $2005	; $195 SmallUnstableSnowPlatform
+	dw $800D	; $196 UnstableSnowPlatform
+	dw $1805	; $197 ArrowSign
+	dw $1805	; $198 DiagonalArrowSign
+	dw $2005	; $199 DizzyDandy
+	dw $1155	; $19A BooGuy
+	dw $1975	; $19B TacklingBumpty
+	dw $2975	; $19C FlyingBumpty
+	dw $4155	; $19D SkeletonGoonie
+	dw $2155	; $19E WinglessSkeletonGoonie
+	dw $4151	; $19F SkeletonGoonieCarryingBomb
+	dw $380E	; $1A0 DoubleFirebar
+	dw $200E	; $1A1 Firebar
+	dw $1801	; $1A2 HealthStar
+	dw $2155	; $1A3 LittleSkullMouser
+	dw $3005	; $1A4 KeyholeCork
+	dw $3875	; $1A5 RunAwayMonkey
+	dw $3875	; $1A6 MonkeyWithWatermelon
+	dw $3875	; $1A7 HangingMonkeyThrowingBombsOrNeedlenoses
+	dw $3875	; $1A8 TheifMonkey
+	dw $3875	; $1A9 HangingMonkeySpittingSeeds
+	dw $B006	; $1AA HotLips
+	dw $3951	; $1AB BooBalloon
+	dw $1005	; $1AC SmallFrog
+	dw $3001	; $1AD MagicShootingKamek
+	dw $1805	; $1AE MagicShot
+	dw $0804	; $1AF FloatingCoin
+	dw $0800	; $1B0 DeflatingBalloon
+	dw $7101	; $1B1 CoinCannon
+	dw $0904	; $1B2 MinigameCoin
+	dw $3101	; $1B3 GatherCoinsBandit
+	dw $1101	; $1B4 MinigameCheckeredPlatform
+	dw $3101	; $1B5 PoppingBalloonsBandit
+	dw $2101	; $1B6 MinigameBalloon
+	dw $3851	; $1B7 SeedSpittingMinigameBandit
+	dw $0100	; $1B8 WatermelonPot
+	dw $3811	; $1B9 P2SeedSpittingMinigameBandit
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0A9E90, incbin, DATA_0A9E90_YI_U2.bin)
@@ -2887,63 +4180,467 @@ else
 	%FREE_BYTES($0A9E90, 138, $FF)
 endif
 
+;-------------------------------------------------------------------------
+; DATA_0A9F1A -- per-sprite DRAW PRIORITY + OAM ATTRIBUTE seed, one word per
+; sprite ID (indexed by ID*2). (Original source: ENDATA0 = ENYUSN, ENCLOR.)
+;   LOW byte  -> $14A2 (!EXRAM_YI_Level_NorSpr_DrawPriority): draw layer 0-7. The
+;                GSU OAM builder (CODE_0989C1) walks layers 0,1,...,7 over all 40
+;                slots and emits a slot when its $14A2 word equals the layer, so 0
+;                is frontmost; Yoshi is inserted at layer $011A. $FF = never drawn
+;                (also what the off-screen despawn writes). 195 ids use 5, 88 use 2.
+;   HIGH byte -> $1042 (!EXRAM_YI_Level_NorSpr_OAMFlipPaletteFlags) after EOR #$20:
+;                OAM attribute vhoopppN -- v Y-flip, h X-flip (XORed with facing),
+;                oo OBJ priority with bit 5 stored inverted (table 0 = priority 2;
+;                table bit 4 = priority 3: Lakitus, BVZs, Fuzzy; table bit 5 =
+;                priority 0/1: background sprites), ppp palette row, N tile bit 8
+;                (never set here). The cel walker applies it as
+;                (cel_attr & mask) XOR this byte.
+; Ambient equivalent: DATA_0AB512 -> $1462 / $1002 (EOR #$30 instead).
+;-------------------------------------------------------------------------
 DATA_0A9F1A:
-	dw $0805,$0007,$0C02,$0805,$0201,$0604,$1202,$0004
-	dw $2C07,$0204,$0005,$0002,$0C05,$0000,$0000,$0000
-	dw $0005,$1C02,$0207,$00FF,$02FF,$0A02,$0CFF,$0001
-	dw $1202,$0202,$0005,$0805,$0205,$0005,$0005,$0006
-	dw $0003,$0402,$0005,$0205,$0405,$0005,$0005,$0205
-	dw $0005,$0005,$0205,$0005,$0202,$0E02,$0006,$0C07
-	dw $0005,$0005,$0007,$0006,$0C06,$0007,$00FF,$0405
-	dw $0605,$00FF,$0002,$0002,$0C05,$0007,$0202,$0000
-	dw $0002,$0002,$00FF,$0205,$0005,$0005,$0005,$0005
-	dw $12FF,$00FF,$0002,$0002,$8005,$0004,$0007,$0000
-	dw $00FF,$02FF,$0002,$1205,$8202,$0005,$0005,$0005
-	dw $0002,$0405,$0205,$0803,$08FF,$0602,$00FF,$00FF
-	dw $0802,$0A04,$0005,$0802,$0805,$0005,$0202,$00FF
-	dw $0004,$0204,$0404,$0002,$0004,$0402,$0402,$0004
-	dw $0204,$0204,$0807,$0005,$0405,$04FF,$0206,$0206
-	dw $0002,$0002,$0002,$00FF,$00FF,$00FF,$0CFF,$0805
-	dw $02FF,$02FF,$0202,$2007,$00FF,$0003,$0005,$0202
-	dw $0405,$0205,$0805,$0005,$0E05,$00FF,$1204,$0004
-	dw $0005,$0203,$0204,$0007,$0806,$0002,$0802,$0202
-	dw $0A02,$0405,$0005,$0205,$0401,$0202,$0406,$0003
-	dw $0001,$0805,$0403,$0007,$0007,$0006,$0C00,$0C00
-	dw $0C00,$0CFF,$2C00,$0005,$00FF,$0204,$00FF,$0002
-	dw $0002,$0002,$0002,$00FF,$0002,$00FF,$0002,$0002
-	dw $0002,$0002,$0002,$0002,$0002,$0002,$0002,$0002
-	dw $0002,$0002,$0002,$0002,$0002,$0002,$0002,$0002
-	dw $0002,$0002,$0207,$0002,$0002,$1005,$02FF,$0CFF
-	dw $00FF,$00FF,$0405,$0005,$0005,$2000,$0005,$0405
-	dw $0207,$0005,$0005,$0005,$0606,$00FF,$0C05,$0005
-	dw $0C05,$0E05,$0207,$0207,$0006,$0007,$1005,$0005
-	dw $0005,$0005,$1005,$1005,$00FF,$00FF,$0007,$0605
-	dw $0406,$0002,$0005,$0005,$0002,$0005,$0005,$0005
-	dw $0005,$0404,$0206,$0005,$0005,$0005,$0201,$0005
-	dw $0006,$0002,$0002,$0007,$0005,$0007,$0007,$1003
-	dw $0005,$0005,$0405,$0405,$0007,$0006,$0805,$0405
-	dw $0006,$0005,$00FF,$0005,$0004,$0402,$0004,$0804
-	dw $0804,$0002,$0001,$1005,$0002,$0403,$0005,$0405
-	dw $0805,$00FF,$0402,$0402,$0003,$1203,$0007,$0806
-	dw $00FF,$1005,$0005,$0005,$0005,$0005,$00FF,$1005
-	dw $1005,$0007,$00FF,$0005,$0002,$0405,$0405,$0C07
-	dw $0C07,$0C07,$0C07,$0EFF,$0002,$1005,$1005,$0005
-	dw $0005,$0005,$0005,$0005,$0002,$0805,$0005,$00FF
-	dw $0004,$0005,$0005,$0005,$0005,$0005,$0005,$0005
-	dw $0005,$0005,$0005,$0005,$00FF,$0405,$0005,$2005
-	dw $0405,$0205,$0205,$0005,$0004,$0204,$0805,$0005
-	dw $0205,$00FF,$0005,$0005,$0005,$0005,$1005,$0004
-	dw $0204,$0005,$0205,$0005,$0205,$0005,$0205,$0205
-	dw $0005,$0CFF,$0C02,$1005,$1005,$1005,$1005,$1005
-	dw $1005,$1005,$1005,$1005,$1005,$1005,$1005,$0005
-	dw $0005,$0005,$0205,$0005,$0005,$0002,$0002,$0402
-	dw $0402,$0002,$0002,$0402,$0402,$0202,$0202,$0002
-	dw $0005,$0005,$0005,$0005,$3005,$0E05,$0E05,$0006
-	dw $0006,$0205,$0405,$0005,$1005,$1005,$0005,$1005
-	dw $0001,$0001,$0005,$0005,$0C05,$0004,$0004,$0004
-	dw $0004,$0004,$0005,$1003,$0005,$0205,$0004,$0405
-	dw $0205,$0405,$0406,$0005,$0406,$0005,$0206,$0004
-	dw $0005,$0004
+DATA_sprite_priority_attr_table:                     ; descriptive alias (main-side: FXDATA_0A9F1A)
+	dw $0805	; $000 LavaLog
+	dw $0007	; $001 ClosedDoor
+	dw $0C02	; $002 NavalPiranhaVines
+	dw $0805	; $003 CrateWithKey
+	dw $0201	; $004 HitSuperBabyMarioBlock
+	dw $0604	; $005 IcyWatermelon
+	dw $1202	; $006 WatermelonFreeze
+	dw $0004	; $007 Watermelon
+	dw $2C07	; $008 FallingRubble
+	dw $0204	; $009 FireWatermelon
+	dw $0005	; $00A Kaboomba
+	dw $0002	; $00B Cannonball
+	dw $0C05	; $00C RaphaelTheRaven
+	dw $0000	; $00D GoalRing
+	dw $0000	; $00E GOALLetters
+	dw $0000	; $00F BonusChallengeSign
+	dw $0005	; $010 RoundedCagedGhost
+	dw $1C02	; $011 ItemCard
+	dw $0207	; $012 BossDoor
+	dw $00FF	; $013 BossExplosion
+	dw $02FF	; $014 KeyFromBoss
+	dw $0A02	; $015 SubmarineTorpedo
+	dw $0CFF	; $016 BiggerBoo
+	dw $0001	; $017 FrogPirate
+	dw $1202	; $018 WatermelonFlame
+	dw $0202	; $019 Bubble
+	dw $0005	; $01A SkiLift
+	dw $0805	; $01B VerticalLavaLog
+	dw $0205	; $01C DrFreezegood
+	dw $0005	; $01D DrFreezegoodOnSkiLift
+	dw $0005	; $01E Shyguy
+	dw $0006	; $01F RotatingDoors
+	dw $0003	; $020 Bandit
+	dw $0402	; $021 Bucket
+	dw $0005	; $022 FlashingEgg
+	dw $0205	; $023 RedEgg
+	dw $0405	; $024 YellowEgg
+	dw $0005	; $025 GreenEgg
+	dw $0005	; $026 BowserFightGiantEgg
+	dw $0205	; $027 Key
+	dw $0005	; $028 HuffinPuffin
+	dw $0005	; $029 GiantEgg
+	dw $0205	; $02A RedGiantEgg
+	dw $0005	; $02B GreenGiantEgg
+	dw $0202	; $02C LungeFish
+	dw $0E02	; $02D SalvoTheSlime
+	dw $0006	; $02E EyesOfSalvoTheSlime
+	dw $0C07	; $02F LittleMouserHole
+	dw $0005	; $030 LittleMouser
+	dw $0005	; $031 PottedSpikedFunGuy
+	dw $0007	; $032 PeekingLittleMouser
+	dw $0006	; $033 LittleMouserExitingNest
+	dw $0C06	; $034 RogersPot
+	dw $0007	; $035 RogerThePottedGhost
+	dw $00FF	; $036 FallingWall
+	dw $0405	; $037 GrimLeecher
+	dw $0605	; $038 PottedGhostFlame
+	dw $00FF	; $039 HorizontalRotatingPlank
+	dw $0002	; $03A 3MiniRavens
+	dw $0002	; $03B MiniRaven
+	dw $0C05	; $03C TapTapTheRedNose
+	dw $0007	; $03D LargeSeesaw
+	dw $0202	; $03E ThinPlatform
+	dw $0000	; $03F SlimeBlock
+	dw $0002	; $040 BabyLuigi
+	dw $0002	; $041 Stork
+	dw $00FF	; $042 VerticalPipeEntrance
+	dw $0205	; $043 RedGiantShyguy
+	dw $0005	; $044 GreenGiantShyguy
+	dw $0005	; $045 PrinceFroggy
+	dw $0005	; $046 BurtTheBashful
+	dw $0005	; $047 ShyguyPushingRoger
+	dw $12FF	; $048 CutsceneKamek
+	dw $00FF	; $049 ThunderLakituFireBlast1
+	dw $0002	; $04A ThunderLakituFireBlast2
+	dw $0002	; $04B ThunderLakituFireBlast3
+	dw $8005	; $04C UpsidedownBlowHard
+	dw $0004	; $04D UnusedSpriteIndex
+	dw $0007	; $04E LockedDoor
+	dw $0000	; $04F MiddleRing
+	dw $00FF	; $050 GreyRotatingWoodenBoard
+	dw $02FF	; $051 LargeWheel
+	dw $0002	; $052 BalloonPlatform
+	dw $1205	; $053 KamekSayingOhMy
+	dw $8202	; $054 UpsideDownPiranhaPlant
+	dw $0005	; $055 4GreenRotatingPlatforms
+	dw $0005	; $056 4PinkRotatingPlatforms
+	dw $0005	; $057 SewerGhostWithPlatform
+	dw $0002	; $058 GreenToady
+	dw $0405	; $059 StationarySuperStar
+	dw $0205	; $05A RaphaelSparkAttack
+	dw $0803	; $05B RedCoinBandit
+	dw $08FF	; $05C PinkToady
+	dw $0602	; $05D GlitchedSprite
+	dw $00FF	; $05E BrownWoodenBoard
+	dw $00FF	; $05F AutoRotateBrownWoodenBoard
+	dw $0802	; $060 Bomb
+	dw $0A04	; $061 BabyMario
+	dw $0005	; $062 Goomba
+	dw $0802	; $063 MuddyBuddy
+	dw $0805	; $064 4AutoRotatingPinkPlatforms
+	dw $0005	; $065 RedCoin
+	dw $0202	; $066 PiranhaPlant
+	dw $00FF	; $067 RockRevealedHiddenWingedCloud
+	dw $0004	; $068 FlashingEggBlock
+	dw $0204	; $069 RedEggBlock
+	dw $0404	; $06A YellowEggBlock
+	dw $0002	; $06B GreenEggBlock
+	dw $0004	; $06C LargeSpringBall
+	dw $0402	; $06D ClockwiseHootieTheBlueFish
+	dw $0402	; $06E CounterclockwiseHootieTheBlueFish
+	dw $0004	; $06F SpringBall
+	dw $0204	; $070 Clawdaddy
+	dw $0204	; $071 BigBoo
+	dw $0807	; $072 TrainBandit
+	dw $0005	; $073 BalloonPump
+	dw $0405	; $074 Spike
+	dw $04FF	; $075 SpikeBall
+	dw $0206	; $076 ClockwisePiroDangle
+	dw $0206	; $077 CounterclockwisePiroDangle
+	dw $0002	; $078 RedBulletBillShooter
+	dw $0002	; $079 YellowBulletBillShooter
+	dw $0002	; $07A GreenBulletBillShooter
+	dw $00FF	; $07B RedBulletBill
+	dw $00FF	; $07C YellowBulletBill
+	dw $00FF	; $07D GreenBulletBill
+	dw $0CFF	; $07E DentOfSquishyPlatform
+	dw $0805	; $07F LogSeesawPlatform
+	dw $02FF	; $080 StraightLavaBubble
+	dw $02FF	; $081 FollowingLavaBubble
+	dw $0202	; $082 ChainChomp
+	dw $2007	; $083 BowserFightCloud
+	dw $00FF	; $084 TeleportSprite
+	dw $0003	; $085 HarryHedgehog
+	dw $0005	; $086 GlitchedSprite
+	dw $0202	; $087 MockUpLaidEgg
+	dw $0405	; $088 SuperStar
+	dw $0205	; $089 HorizontalMovingRedPlatform
+	dw $0805	; $08A VerticalMovingPinkPlatform
+	dw $0005	; $08B MockUp
+	dw $0E05	; $08C YoshiAtGoal
+	dw $00FF	; $08D Flyguy
+	dw $1204	; $08E BowserRoomKamek
+	dw $0004	; $08F MonkeySwing
+	dw $0005	; $090 DanglingGhost
+	dw $0203	; $091 4RedToadies
+	dw $0204	; $092 MelonBug
+	dw $0007	; $093 Door
+	dw $0806	; $094 ExpandingBlock
+	dw $0002	; $095 BlueCheckeredBlock
+	dw $0802	; $096 RedCheckeredBlock
+	dw $0202	; $097 POWBlock
+	dw $0A02	; $098 EndTransformationBlock
+	dw $0405	; $099 SpinyEgg
+	dw $0005	; $09A SwingingGreenPlatform
+	dw $0205	; $09B MaceGuy
+	dw $0401	; $09C Mace
+	dw $0202	; $09D RedSwitch
+	dw $0406	; $09E ChompRock
+	dw $0003	; $09F PtooiePiranhaPlant
+	dw $0001	; $0A0 Tulip
+	dw $0805	; $0A1 SmallPot
+	dw $0403	; $0A2 ThunderLakituFireball
+	dw $0007	; $0A3 LeftHidingBandit
+	dw $0007	; $0A4 RightHidingBandit
+	dw $0006	; $0A5 NepEnut
+	dw $0C00	; $0A6 IncomingChomp
+	dw $0C00	; $0A7 GroupOfIncomingChomps
+	dw $0C00	; $0A8 FallingIncomingChomp
+	dw $0CFF	; $0A9 IncomingChompShadow
+	dw $2C00	; $0AA BackgroundShyguy
+	dw $0005	; $0AB FullEggSpawner
+	dw $00FF	; $0AC FallingRockArrowAndShadow
+	dw $0204	; $0AD MessageBox
+	dw $00FF	; $0AE HookbillTheKoopa
+	dw $0002	; $0AF CarMorphBubble
+	dw $0002	; $0B0 MoleMorphBubble
+	dw $0002	; $0B1 HelicopterMorphBubble
+	dw $0002	; $0B2 TrainMorphBubble
+	dw $00FF	; $0B3 FuzzyFart
+	dw $0002	; $0B4 SubmarineMorphBubble
+	dw $00FF	; $0B5 HiddenWingedCloud
+	dw $0002	; $0B6 WingedCloudWith8Coins
+	dw $0002	; $0B7 WingedCloudWithBubbled1up
+	dw $0002	; $0B8 WingedCloudWithFlower
+	dw $0002	; $0B9 WingedCloudWithPOW
+	dw $0002	; $0BA WingedCloudWithStairs
+	dw $0002	; $0BB WingedCloudWithPlatform
+	dw $0002	; $0BC WingedCloudWithBandit
+	dw $0002	; $0BD WingedCloudWithCoin
+	dw $0002	; $0BE WingedCloudWith1up
+	dw $0002	; $0BF WingedCloudWithKey
+	dw $0002	; $0C0 WingedCloudWith3Stars
+	dw $0002	; $0C1 WingedCloudWith5Stars
+	dw $0002	; $0C2 WingedCloudWithDoor
+	dw $0002	; $0C3 WingedCloudWithLowerGround
+	dw $0002	; $0C4 WingedCloudWithWatermelon
+	dw $0002	; $0C5 WingedCloudWithFireWatermelon
+	dw $0002	; $0C6 WingedCloudWithIcyWatermelon
+	dw $0002	; $0C7 WingedCloudWith3LeafSunflower
+	dw $0002	; $0C8 WingedCloudWith6LeafSunflower
+	dw $0002	; $0C9 WingedCloudWithCrashGameFeature
+	dw $0207	; $0CA BigBossDoor
+	dw $0002	; $0CB WingedCloudWithCoinOrStar
+	dw $0002	; $0CC WingedCloudWithRedSwitch
+	dw $1005	; $0CD BaronVonZeppelinCarryingGiantEgg
+	dw $02FF	; $0CE BowserFire
+	dw $0CFF	; $0CF BowserRocks
+	dw $00FF	; $0D0 HorizontalEntranceToRight
+	dw $00FF	; $0D1 SecretPipeEntrance
+	dw $0405	; $0D2 MarchingMilde
+	dw $0005	; $0D3 LargeMilde
+	dw $0005	; $0D4 MediumMilde
+	dw $2000	; $0D5 BackgroundForHookbillFight
+	dw $0005	; $0D6 FortGhostWithPlatform
+	dw $0405	; $0D7 SluggyTheUnshaven
+	dw $0207	; $0D8 ChompWarningSign
+	dw $0005	; $0D9 FishinLakitu
+	dw $0005	; $0DA FlowerPot
+	dw $0005	; $0DB SoftBlock
+	dw $0606	; $0DC Snowball
+	dw $00FF	; $0DD CloseWallInNavalPiranhaRoom
+	dw $0C05	; $0DE FallingRockPlatform
+	dw $0005	; $0DF PiscatoryPete
+	dw $0C05	; $0E0 PreyingMantas
+	dw $0E05	; $0E1 LochNestor
+	dw $0207	; $0E2 BooBlah
+	dw $0207	; $0E3 BooBlahWithPiroDangle
+	dw $0006	; $0E4 HeadingCactus
+	dw $0007	; $0E5 GreenNeedlenose
+	dw $1005	; $0E6 Gusty
+	dw $0005	; $0E7 Burt
+	dw $0005	; $0E8 Goonie
+	dw $0005	; $0E9 3WinglessGoonies
+	dw $1005	; $0EA VerticalCloudDrop
+	dw $1005	; $0EB HorizontalCloudDrop
+	dw $00FF	; $0EC JumpingFlamerGuy
+	dw $00FF	; $0ED RunningFlamerGuy
+	dw $0007	; $0EE EggoDil
+	dw $0605	; $0EF EggoDilFace
+	dw $0406	; $0F0 EggoDilPetal
+	dw $0002	; $0F1 EggPlantShootingBubbles
+	dw $0005	; $0F2 ShyguyOnStilts
+	dw $0005	; $0F3 WoozyGuy
+	dw $0002	; $0F4 EggPlant
+	dw $0005	; $0F5 Slugger
+	dw $0005	; $0F6 MotherHuffinPuffin
+	dw $0005	; $0F7 BarneyBubble
+	dw $0005	; $0F8 BlowHard
+	dw $0404	; $0F9 YellowNeedlenose
+	dw $0206	; $0FA Flower
+	dw $0005	; $0FB LongSpearGuy
+	dw $0005	; $0FC ShortSpearGuy
+	dw $0005	; $0FD ZeusGuy
+	dw $0201	; $0FE ZeusGuyBlast
+	dw $0005	; $0FF Poochy
+	dw $0006	; $100 Bubbled1up
+	dw $0002	; $101 RotatingMace
+	dw $0002	; $102 DoubleRotatingMace
+	dw $0007	; $103 BooGuysMovingMace
+	dw $0005	; $104 JeanDeFillet
+	dw $0007	; $105 BooGuysCarryingBombToLeft
+	dw $0007	; $106 BooGuysCarryingBombToRight
+	dw $1003	; $107 WatermelonSeed
+	dw $0005	; $108 Milde
+	dw $0005	; $109 BronzeTapTap
+	dw $0405	; $10A SilverTapTap
+	dw $0405	; $10B HoppingSilverTapTap
+	dw $0007	; $10C ChainedSpikeBall
+	dw $0006	; $10D BooGuyOperatingPulley
+	dw $0805	; $10E CrateWith6Stars
+	dw $0405	; $10F BooManBluff
+	dw $0006	; $110 Flower
+	dw $0005	; $111 GeorgetteJelly
+	dw $00FF	; $112 GeorgetteJellyGoo
+	dw $0005	; $113 Snifit
+	dw $0004	; $114 SnifitBullet
+	dw $0402	; $115 Coin
+	dw $0004	; $116 BuoyantRoundPlatform
+	dw $0804	; $117 DonutLift
+	dw $0804	; $118 LargeDonutLift
+	dw $0002	; $119 Spooky
+	dw $0001	; $11A GreenGlove
+	dw $1005	; $11B Lakitu
+	dw $0002	; $11C LakituCloud
+	dw $0403	; $11D SpinyEgg
+	dw $0005	; $11E BrownArrowWheel
+	dw $0405	; $11F BlueArrowWheel
+	dw $0805	; $120 DoubledSidedArrowLift
+	dw $00FF	; $121 NumberPlatformExplosion
+	dw $0402	; $122 BucketWithBandit
+	dw $0402	; $123 BucketWithCoins
+	dw $0003	; $124 Stretch
+	dw $1203	; $125 AttackingAndEndingKamek
+	dw $0007	; $126 SpikedLogOnPulley
+	dw $0806	; $127 PulleyOfSpikedLog
+	dw $00FF	; $128 GroundRippleInBabyBowerRoom
+	dw $1005	; $129 Fuzzy
+	dw $0005	; $12A ShyGuyBanditTrap
+	dw $0005	; $12B FatGuy
+	dw $0005	; $12C FlyOrWhirlyGuy
+	dw $0005	; $12D PrologueCutsceneYoshi
+	dw $00FF	; $12E LargePopEffect
+	dw $1005	; $12F HorizontalLavaDrop
+	dw $1005	; $130 VerticalLavaDrop
+	dw $0007	; $131 LockedDoor
+	dw $00FF	; $132 LemonDrop
+	dw $0005	; $133 LanternGhost
+	dw $0002	; $134 BabyBowser
+	dw $0405	; $135 CirclingRaven
+	dw $0405	; $136 CirclingRaven
+	dw $0C07	; $137 3x6FallingStone
+	dw $0C07	; $138 3x3FallingStone
+	dw $0C07	; $139 3x9FallingStone
+	dw $0C07	; $13A 6x3FallingStone
+	dw $0EFF	; $13B StomachAcid
+	dw $0002	; $13C DownFlippers
+	dw $1005	; $13D DanglingFang
+	dw $1005	; $13E FlyingFang
+	dw $0005	; $13F SwimmingFlopsyFish
+	dw $0005	; $140 SwimmingAndJumpingFlopsyFish
+	dw $0005	; $141 SwimmingAndArcJumpingFlopsyFish
+	dw $0005	; $142 3JumpFlopsyFish
+	dw $0005	; $143 SprayFish
+	dw $0002	; $144 RightOrLeftFlippers
+	dw $0805	; $145 BlueSluggy
+	dw $0005	; $146 PinkSluggy
+	dw $00FF	; $147 HorizontalEntranceToLeft
+	dw $0004	; $148 LargeSpringBall
+	dw $0005	; $149 UpArrowCloud
+	dw $0005	; $14A UpRightArrowCloud
+	dw $0005	; $14B RightArrowCloud
+	dw $0005	; $14C DownRightArrowCloud
+	dw $0005	; $14D DownArrowCloud
+	dw $0005	; $14E DownLeftArrowCloud
+	dw $0005	; $14F LeftArrowCloud
+	dw $0005	; $150 UpLeftArrowCloud
+	dw $0005	; $151 RotatingArrowCloud
+	dw $0005	; $152 Flutter
+	dw $0005	; $153 GoonieWithShyGuy
+	dw $00FF	; $154 SharkChomp
+	dw $0405	; $155 FatGoonie
+	dw $0005	; $156 CactusJack
+	dw $2005	; $157 WallLakitu
+	dw $0405	; $158 BowlingGoonie
+	dw $0205	; $159 WalkingGrunt
+	dw $0205	; $15A RunningGrunt
+	dw $0005	; $15B DancingSpearGuy
+	dw $0004	; $15C GreenRotatingPlatformSwitch
+	dw $0204	; $15D RedRotatingPlatformSwitch
+	dw $0805	; $15E 4PinkRotatingPlatformsWithShyGuys
+	dw $0005	; $15F GreenSpikedPlatform
+	dw $0205	; $160 RedSpikedPlatform
+	dw $00FF	; $161 RewardItemForDefeatingRoomEnemies
+	dw $0005	; $162 DoubleSpikePlatformWithSwitch
+	dw $0005	; $163 BouncingNeedlenose
+	dw $0005	; $164 NipperPlant
+	dw $0005	; $165 NipperSpore
+	dw $1005	; $166 ThunderLakitu
+	dw $0004	; $167 GreenKoopaShell
+	dw $0204	; $168 RedKoopaShell
+	dw $0005	; $169 GreenNakedKoopa
+	dw $0205	; $16A RedNakedKoopa
+	dw $0005	; $16B GreenKoopa
+	dw $0205	; $16C RedKoopa
+	dw $0005	; $16D GreenParakoopa
+	dw $0205	; $16E RedHorizontalParakoopa
+	dw $0205	; $16F RedVerticalParakoopa
+	dw $0005	; $170 AquaLakitu
+	dw $0CFF	; $171 NavalPiranha
+	dw $0C02	; $172 NavalPiranhaBuds
+	dw $1005	; $173 BaronVonZeppelinCarryingShyGuy
+	dw $1005	; $174 BaronVonZeppelinCarryingNeedlenose
+	dw $1005	; $175 BaronVonZeppelinCarryingBomb
+	dw $1005	; $176 BaronVonZeppelinCarryingBandit
+	dw $1005	; $177 BaronVonZeppelinCarryingLargeSpringBall
+	dw $1005	; $178 BaronVonZeppelinCarrying1up
+	dw $1005	; $179 BaronVonZeppelinCarryingKey
+	dw $1005	; $17A BaronVonZeppelinCarryingCoins
+	dw $1005	; $17B BaronVonZeppelinCarryingWatermelon
+	dw $1005	; $17C BaronVonZeppelinCarryingFireWatermelon
+	dw $1005	; $17D BaronVonZeppelinCarryingIcyWatermelon
+	dw $1005	; $17E BaronVonZeppelinCarryingCrateWith6Stars
+	dw $0005	; $17F BaronVonZeppelin
+	dw $0005	; $180 SpinningLog
+	dw $0005	; $181 CrazeeDayzee
+	dw $0205	; $182 Dragonfly
+	dw $0005	; $183 Butterfly
+	dw $0005	; $184 Bumpty
+	dw $0002	; $185 MovingLineGuidedGreenPlatformLeft
+	dw $0002	; $186 MovingLineGuidedGreenPlatformRight
+	dw $0402	; $187 MovingLineGuidedYellowPlatformLeft
+	dw $0402	; $188 MovingLineGuidedYellowPlatformRight
+	dw $0002	; $189 LineGuidedGreenPlatformLeft
+	dw $0002	; $18A LineGuidedGreenPlatformRight
+	dw $0402	; $18B LineGuidedYellowPlatformLeft
+	dw $0402	; $18C LineGuidedYellowPlatformRight
+	dw $0202	; $18D LineGuidedRedPlatformLeft
+	dw $0202	; $18E LineGuidedGreenPlatformRight
+	dw $0002	; $18F SpiralPlatform
+	dw $0005	; $190 FallingIcicle
+	dw $0005	; $191 Bird
+	dw $0005	; $192 PetalGuy
+	dw $0005	; $193 SnakeCagedGhost
+	dw $3005	; $194 Blargg
+	dw $0E05	; $195 SmallUnstableSnowPlatform
+	dw $0E05	; $196 UnstableSnowPlatform
+	dw $0006	; $197 ArrowSign
+	dw $0006	; $198 DiagonalArrowSign
+	dw $0205	; $199 DizzyDandy
+	dw $0405	; $19A BooGuy
+	dw $0005	; $19B TacklingBumpty
+	dw $1005	; $19C FlyingBumpty
+	dw $1005	; $19D SkeletonGoonie
+	dw $0005	; $19E WinglessSkeletonGoonie
+	dw $1005	; $19F SkeletonGoonieCarryingBomb
+	dw $0001	; $1A0 DoubleFirebar
+	dw $0001	; $1A1 Firebar
+	dw $0005	; $1A2 HealthStar
+	dw $0005	; $1A3 LittleSkullMouser
+	dw $0C05	; $1A4 KeyholeCork
+	dw $0004	; $1A5 RunAwayMonkey
+	dw $0004	; $1A6 MonkeyWithWatermelon
+	dw $0004	; $1A7 HangingMonkeyThrowingBombsOrNeedlenoses
+	dw $0004	; $1A8 TheifMonkey
+	dw $0004	; $1A9 HangingMonkeySpittingSeeds
+	dw $0005	; $1AA HotLips
+	dw $1003	; $1AB BooBalloon
+	dw $0005	; $1AC SmallFrog
+	dw $0205	; $1AD MagicShootingKamek
+	dw $0004	; $1AE MagicShot
+	dw $0405	; $1AF FloatingCoin
+	dw $0205	; $1B0 DeflatingBalloon
+	dw $0405	; $1B1 CoinCannon
+	dw $0406	; $1B2 MinigameCoin
+	dw $0005	; $1B3 GatherCoinsBandit
+	dw $0406	; $1B4 MinigameCheckeredPlatform
+	dw $0005	; $1B5 PoppingBalloonsBandit
+	dw $0206	; $1B6 MinigameBalloon
+	dw $0004	; $1B7 SeedSpittingMinigameBandit
+	dw $0005	; $1B8 WatermelonPot
+	dw $0004	; $1B9 P2SeedSpittingMinigameBandit
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AA28E, incbin, DATA_0AA28E_YI_U2.bin)
@@ -2951,63 +4648,468 @@ else
 	%FREE_BYTES($0AA28E, 138, $FF)
 endif
 
+;-------------------------------------------------------------------------
+; DATA_0AA318 -- per-sprite Y PHYSICS (gravity) table, one word per sprite ID
+; (indexed by ID*2). (Original source: ENDATA1 = ENGPOW, ENGMAX.) Seeded at spawn;
+; handlers override (e.g. stomp / spit-out / freeze hard-write $0040 / $0400).
+;   LOW byte  -> $1542 (!EXRAM_YI_Level_NorSpr_YAccelLo), sign-extended: Y
+;                acceleration STEP per frame (all table entries are 0..$70).
+;   HIGH byte -> $15E2 (!EXRAM_YI_Level_NorSpr_YAccelCeilLo), sign-extended * 16:
+;                Y TARGET speed (negative = rises: Bubble $F800, Watermelon Flame
+;                $FC00, Sluggies $FC00, BVZ $FE00, Balloon Platform $FF40, ...).
+; Each frame the GSU integrator FXCODE_09884C (all 40 slots with status >= $0C)
+; does  speed += (target - speed >= 0) ? +step : -step  -- there is no clamp, so
+; the speed dithers within one step of the target (the default $40/$0400 pair,
+; 109 ids, alternates $0400/$0440). CODE_03B697 (12 Kamek/Baby Bowser callers)
+; has the same logic. Distribution: (0,0) 199 ids; ($40,$0400) 109; (0,$0400) 52
+; (target set but no acceleration until the handler sets $1542: eggs, melons,
+; platforms); ($28,$0280) 11; ($60,$0600) 6; ($2C,$02C0) 6; ($20,$0200) 6.
+; Ambient equivalent: DATA_0AB712 -> $1502 / $15A2.
+;-------------------------------------------------------------------------
 DATA_0AA318:
-	dw $4010,$6060,$0000,$4040,$4070,$4000,$0410,$4000
-	dw $0000,$4000,$4040,$4040,$4040,$0000,$0000,$0000
-	dw $0000,$0000,$6060,$0000,$0800,$0000,$0000,$4040
-	dw $C010,$F802,$4040,$0000,$2C2C,$4040,$4040,$4000
-	dw $4040,$4000,$4000,$4000,$4000,$4000,$4000,$4040
-	dw $4040,$4000,$4000,$4000,$0000,$1003,$0800,$0000
-	dw $4040,$4040,$0000,$4000,$4000,$0000,$0000,$0404
-	dw $0000,$0000,$4040,$4040,$4040,$0000,$0000,$0000
-	dw $4040,$0000,$0000,$4040,$4040,$0000,$4040,$4040
-	dw $0000,$4040,$4040,$0000,$4000,$0000,$6060,$0000
-	dw $0000,$0000,$F404,$0000,$4000,$2800,$2800,$0000
-	dw $0005,$0000,$0000,$4040,$0000,$4000,$0000,$0000
-	dw $2C2C,$4040,$4040,$4040,$2800,$0000,$4040,$0000
-	dw $4000,$1000,$4000,$0000,$4060,$4040,$4040,$4060
-	dw $2C2C,$0000,$0000,$0000,$2C2C,$0000,$4000,$4000
-	dw $4040,$4040,$4040,$0000,$0000,$0000,$0000,$0000
-	dw $2C00,$2C00,$4040,$0000,$0000,$2C2C,$0840,$4040
-	dw $2020,$0000,$0000,$0000,$4000,$0000,$0C10,$0000
-	dw $0000,$0000,$4040,$6060,$4000,$0000,$0000,$0000
-	dw $4000,$0000,$0000,$2C2C,$4000,$4040,$4040,$4040
-	dw $0000,$4040,$4040,$4040,$4040,$0000,$1008,$1008
-	dw $0000,$0000,$0000,$4040,$0000,$4000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$6060,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$4040,$4040,$4040,$0000,$0000,$4000
-	dw $0000,$1008,$4040,$4040,$4040,$0000,$2000,$0000
-	dw $0000,$0000,$4040,$4040,$4040,$3000,$0000,$3434
-	dw $0010,$4040,$8010,$0000,$4040,$4040,$4040,$0000
-	dw $4000,$4040,$4040,$4040,$4040,$4040,$4040,$4040
-	dw $4040,$0000,$0000,$4040,$4040,$4040,$0000,$4040
-	dw $F802,$0000,$0000,$0000,$4000,$0000,$0000,$4001
-	dw $4040,$4040,$4040,$4040,$4000,$0000,$4040,$1006
-	dw $0000,$4040,$1000,$4040,$0000,$4018,$0004,$2000
-	dw $2000,$2020,$4040,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$4000,$4000,$4040,$0000,$4000,$0000
-	dw $0000,$0004,$4040,$4040,$0000,$4040,$0000,$0000
-	dw $0000,$6060,$4000,$4040,$4000,$4000,$4000,$2001
-	dw $2001,$2001,$2001,$0000,$0000,$0000,$0000,$4000
-	dw $4000,$4000,$4000,$4000,$0000,$C040,$C040,$0000
-	dw $4060,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0010,$0000,$2020,$6000,$4000
-	dw $2020,$4040,$4040,$4040,$4000,$4000,$2800,$0000
-	dw $0000,$0000,$0000,$4040,$4040,$0808,$4000,$4040
-	dw $4040,$4040,$4040,$4040,$4040,$2020,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$E004
-	dw $0000,$4040,$0000,$0000,$4040,$2828,$2828,$2828
-	dw $2828,$2828,$2828,$2828,$2828,$2828,$2828,$2828
-	dw $4000,$4040,$4040,$0000,$0000,$4000,$4000,$0000
-	dw $0000,$0000,$4040,$4040,$0000,$0000,$4040,$0000
-	dw $0000,$0000,$4018,$4040,$8000,$4040,$4040,$4000
-	dw $4040,$4000,$0000,$0000,$2020,$4040,$0000,$0000
-	dw $0000,$0000,$5020,$4040,$0000,$4040,$0000,$4040
-	dw $0000,$4040
+DATA_sprite_gravity_table:                           ; descriptive alias (main-side: FXDATA_0AA318)
+	dw $4010	; $000 LavaLog
+	dw $6060	; $001 ClosedDoor
+	dw $0000	; $002 NavalPiranhaVines
+	dw $4040	; $003 CrateWithKey
+	dw $4070	; $004 HitSuperBabyMarioBlock
+	dw $4000	; $005 IcyWatermelon
+	dw $0410	; $006 WatermelonFreeze
+	dw $4000	; $007 Watermelon
+	dw $0000	; $008 FallingRubble
+	dw $4000	; $009 FireWatermelon
+	dw $4040	; $00A Kaboomba
+	dw $4040	; $00B Cannonball
+	dw $4040	; $00C RaphaelTheRaven
+	dw $0000	; $00D GoalRing
+	dw $0000	; $00E GOALLetters
+	dw $0000	; $00F BonusChallengeSign
+	dw $0000	; $010 RoundedCagedGhost
+	dw $0000	; $011 ItemCard
+	dw $6060	; $012 BossDoor
+	dw $0000	; $013 BossExplosion
+	dw $0800	; $014 KeyFromBoss
+	dw $0000	; $015 SubmarineTorpedo
+	dw $0000	; $016 BiggerBoo
+	dw $4040	; $017 FrogPirate
+	dw $C010	; $018 WatermelonFlame
+	dw $F802	; $019 Bubble
+	dw $4040	; $01A SkiLift
+	dw $0000	; $01B VerticalLavaLog
+	dw $2C2C	; $01C DrFreezegood
+	dw $4040	; $01D DrFreezegoodOnSkiLift
+	dw $4040	; $01E Shyguy
+	dw $4000	; $01F RotatingDoors
+	dw $4040	; $020 Bandit
+	dw $4000	; $021 Bucket
+	dw $4000	; $022 FlashingEgg
+	dw $4000	; $023 RedEgg
+	dw $4000	; $024 YellowEgg
+	dw $4000	; $025 GreenEgg
+	dw $4000	; $026 BowserFightGiantEgg
+	dw $4040	; $027 Key
+	dw $4040	; $028 HuffinPuffin
+	dw $4000	; $029 GiantEgg
+	dw $4000	; $02A RedGiantEgg
+	dw $4000	; $02B GreenGiantEgg
+	dw $0000	; $02C LungeFish
+	dw $1003	; $02D SalvoTheSlime
+	dw $0800	; $02E EyesOfSalvoTheSlime
+	dw $0000	; $02F LittleMouserHole
+	dw $4040	; $030 LittleMouser
+	dw $4040	; $031 PottedSpikedFunGuy
+	dw $0000	; $032 PeekingLittleMouser
+	dw $4000	; $033 LittleMouserExitingNest
+	dw $4000	; $034 RogersPot
+	dw $0000	; $035 RogerThePottedGhost
+	dw $0000	; $036 FallingWall
+	dw $0404	; $037 GrimLeecher
+	dw $0000	; $038 PottedGhostFlame
+	dw $0000	; $039 HorizontalRotatingPlank
+	dw $4040	; $03A 3MiniRavens
+	dw $4040	; $03B MiniRaven
+	dw $4040	; $03C TapTapTheRedNose
+	dw $0000	; $03D LargeSeesaw
+	dw $0000	; $03E ThinPlatform
+	dw $0000	; $03F SlimeBlock
+	dw $4040	; $040 BabyLuigi
+	dw $0000	; $041 Stork
+	dw $0000	; $042 VerticalPipeEntrance
+	dw $4040	; $043 RedGiantShyguy
+	dw $4040	; $044 GreenGiantShyguy
+	dw $0000	; $045 PrinceFroggy
+	dw $4040	; $046 BurtTheBashful
+	dw $4040	; $047 ShyguyPushingRoger
+	dw $0000	; $048 CutsceneKamek
+	dw $4040	; $049 ThunderLakituFireBlast1
+	dw $4040	; $04A ThunderLakituFireBlast2
+	dw $0000	; $04B ThunderLakituFireBlast3
+	dw $4000	; $04C UpsidedownBlowHard
+	dw $0000	; $04D UnusedSpriteIndex
+	dw $6060	; $04E LockedDoor
+	dw $0000	; $04F MiddleRing
+	dw $0000	; $050 GreyRotatingWoodenBoard
+	dw $0000	; $051 LargeWheel
+	dw $F404	; $052 BalloonPlatform
+	dw $0000	; $053 KamekSayingOhMy
+	dw $4000	; $054 UpsideDownPiranhaPlant
+	dw $2800	; $055 4GreenRotatingPlatforms
+	dw $2800	; $056 4PinkRotatingPlatforms
+	dw $0000	; $057 SewerGhostWithPlatform
+	dw $0005	; $058 GreenToady
+	dw $0000	; $059 StationarySuperStar
+	dw $0000	; $05A RaphaelSparkAttack
+	dw $4040	; $05B RedCoinBandit
+	dw $0000	; $05C PinkToady
+	dw $4000	; $05D GlitchedSprite
+	dw $0000	; $05E BrownWoodenBoard
+	dw $0000	; $05F AutoRotateBrownWoodenBoard
+	dw $2C2C	; $060 Bomb
+	dw $4040	; $061 BabyMario
+	dw $4040	; $062 Goomba
+	dw $4040	; $063 MuddyBuddy
+	dw $2800	; $064 4AutoRotatingPinkPlatforms
+	dw $0000	; $065 RedCoin
+	dw $4040	; $066 PiranhaPlant
+	dw $0000	; $067 RockRevealedHiddenWingedCloud
+	dw $4000	; $068 FlashingEggBlock
+	dw $1000	; $069 RedEggBlock
+	dw $4000	; $06A YellowEggBlock
+	dw $0000	; $06B GreenEggBlock
+	dw $4060	; $06C LargeSpringBall
+	dw $4040	; $06D ClockwiseHootieTheBlueFish
+	dw $4040	; $06E CounterclockwiseHootieTheBlueFish
+	dw $4060	; $06F SpringBall
+	dw $2C2C	; $070 Clawdaddy
+	dw $0000	; $071 BigBoo
+	dw $0000	; $072 TrainBandit
+	dw $0000	; $073 BalloonPump
+	dw $2C2C	; $074 Spike
+	dw $0000	; $075 SpikeBall
+	dw $4000	; $076 ClockwisePiroDangle
+	dw $4000	; $077 CounterclockwisePiroDangle
+	dw $4040	; $078 RedBulletBillShooter
+	dw $4040	; $079 YellowBulletBillShooter
+	dw $4040	; $07A GreenBulletBillShooter
+	dw $0000	; $07B RedBulletBill
+	dw $0000	; $07C YellowBulletBill
+	dw $0000	; $07D GreenBulletBill
+	dw $0000	; $07E DentOfSquishyPlatform
+	dw $0000	; $07F LogSeesawPlatform
+	dw $2C00	; $080 StraightLavaBubble
+	dw $2C00	; $081 FollowingLavaBubble
+	dw $4040	; $082 ChainChomp
+	dw $0000	; $083 BowserFightCloud
+	dw $0000	; $084 TeleportSprite
+	dw $2C2C	; $085 HarryHedgehog
+	dw $0840	; $086 GlitchedSprite
+	dw $4040	; $087 MockUpLaidEgg
+	dw $2020	; $088 SuperStar
+	dw $0000	; $089 HorizontalMovingRedPlatform
+	dw $0000	; $08A VerticalMovingPinkPlatform
+	dw $0000	; $08B MockUp
+	dw $4000	; $08C YoshiAtGoal
+	dw $0000	; $08D Flyguy
+	dw $0C10	; $08E BowserRoomKamek
+	dw $0000	; $08F MonkeySwing
+	dw $0000	; $090 DanglingGhost
+	dw $0000	; $091 4RedToadies
+	dw $4040	; $092 MelonBug
+	dw $6060	; $093 Door
+	dw $4000	; $094 ExpandingBlock
+	dw $0000	; $095 BlueCheckeredBlock
+	dw $0000	; $096 RedCheckeredBlock
+	dw $0000	; $097 POWBlock
+	dw $4000	; $098 EndTransformationBlock
+	dw $0000	; $099 SpinyEgg
+	dw $0000	; $09A SwingingGreenPlatform
+	dw $2C2C	; $09B MaceGuy
+	dw $4000	; $09C Mace
+	dw $4040	; $09D RedSwitch
+	dw $4040	; $09E ChompRock
+	dw $4040	; $09F PtooiePiranhaPlant
+	dw $0000	; $0A0 Tulip
+	dw $4040	; $0A1 SmallPot
+	dw $4040	; $0A2 ThunderLakituFireball
+	dw $4040	; $0A3 LeftHidingBandit
+	dw $4040	; $0A4 RightHidingBandit
+	dw $0000	; $0A5 NepEnut
+	dw $1008	; $0A6 IncomingChomp
+	dw $1008	; $0A7 GroupOfIncomingChomps
+	dw $0000	; $0A8 FallingIncomingChomp
+	dw $0000	; $0A9 IncomingChompShadow
+	dw $0000	; $0AA BackgroundShyguy
+	dw $4040	; $0AB FullEggSpawner
+	dw $0000	; $0AC FallingRockArrowAndShadow
+	dw $4000	; $0AD MessageBox
+	dw $0000	; $0AE HookbillTheKoopa
+	dw $0000	; $0AF CarMorphBubble
+	dw $0000	; $0B0 MoleMorphBubble
+	dw $0000	; $0B1 HelicopterMorphBubble
+	dw $0000	; $0B2 TrainMorphBubble
+	dw $0000	; $0B3 FuzzyFart
+	dw $0000	; $0B4 SubmarineMorphBubble
+	dw $0000	; $0B5 HiddenWingedCloud
+	dw $0000	; $0B6 WingedCloudWith8Coins
+	dw $0000	; $0B7 WingedCloudWithBubbled1up
+	dw $0000	; $0B8 WingedCloudWithFlower
+	dw $0000	; $0B9 WingedCloudWithPOW
+	dw $0000	; $0BA WingedCloudWithStairs
+	dw $0000	; $0BB WingedCloudWithPlatform
+	dw $0000	; $0BC WingedCloudWithBandit
+	dw $0000	; $0BD WingedCloudWithCoin
+	dw $0000	; $0BE WingedCloudWith1up
+	dw $0000	; $0BF WingedCloudWithKey
+	dw $0000	; $0C0 WingedCloudWith3Stars
+	dw $0000	; $0C1 WingedCloudWith5Stars
+	dw $0000	; $0C2 WingedCloudWithDoor
+	dw $0000	; $0C3 WingedCloudWithLowerGround
+	dw $0000	; $0C4 WingedCloudWithWatermelon
+	dw $0000	; $0C5 WingedCloudWithFireWatermelon
+	dw $0000	; $0C6 WingedCloudWithIcyWatermelon
+	dw $0000	; $0C7 WingedCloudWith3LeafSunflower
+	dw $0000	; $0C8 WingedCloudWith6LeafSunflower
+	dw $0000	; $0C9 WingedCloudWithCrashGameFeature
+	dw $6060	; $0CA BigBossDoor
+	dw $0000	; $0CB WingedCloudWithCoinOrStar
+	dw $0000	; $0CC WingedCloudWithRedSwitch
+	dw $0000	; $0CD BaronVonZeppelinCarryingGiantEgg
+	dw $0000	; $0CE BowserFire
+	dw $0000	; $0CF BowserRocks
+	dw $0000	; $0D0 HorizontalEntranceToRight
+	dw $0000	; $0D1 SecretPipeEntrance
+	dw $4040	; $0D2 MarchingMilde
+	dw $4040	; $0D3 LargeMilde
+	dw $4040	; $0D4 MediumMilde
+	dw $0000	; $0D5 BackgroundForHookbillFight
+	dw $0000	; $0D6 FortGhostWithPlatform
+	dw $4000	; $0D7 SluggyTheUnshaven
+	dw $0000	; $0D8 ChompWarningSign
+	dw $1008	; $0D9 FishinLakitu
+	dw $4040	; $0DA FlowerPot
+	dw $4040	; $0DB SoftBlock
+	dw $4040	; $0DC Snowball
+	dw $0000	; $0DD CloseWallInNavalPiranhaRoom
+	dw $2000	; $0DE FallingRockPlatform
+	dw $0000	; $0DF PiscatoryPete
+	dw $0000	; $0E0 PreyingMantas
+	dw $0000	; $0E1 LochNestor
+	dw $4040	; $0E2 BooBlah
+	dw $4040	; $0E3 BooBlahWithPiroDangle
+	dw $4040	; $0E4 HeadingCactus
+	dw $3000	; $0E5 GreenNeedlenose
+	dw $0000	; $0E6 Gusty
+	dw $3434	; $0E7 Burt
+	dw $0010	; $0E8 Goonie
+	dw $4040	; $0E9 3WinglessGoonies
+	dw $8010	; $0EA VerticalCloudDrop
+	dw $0000	; $0EB HorizontalCloudDrop
+	dw $4040	; $0EC JumpingFlamerGuy
+	dw $4040	; $0ED RunningFlamerGuy
+	dw $4040	; $0EE EggoDil
+	dw $0000	; $0EF EggoDilFace
+	dw $4000	; $0F0 EggoDilPetal
+	dw $4040	; $0F1 EggPlantShootingBubbles
+	dw $4040	; $0F2 ShyguyOnStilts
+	dw $4040	; $0F3 WoozyGuy
+	dw $4040	; $0F4 EggPlant
+	dw $4040	; $0F5 Slugger
+	dw $4040	; $0F6 MotherHuffinPuffin
+	dw $4040	; $0F7 BarneyBubble
+	dw $4040	; $0F8 BlowHard
+	dw $0000	; $0F9 YellowNeedlenose
+	dw $0000	; $0FA Flower
+	dw $4040	; $0FB LongSpearGuy
+	dw $4040	; $0FC ShortSpearGuy
+	dw $4040	; $0FD ZeusGuy
+	dw $0000	; $0FE ZeusGuyBlast
+	dw $4040	; $0FF Poochy
+	dw $F802	; $100 Bubbled1up
+	dw $0000	; $101 RotatingMace
+	dw $0000	; $102 DoubleRotatingMace
+	dw $0000	; $103 BooGuysMovingMace
+	dw $4000	; $104 JeanDeFillet
+	dw $0000	; $105 BooGuysCarryingBombToLeft
+	dw $0000	; $106 BooGuysCarryingBombToRight
+	dw $4001	; $107 WatermelonSeed
+	dw $4040	; $108 Milde
+	dw $4040	; $109 BronzeTapTap
+	dw $4040	; $10A SilverTapTap
+	dw $4040	; $10B HoppingSilverTapTap
+	dw $4000	; $10C ChainedSpikeBall
+	dw $0000	; $10D BooGuyOperatingPulley
+	dw $4040	; $10E CrateWith6Stars
+	dw $1006	; $10F BooManBluff
+	dw $0000	; $110 Flower
+	dw $4040	; $111 GeorgetteJelly
+	dw $1000	; $112 GeorgetteJellyGoo
+	dw $4040	; $113 Snifit
+	dw $0000	; $114 SnifitBullet
+	dw $4018	; $115 Coin
+	dw $0004	; $116 BuoyantRoundPlatform
+	dw $2000	; $117 DonutLift
+	dw $2000	; $118 LargeDonutLift
+	dw $2020	; $119 Spooky
+	dw $4040	; $11A GreenGlove
+	dw $0000	; $11B Lakitu
+	dw $0000	; $11C LakituCloud
+	dw $0000	; $11D SpinyEgg
+	dw $0000	; $11E BrownArrowWheel
+	dw $0000	; $11F BlueArrowWheel
+	dw $0000	; $120 DoubledSidedArrowLift
+	dw $0000	; $121 NumberPlatformExplosion
+	dw $4000	; $122 BucketWithBandit
+	dw $4000	; $123 BucketWithCoins
+	dw $4040	; $124 Stretch
+	dw $0000	; $125 AttackingAndEndingKamek
+	dw $4000	; $126 SpikedLogOnPulley
+	dw $0000	; $127 PulleyOfSpikedLog
+	dw $0000	; $128 GroundRippleInBabyBowerRoom
+	dw $0004	; $129 Fuzzy
+	dw $4040	; $12A ShyGuyBanditTrap
+	dw $4040	; $12B FatGuy
+	dw $0000	; $12C FlyOrWhirlyGuy
+	dw $4040	; $12D PrologueCutsceneYoshi
+	dw $0000	; $12E LargePopEffect
+	dw $0000	; $12F HorizontalLavaDrop
+	dw $0000	; $130 VerticalLavaDrop
+	dw $6060	; $131 LockedDoor
+	dw $4000	; $132 LemonDrop
+	dw $4040	; $133 LanternGhost
+	dw $4000	; $134 BabyBowser
+	dw $4000	; $135 CirclingRaven
+	dw $4000	; $136 CirclingRaven
+	dw $2001	; $137 3x6FallingStone
+	dw $2001	; $138 3x3FallingStone
+	dw $2001	; $139 3x9FallingStone
+	dw $2001	; $13A 6x3FallingStone
+	dw $0000	; $13B StomachAcid
+	dw $0000	; $13C DownFlippers
+	dw $0000	; $13D DanglingFang
+	dw $0000	; $13E FlyingFang
+	dw $4000	; $13F SwimmingFlopsyFish
+	dw $4000	; $140 SwimmingAndJumpingFlopsyFish
+	dw $4000	; $141 SwimmingAndArcJumpingFlopsyFish
+	dw $4000	; $142 3JumpFlopsyFish
+	dw $4000	; $143 SprayFish
+	dw $0000	; $144 RightOrLeftFlippers
+	dw $C040	; $145 BlueSluggy
+	dw $C040	; $146 PinkSluggy
+	dw $0000	; $147 HorizontalEntranceToLeft
+	dw $4060	; $148 LargeSpringBall
+	dw $0000	; $149 UpArrowCloud
+	dw $0000	; $14A UpRightArrowCloud
+	dw $0000	; $14B RightArrowCloud
+	dw $0000	; $14C DownRightArrowCloud
+	dw $0000	; $14D DownArrowCloud
+	dw $0000	; $14E DownLeftArrowCloud
+	dw $0000	; $14F LeftArrowCloud
+	dw $0000	; $150 UpLeftArrowCloud
+	dw $0000	; $151 RotatingArrowCloud
+	dw $0000	; $152 Flutter
+	dw $0010	; $153 GoonieWithShyGuy
+	dw $0000	; $154 SharkChomp
+	dw $2020	; $155 FatGoonie
+	dw $6000	; $156 CactusJack
+	dw $4000	; $157 WallLakitu
+	dw $2020	; $158 BowlingGoonie
+	dw $4040	; $159 WalkingGrunt
+	dw $4040	; $15A RunningGrunt
+	dw $4040	; $15B DancingSpearGuy
+	dw $4000	; $15C GreenRotatingPlatformSwitch
+	dw $4000	; $15D RedRotatingPlatformSwitch
+	dw $2800	; $15E 4PinkRotatingPlatformsWithShyGuys
+	dw $0000	; $15F GreenSpikedPlatform
+	dw $0000	; $160 RedSpikedPlatform
+	dw $0000	; $161 RewardItemForDefeatingRoomEnemies
+	dw $0000	; $162 DoubleSpikePlatformWithSwitch
+	dw $4040	; $163 BouncingNeedlenose
+	dw $4040	; $164 NipperPlant
+	dw $0808	; $165 NipperSpore
+	dw $4000	; $166 ThunderLakitu
+	dw $4040	; $167 GreenKoopaShell
+	dw $4040	; $168 RedKoopaShell
+	dw $4040	; $169 GreenNakedKoopa
+	dw $4040	; $16A RedNakedKoopa
+	dw $4040	; $16B GreenKoopa
+	dw $4040	; $16C RedKoopa
+	dw $2020	; $16D GreenParakoopa
+	dw $0000	; $16E RedHorizontalParakoopa
+	dw $0000	; $16F RedVerticalParakoopa
+	dw $0000	; $170 AquaLakitu
+	dw $0000	; $171 NavalPiranha
+	dw $0000	; $172 NavalPiranhaBuds
+	dw $0000	; $173 BaronVonZeppelinCarryingShyGuy
+	dw $0000	; $174 BaronVonZeppelinCarryingNeedlenose
+	dw $0000	; $175 BaronVonZeppelinCarryingBomb
+	dw $0000	; $176 BaronVonZeppelinCarryingBandit
+	dw $0000	; $177 BaronVonZeppelinCarryingLargeSpringBall
+	dw $0000	; $178 BaronVonZeppelinCarrying1up
+	dw $0000	; $179 BaronVonZeppelinCarryingKey
+	dw $0000	; $17A BaronVonZeppelinCarryingCoins
+	dw $0000	; $17B BaronVonZeppelinCarryingWatermelon
+	dw $0000	; $17C BaronVonZeppelinCarryingFireWatermelon
+	dw $0000	; $17D BaronVonZeppelinCarryingIcyWatermelon
+	dw $0000	; $17E BaronVonZeppelinCarryingCrateWith6Stars
+	dw $E004	; $17F BaronVonZeppelin
+	dw $0000	; $180 SpinningLog
+	dw $4040	; $181 CrazeeDayzee
+	dw $0000	; $182 Dragonfly
+	dw $0000	; $183 Butterfly
+	dw $4040	; $184 Bumpty
+	dw $2828	; $185 MovingLineGuidedGreenPlatformLeft
+	dw $2828	; $186 MovingLineGuidedGreenPlatformRight
+	dw $2828	; $187 MovingLineGuidedYellowPlatformLeft
+	dw $2828	; $188 MovingLineGuidedYellowPlatformRight
+	dw $2828	; $189 LineGuidedGreenPlatformLeft
+	dw $2828	; $18A LineGuidedGreenPlatformRight
+	dw $2828	; $18B LineGuidedYellowPlatformLeft
+	dw $2828	; $18C LineGuidedYellowPlatformRight
+	dw $2828	; $18D LineGuidedRedPlatformLeft
+	dw $2828	; $18E LineGuidedGreenPlatformRight
+	dw $2828	; $18F SpiralPlatform
+	dw $4000	; $190 FallingIcicle
+	dw $4040	; $191 Bird
+	dw $4040	; $192 PetalGuy
+	dw $0000	; $193 SnakeCagedGhost
+	dw $0000	; $194 Blargg
+	dw $4000	; $195 SmallUnstableSnowPlatform
+	dw $4000	; $196 UnstableSnowPlatform
+	dw $0000	; $197 ArrowSign
+	dw $0000	; $198 DiagonalArrowSign
+	dw $0000	; $199 DizzyDandy
+	dw $4040	; $19A BooGuy
+	dw $4040	; $19B TacklingBumpty
+	dw $0000	; $19C FlyingBumpty
+	dw $0000	; $19D SkeletonGoonie
+	dw $4040	; $19E WinglessSkeletonGoonie
+	dw $0000	; $19F SkeletonGoonieCarryingBomb
+	dw $0000	; $1A0 DoubleFirebar
+	dw $0000	; $1A1 Firebar
+	dw $4018	; $1A2 HealthStar
+	dw $4040	; $1A3 LittleSkullMouser
+	dw $8000	; $1A4 KeyholeCork
+	dw $4040	; $1A5 RunAwayMonkey
+	dw $4040	; $1A6 MonkeyWithWatermelon
+	dw $4000	; $1A7 HangingMonkeyThrowingBombsOrNeedlenoses
+	dw $4040	; $1A8 TheifMonkey
+	dw $4000	; $1A9 HangingMonkeySpittingSeeds
+	dw $0000	; $1AA HotLips
+	dw $0000	; $1AB BooBalloon
+	dw $2020	; $1AC SmallFrog
+	dw $4040	; $1AD MagicShootingKamek
+	dw $0000	; $1AE MagicShot
+	dw $0000	; $1AF FloatingCoin
+	dw $0000	; $1B0 DeflatingBalloon
+	dw $0000	; $1B1 CoinCannon
+	dw $5020	; $1B2 MinigameCoin
+	dw $4040	; $1B3 GatherCoinsBandit
+	dw $0000	; $1B4 MinigameCheckeredPlatform
+	dw $4040	; $1B5 PoppingBalloonsBandit
+	dw $0000	; $1B6 MinigameBalloon
+	dw $4040	; $1B7 SeedSpittingMinigameBandit
+	dw $0000	; $1B8 WatermelonPot
+	dw $4040	; $1B9 P2SeedSpittingMinigameBandit
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AA68C, incbin, DATA_0AA68C_YI_U2.bin)
@@ -3026,62 +5128,448 @@ endif
 ;-------------------------------------------------------------------------
 DATA_0AA716:
 DATA_sprite_gfx_file_table:                          ; descriptive alias (main-side: FXDATA_0AA716)
-	dw $0000,$0000,$005A,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$004A,$004A,$0000,$0000,$0000,$0000
-	dw $0042,$0000,$0000,$0000,$0000,$0000,$0061,$0068
-	dw $0000,$0000,$002E,$0048,$0000,$002E,$0000,$0031
-	dw $004E,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$002F,$002F,$0032,$0000,$0045,$0028
-	dw $0028,$0036,$0028,$0028,$0042,$0042,$0000,$0046
-	dw $0042,$0000,$004F,$004F,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0070,$0070,$0070,$0000,$0000
-	dw $006A,$0000,$0000,$0000,$0036,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$006A,$0029,$0000,$0000,$0000
-	dw $0000,$0000,$001B,$004E,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0026,$0000,$0000,$0000,$0029,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0035,$0061,$002E,$0000,$0026,$0000,$0045,$0045
-	dw $0031,$0031,$0031,$0000,$0000,$0031,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$001E,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0067,$0000
-	dw $0042,$0000,$001E,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$004F,$0000,$0059,$0000,$0000,$0000,$0029
-	dw $0000,$0036,$004B,$004E,$004E,$0053,$001B,$001B
-	dw $001B,$001B,$001B,$0000,$0000,$0000,$0047,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0029,$006F,$006D,$001A,$0000,$0055
-	dw $0000,$0049,$0044,$0000,$0000,$0000,$0020,$003E
-	dw $003E,$003E,$0022,$0022,$0024,$0000,$0025,$0000
-	dw $002A,$002A,$002C,$002D,$0000,$0000,$002F,$002F
-	dw $002F,$001F,$0037,$0000,$001F,$0000,$0000,$0000
-	dw $0036,$0000,$0000,$0035,$0035,$0000,$0000,$003A
-	dw $0000,$0000,$0000,$003C,$0000,$0000,$0000,$0000
-	dw $0029,$0000,$0000,$0000,$003F,$003F,$0000,$0030
-	dw $0071,$0041,$0041,$0040,$0040,$0000,$004C,$004C
-	dw $004C,$0046,$0000,$0049,$0049,$0049,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0027,$006A,$004E,$0000
-	dw $0000,$0052,$0000,$0050,$0000,$00AB,$0000,$0051
-	dw $0051,$0000,$0045,$0000,$00AD,$0000,$0000,$0020
-	dw $0020,$0020,$0020,$0070,$0000,$0055,$0055,$0054
-	dw $0054,$0054,$0054,$0058,$0000,$0055,$0055,$0000
-	dw $0000,$0057,$0057,$0057,$0057,$0057,$0057,$0057
-	dw $0057,$0057,$0056,$002A,$0053,$002B,$0000,$0049
-	dw $002B,$0000,$0000,$0039,$002A,$002A,$0000,$0000
-	dw $0000,$0000,$002A,$0000,$0025,$0025,$0049,$0047
-	dw $0047,$0047,$0047,$0047,$0047,$002B,$002B,$002B
-	dw $004F,$005A,$005A,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$005D,$005D,$005D,$005E,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $005F,$005E,$005D,$0042,$0062,$0000,$0000,$001C
-	dw $001C,$0000,$0060,$005E,$005E,$0063,$0063,$0063
-	dw $0065,$0065,$0000,$0060,$0048,$0064,$0064,$0064
-	dw $0064,$0064,$0066,$0065,$0068,$0067,$0067,$0000
-	dw $0065,$0000,$0000,$004E,$0000,$004E,$0000,$004E
-	dw $0000,$004E
+	dw $0000	; $000 LavaLog
+	dw $0000	; $001 ClosedDoor
+	dw $005A	; $002 NavalPiranhaVines
+	dw $0000	; $003 CrateWithKey
+	dw $0000	; $004 HitSuperBabyMarioBlock
+	dw $0000	; $005 IcyWatermelon
+	dw $0000	; $006 WatermelonFreeze
+	dw $0000	; $007 Watermelon
+	dw $0000	; $008 FallingRubble
+	dw $0000	; $009 FireWatermelon
+	dw $004A	; $00A Kaboomba
+	dw $004A	; $00B Cannonball
+	dw $0000	; $00C RaphaelTheRaven
+	dw $0000	; $00D GoalRing
+	dw $0000	; $00E GOALLetters
+	dw $0000	; $00F BonusChallengeSign
+	dw $0042	; $010 RoundedCagedGhost
+	dw $0000	; $011 ItemCard
+	dw $0000	; $012 BossDoor
+	dw $0000	; $013 BossExplosion
+	dw $0000	; $014 KeyFromBoss
+	dw $0000	; $015 SubmarineTorpedo
+	dw $0061	; $016 BiggerBoo
+	dw $0068	; $017 FrogPirate
+	dw $0000	; $018 WatermelonFlame
+	dw $0000	; $019 Bubble
+	dw $002E	; $01A SkiLift
+	dw $0048	; $01B VerticalLavaLog
+	dw $0000	; $01C DrFreezegood
+	dw $002E	; $01D DrFreezegoodOnSkiLift
+	dw $0000	; $01E Shyguy
+	dw $0031	; $01F RotatingDoors
+	dw $004E	; $020 Bandit
+	dw $0000	; $021 Bucket
+	dw $0000	; $022 FlashingEgg
+	dw $0000	; $023 RedEgg
+	dw $0000	; $024 YellowEgg
+	dw $0000	; $025 GreenEgg
+	dw $0000	; $026 BowserFightGiantEgg
+	dw $0000	; $027 Key
+	dw $0000	; $028 HuffinPuffin
+	dw $0000	; $029 GiantEgg
+	dw $002F	; $02A RedGiantEgg
+	dw $002F	; $02B GreenGiantEgg
+	dw $0032	; $02C LungeFish
+	dw $0000	; $02D SalvoTheSlime
+	dw $0045	; $02E EyesOfSalvoTheSlime
+	dw $0028	; $02F LittleMouserHole
+	dw $0028	; $030 LittleMouser
+	dw $0036	; $031 PottedSpikedFunGuy
+	dw $0028	; $032 PeekingLittleMouser
+	dw $0028	; $033 LittleMouserExitingNest
+	dw $0042	; $034 RogersPot
+	dw $0042	; $035 RogerThePottedGhost
+	dw $0000	; $036 FallingWall
+	dw $0046	; $037 GrimLeecher
+	dw $0042	; $038 PottedGhostFlame
+	dw $0000	; $039 HorizontalRotatingPlank
+	dw $004F	; $03A 3MiniRavens
+	dw $004F	; $03B MiniRaven
+	dw $0000	; $03C TapTapTheRedNose
+	dw $0000	; $03D LargeSeesaw
+	dw $0000	; $03E ThinPlatform
+	dw $0000	; $03F SlimeBlock
+	dw $0000	; $040 BabyLuigi
+	dw $0000	; $041 Stork
+	dw $0000	; $042 VerticalPipeEntrance
+	dw $0070	; $043 RedGiantShyguy
+	dw $0070	; $044 GreenGiantShyguy
+	dw $0070	; $045 PrinceFroggy
+	dw $0000	; $046 BurtTheBashful
+	dw $0000	; $047 ShyguyPushingRoger
+	dw $006A	; $048 CutsceneKamek
+	dw $0000	; $049 ThunderLakituFireBlast1
+	dw $0000	; $04A ThunderLakituFireBlast2
+	dw $0000	; $04B ThunderLakituFireBlast3
+	dw $0036	; $04C UpsidedownBlowHard
+	dw $0000	; $04D UnusedSpriteIndex
+	dw $0000	; $04E LockedDoor
+	dw $0000	; $04F MiddleRing
+	dw $0000	; $050 GreyRotatingWoodenBoard
+	dw $0000	; $051 LargeWheel
+	dw $0000	; $052 BalloonPlatform
+	dw $006A	; $053 KamekSayingOhMy
+	dw $0029	; $054 UpsideDownPiranhaPlant
+	dw $0000	; $055 4GreenRotatingPlatforms
+	dw $0000	; $056 4PinkRotatingPlatforms
+	dw $0000	; $057 SewerGhostWithPlatform
+	dw $0000	; $058 GreenToady
+	dw $0000	; $059 StationarySuperStar
+	dw $001B	; $05A RaphaelSparkAttack
+	dw $004E	; $05B RedCoinBandit
+	dw $0000	; $05C PinkToady
+	dw $0000	; $05D GlitchedSprite
+	dw $0000	; $05E BrownWoodenBoard
+	dw $0000	; $05F AutoRotateBrownWoodenBoard
+	dw $0000	; $060 Bomb
+	dw $0000	; $061 BabyMario
+	dw $0026	; $062 Goomba
+	dw $0000	; $063 MuddyBuddy
+	dw $0000	; $064 4AutoRotatingPinkPlatforms
+	dw $0000	; $065 RedCoin
+	dw $0029	; $066 PiranhaPlant
+	dw $0000	; $067 RockRevealedHiddenWingedCloud
+	dw $0000	; $068 FlashingEggBlock
+	dw $0000	; $069 RedEggBlock
+	dw $0000	; $06A YellowEggBlock
+	dw $0000	; $06B GreenEggBlock
+	dw $0000	; $06C LargeSpringBall
+	dw $0000	; $06D ClockwiseHootieTheBlueFish
+	dw $0000	; $06E CounterclockwiseHootieTheBlueFish
+	dw $0000	; $06F SpringBall
+	dw $0035	; $070 Clawdaddy
+	dw $0061	; $071 BigBoo
+	dw $002E	; $072 TrainBandit
+	dw $0000	; $073 BalloonPump
+	dw $0026	; $074 Spike
+	dw $0000	; $075 SpikeBall
+	dw $0045	; $076 ClockwisePiroDangle
+	dw $0045	; $077 CounterclockwisePiroDangle
+	dw $0031	; $078 RedBulletBillShooter
+	dw $0031	; $079 YellowBulletBillShooter
+	dw $0031	; $07A GreenBulletBillShooter
+	dw $0000	; $07B RedBulletBill
+	dw $0000	; $07C YellowBulletBill
+	dw $0031	; $07D GreenBulletBill
+	dw $0000	; $07E DentOfSquishyPlatform
+	dw $0000	; $07F LogSeesawPlatform
+	dw $0000	; $080 StraightLavaBubble
+	dw $0000	; $081 FollowingLavaBubble
+	dw $0000	; $082 ChainChomp
+	dw $0000	; $083 BowserFightCloud
+	dw $0000	; $084 TeleportSprite
+	dw $001E	; $085 HarryHedgehog
+	dw $0000	; $086 GlitchedSprite
+	dw $0000	; $087 MockUpLaidEgg
+	dw $0000	; $088 SuperStar
+	dw $0000	; $089 HorizontalMovingRedPlatform
+	dw $0000	; $08A VerticalMovingPinkPlatform
+	dw $0000	; $08B MockUp
+	dw $0000	; $08C YoshiAtGoal
+	dw $0000	; $08D Flyguy
+	dw $0067	; $08E BowserRoomKamek
+	dw $0000	; $08F MonkeySwing
+	dw $0042	; $090 DanglingGhost
+	dw $0000	; $091 4RedToadies
+	dw $001E	; $092 MelonBug
+	dw $0000	; $093 Door
+	dw $0000	; $094 ExpandingBlock
+	dw $0000	; $095 BlueCheckeredBlock
+	dw $0000	; $096 RedCheckeredBlock
+	dw $0000	; $097 POWBlock
+	dw $0000	; $098 EndTransformationBlock
+	dw $004F	; $099 SpinyEgg
+	dw $0000	; $09A SwingingGreenPlatform
+	dw $0059	; $09B MaceGuy
+	dw $0000	; $09C Mace
+	dw $0000	; $09D RedSwitch
+	dw $0000	; $09E ChompRock
+	dw $0029	; $09F PtooiePiranhaPlant
+	dw $0000	; $0A0 Tulip
+	dw $0036	; $0A1 SmallPot
+	dw $004B	; $0A2 ThunderLakituFireball
+	dw $004E	; $0A3 LeftHidingBandit
+	dw $004E	; $0A4 RightHidingBandit
+	dw $0053	; $0A5 NepEnut
+	dw $001B	; $0A6 IncomingChomp
+	dw $001B	; $0A7 GroupOfIncomingChomps
+	dw $001B	; $0A8 FallingIncomingChomp
+	dw $001B	; $0A9 IncomingChompShadow
+	dw $001B	; $0AA BackgroundShyguy
+	dw $0000	; $0AB FullEggSpawner
+	dw $0000	; $0AC FallingRockArrowAndShadow
+	dw $0000	; $0AD MessageBox
+	dw $0047	; $0AE HookbillTheKoopa
+	dw $0000	; $0AF CarMorphBubble
+	dw $0000	; $0B0 MoleMorphBubble
+	dw $0000	; $0B1 HelicopterMorphBubble
+	dw $0000	; $0B2 TrainMorphBubble
+	dw $0000	; $0B3 FuzzyFart
+	dw $0000	; $0B4 SubmarineMorphBubble
+	dw $0000	; $0B5 HiddenWingedCloud
+	dw $0000	; $0B6 WingedCloudWith8Coins
+	dw $0000	; $0B7 WingedCloudWithBubbled1up
+	dw $0000	; $0B8 WingedCloudWithFlower
+	dw $0000	; $0B9 WingedCloudWithPOW
+	dw $0000	; $0BA WingedCloudWithStairs
+	dw $0000	; $0BB WingedCloudWithPlatform
+	dw $0000	; $0BC WingedCloudWithBandit
+	dw $0000	; $0BD WingedCloudWithCoin
+	dw $0000	; $0BE WingedCloudWith1up
+	dw $0000	; $0BF WingedCloudWithKey
+	dw $0000	; $0C0 WingedCloudWith3Stars
+	dw $0000	; $0C1 WingedCloudWith5Stars
+	dw $0000	; $0C2 WingedCloudWithDoor
+	dw $0000	; $0C3 WingedCloudWithLowerGround
+	dw $0000	; $0C4 WingedCloudWithWatermelon
+	dw $0000	; $0C5 WingedCloudWithFireWatermelon
+	dw $0000	; $0C6 WingedCloudWithIcyWatermelon
+	dw $0000	; $0C7 WingedCloudWith3LeafSunflower
+	dw $0000	; $0C8 WingedCloudWith6LeafSunflower
+	dw $0000	; $0C9 WingedCloudWithCrashGameFeature
+	dw $0000	; $0CA BigBossDoor
+	dw $0000	; $0CB WingedCloudWithCoinOrStar
+	dw $0000	; $0CC WingedCloudWithRedSwitch
+	dw $0000	; $0CD BaronVonZeppelinCarryingGiantEgg
+	dw $0000	; $0CE BowserFire
+	dw $0000	; $0CF BowserRocks
+	dw $0000	; $0D0 HorizontalEntranceToRight
+	dw $0000	; $0D1 SecretPipeEntrance
+	dw $0029	; $0D2 MarchingMilde
+	dw $006F	; $0D3 LargeMilde
+	dw $006D	; $0D4 MediumMilde
+	dw $001A	; $0D5 BackgroundForHookbillFight
+	dw $0000	; $0D6 FortGhostWithPlatform
+	dw $0055	; $0D7 SluggyTheUnshaven
+	dw $0000	; $0D8 ChompWarningSign
+	dw $0049	; $0D9 FishinLakitu
+	dw $0044	; $0DA FlowerPot
+	dw $0000	; $0DB SoftBlock
+	dw $0000	; $0DC Snowball
+	dw $0000	; $0DD CloseWallInNavalPiranhaRoom
+	dw $0020	; $0DE FallingRockPlatform
+	dw $003E	; $0DF PiscatoryPete
+	dw $003E	; $0E0 PreyingMantas
+	dw $003E	; $0E1 LochNestor
+	dw $0022	; $0E2 BooBlah
+	dw $0022	; $0E3 BooBlahWithPiroDangle
+	dw $0024	; $0E4 HeadingCactus
+	dw $0000	; $0E5 GreenNeedlenose
+	dw $0025	; $0E6 Gusty
+	dw $0000	; $0E7 Burt
+	dw $002A	; $0E8 Goonie
+	dw $002A	; $0E9 3WinglessGoonies
+	dw $002C	; $0EA VerticalCloudDrop
+	dw $002D	; $0EB HorizontalCloudDrop
+	dw $0000	; $0EC JumpingFlamerGuy
+	dw $0000	; $0ED RunningFlamerGuy
+	dw $002F	; $0EE EggoDil
+	dw $002F	; $0EF EggoDilFace
+	dw $002F	; $0F0 EggoDilPetal
+	dw $001F	; $0F1 EggPlantShootingBubbles
+	dw $0037	; $0F2 ShyguyOnStilts
+	dw $0000	; $0F3 WoozyGuy
+	dw $001F	; $0F4 EggPlant
+	dw $0000	; $0F5 Slugger
+	dw $0000	; $0F6 MotherHuffinPuffin
+	dw $0000	; $0F7 BarneyBubble
+	dw $0036	; $0F8 BlowHard
+	dw $0000	; $0F9 YellowNeedlenose
+	dw $0000	; $0FA Flower
+	dw $0035	; $0FB LongSpearGuy
+	dw $0035	; $0FC ShortSpearGuy
+	dw $0000	; $0FD ZeusGuy
+	dw $0000	; $0FE ZeusGuyBlast
+	dw $003A	; $0FF Poochy
+	dw $0000	; $100 Bubbled1up
+	dw $0000	; $101 RotatingMace
+	dw $0000	; $102 DoubleRotatingMace
+	dw $003C	; $103 BooGuysMovingMace
+	dw $0000	; $104 JeanDeFillet
+	dw $0000	; $105 BooGuysCarryingBombToLeft
+	dw $0000	; $106 BooGuysCarryingBombToRight
+	dw $0000	; $107 WatermelonSeed
+	dw $0029	; $108 Milde
+	dw $0000	; $109 BronzeTapTap
+	dw $0000	; $10A SilverTapTap
+	dw $0000	; $10B HoppingSilverTapTap
+	dw $003F	; $10C ChainedSpikeBall
+	dw $003F	; $10D BooGuyOperatingPulley
+	dw $0000	; $10E CrateWith6Stars
+	dw $0030	; $10F BooManBluff
+	dw $0071	; $110 Flower
+	dw $0041	; $111 GeorgetteJelly
+	dw $0041	; $112 GeorgetteJellyGoo
+	dw $0040	; $113 Snifit
+	dw $0040	; $114 SnifitBullet
+	dw $0000	; $115 Coin
+	dw $004C	; $116 BuoyantRoundPlatform
+	dw $004C	; $117 DonutLift
+	dw $004C	; $118 LargeDonutLift
+	dw $0046	; $119 Spooky
+	dw $0000	; $11A GreenGlove
+	dw $0049	; $11B Lakitu
+	dw $0049	; $11C LakituCloud
+	dw $0049	; $11D SpinyEgg
+	dw $0000	; $11E BrownArrowWheel
+	dw $0000	; $11F BlueArrowWheel
+	dw $0000	; $120 DoubledSidedArrowLift
+	dw $0000	; $121 NumberPlatformExplosion
+	dw $0000	; $122 BucketWithBandit
+	dw $0000	; $123 BucketWithCoins
+	dw $0027	; $124 Stretch
+	dw $006A	; $125 AttackingAndEndingKamek
+	dw $004E	; $126 SpikedLogOnPulley
+	dw $0000	; $127 PulleyOfSpikedLog
+	dw $0000	; $128 GroundRippleInBabyBowerRoom
+	dw $0052	; $129 Fuzzy
+	dw $0000	; $12A ShyGuyBanditTrap
+	dw $0050	; $12B FatGuy
+	dw $0000	; $12C FlyOrWhirlyGuy
+	dw $00AB	; $12D PrologueCutsceneYoshi
+	dw $0000	; $12E LargePopEffect
+	dw $0051	; $12F HorizontalLavaDrop
+	dw $0051	; $130 VerticalLavaDrop
+	dw $0000	; $131 LockedDoor
+	dw $0045	; $132 LemonDrop
+	dw $0000	; $133 LanternGhost
+	dw $00AD	; $134 BabyBowser
+	dw $0000	; $135 CirclingRaven
+	dw $0000	; $136 CirclingRaven
+	dw $0020	; $137 3x6FallingStone
+	dw $0020	; $138 3x3FallingStone
+	dw $0020	; $139 3x9FallingStone
+	dw $0020	; $13A 6x3FallingStone
+	dw $0070	; $13B StomachAcid
+	dw $0000	; $13C DownFlippers
+	dw $0055	; $13D DanglingFang
+	dw $0055	; $13E FlyingFang
+	dw $0054	; $13F SwimmingFlopsyFish
+	dw $0054	; $140 SwimmingAndJumpingFlopsyFish
+	dw $0054	; $141 SwimmingAndArcJumpingFlopsyFish
+	dw $0054	; $142 3JumpFlopsyFish
+	dw $0058	; $143 SprayFish
+	dw $0000	; $144 RightOrLeftFlippers
+	dw $0055	; $145 BlueSluggy
+	dw $0055	; $146 PinkSluggy
+	dw $0000	; $147 HorizontalEntranceToLeft
+	dw $0000	; $148 LargeSpringBall
+	dw $0057	; $149 UpArrowCloud
+	dw $0057	; $14A UpRightArrowCloud
+	dw $0057	; $14B RightArrowCloud
+	dw $0057	; $14C DownRightArrowCloud
+	dw $0057	; $14D DownArrowCloud
+	dw $0057	; $14E DownLeftArrowCloud
+	dw $0057	; $14F LeftArrowCloud
+	dw $0057	; $150 UpLeftArrowCloud
+	dw $0057	; $151 RotatingArrowCloud
+	dw $0056	; $152 Flutter
+	dw $002A	; $153 GoonieWithShyGuy
+	dw $0053	; $154 SharkChomp
+	dw $002B	; $155 FatGoonie
+	dw $0000	; $156 CactusJack
+	dw $0049	; $157 WallLakitu
+	dw $002B	; $158 BowlingGoonie
+	dw $0000	; $159 WalkingGrunt
+	dw $0000	; $15A RunningGrunt
+	dw $0039	; $15B DancingSpearGuy
+	dw $002A	; $15C GreenRotatingPlatformSwitch
+	dw $002A	; $15D RedRotatingPlatformSwitch
+	dw $0000	; $15E 4PinkRotatingPlatformsWithShyGuys
+	dw $0000	; $15F GreenSpikedPlatform
+	dw $0000	; $160 RedSpikedPlatform
+	dw $0000	; $161 RewardItemForDefeatingRoomEnemies
+	dw $002A	; $162 DoubleSpikePlatformWithSwitch
+	dw $0000	; $163 BouncingNeedlenose
+	dw $0025	; $164 NipperPlant
+	dw $0025	; $165 NipperSpore
+	dw $0049	; $166 ThunderLakitu
+	dw $0047	; $167 GreenKoopaShell
+	dw $0047	; $168 RedKoopaShell
+	dw $0047	; $169 GreenNakedKoopa
+	dw $0047	; $16A RedNakedKoopa
+	dw $0047	; $16B GreenKoopa
+	dw $0047	; $16C RedKoopa
+	dw $002B	; $16D GreenParakoopa
+	dw $002B	; $16E RedHorizontalParakoopa
+	dw $002B	; $16F RedVerticalParakoopa
+	dw $004F	; $170 AquaLakitu
+	dw $005A	; $171 NavalPiranha
+	dw $005A	; $172 NavalPiranhaBuds
+	dw $0000	; $173 BaronVonZeppelinCarryingShyGuy
+	dw $0000	; $174 BaronVonZeppelinCarryingNeedlenose
+	dw $0000	; $175 BaronVonZeppelinCarryingBomb
+	dw $0000	; $176 BaronVonZeppelinCarryingBandit
+	dw $0000	; $177 BaronVonZeppelinCarryingLargeSpringBall
+	dw $0000	; $178 BaronVonZeppelinCarrying1up
+	dw $0000	; $179 BaronVonZeppelinCarryingKey
+	dw $0000	; $17A BaronVonZeppelinCarryingCoins
+	dw $0000	; $17B BaronVonZeppelinCarryingWatermelon
+	dw $0000	; $17C BaronVonZeppelinCarryingFireWatermelon
+	dw $0000	; $17D BaronVonZeppelinCarryingIcyWatermelon
+	dw $0000	; $17E BaronVonZeppelinCarryingCrateWith6Stars
+	dw $0000	; $17F BaronVonZeppelin
+	dw $0000	; $180 SpinningLog
+	dw $005D	; $181 CrazeeDayzee
+	dw $005D	; $182 Dragonfly
+	dw $005D	; $183 Butterfly
+	dw $005E	; $184 Bumpty
+	dw $0000	; $185 MovingLineGuidedGreenPlatformLeft
+	dw $0000	; $186 MovingLineGuidedGreenPlatformRight
+	dw $0000	; $187 MovingLineGuidedYellowPlatformLeft
+	dw $0000	; $188 MovingLineGuidedYellowPlatformRight
+	dw $0000	; $189 LineGuidedGreenPlatformLeft
+	dw $0000	; $18A LineGuidedGreenPlatformRight
+	dw $0000	; $18B LineGuidedYellowPlatformLeft
+	dw $0000	; $18C LineGuidedYellowPlatformRight
+	dw $0000	; $18D LineGuidedRedPlatformLeft
+	dw $0000	; $18E LineGuidedGreenPlatformRight
+	dw $0000	; $18F SpiralPlatform
+	dw $005F	; $190 FallingIcicle
+	dw $005E	; $191 Bird
+	dw $005D	; $192 PetalGuy
+	dw $0042	; $193 SnakeCagedGhost
+	dw $0062	; $194 Blargg
+	dw $0000	; $195 SmallUnstableSnowPlatform
+	dw $0000	; $196 UnstableSnowPlatform
+	dw $001C	; $197 ArrowSign
+	dw $001C	; $198 DiagonalArrowSign
+	dw $0000	; $199 DizzyDandy
+	dw $0060	; $19A BooGuy
+	dw $005E	; $19B TacklingBumpty
+	dw $005E	; $19C FlyingBumpty
+	dw $0063	; $19D SkeletonGoonie
+	dw $0063	; $19E WinglessSkeletonGoonie
+	dw $0063	; $19F SkeletonGoonieCarryingBomb
+	dw $0065	; $1A0 DoubleFirebar
+	dw $0065	; $1A1 Firebar
+	dw $0000	; $1A2 HealthStar
+	dw $0060	; $1A3 LittleSkullMouser
+	dw $0048	; $1A4 KeyholeCork
+	dw $0064	; $1A5 RunAwayMonkey
+	dw $0064	; $1A6 MonkeyWithWatermelon
+	dw $0064	; $1A7 HangingMonkeyThrowingBombsOrNeedlenoses
+	dw $0064	; $1A8 TheifMonkey
+	dw $0064	; $1A9 HangingMonkeySpittingSeeds
+	dw $0066	; $1AA HotLips
+	dw $0065	; $1AB BooBalloon
+	dw $0068	; $1AC SmallFrog
+	dw $0067	; $1AD MagicShootingKamek
+	dw $0067	; $1AE MagicShot
+	dw $0000	; $1AF FloatingCoin
+	dw $0065	; $1B0 DeflatingBalloon
+	dw $0000	; $1B1 CoinCannon
+	dw $0000	; $1B2 MinigameCoin
+	dw $004E	; $1B3 GatherCoinsBandit
+	dw $0000	; $1B4 MinigameCheckeredPlatform
+	dw $004E	; $1B5 PoppingBalloonsBandit
+	dw $0000	; $1B6 MinigameBalloon
+	dw $004E	; $1B7 SeedSpittingMinigameBandit
+	dw $0000	; $1B8 WatermelonPot
+	dw $004E	; $1B9 P2SeedSpittingMinigameBandit
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AAA8A, incbin, DATA_0AAA8A_YI_U2.bin)
@@ -3089,118 +5577,466 @@ else
 	%FREE_BYTES($0AAA8A, 138, $FF)
 endif
 
-DATA_0AAB14:			; Note: The graphics to use for spat out sprites. $0000 = No spinning. Bit 15 set = 32x32 sprite. Bit 15 clear = 16x16 sprite
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,DATA_540000+$014A
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,DATA_540000+$0164,$0000
-	dw DATA_540000+$00C6,$0000,DATA_540000+$0342,DATA_540000+$0342
-	dw DATA_540000+$0342,DATA_540000+$0342,$0000,$0000
-	dw $0000,DATA_548000+$0388,DATA_548000+$0388,DATA_548000+$0388
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,DATA_548000+$000C
-	dw DATA_548000+$000C,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,DATA_540000+$00C6
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,DATA_540000+$00C6
-	dw DATA_540000+$00C6,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw DATA_540000+$0342,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,DATA_540000+$0164
-	dw $0000,DATA_540000+$00C6,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,DATA_540000+$00C6,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,DATA_540000+$0120,DATA_540000+$0120,DATA_540000+$0120
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,DATA_540000+$00C6,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,DATA_540000+$0164,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,DATA_540000+$0048
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,DATA_540000+$004A,DATA_540000+$004A,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,DATA_540000+$0122,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000
-	dw $0000,$0000
+;-------------------------------------------------------------------------
+; DATA_0AAB14 -- SPIN GRAPHIC of a spat-out sprite, one word per sprite ID
+; (indexed by ID*2); $0000 = none (the sprite is spat without a spinning
+; bitmap). (Original source: ETCADR, "OBJ mode7 chara data address".) Read by
+; CODE_039CCD (spit-out: VRAM cell allocation via CODE_03AD24 / CODE_03AD74) and
+; CODE_03B631 (per-frame rotation draw while $7D38 runs). NOT a plain byte
+; offset -- a packed texel code:
+;   bit 15         1 = 32x32 (4-cell group, $7402 |= $0200, FXCODE_088205)
+;                  0 = 16x16 (1 cell, $7402 |= $0100, FXCODE_08867E)
+;   bits 0-3, 7    texel X / 8     -> GSU R12 bits 3-6, 7
+;   bits 4-6, 8,10 texel row / 8   -> R12 bits 11-13, 14, 15 (rows are 256 bytes)
+;   bit 9          high nibble     -> R12 bit 0 (plot POR bit 2)
+; Texture = $54:(R12 & $FFFE) in the chunky 4bpp sprite bitmap (see
+; docs/graphicsassets.md). E.g. $014A Cannonball -> $54:6050 low nibble;
+; $8388 Giant Egg -> 32x32 at $54:40C0, high nibble. 28 ids are non-zero.
+;-------------------------------------------------------------------------
+DATA_0AAB14:
+DATA_sprite_spit_graphic_table:                      ; descriptive alias (main-side: FXDATA_0AAB14)
+	dw $0000            	; $000 LavaLog
+	dw $0000            	; $001 ClosedDoor
+	dw $0000            	; $002 NavalPiranhaVines
+	dw $0000            	; $003 CrateWithKey
+	dw $0000            	; $004 HitSuperBabyMarioBlock
+	dw $0000            	; $005 IcyWatermelon
+	dw $0000            	; $006 WatermelonFreeze
+	dw $0000            	; $007 Watermelon
+	dw $0000            	; $008 FallingRubble
+	dw $0000            	; $009 FireWatermelon
+	dw $0000            	; $00A Kaboomba
+	dw $014A	; $00B Cannonball
+	dw $0000            	; $00C RaphaelTheRaven
+	dw $0000            	; $00D GoalRing
+	dw $0000            	; $00E GOALLetters
+	dw $0000            	; $00F BonusChallengeSign
+	dw $0000            	; $010 RoundedCagedGhost
+	dw $0000            	; $011 ItemCard
+	dw $0000            	; $012 BossDoor
+	dw $0000            	; $013 BossExplosion
+	dw $0000            	; $014 KeyFromBoss
+	dw $0000            	; $015 SubmarineTorpedo
+	dw $0000            	; $016 BiggerBoo
+	dw $0000            	; $017 FrogPirate
+	dw $0000            	; $018 WatermelonFlame
+	dw $0000            	; $019 Bubble
+	dw $0000            	; $01A SkiLift
+	dw $0000            	; $01B VerticalLavaLog
+	dw $0000            	; $01C DrFreezegood
+	dw $0000            	; $01D DrFreezegoodOnSkiLift
+	dw $0164	; $01E Shyguy
+	dw $0000            	; $01F RotatingDoors
+	dw $00C6	; $020 Bandit
+	dw $0000            	; $021 Bucket
+	dw $0342	; $022 FlashingEgg
+	dw $0342	; $023 RedEgg
+	dw $0342	; $024 YellowEgg
+	dw $0342	; $025 GreenEgg
+	dw $0000            	; $026 BowserFightGiantEgg
+	dw $0000            	; $027 Key
+	dw $0000            	; $028 HuffinPuffin
+	dw $8388	; $029 GiantEgg
+	dw $8388	; $02A RedGiantEgg
+	dw $8388	; $02B GreenGiantEgg
+	dw $0000            	; $02C LungeFish
+	dw $0000            	; $02D SalvoTheSlime
+	dw $0000            	; $02E EyesOfSalvoTheSlime
+	dw $0000            	; $02F LittleMouserHole
+	dw $0000            	; $030 LittleMouser
+	dw $0000            	; $031 PottedSpikedFunGuy
+	dw $0000            	; $032 PeekingLittleMouser
+	dw $0000            	; $033 LittleMouserExitingNest
+	dw $0000            	; $034 RogersPot
+	dw $0000            	; $035 RogerThePottedGhost
+	dw $0000            	; $036 FallingWall
+	dw $0000            	; $037 GrimLeecher
+	dw $0000            	; $038 PottedGhostFlame
+	dw $0000            	; $039 HorizontalRotatingPlank
+	dw $0000            	; $03A 3MiniRavens
+	dw $0000            	; $03B MiniRaven
+	dw $0000            	; $03C TapTapTheRedNose
+	dw $0000            	; $03D LargeSeesaw
+	dw $0000            	; $03E ThinPlatform
+	dw $0000            	; $03F SlimeBlock
+	dw $0000            	; $040 BabyLuigi
+	dw $0000            	; $041 Stork
+	dw $0000            	; $042 VerticalPipeEntrance
+	dw $800C	; $043 RedGiantShyguy
+	dw $800C	; $044 GreenGiantShyguy
+	dw $0000            	; $045 PrinceFroggy
+	dw $0000            	; $046 BurtTheBashful
+	dw $0000            	; $047 ShyguyPushingRoger
+	dw $0000            	; $048 CutsceneKamek
+	dw $0000            	; $049 ThunderLakituFireBlast1
+	dw $0000            	; $04A ThunderLakituFireBlast2
+	dw $0000            	; $04B ThunderLakituFireBlast3
+	dw $0000            	; $04C UpsidedownBlowHard
+	dw $0000            	; $04D UnusedSpriteIndex
+	dw $0000            	; $04E LockedDoor
+	dw $0000            	; $04F MiddleRing
+	dw $0000            	; $050 GreyRotatingWoodenBoard
+	dw $0000            	; $051 LargeWheel
+	dw $0000            	; $052 BalloonPlatform
+	dw $0000            	; $053 KamekSayingOhMy
+	dw $0000            	; $054 UpsideDownPiranhaPlant
+	dw $0000            	; $055 4GreenRotatingPlatforms
+	dw $0000            	; $056 4PinkRotatingPlatforms
+	dw $0000            	; $057 SewerGhostWithPlatform
+	dw $0000            	; $058 GreenToady
+	dw $0000            	; $059 StationarySuperStar
+	dw $0000            	; $05A RaphaelSparkAttack
+	dw $00C6	; $05B RedCoinBandit
+	dw $0000            	; $05C PinkToady
+	dw $0000            	; $05D GlitchedSprite
+	dw $0000            	; $05E BrownWoodenBoard
+	dw $0000            	; $05F AutoRotateBrownWoodenBoard
+	dw $0000            	; $060 Bomb
+	dw $0000            	; $061 BabyMario
+	dw $0000            	; $062 Goomba
+	dw $0000            	; $063 MuddyBuddy
+	dw $0000            	; $064 4AutoRotatingPinkPlatforms
+	dw $0000            	; $065 RedCoin
+	dw $0000            	; $066 PiranhaPlant
+	dw $0000            	; $067 RockRevealedHiddenWingedCloud
+	dw $0000            	; $068 FlashingEggBlock
+	dw $0000            	; $069 RedEggBlock
+	dw $0000            	; $06A YellowEggBlock
+	dw $0000            	; $06B GreenEggBlock
+	dw $0000            	; $06C LargeSpringBall
+	dw $0000            	; $06D ClockwiseHootieTheBlueFish
+	dw $0000            	; $06E CounterclockwiseHootieTheBlueFish
+	dw $0000            	; $06F SpringBall
+	dw $0000            	; $070 Clawdaddy
+	dw $0000            	; $071 BigBoo
+	dw $0000            	; $072 TrainBandit
+	dw $0000            	; $073 BalloonPump
+	dw $0000            	; $074 Spike
+	dw $0000            	; $075 SpikeBall
+	dw $0000            	; $076 ClockwisePiroDangle
+	dw $0000            	; $077 CounterclockwisePiroDangle
+	dw $0000            	; $078 RedBulletBillShooter
+	dw $0000            	; $079 YellowBulletBillShooter
+	dw $0000            	; $07A GreenBulletBillShooter
+	dw $0000            	; $07B RedBulletBill
+	dw $0000            	; $07C YellowBulletBill
+	dw $0000            	; $07D GreenBulletBill
+	dw $0000            	; $07E DentOfSquishyPlatform
+	dw $0000            	; $07F LogSeesawPlatform
+	dw $0000            	; $080 StraightLavaBubble
+	dw $0000            	; $081 FollowingLavaBubble
+	dw $0000            	; $082 ChainChomp
+	dw $0000            	; $083 BowserFightCloud
+	dw $0000            	; $084 TeleportSprite
+	dw $0000            	; $085 HarryHedgehog
+	dw $0000            	; $086 GlitchedSprite
+	dw $0000            	; $087 MockUpLaidEgg
+	dw $0000            	; $088 SuperStar
+	dw $0000            	; $089 HorizontalMovingRedPlatform
+	dw $0000            	; $08A VerticalMovingPinkPlatform
+	dw $0000            	; $08B MockUp
+	dw $0000            	; $08C YoshiAtGoal
+	dw $0000            	; $08D Flyguy
+	dw $0000            	; $08E BowserRoomKamek
+	dw $0000            	; $08F MonkeySwing
+	dw $0000            	; $090 DanglingGhost
+	dw $0000            	; $091 4RedToadies
+	dw $0000            	; $092 MelonBug
+	dw $0000            	; $093 Door
+	dw $0000            	; $094 ExpandingBlock
+	dw $0000            	; $095 BlueCheckeredBlock
+	dw $0000            	; $096 RedCheckeredBlock
+	dw $0000            	; $097 POWBlock
+	dw $0000            	; $098 EndTransformationBlock
+	dw $0000            	; $099 SpinyEgg
+	dw $0000            	; $09A SwingingGreenPlatform
+	dw $0000            	; $09B MaceGuy
+	dw $0000            	; $09C Mace
+	dw $0000            	; $09D RedSwitch
+	dw $0000            	; $09E ChompRock
+	dw $0000            	; $09F PtooiePiranhaPlant
+	dw $0000            	; $0A0 Tulip
+	dw $0000            	; $0A1 SmallPot
+	dw $0000            	; $0A2 ThunderLakituFireball
+	dw $00C6	; $0A3 LeftHidingBandit
+	dw $00C6	; $0A4 RightHidingBandit
+	dw $0000            	; $0A5 NepEnut
+	dw $0000            	; $0A6 IncomingChomp
+	dw $0000            	; $0A7 GroupOfIncomingChomps
+	dw $0000            	; $0A8 FallingIncomingChomp
+	dw $0000            	; $0A9 IncomingChompShadow
+	dw $0000            	; $0AA BackgroundShyguy
+	dw $0000            	; $0AB FullEggSpawner
+	dw $0000            	; $0AC FallingRockArrowAndShadow
+	dw $0000            	; $0AD MessageBox
+	dw $0000            	; $0AE HookbillTheKoopa
+	dw $0000            	; $0AF CarMorphBubble
+	dw $0000            	; $0B0 MoleMorphBubble
+	dw $0000            	; $0B1 HelicopterMorphBubble
+	dw $0000            	; $0B2 TrainMorphBubble
+	dw $0000            	; $0B3 FuzzyFart
+	dw $0000            	; $0B4 SubmarineMorphBubble
+	dw $0000            	; $0B5 HiddenWingedCloud
+	dw $0000            	; $0B6 WingedCloudWith8Coins
+	dw $0000            	; $0B7 WingedCloudWithBubbled1up
+	dw $0000            	; $0B8 WingedCloudWithFlower
+	dw $0000            	; $0B9 WingedCloudWithPOW
+	dw $0000            	; $0BA WingedCloudWithStairs
+	dw $0000            	; $0BB WingedCloudWithPlatform
+	dw $0000            	; $0BC WingedCloudWithBandit
+	dw $0000            	; $0BD WingedCloudWithCoin
+	dw $0000            	; $0BE WingedCloudWith1up
+	dw $0000            	; $0BF WingedCloudWithKey
+	dw $0000            	; $0C0 WingedCloudWith3Stars
+	dw $0000            	; $0C1 WingedCloudWith5Stars
+	dw $0000            	; $0C2 WingedCloudWithDoor
+	dw $0000            	; $0C3 WingedCloudWithLowerGround
+	dw $0000            	; $0C4 WingedCloudWithWatermelon
+	dw $0000            	; $0C5 WingedCloudWithFireWatermelon
+	dw $0000            	; $0C6 WingedCloudWithIcyWatermelon
+	dw $0000            	; $0C7 WingedCloudWith3LeafSunflower
+	dw $0000            	; $0C8 WingedCloudWith6LeafSunflower
+	dw $0000            	; $0C9 WingedCloudWithCrashGameFeature
+	dw $0000            	; $0CA BigBossDoor
+	dw $0000            	; $0CB WingedCloudWithCoinOrStar
+	dw $0000            	; $0CC WingedCloudWithRedSwitch
+	dw $0000            	; $0CD BaronVonZeppelinCarryingGiantEgg
+	dw $0000            	; $0CE BowserFire
+	dw $0000            	; $0CF BowserRocks
+	dw $0342	; $0D0 HorizontalEntranceToRight
+	dw $0000            	; $0D1 SecretPipeEntrance
+	dw $0000            	; $0D2 MarchingMilde
+	dw $0000            	; $0D3 LargeMilde
+	dw $0000            	; $0D4 MediumMilde
+	dw $0000            	; $0D5 BackgroundForHookbillFight
+	dw $0000            	; $0D6 FortGhostWithPlatform
+	dw $0000            	; $0D7 SluggyTheUnshaven
+	dw $0000            	; $0D8 ChompWarningSign
+	dw $0000            	; $0D9 FishinLakitu
+	dw $0000            	; $0DA FlowerPot
+	dw $0000            	; $0DB SoftBlock
+	dw $0000            	; $0DC Snowball
+	dw $0000            	; $0DD CloseWallInNavalPiranhaRoom
+	dw $0000            	; $0DE FallingRockPlatform
+	dw $0000            	; $0DF PiscatoryPete
+	dw $0000            	; $0E0 PreyingMantas
+	dw $0000            	; $0E1 LochNestor
+	dw $0000            	; $0E2 BooBlah
+	dw $0000            	; $0E3 BooBlahWithPiroDangle
+	dw $0000            	; $0E4 HeadingCactus
+	dw $0000            	; $0E5 GreenNeedlenose
+	dw $0000            	; $0E6 Gusty
+	dw $0000            	; $0E7 Burt
+	dw $0000            	; $0E8 Goonie
+	dw $0000            	; $0E9 3WinglessGoonies
+	dw $0000            	; $0EA VerticalCloudDrop
+	dw $0000            	; $0EB HorizontalCloudDrop
+	dw $0000            	; $0EC JumpingFlamerGuy
+	dw $0000            	; $0ED RunningFlamerGuy
+	dw $0000            	; $0EE EggoDil
+	dw $0000            	; $0EF EggoDilFace
+	dw $0000            	; $0F0 EggoDilPetal
+	dw $0000            	; $0F1 EggPlantShootingBubbles
+	dw $0000            	; $0F2 ShyguyOnStilts
+	dw $0164	; $0F3 WoozyGuy
+	dw $0000            	; $0F4 EggPlant
+	dw $00C6	; $0F5 Slugger
+	dw $0000            	; $0F6 MotherHuffinPuffin
+	dw $0000            	; $0F7 BarneyBubble
+	dw $0000            	; $0F8 BlowHard
+	dw $0000            	; $0F9 YellowNeedlenose
+	dw $0000            	; $0FA Flower
+	dw $0000            	; $0FB LongSpearGuy
+	dw $0000            	; $0FC ShortSpearGuy
+	dw $00C6	; $0FD ZeusGuy
+	dw $0000            	; $0FE ZeusGuyBlast
+	dw $0000            	; $0FF Poochy
+	dw $0000            	; $100 Bubbled1up
+	dw $0000            	; $101 RotatingMace
+	dw $0000            	; $102 DoubleRotatingMace
+	dw $0000            	; $103 BooGuysMovingMace
+	dw $0000            	; $104 JeanDeFillet
+	dw $0000            	; $105 BooGuysCarryingBombToLeft
+	dw $0000            	; $106 BooGuysCarryingBombToRight
+	dw $0000            	; $107 WatermelonSeed
+	dw $0000            	; $108 Milde
+	dw $0120	; $109 BronzeTapTap
+	dw $0120	; $10A SilverTapTap
+	dw $0120	; $10B HoppingSilverTapTap
+	dw $0000            	; $10C ChainedSpikeBall
+	dw $0000            	; $10D BooGuyOperatingPulley
+	dw $0000            	; $10E CrateWith6Stars
+	dw $0000            	; $10F BooManBluff
+	dw $0000            	; $110 Flower
+	dw $0000            	; $111 GeorgetteJelly
+	dw $0000            	; $112 GeorgetteJellyGoo
+	dw $0000            	; $113 Snifit
+	dw $0000            	; $114 SnifitBullet
+	dw $0000            	; $115 Coin
+	dw $0000            	; $116 BuoyantRoundPlatform
+	dw $0000            	; $117 DonutLift
+	dw $0000            	; $118 LargeDonutLift
+	dw $0000            	; $119 Spooky
+	dw $00C6	; $11A GreenGlove
+	dw $0000            	; $11B Lakitu
+	dw $0000            	; $11C LakituCloud
+	dw $0000            	; $11D SpinyEgg
+	dw $0000            	; $11E BrownArrowWheel
+	dw $0000            	; $11F BlueArrowWheel
+	dw $0000            	; $120 DoubledSidedArrowLift
+	dw $0000            	; $121 NumberPlatformExplosion
+	dw $0000            	; $122 BucketWithBandit
+	dw $0000            	; $123 BucketWithCoins
+	dw $0000            	; $124 Stretch
+	dw $0000            	; $125 AttackingAndEndingKamek
+	dw $0000            	; $126 SpikedLogOnPulley
+	dw $0000            	; $127 PulleyOfSpikedLog
+	dw $0000            	; $128 GroundRippleInBabyBowerRoom
+	dw $0000            	; $129 Fuzzy
+	dw $0164	; $12A ShyGuyBanditTrap
+	dw $0000            	; $12B FatGuy
+	dw $0000            	; $12C FlyOrWhirlyGuy
+	dw $0000            	; $12D PrologueCutsceneYoshi
+	dw $0000            	; $12E LargePopEffect
+	dw $0000            	; $12F HorizontalLavaDrop
+	dw $0000            	; $130 VerticalLavaDrop
+	dw $0000            	; $131 LockedDoor
+	dw $0000            	; $132 LemonDrop
+	dw $0048	; $133 LanternGhost
+	dw $0000            	; $134 BabyBowser
+	dw $0000            	; $135 CirclingRaven
+	dw $0000            	; $136 CirclingRaven
+	dw $0000            	; $137 3x6FallingStone
+	dw $0000            	; $138 3x3FallingStone
+	dw $0000            	; $139 3x9FallingStone
+	dw $0000            	; $13A 6x3FallingStone
+	dw $0000            	; $13B StomachAcid
+	dw $0000            	; $13C DownFlippers
+	dw $0000            	; $13D DanglingFang
+	dw $0000            	; $13E FlyingFang
+	dw $0000            	; $13F SwimmingFlopsyFish
+	dw $0000            	; $140 SwimmingAndJumpingFlopsyFish
+	dw $0000            	; $141 SwimmingAndArcJumpingFlopsyFish
+	dw $0000            	; $142 3JumpFlopsyFish
+	dw $0000            	; $143 SprayFish
+	dw $0000            	; $144 RightOrLeftFlippers
+	dw $0000            	; $145 BlueSluggy
+	dw $0000            	; $146 PinkSluggy
+	dw $0000            	; $147 HorizontalEntranceToLeft
+	dw $0000            	; $148 LargeSpringBall
+	dw $0000            	; $149 UpArrowCloud
+	dw $0000            	; $14A UpRightArrowCloud
+	dw $0000            	; $14B RightArrowCloud
+	dw $0000            	; $14C DownRightArrowCloud
+	dw $0000            	; $14D DownArrowCloud
+	dw $0000            	; $14E DownLeftArrowCloud
+	dw $0000            	; $14F LeftArrowCloud
+	dw $0000            	; $150 UpLeftArrowCloud
+	dw $0000            	; $151 RotatingArrowCloud
+	dw $0000            	; $152 Flutter
+	dw $0000            	; $153 GoonieWithShyGuy
+	dw $0000            	; $154 SharkChomp
+	dw $0000            	; $155 FatGoonie
+	dw $0000            	; $156 CactusJack
+	dw $0000            	; $157 WallLakitu
+	dw $0000            	; $158 BowlingGoonie
+	dw $004A	; $159 WalkingGrunt
+	dw $004A	; $15A RunningGrunt
+	dw $0000            	; $15B DancingSpearGuy
+	dw $0000            	; $15C GreenRotatingPlatformSwitch
+	dw $0000            	; $15D RedRotatingPlatformSwitch
+	dw $0000            	; $15E 4PinkRotatingPlatformsWithShyGuys
+	dw $0000            	; $15F GreenSpikedPlatform
+	dw $0000            	; $160 RedSpikedPlatform
+	dw $0000            	; $161 RewardItemForDefeatingRoomEnemies
+	dw $0000            	; $162 DoubleSpikePlatformWithSwitch
+	dw $0000            	; $163 BouncingNeedlenose
+	dw $0000            	; $164 NipperPlant
+	dw $0000            	; $165 NipperSpore
+	dw $0000            	; $166 ThunderLakitu
+	dw $0000            	; $167 GreenKoopaShell
+	dw $0000            	; $168 RedKoopaShell
+	dw $0000            	; $169 GreenNakedKoopa
+	dw $0000            	; $16A RedNakedKoopa
+	dw $0000            	; $16B GreenKoopa
+	dw $0000            	; $16C RedKoopa
+	dw $0000            	; $16D GreenParakoopa
+	dw $0000            	; $16E RedHorizontalParakoopa
+	dw $0000            	; $16F RedVerticalParakoopa
+	dw $0000            	; $170 AquaLakitu
+	dw $0000            	; $171 NavalPiranha
+	dw $0000            	; $172 NavalPiranhaBuds
+	dw $0000            	; $173 BaronVonZeppelinCarryingShyGuy
+	dw $0000            	; $174 BaronVonZeppelinCarryingNeedlenose
+	dw $0000            	; $175 BaronVonZeppelinCarryingBomb
+	dw $0000            	; $176 BaronVonZeppelinCarryingBandit
+	dw $0000            	; $177 BaronVonZeppelinCarryingLargeSpringBall
+	dw $0000            	; $178 BaronVonZeppelinCarrying1up
+	dw $0000            	; $179 BaronVonZeppelinCarryingKey
+	dw $0000            	; $17A BaronVonZeppelinCarryingCoins
+	dw $0000            	; $17B BaronVonZeppelinCarryingWatermelon
+	dw $0000            	; $17C BaronVonZeppelinCarryingFireWatermelon
+	dw $0000            	; $17D BaronVonZeppelinCarryingIcyWatermelon
+	dw $0000            	; $17E BaronVonZeppelinCarryingCrateWith6Stars
+	dw $0000            	; $17F BaronVonZeppelin
+	dw $0000            	; $180 SpinningLog
+	dw $0000            	; $181 CrazeeDayzee
+	dw $0000            	; $182 Dragonfly
+	dw $0000            	; $183 Butterfly
+	dw $0000            	; $184 Bumpty
+	dw $0000            	; $185 MovingLineGuidedGreenPlatformLeft
+	dw $0000            	; $186 MovingLineGuidedGreenPlatformRight
+	dw $0000            	; $187 MovingLineGuidedYellowPlatformLeft
+	dw $0000            	; $188 MovingLineGuidedYellowPlatformRight
+	dw $0000            	; $189 LineGuidedGreenPlatformLeft
+	dw $0000            	; $18A LineGuidedGreenPlatformRight
+	dw $0000            	; $18B LineGuidedYellowPlatformLeft
+	dw $0000            	; $18C LineGuidedYellowPlatformRight
+	dw $0000            	; $18D LineGuidedRedPlatformLeft
+	dw $0000            	; $18E LineGuidedGreenPlatformRight
+	dw $0000            	; $18F SpiralPlatform
+	dw $0000            	; $190 FallingIcicle
+	dw $0000            	; $191 Bird
+	dw $0000            	; $192 PetalGuy
+	dw $0000            	; $193 SnakeCagedGhost
+	dw $0000            	; $194 Blargg
+	dw $0000            	; $195 SmallUnstableSnowPlatform
+	dw $0000            	; $196 UnstableSnowPlatform
+	dw $0000            	; $197 ArrowSign
+	dw $0000            	; $198 DiagonalArrowSign
+	dw $0000            	; $199 DizzyDandy
+	dw $0122	; $19A BooGuy
+	dw $0000            	; $19B TacklingBumpty
+	dw $0000            	; $19C FlyingBumpty
+	dw $0000            	; $19D SkeletonGoonie
+	dw $0000            	; $19E WinglessSkeletonGoonie
+	dw $0000            	; $19F SkeletonGoonieCarryingBomb
+	dw $0000            	; $1A0 DoubleFirebar
+	dw $0000            	; $1A1 Firebar
+	dw $0000            	; $1A2 HealthStar
+	dw $0000            	; $1A3 LittleSkullMouser
+	dw $0000            	; $1A4 KeyholeCork
+	dw $0000            	; $1A5 RunAwayMonkey
+	dw $0000            	; $1A6 MonkeyWithWatermelon
+	dw $0000            	; $1A7 HangingMonkeyThrowingBombsOrNeedlenoses
+	dw $0000            	; $1A8 TheifMonkey
+	dw $0000            	; $1A9 HangingMonkeySpittingSeeds
+	dw $0000            	; $1AA HotLips
+	dw $0000            	; $1AB BooBalloon
+	dw $0000            	; $1AC SmallFrog
+	dw $0000            	; $1AD MagicShootingKamek
+	dw $0000            	; $1AE MagicShot
+	dw $0000            	; $1AF FloatingCoin
+	dw $0000            	; $1B0 DeflatingBalloon
+	dw $0000            	; $1B1 CoinCannon
+	dw $0000            	; $1B2 MinigameCoin
+	dw $0000            	; $1B3 GatherCoinsBandit
+	dw $0000            	; $1B4 MinigameCheckeredPlatform
+	dw $0000            	; $1B5 PoppingBalloonsBandit
+	dw $0000            	; $1B6 MinigameBalloon
+	dw $0000            	; $1B7 SeedSpittingMinigameBandit
+	dw $0000            	; $1B8 WatermelonPot
+	dw $0000            	; $1B9 P2SeedSpittingMinigameBandit
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AAE88, incbin, DATA_0AAE88_YI_U2.bin)
@@ -3208,22 +6044,157 @@ else
 	%FREE_BYTES($0AAE88, 138, $FF)
 endif
 
+; ============================================================================
+; Ambient-sprite property tables (original source `chip/ys_msub0.asm` names
+; EXMODE0/1/2, EXDATA0/1, EXCHR_BNK). Six word tables, one word per AMBIENT id,
+; indexed by (id - $1BA)*2: every reader uses TABLE-(!Define_YI_AmbSpr1BA*$02)+id*2.
+; 117 entries ($1BA-$22E, same order as AmbientSpriteIDs.asm and
+; DATA_ambient_sprite_routines), then 278 bytes of padding: each table reserves
+; $200 bytes (256 ids). Seeded into a fresh ambient slot by
+; CODE_spawn_ambient_sprite ($00:8B21), CODE_0ADFE3 (GSU) and CODE_0BF0C4 (GSU);
+; the ambient counterparts of the normal-sprite tables at $0A:9320-$0A:A716.
+;
+;   DATA_0AAF12 EXMODE0   -> $0F60   unused: seeded, never read by either CPU
+;   DATA_0AB112 EXMODE1   -> $0F62   terrain-check flags, same layout as
+;                                    DATA_0A971E (bits 0-4 = BG-check type, 0 = none)
+;   DATA_0AB312 EXMODE2   -> $1000   same layout as DATA_0A9B1C: lo bits 0-1 draw
+;                                    method, bits 2-3 off-screen cull class
+;                                    (0 = never culled); hi = OBJ count * 8
+;   DATA_0AB512 EXDATA0   lo -> $1462 draw priority level ($FF = never drawn)
+;                         hi -> $1002 OAM attribute, EOR #$30 on seed (normal
+;                                    sprites use EOR #$20, so attr 0 = OBJ prio 3 here)
+;   DATA_0AB712 EXDATA1   lo -> $1502 Y acceleration (signed)
+;                         hi -> $15A2 target Y speed (signed byte * 16). The
+;                                    integrator steps speed toward the target by
+;                                    the accel each frame; it is a target, not a cap
+;   DATA_0AB912 EXCHR_BNK lo -> $1140 gfx-file id; spawn finds it in the six
+;                                    spriteset slots $0EB6-$0EBB and stores tile
+;                                    base (slot+7)*4, or 0 if absent
+;
+; The GSU treats the 16 ambient + 24 normal slots as ONE 40-slot array (one
+; index: ambient $00-$3C, normal $40-$9C, bases = the ambient-half addresses),
+; so EXMODE1/EXMODE2 are read by the very same code as ENMODE1/ENMODE2:
+; CODE_0ACFED (terrain), CODE_09884C (speed/position), CODE_0989C1 (cull + OAM).
+; ============================================================================
 DATA_0AAF12:
-	dw $0000,$0000,$001C,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$8840,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0040,$0040,$0040,$0040
+DATA_ambient_unused_mode0_table:                     ; descriptive alias (main-side: FXDATA_0AAF12)
+	dw $0000	; $1BA Water splash for transition
+	dw $0000	; $1BB Water splash from swimming player
+	dw $001C	; $1BC Underwater bubble
+	dw $0000	; $1BD Eggshell fragment
+	dw $0000	; $1BE Small bopping animation
+	dw $0000	; $1BF Score sprites
+	dw $0000	; $1C0 Multi-stage frame animation
+	dw $0000	; $1C1 Direction/state-from-timer effect
+	dw $0000	; $1C2 Player transformation flash sparkle
+	dw $0000	; $1C3 2-frame stutter blink
+	dw $0000	; $1C4 3-stage animation via DATA_008E34
+	dw $0000	; $1C5 6-stage countdown animation
+	dw $0000	; $1C6 PPU-multiplier-driven Mode-7 rotator
+	dw $0000	; $1C7 1-frame trigger by Y-velocity
+	dw $0000	; $1C8 Lifetime LSR x3 -> OAM tile
+	dw $0000	; $1C9 Drift-with-RNG
+	dw $0000	; $1CA 6-stage animation
+	dw $0000	; $1CB 7-stage animation
+	dw $0000	; $1CC 8-stage animation
+	dw $0000	; $1CD 11-stage animation
+	dw $0000	; $1CE 2-stage animation
+	dw $0000	; $1CF Player-proximity tracker
+	dw $8840	; $1D0 10-stage animation
+	dw $0000	; $1D1 Freeze-only stub
+	dw $0000	; $1D2 5-stage hold-table animation
+	dw $0000	; $1D3 OAM-shrink-and-flush
+	dw $0000	; $1D4 Enemy/object attack puff
+	dw $0000	; $1D5 BulletBillShooter cannon-fire smoke puff
+	dw $0000	; $1D6 LavaBubble splash / FlamerGuy flame-emit puff
+	dw $0000	; $1D7 Monkey watermelon-throw / Bandit kick-up dust
+	dw $0000	; $1D8 HarryHedgehog rolling-dust / crate-break dust
+	dw $0000	; $1D9 FrogPirate skip-rock / splash puff
+	dw $0000	; $1DA Dormant mid-air burst
+	dw $0000	; $1DB Dormant 3-stage physics puff
+	dw $0000	; $1DC BabyBowser smash / MinigameBalloon pop puff
+	dw $0000	; $1DD Boss-arena / key-glow sparkle
+	dw $0000	; $1DE Dormant homing-physics tracker
+	dw $0000	; $1DF Universal damage / contact puff
+	dw $0000	; $1E0 SpearGuy spear-throw / Koopa-shell kick puff
+	dw $0000	; $1E1 Baby Mario whirlwind
+	dw $0000	; $1E2 BlowHard whirlwind-shrink pulse
+	dw $0000	; $1E3 Dormant placeholder slot
+	dw $0000	; $1E4 Coin / red-coin / 1-up pickup sparkle
+	dw $0000	; $1E5 Dormant placeholder timer
+	dw $0000	; $1E6 Enemy stomp impact puff
+	dw $0000	; $1E7 Enemy stomp puff variant
+	dw $0000	; $1E8 EggoDilFace petal-launch puff
+	dw $0000	; $1E9 BlowHard SuperFX-rendered burst
+	dw $0000	; $1EA SpearGuy spear-throw sparkle
+	dw $0000	; $1EB SpearGuy spear-throw sparkle twin
+	dw $0000	; $1EC Cannonball / Bomb mid-flight trail particle
+	dw $0000	; $1ED Cannonball / Bomb explosion puff
+	dw $0000	; $1EE Shared vanish/dissolve puff
+	dw $0000	; $1EF Baron Von Zeppelin carry-cargo trail particle
+	dw $0000	; $1F0 IcyWatermelon freeze-shard particle
+	dw $0000	; $1F1 Baby Bowser arena puff
+	dw $0000	; $1F2 Break-frozen-enemy puff
+	dw $0000	; $1F3 Crate-break shrapnel
+	dw $0000	; $1F4 Georgette Jelly drip-drop puff
+	dw $0000	; $1F5 Snifit projectile-spawn smoke puff
+	dw $0000	; $1F6 Snifit / GreenGlove attack puff
+	dw $0000	; $1F7 ShyguyOnStilts wobble/balance/fall puff
+	dw $0000	; $1F8 Lakitu cloud-trail particle
+	dw $0000	; $1F9 GreenGlove ambient projectile particle
+	dw $0000	; $1FA HorizontalLavaDrop droplet trail puff
+	dw $0000	; $1FB VerticalLavaDrop droplet trail puff
+	dw $0000	; $1FC DanglingFang descent / attack puff
+	dw $0000	; $1FD FlopsyFish jump-splash puff
+	dw $0000	; $1FE FlopsyFish jump-arc anticipation flash
+	dw $0000	; $1FF Goonie aerial-patrol companion
+	dw $0000	; $200 RotatingArrowCloud charge-up sparkle
+	dw $0000	; $201 AquaLakitu fishing-rod water splash
+	dw $0000	; $202 Flutter spore-drift sparkle
+	dw $0000	; $203 Flutter secondary spore particle
+	dw $0000	; $204 SprayFish water-spray particle
+	dw $0000	; $205 SprayFish water-spray particle
+	dw $0000	; $206 SprayFish water-spray particle
+	dw $0000	; $207 Grunt walking-dust trail
+	dw $0000	; $208 Enemy death-pop OAM
+	dw $0000	; $209 BlowHard wind sparkle
+	dw $0000	; $20A ZeusGuyBlast lightning-impact mirror-flash
+	dw $0000	; $20B ChompRock smash debris
+	dw $0000	; $20C Hookbill-arena / ChompRock destruction debris
+	dw $0000	; $20D ThunderLakitu lightning-bolt sparkle
+	dw $0000	; $20E ThunderLakitu lightning-bolt sparkle
+	dw $0000	; $20F ThunderLakituFireball impact-blink
+	dw $0000	; $210 Mufti-Guy flower-disguise petal burst
+	dw $0000	; $211 Goonie attack-burst petals
+	dw $0000	; $212 Crazee Dayzee "happy notes" emote
+	dw $0000	; $213 WatermelonFlame smoke trail
+	dw $0000	; $214 GSU-only multi-tile burst
+	dw $0000	; $215 Skeleton Goonie patrol companion
+	dw $0000	; $216 Skeleton Goonie wing-loss puff
+	dw $0000	; $217 Salvo the Slime droplet ground-bounce
+	dw $0000	; $218 BowserFightGiantEgg bounce-debris
+	dw $0000	; $219 Little Skull Mouser appearance/disappearance...
+	dw $0000	; $21A KeyholeCork pop-out puff
+	dw $0000	; $21B HotLips fire-blast smoke
+	dw $0000	; $21C GSU-only timed puff
+	dw $0000	; $21D GSU-only timed decrement
+	dw $0000	; $21E HotLips fire-blast secondary smoke
+	dw $0000	; $21F Raphael the Raven death-twinkle sparkle
+	dw $0000	; $220 Kamek
+	dw $0000	; $221 Prince Froggy StomachAcid drip splash
+	dw $0000	; $222 Naval Piranha defeat-debris dirt chunk
+	dw $0000	; $223 Hookbill the Koopa dead-pancake squish particles
+	dw $0000	; $224 Sniff-detect sparkle
+	dw $0000	; $225 Dormant placeholder timer
+	dw $0000	; $226 Coin-pickup spinning-coin popup
+	dw $0000	; $227 BowserRoomKamek magic-spell launch sparkle
+	dw $0000	; $228 ZeusGuy lightning-spark particle
+	dw $0000	; $229 WatermelonSeed projectile trail dust
+	dw $0000	; $22A CoinCannon firing-blast cone
+	dw $0040	; $22B Bandit-minigame jackpot row head
+	dw $0040	; $22C Bandit-minigame regular-row head
+	dw $0040	; $22D Bandit-minigame jackpot popup tail
+	dw $0040	; $22E Bandit-minigame final fade -- last allocated...
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AAFFC, incbin, DATA_0AAFFC_YI_U2.bin)
@@ -3231,22 +6202,126 @@ else
 	%FREE_BYTES($0AAFFC, 278, $FF)
 endif
 
+; EXMODE1 copy -> ambient slot word $0F62: terrain-check flags (DATA_0A971E layout). See the block above DATA_0AAF12.
 DATA_0AB112:
-	dw $0000,$0000,$001C,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0001,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000
+DATA_ambient_terrain_flags_table:                    ; descriptive alias (main-side: FXDATA_0AB112)
+	dw $0000	; $1BA Water splash for transition
+	dw $0000	; $1BB Water splash from swimming player
+	dw $001C	; $1BC Underwater bubble
+	dw $0000	; $1BD Eggshell fragment
+	dw $0000	; $1BE Small bopping animation
+	dw $0000	; $1BF Score sprites
+	dw $0000	; $1C0 Multi-stage frame animation
+	dw $0000	; $1C1 Direction/state-from-timer effect
+	dw $0000	; $1C2 Player transformation flash sparkle
+	dw $0000	; $1C3 2-frame stutter blink
+	dw $0000	; $1C4 3-stage animation via DATA_008E34
+	dw $0000	; $1C5 6-stage countdown animation
+	dw $0000	; $1C6 PPU-multiplier-driven Mode-7 rotator
+	dw $0000	; $1C7 1-frame trigger by Y-velocity
+	dw $0000	; $1C8 Lifetime LSR x3 -> OAM tile
+	dw $0000	; $1C9 Drift-with-RNG
+	dw $0000	; $1CA 6-stage animation
+	dw $0000	; $1CB 7-stage animation
+	dw $0000	; $1CC 8-stage animation
+	dw $0000	; $1CD 11-stage animation
+	dw $0000	; $1CE 2-stage animation
+	dw $0000	; $1CF Player-proximity tracker
+	dw $0000	; $1D0 10-stage animation
+	dw $0000	; $1D1 Freeze-only stub
+	dw $0000	; $1D2 5-stage hold-table animation
+	dw $0000	; $1D3 OAM-shrink-and-flush
+	dw $0000	; $1D4 Enemy/object attack puff
+	dw $0000	; $1D5 BulletBillShooter cannon-fire smoke puff
+	dw $0000	; $1D6 LavaBubble splash / FlamerGuy flame-emit puff
+	dw $0000	; $1D7 Monkey watermelon-throw / Bandit kick-up dust
+	dw $0000	; $1D8 HarryHedgehog rolling-dust / crate-break dust
+	dw $0000	; $1D9 FrogPirate skip-rock / splash puff
+	dw $0000	; $1DA Dormant mid-air burst
+	dw $0000	; $1DB Dormant 3-stage physics puff
+	dw $0000	; $1DC BabyBowser smash / MinigameBalloon pop puff
+	dw $0000	; $1DD Boss-arena / key-glow sparkle
+	dw $0000	; $1DE Dormant homing-physics tracker
+	dw $0000	; $1DF Universal damage / contact puff
+	dw $0000	; $1E0 SpearGuy spear-throw / Koopa-shell kick puff
+	dw $0000	; $1E1 Baby Mario whirlwind
+	dw $0000	; $1E2 BlowHard whirlwind-shrink pulse
+	dw $0000	; $1E3 Dormant placeholder slot
+	dw $0000	; $1E4 Coin / red-coin / 1-up pickup sparkle
+	dw $0000	; $1E5 Dormant placeholder timer
+	dw $0000	; $1E6 Enemy stomp impact puff
+	dw $0000	; $1E7 Enemy stomp puff variant
+	dw $0000	; $1E8 EggoDilFace petal-launch puff
+	dw $0000	; $1E9 BlowHard SuperFX-rendered burst
+	dw $0000	; $1EA SpearGuy spear-throw sparkle
+	dw $0000	; $1EB SpearGuy spear-throw sparkle twin
+	dw $0000	; $1EC Cannonball / Bomb mid-flight trail particle
+	dw $0000	; $1ED Cannonball / Bomb explosion puff
+	dw $0000	; $1EE Shared vanish/dissolve puff
+	dw $0000	; $1EF Baron Von Zeppelin carry-cargo trail particle
+	dw $0000	; $1F0 IcyWatermelon freeze-shard particle
+	dw $0000	; $1F1 Baby Bowser arena puff
+	dw $0000	; $1F2 Break-frozen-enemy puff
+	dw $0000	; $1F3 Crate-break shrapnel
+	dw $0000	; $1F4 Georgette Jelly drip-drop puff
+	dw $0000	; $1F5 Snifit projectile-spawn smoke puff
+	dw $0000	; $1F6 Snifit / GreenGlove attack puff
+	dw $0000	; $1F7 ShyguyOnStilts wobble/balance/fall puff
+	dw $0000	; $1F8 Lakitu cloud-trail particle
+	dw $0000	; $1F9 GreenGlove ambient projectile particle
+	dw $0000	; $1FA HorizontalLavaDrop droplet trail puff
+	dw $0000	; $1FB VerticalLavaDrop droplet trail puff
+	dw $0000	; $1FC DanglingFang descent / attack puff
+	dw $0000	; $1FD FlopsyFish jump-splash puff
+	dw $0000	; $1FE FlopsyFish jump-arc anticipation flash
+	dw $0000	; $1FF Goonie aerial-patrol companion
+	dw $0000	; $200 RotatingArrowCloud charge-up sparkle
+	dw $0000	; $201 AquaLakitu fishing-rod water splash
+	dw $0000	; $202 Flutter spore-drift sparkle
+	dw $0000	; $203 Flutter secondary spore particle
+	dw $0000	; $204 SprayFish water-spray particle
+	dw $0000	; $205 SprayFish water-spray particle
+	dw $0000	; $206 SprayFish water-spray particle
+	dw $0000	; $207 Grunt walking-dust trail
+	dw $0000	; $208 Enemy death-pop OAM
+	dw $0000	; $209 BlowHard wind sparkle
+	dw $0000	; $20A ZeusGuyBlast lightning-impact mirror-flash
+	dw $0000	; $20B ChompRock smash debris
+	dw $0000	; $20C Hookbill-arena / ChompRock destruction debris
+	dw $0000	; $20D ThunderLakitu lightning-bolt sparkle
+	dw $0000	; $20E ThunderLakitu lightning-bolt sparkle
+	dw $0000	; $20F ThunderLakituFireball impact-blink
+	dw $0000	; $210 Mufti-Guy flower-disguise petal burst
+	dw $0000	; $211 Goonie attack-burst petals
+	dw $0000	; $212 Crazee Dayzee "happy notes" emote
+	dw $0000	; $213 WatermelonFlame smoke trail
+	dw $0000	; $214 GSU-only multi-tile burst
+	dw $0000	; $215 Skeleton Goonie patrol companion
+	dw $0000	; $216 Skeleton Goonie wing-loss puff
+	dw $0001	; $217 Salvo the Slime droplet ground-bounce
+	dw $0000	; $218 BowserFightGiantEgg bounce-debris
+	dw $0000	; $219 Little Skull Mouser appearance/disappearance...
+	dw $0000	; $21A KeyholeCork pop-out puff
+	dw $0000	; $21B HotLips fire-blast smoke
+	dw $0000	; $21C GSU-only timed puff
+	dw $0000	; $21D GSU-only timed decrement
+	dw $0000	; $21E HotLips fire-blast secondary smoke
+	dw $0000	; $21F Raphael the Raven death-twinkle sparkle
+	dw $0000	; $220 Kamek
+	dw $0000	; $221 Prince Froggy StomachAcid drip splash
+	dw $0000	; $222 Naval Piranha defeat-debris dirt chunk
+	dw $0000	; $223 Hookbill the Koopa dead-pancake squish particles
+	dw $0000	; $224 Sniff-detect sparkle
+	dw $0000	; $225 Dormant placeholder timer
+	dw $0000	; $226 Coin-pickup spinning-coin popup
+	dw $0000	; $227 BowserRoomKamek magic-spell launch sparkle
+	dw $0000	; $228 ZeusGuy lightning-spark particle
+	dw $0000	; $229 WatermelonSeed projectile trail dust
+	dw $0000	; $22A CoinCannon firing-blast cone
+	dw $0000	; $22B Bandit-minigame jackpot row head
+	dw $0000	; $22C Bandit-minigame regular-row head
+	dw $0000	; $22D Bandit-minigame jackpot popup tail
+	dw $0000	; $22E Bandit-minigame final fade -- last allocated...
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AB1FC, incbin, DATA_0AB1FC_YI_U2.bin)
@@ -3254,22 +6329,126 @@ else
 	%FREE_BYTES($0AB1FC, 278, $FF)
 endif
 
+; EXMODE2 copy -> ambient slot word $1000: lo = draw method (bits 0-1) + cull class (bits 2-3), hi = OBJ count*8 (DATA_0A9B1C layout).
 DATA_0AB312:
-	dw $1005,$0804,$0804,$0804,$2005,$2005,$2005,$1005
-	dw $6005,$2805,$2005,$2005,$0804,$0804,$0804,$0804
-	dw $0804,$4005,$2001,$4005,$0804,$0804,$2005,$0002
-	dw $2005,$2005,$3805,$2805,$0804,$0804,$0804,$0804
-	dw $0804,$3805,$2805,$0804,$0804,$0804,$1805,$6005
-	dw $2005,$2005,$2005,$0804,$4005,$4005,$2005,$2005
-	dw $1005,$1805,$0804,$4005,$6005,$2005,$0804,$2005
-	dw $2006,$0804,$5005,$0805,$3005,$3805,$0804,$3005
-	dw $0804,$0804,$0804,$1805,$3005,$0804,$0804,$3005
-	dw $0804,$0804,$2005,$0804,$0804,$0804,$4005,$1805
-	dw $2005,$4806,$6006,$2005,$6005,$2005,$4006,$4006
-	dw $0804,$4805,$0806,$0804,$0804,$0804,$2002,$0804
-	dw $3005,$0804,$3005,$2005,$2005,$2005,$2005,$1805
-	dw $2005,$0804,$2005,$1005,$0804,$0804,$2005,$0804
-	dw $5005,$2981,$4181,$6181,$6181
+DATA_ambient_render_control_table:                   ; descriptive alias (main-side: FXDATA_0AB312)
+	dw $1005	; $1BA Water splash for transition
+	dw $0804	; $1BB Water splash from swimming player
+	dw $0804	; $1BC Underwater bubble
+	dw $0804	; $1BD Eggshell fragment
+	dw $2005	; $1BE Small bopping animation
+	dw $2005	; $1BF Score sprites
+	dw $2005	; $1C0 Multi-stage frame animation
+	dw $1005	; $1C1 Direction/state-from-timer effect
+	dw $6005	; $1C2 Player transformation flash sparkle
+	dw $2805	; $1C3 2-frame stutter blink
+	dw $2005	; $1C4 3-stage animation via DATA_008E34
+	dw $2005	; $1C5 6-stage countdown animation
+	dw $0804	; $1C6 PPU-multiplier-driven Mode-7 rotator
+	dw $0804	; $1C7 1-frame trigger by Y-velocity
+	dw $0804	; $1C8 Lifetime LSR x3 -> OAM tile
+	dw $0804	; $1C9 Drift-with-RNG
+	dw $0804	; $1CA 6-stage animation
+	dw $4005	; $1CB 7-stage animation
+	dw $2001	; $1CC 8-stage animation
+	dw $4005	; $1CD 11-stage animation
+	dw $0804	; $1CE 2-stage animation
+	dw $0804	; $1CF Player-proximity tracker
+	dw $2005	; $1D0 10-stage animation
+	dw $0002	; $1D1 Freeze-only stub
+	dw $2005	; $1D2 5-stage hold-table animation
+	dw $2005	; $1D3 OAM-shrink-and-flush
+	dw $3805	; $1D4 Enemy/object attack puff
+	dw $2805	; $1D5 BulletBillShooter cannon-fire smoke puff
+	dw $0804	; $1D6 LavaBubble splash / FlamerGuy flame-emit puff
+	dw $0804	; $1D7 Monkey watermelon-throw / Bandit kick-up dust
+	dw $0804	; $1D8 HarryHedgehog rolling-dust / crate-break dust
+	dw $0804	; $1D9 FrogPirate skip-rock / splash puff
+	dw $0804	; $1DA Dormant mid-air burst
+	dw $3805	; $1DB Dormant 3-stage physics puff
+	dw $2805	; $1DC BabyBowser smash / MinigameBalloon pop puff
+	dw $0804	; $1DD Boss-arena / key-glow sparkle
+	dw $0804	; $1DE Dormant homing-physics tracker
+	dw $0804	; $1DF Universal damage / contact puff
+	dw $1805	; $1E0 SpearGuy spear-throw / Koopa-shell kick puff
+	dw $6005	; $1E1 Baby Mario whirlwind
+	dw $2005	; $1E2 BlowHard whirlwind-shrink pulse
+	dw $2005	; $1E3 Dormant placeholder slot
+	dw $2005	; $1E4 Coin / red-coin / 1-up pickup sparkle
+	dw $0804	; $1E5 Dormant placeholder timer
+	dw $4005	; $1E6 Enemy stomp impact puff
+	dw $4005	; $1E7 Enemy stomp puff variant
+	dw $2005	; $1E8 EggoDilFace petal-launch puff
+	dw $2005	; $1E9 BlowHard SuperFX-rendered burst
+	dw $1005	; $1EA SpearGuy spear-throw sparkle
+	dw $1805	; $1EB SpearGuy spear-throw sparkle twin
+	dw $0804	; $1EC Cannonball / Bomb mid-flight trail particle
+	dw $4005	; $1ED Cannonball / Bomb explosion puff
+	dw $6005	; $1EE Shared vanish/dissolve puff
+	dw $2005	; $1EF Baron Von Zeppelin carry-cargo trail particle
+	dw $0804	; $1F0 IcyWatermelon freeze-shard particle
+	dw $2005	; $1F1 Baby Bowser arena puff
+	dw $2006	; $1F2 Break-frozen-enemy puff
+	dw $0804	; $1F3 Crate-break shrapnel
+	dw $5005	; $1F4 Georgette Jelly drip-drop puff
+	dw $0805	; $1F5 Snifit projectile-spawn smoke puff
+	dw $3005	; $1F6 Snifit / GreenGlove attack puff
+	dw $3805	; $1F7 ShyguyOnStilts wobble/balance/fall puff
+	dw $0804	; $1F8 Lakitu cloud-trail particle
+	dw $3005	; $1F9 GreenGlove ambient projectile particle
+	dw $0804	; $1FA HorizontalLavaDrop droplet trail puff
+	dw $0804	; $1FB VerticalLavaDrop droplet trail puff
+	dw $0804	; $1FC DanglingFang descent / attack puff
+	dw $1805	; $1FD FlopsyFish jump-splash puff
+	dw $3005	; $1FE FlopsyFish jump-arc anticipation flash
+	dw $0804	; $1FF Goonie aerial-patrol companion
+	dw $0804	; $200 RotatingArrowCloud charge-up sparkle
+	dw $3005	; $201 AquaLakitu fishing-rod water splash
+	dw $0804	; $202 Flutter spore-drift sparkle
+	dw $0804	; $203 Flutter secondary spore particle
+	dw $2005	; $204 SprayFish water-spray particle
+	dw $0804	; $205 SprayFish water-spray particle
+	dw $0804	; $206 SprayFish water-spray particle
+	dw $0804	; $207 Grunt walking-dust trail
+	dw $4005	; $208 Enemy death-pop OAM
+	dw $1805	; $209 BlowHard wind sparkle
+	dw $2005	; $20A ZeusGuyBlast lightning-impact mirror-flash
+	dw $4806	; $20B ChompRock smash debris
+	dw $6006	; $20C Hookbill-arena / ChompRock destruction debris
+	dw $2005	; $20D ThunderLakitu lightning-bolt sparkle
+	dw $6005	; $20E ThunderLakitu lightning-bolt sparkle
+	dw $2005	; $20F ThunderLakituFireball impact-blink
+	dw $4006	; $210 Mufti-Guy flower-disguise petal burst
+	dw $4006	; $211 Goonie attack-burst petals
+	dw $0804	; $212 Crazee Dayzee "happy notes" emote
+	dw $4805	; $213 WatermelonFlame smoke trail
+	dw $0806	; $214 GSU-only multi-tile burst
+	dw $0804	; $215 Skeleton Goonie patrol companion
+	dw $0804	; $216 Skeleton Goonie wing-loss puff
+	dw $0804	; $217 Salvo the Slime droplet ground-bounce
+	dw $2002	; $218 BowserFightGiantEgg bounce-debris
+	dw $0804	; $219 Little Skull Mouser appearance/disappearance...
+	dw $3005	; $21A KeyholeCork pop-out puff
+	dw $0804	; $21B HotLips fire-blast smoke
+	dw $3005	; $21C GSU-only timed puff
+	dw $2005	; $21D GSU-only timed decrement
+	dw $2005	; $21E HotLips fire-blast secondary smoke
+	dw $2005	; $21F Raphael the Raven death-twinkle sparkle
+	dw $2005	; $220 Kamek
+	dw $1805	; $221 Prince Froggy StomachAcid drip splash
+	dw $2005	; $222 Naval Piranha defeat-debris dirt chunk
+	dw $0804	; $223 Hookbill the Koopa dead-pancake squish particles
+	dw $2005	; $224 Sniff-detect sparkle
+	dw $1005	; $225 Dormant placeholder timer
+	dw $0804	; $226 Coin-pickup spinning-coin popup
+	dw $0804	; $227 BowserRoomKamek magic-spell launch sparkle
+	dw $2005	; $228 ZeusGuy lightning-spark particle
+	dw $0804	; $229 WatermelonSeed projectile trail dust
+	dw $5005	; $22A CoinCannon firing-blast cone
+	dw $2981	; $22B Bandit-minigame jackpot row head
+	dw $4181	; $22C Bandit-minigame regular-row head
+	dw $6181	; $22D Bandit-minigame jackpot popup tail
+	dw $6181	; $22E Bandit-minigame final fade -- last allocated...
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AB3FC, incbin, DATA_0AB3FC_YI_U2.bin)
@@ -3277,22 +6456,126 @@ else
 	%FREE_BYTES($0AB3FC, 278, $FF)
 endif
 
+; EXDATA0: lo byte -> $1462 draw priority level ($FF = never drawn); hi byte EOR #$30 -> $1002 OAM attribute seed.
 DATA_0AB512:
-	dw $1602,$1602,$16FF,$0005,$0602,$0002,$0606,$0602
-	dw $0605,$0002,$0602,$0602,$0602,$1202,$0602,$0602
-	dw $0602,$0602,$0602,$0602,$1602,$0604,$0602,$0602
-	dw $0001,$0000,$0602,$0602,$0204,$0601,$0601,$0601
-	dw $0601,$0601,$0601,$0601,$0601,$0601,$0601,$0601
-	dw $0000,$0401,$0601,$0601,$0601,$0601,$0601,$0201
-	dw $0001,$0001,$0601,$0001,$0001,$0601,$0601,$0001
-	dw $0001,$0001,$0001,$0601,$0601,$0001,$0406,$0601
-	dw $0205,$0205,$0606,$1001,$1001,$0401,$0001,$0001
-	dw $0001,$0601,$0001,$0601,$0601,$0201,$0001,$0001
-	dw $0001,$0001,$0001,$0401,$0606,$0401,$0401,$0401
-	dw $0001,$0001,$0000,$0401,$0401,$0201,$0001,$0401
-	dw $1601,$0201,$0001,$0001,$0401,$0001,$16FF,$0001
-	dw $0001,$0C01,$1000,$0602,$0002,$0007,$0201,$0003
-	dw $0401,$0806,$0606,$0406,$0006
+DATA_ambient_priority_attr_table:                    ; descriptive alias (main-side: FXDATA_0AB512)
+	dw $1602	; $1BA Water splash for transition
+	dw $1602	; $1BB Water splash from swimming player
+	dw $16FF	; $1BC Underwater bubble
+	dw $0005	; $1BD Eggshell fragment
+	dw $0602	; $1BE Small bopping animation
+	dw $0002	; $1BF Score sprites
+	dw $0606	; $1C0 Multi-stage frame animation
+	dw $0602	; $1C1 Direction/state-from-timer effect
+	dw $0605	; $1C2 Player transformation flash sparkle
+	dw $0002	; $1C3 2-frame stutter blink
+	dw $0602	; $1C4 3-stage animation via DATA_008E34
+	dw $0602	; $1C5 6-stage countdown animation
+	dw $0602	; $1C6 PPU-multiplier-driven Mode-7 rotator
+	dw $1202	; $1C7 1-frame trigger by Y-velocity
+	dw $0602	; $1C8 Lifetime LSR x3 -> OAM tile
+	dw $0602	; $1C9 Drift-with-RNG
+	dw $0602	; $1CA 6-stage animation
+	dw $0602	; $1CB 7-stage animation
+	dw $0602	; $1CC 8-stage animation
+	dw $0602	; $1CD 11-stage animation
+	dw $1602	; $1CE 2-stage animation
+	dw $0604	; $1CF Player-proximity tracker
+	dw $0602	; $1D0 10-stage animation
+	dw $0602	; $1D1 Freeze-only stub
+	dw $0001	; $1D2 5-stage hold-table animation
+	dw $0000	; $1D3 OAM-shrink-and-flush
+	dw $0602	; $1D4 Enemy/object attack puff
+	dw $0602	; $1D5 BulletBillShooter cannon-fire smoke puff
+	dw $0204	; $1D6 LavaBubble splash / FlamerGuy flame-emit puff
+	dw $0601	; $1D7 Monkey watermelon-throw / Bandit kick-up dust
+	dw $0601	; $1D8 HarryHedgehog rolling-dust / crate-break dust
+	dw $0601	; $1D9 FrogPirate skip-rock / splash puff
+	dw $0601	; $1DA Dormant mid-air burst
+	dw $0601	; $1DB Dormant 3-stage physics puff
+	dw $0601	; $1DC BabyBowser smash / MinigameBalloon pop puff
+	dw $0601	; $1DD Boss-arena / key-glow sparkle
+	dw $0601	; $1DE Dormant homing-physics tracker
+	dw $0601	; $1DF Universal damage / contact puff
+	dw $0601	; $1E0 SpearGuy spear-throw / Koopa-shell kick puff
+	dw $0601	; $1E1 Baby Mario whirlwind
+	dw $0000	; $1E2 BlowHard whirlwind-shrink pulse
+	dw $0401	; $1E3 Dormant placeholder slot
+	dw $0601	; $1E4 Coin / red-coin / 1-up pickup sparkle
+	dw $0601	; $1E5 Dormant placeholder timer
+	dw $0601	; $1E6 Enemy stomp impact puff
+	dw $0601	; $1E7 Enemy stomp puff variant
+	dw $0601	; $1E8 EggoDilFace petal-launch puff
+	dw $0201	; $1E9 BlowHard SuperFX-rendered burst
+	dw $0001	; $1EA SpearGuy spear-throw sparkle
+	dw $0001	; $1EB SpearGuy spear-throw sparkle twin
+	dw $0601	; $1EC Cannonball / Bomb mid-flight trail particle
+	dw $0001	; $1ED Cannonball / Bomb explosion puff
+	dw $0001	; $1EE Shared vanish/dissolve puff
+	dw $0601	; $1EF Baron Von Zeppelin carry-cargo trail particle
+	dw $0601	; $1F0 IcyWatermelon freeze-shard particle
+	dw $0001	; $1F1 Baby Bowser arena puff
+	dw $0001	; $1F2 Break-frozen-enemy puff
+	dw $0001	; $1F3 Crate-break shrapnel
+	dw $0001	; $1F4 Georgette Jelly drip-drop puff
+	dw $0601	; $1F5 Snifit projectile-spawn smoke puff
+	dw $0601	; $1F6 Snifit / GreenGlove attack puff
+	dw $0001	; $1F7 ShyguyOnStilts wobble/balance/fall puff
+	dw $0406	; $1F8 Lakitu cloud-trail particle
+	dw $0601	; $1F9 GreenGlove ambient projectile particle
+	dw $0205	; $1FA HorizontalLavaDrop droplet trail puff
+	dw $0205	; $1FB VerticalLavaDrop droplet trail puff
+	dw $0606	; $1FC DanglingFang descent / attack puff
+	dw $1001	; $1FD FlopsyFish jump-splash puff
+	dw $1001	; $1FE FlopsyFish jump-arc anticipation flash
+	dw $0401	; $1FF Goonie aerial-patrol companion
+	dw $0001	; $200 RotatingArrowCloud charge-up sparkle
+	dw $0001	; $201 AquaLakitu fishing-rod water splash
+	dw $0001	; $202 Flutter spore-drift sparkle
+	dw $0601	; $203 Flutter secondary spore particle
+	dw $0001	; $204 SprayFish water-spray particle
+	dw $0601	; $205 SprayFish water-spray particle
+	dw $0601	; $206 SprayFish water-spray particle
+	dw $0201	; $207 Grunt walking-dust trail
+	dw $0001	; $208 Enemy death-pop OAM
+	dw $0001	; $209 BlowHard wind sparkle
+	dw $0001	; $20A ZeusGuyBlast lightning-impact mirror-flash
+	dw $0001	; $20B ChompRock smash debris
+	dw $0001	; $20C Hookbill-arena / ChompRock destruction debris
+	dw $0401	; $20D ThunderLakitu lightning-bolt sparkle
+	dw $0606	; $20E ThunderLakitu lightning-bolt sparkle
+	dw $0401	; $20F ThunderLakituFireball impact-blink
+	dw $0401	; $210 Mufti-Guy flower-disguise petal burst
+	dw $0401	; $211 Goonie attack-burst petals
+	dw $0001	; $212 Crazee Dayzee "happy notes" emote
+	dw $0001	; $213 WatermelonFlame smoke trail
+	dw $0000	; $214 GSU-only multi-tile burst
+	dw $0401	; $215 Skeleton Goonie patrol companion
+	dw $0401	; $216 Skeleton Goonie wing-loss puff
+	dw $0201	; $217 Salvo the Slime droplet ground-bounce
+	dw $0001	; $218 BowserFightGiantEgg bounce-debris
+	dw $0401	; $219 Little Skull Mouser appearance/disappearance...
+	dw $1601	; $21A KeyholeCork pop-out puff
+	dw $0201	; $21B HotLips fire-blast smoke
+	dw $0001	; $21C GSU-only timed puff
+	dw $0001	; $21D GSU-only timed decrement
+	dw $0401	; $21E HotLips fire-blast secondary smoke
+	dw $0001	; $21F Raphael the Raven death-twinkle sparkle
+	dw $16FF	; $220 Kamek
+	dw $0001	; $221 Prince Froggy StomachAcid drip splash
+	dw $0001	; $222 Naval Piranha defeat-debris dirt chunk
+	dw $0C01	; $223 Hookbill the Koopa dead-pancake squish particles
+	dw $1000	; $224 Sniff-detect sparkle
+	dw $0602	; $225 Dormant placeholder timer
+	dw $0002	; $226 Coin-pickup spinning-coin popup
+	dw $0007	; $227 BowserRoomKamek magic-spell launch sparkle
+	dw $0201	; $228 ZeusGuy lightning-spark particle
+	dw $0003	; $229 WatermelonSeed projectile trail dust
+	dw $0401	; $22A CoinCannon firing-blast cone
+	dw $0806	; $22B Bandit-minigame jackpot row head
+	dw $0606	; $22C Bandit-minigame regular-row head
+	dw $0406	; $22D Bandit-minigame jackpot popup tail
+	dw $0006	; $22E Bandit-minigame final fade -- last allocated...
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AB5FC, incbin, DATA_0AB5FC_YI_U2.bin)
@@ -3300,22 +6583,126 @@ else
 	%FREE_BYTES($0AB5FC, 278, $FF)
 endif
 
+; EXDATA1: lo byte (signed) -> $1502 Y acceleration; hi byte (signed) * 16 -> $15A2 target Y speed.
 DATA_0AB712:
-	dw $0000,$0000,$0000,$4040,$0000,$0006,$0000,$0000
-	dw $0000,$0000,$F8F8,$0000,$0000,$2008,$0000,$F802
-	dw $4020,$4020,$1008,$0000,$2020,$0000,$0000,$0402
-	dw $0000,$0000,$0000,$0000,$0000,$1008,$0000,$F008
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $4040,$4040,$0000,$0000,$0000,$0000,$0408,$0000
-	dw $0000,$4040,$0000,$0000,$0000,$4040,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0404,$0000,$0000
-	dw $0000,$0000,$0000,$4040,$4040,$4040,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0404,$0000,$2020,$0000,$0000
-	dw $0000,$4040,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$4040,$0000,$0000,$0006,$0010,$0000,$4040
-	dw $0000,$4040,$4040,$4040,$4040
+DATA_ambient_gravity_table:                          ; descriptive alias (main-side: FXDATA_0AB712)
+	dw $0000	; $1BA Water splash for transition
+	dw $0000	; $1BB Water splash from swimming player
+	dw $0000	; $1BC Underwater bubble
+	dw $4040	; $1BD Eggshell fragment
+	dw $0000	; $1BE Small bopping animation
+	dw $0006	; $1BF Score sprites
+	dw $0000	; $1C0 Multi-stage frame animation
+	dw $0000	; $1C1 Direction/state-from-timer effect
+	dw $0000	; $1C2 Player transformation flash sparkle
+	dw $0000	; $1C3 2-frame stutter blink
+	dw $F8F8	; $1C4 3-stage animation via DATA_008E34
+	dw $0000	; $1C5 6-stage countdown animation
+	dw $0000	; $1C6 PPU-multiplier-driven Mode-7 rotator
+	dw $2008	; $1C7 1-frame trigger by Y-velocity
+	dw $0000	; $1C8 Lifetime LSR x3 -> OAM tile
+	dw $F802	; $1C9 Drift-with-RNG
+	dw $4020	; $1CA 6-stage animation
+	dw $4020	; $1CB 7-stage animation
+	dw $1008	; $1CC 8-stage animation
+	dw $0000	; $1CD 11-stage animation
+	dw $2020	; $1CE 2-stage animation
+	dw $0000	; $1CF Player-proximity tracker
+	dw $0000	; $1D0 10-stage animation
+	dw $0402	; $1D1 Freeze-only stub
+	dw $0000	; $1D2 5-stage hold-table animation
+	dw $0000	; $1D3 OAM-shrink-and-flush
+	dw $0000	; $1D4 Enemy/object attack puff
+	dw $0000	; $1D5 BulletBillShooter cannon-fire smoke puff
+	dw $0000	; $1D6 LavaBubble splash / FlamerGuy flame-emit puff
+	dw $1008	; $1D7 Monkey watermelon-throw / Bandit kick-up dust
+	dw $0000	; $1D8 HarryHedgehog rolling-dust / crate-break dust
+	dw $F008	; $1D9 FrogPirate skip-rock / splash puff
+	dw $0000	; $1DA Dormant mid-air burst
+	dw $0000	; $1DB Dormant 3-stage physics puff
+	dw $0000	; $1DC BabyBowser smash / MinigameBalloon pop puff
+	dw $0000	; $1DD Boss-arena / key-glow sparkle
+	dw $0000	; $1DE Dormant homing-physics tracker
+	dw $0000	; $1DF Universal damage / contact puff
+	dw $0000	; $1E0 SpearGuy spear-throw / Koopa-shell kick puff
+	dw $0000	; $1E1 Baby Mario whirlwind
+	dw $0000	; $1E2 BlowHard whirlwind-shrink pulse
+	dw $0000	; $1E3 Dormant placeholder slot
+	dw $0000	; $1E4 Coin / red-coin / 1-up pickup sparkle
+	dw $0000	; $1E5 Dormant placeholder timer
+	dw $0000	; $1E6 Enemy stomp impact puff
+	dw $0000	; $1E7 Enemy stomp puff variant
+	dw $0000	; $1E8 EggoDilFace petal-launch puff
+	dw $0000	; $1E9 BlowHard SuperFX-rendered burst
+	dw $4040	; $1EA SpearGuy spear-throw sparkle
+	dw $4040	; $1EB SpearGuy spear-throw sparkle twin
+	dw $0000	; $1EC Cannonball / Bomb mid-flight trail particle
+	dw $0000	; $1ED Cannonball / Bomb explosion puff
+	dw $0000	; $1EE Shared vanish/dissolve puff
+	dw $0000	; $1EF Baron Von Zeppelin carry-cargo trail particle
+	dw $0408	; $1F0 IcyWatermelon freeze-shard particle
+	dw $0000	; $1F1 Baby Bowser arena puff
+	dw $0000	; $1F2 Break-frozen-enemy puff
+	dw $4040	; $1F3 Crate-break shrapnel
+	dw $0000	; $1F4 Georgette Jelly drip-drop puff
+	dw $0000	; $1F5 Snifit projectile-spawn smoke puff
+	dw $0000	; $1F6 Snifit / GreenGlove attack puff
+	dw $4040	; $1F7 ShyguyOnStilts wobble/balance/fall puff
+	dw $0000	; $1F8 Lakitu cloud-trail particle
+	dw $0000	; $1F9 GreenGlove ambient projectile particle
+	dw $0000	; $1FA HorizontalLavaDrop droplet trail puff
+	dw $0000	; $1FB VerticalLavaDrop droplet trail puff
+	dw $0000	; $1FC DanglingFang descent / attack puff
+	dw $0000	; $1FD FlopsyFish jump-splash puff
+	dw $0000	; $1FE FlopsyFish jump-arc anticipation flash
+	dw $0404	; $1FF Goonie aerial-patrol companion
+	dw $0000	; $200 RotatingArrowCloud charge-up sparkle
+	dw $0000	; $201 AquaLakitu fishing-rod water splash
+	dw $0000	; $202 Flutter spore-drift sparkle
+	dw $0000	; $203 Flutter secondary spore particle
+	dw $0000	; $204 SprayFish water-spray particle
+	dw $4040	; $205 SprayFish water-spray particle
+	dw $4040	; $206 SprayFish water-spray particle
+	dw $4040	; $207 Grunt walking-dust trail
+	dw $0000	; $208 Enemy death-pop OAM
+	dw $0000	; $209 BlowHard wind sparkle
+	dw $0000	; $20A ZeusGuyBlast lightning-impact mirror-flash
+	dw $0000	; $20B ChompRock smash debris
+	dw $0000	; $20C Hookbill-arena / ChompRock destruction debris
+	dw $0000	; $20D ThunderLakitu lightning-bolt sparkle
+	dw $0000	; $20E ThunderLakitu lightning-bolt sparkle
+	dw $0000	; $20F ThunderLakituFireball impact-blink
+	dw $0000	; $210 Mufti-Guy flower-disguise petal burst
+	dw $0000	; $211 Goonie attack-burst petals
+	dw $0000	; $212 Crazee Dayzee "happy notes" emote
+	dw $0000	; $213 WatermelonFlame smoke trail
+	dw $0000	; $214 GSU-only multi-tile burst
+	dw $0404	; $215 Skeleton Goonie patrol companion
+	dw $0000	; $216 Skeleton Goonie wing-loss puff
+	dw $2020	; $217 Salvo the Slime droplet ground-bounce
+	dw $0000	; $218 BowserFightGiantEgg bounce-debris
+	dw $0000	; $219 Little Skull Mouser appearance/disappearance...
+	dw $0000	; $21A KeyholeCork pop-out puff
+	dw $4040	; $21B HotLips fire-blast smoke
+	dw $0000	; $21C GSU-only timed puff
+	dw $0000	; $21D GSU-only timed decrement
+	dw $0000	; $21E HotLips fire-blast secondary smoke
+	dw $0000	; $21F Raphael the Raven death-twinkle sparkle
+	dw $0000	; $220 Kamek
+	dw $0000	; $221 Prince Froggy StomachAcid drip splash
+	dw $0000	; $222 Naval Piranha defeat-debris dirt chunk
+	dw $4040	; $223 Hookbill the Koopa dead-pancake squish particles
+	dw $0000	; $224 Sniff-detect sparkle
+	dw $0000	; $225 Dormant placeholder timer
+	dw $0006	; $226 Coin-pickup spinning-coin popup
+	dw $0010	; $227 BowserRoomKamek magic-spell launch sparkle
+	dw $0000	; $228 ZeusGuy lightning-spark particle
+	dw $4040	; $229 WatermelonSeed projectile trail dust
+	dw $0000	; $22A CoinCannon firing-blast cone
+	dw $4040	; $22B Bandit-minigame jackpot row head
+	dw $4040	; $22C Bandit-minigame regular-row head
+	dw $4040	; $22D Bandit-minigame jackpot popup tail
+	dw $4040	; $22E Bandit-minigame final fade -- last allocated...
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AB7FC, incbin, DATA_0AB7FC_YI_U2.bin)
@@ -3323,22 +6710,126 @@ else
 	%FREE_BYTES($0AB7FC, 278, $FF)
 endif
 
+; EXCHR_BNK: lo byte = sprite-GFX file id the ambient sprite draws from (0 = common page); resolved to an OBJ tile base at spawn.
 DATA_0AB912:
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0048,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0032,$0032,$0000,$0000
-	dw $0045,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$001C,$0000,$0000,$0000,$0000
-	dw $0035,$0035,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0041,$0000,$0000,$0037,$0049,$0000
-	dw $0051,$0051,$0000,$0000,$0054,$002B,$0057,$0000
-	dw $0056,$0000,$0058,$0058,$0058,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$004B,$0000,$004B,$005D,$002B
-	dw $005D,$0000,$0000,$0063,$0063,$0045,$0000,$0060
-	dw $0000,$0066,$0041,$0041,$0066,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-	dw $0000,$0000,$0000,$0000,$0000
+DATA_ambient_gfx_file_table:                         ; descriptive alias (main-side: FXDATA_0AB912)
+	dw $0000	; $1BA Water splash for transition
+	dw $0000	; $1BB Water splash from swimming player
+	dw $0000	; $1BC Underwater bubble
+	dw $0000	; $1BD Eggshell fragment
+	dw $0000	; $1BE Small bopping animation
+	dw $0000	; $1BF Score sprites
+	dw $0000	; $1C0 Multi-stage frame animation
+	dw $0000	; $1C1 Direction/state-from-timer effect
+	dw $0000	; $1C2 Player transformation flash sparkle
+	dw $0000	; $1C3 2-frame stutter blink
+	dw $0000	; $1C4 3-stage animation via DATA_008E34
+	dw $0000	; $1C5 6-stage countdown animation
+	dw $0000	; $1C6 PPU-multiplier-driven Mode-7 rotator
+	dw $0048	; $1C7 1-frame trigger by Y-velocity
+	dw $0000	; $1C8 Lifetime LSR x3 -> OAM tile
+	dw $0000	; $1C9 Drift-with-RNG
+	dw $0000	; $1CA 6-stage animation
+	dw $0000	; $1CB 7-stage animation
+	dw $0000	; $1CC 8-stage animation
+	dw $0000	; $1CD 11-stage animation
+	dw $0032	; $1CE 2-stage animation
+	dw $0032	; $1CF Player-proximity tracker
+	dw $0000	; $1D0 10-stage animation
+	dw $0000	; $1D1 Freeze-only stub
+	dw $0045	; $1D2 5-stage hold-table animation
+	dw $0000	; $1D3 OAM-shrink-and-flush
+	dw $0000	; $1D4 Enemy/object attack puff
+	dw $0000	; $1D5 BulletBillShooter cannon-fire smoke puff
+	dw $0000	; $1D6 LavaBubble splash / FlamerGuy flame-emit puff
+	dw $0000	; $1D7 Monkey watermelon-throw / Bandit kick-up dust
+	dw $0000	; $1D8 HarryHedgehog rolling-dust / crate-break dust
+	dw $0000	; $1D9 FrogPirate skip-rock / splash puff
+	dw $0000	; $1DA Dormant mid-air burst
+	dw $0000	; $1DB Dormant 3-stage physics puff
+	dw $0000	; $1DC BabyBowser smash / MinigameBalloon pop puff
+	dw $0000	; $1DD Boss-arena / key-glow sparkle
+	dw $0000	; $1DE Dormant homing-physics tracker
+	dw $0000	; $1DF Universal damage / contact puff
+	dw $0000	; $1E0 SpearGuy spear-throw / Koopa-shell kick puff
+	dw $0000	; $1E1 Baby Mario whirlwind
+	dw $0000	; $1E2 BlowHard whirlwind-shrink pulse
+	dw $0000	; $1E3 Dormant placeholder slot
+	dw $0000	; $1E4 Coin / red-coin / 1-up pickup sparkle
+	dw $001C	; $1E5 Dormant placeholder timer
+	dw $0000	; $1E6 Enemy stomp impact puff
+	dw $0000	; $1E7 Enemy stomp puff variant
+	dw $0000	; $1E8 EggoDilFace petal-launch puff
+	dw $0000	; $1E9 BlowHard SuperFX-rendered burst
+	dw $0035	; $1EA SpearGuy spear-throw sparkle
+	dw $0035	; $1EB SpearGuy spear-throw sparkle twin
+	dw $0000	; $1EC Cannonball / Bomb mid-flight trail particle
+	dw $0000	; $1ED Cannonball / Bomb explosion puff
+	dw $0000	; $1EE Shared vanish/dissolve puff
+	dw $0000	; $1EF Baron Von Zeppelin carry-cargo trail particle
+	dw $0000	; $1F0 IcyWatermelon freeze-shard particle
+	dw $0000	; $1F1 Baby Bowser arena puff
+	dw $0000	; $1F2 Break-frozen-enemy puff
+	dw $0000	; $1F3 Crate-break shrapnel
+	dw $0041	; $1F4 Georgette Jelly drip-drop puff
+	dw $0000	; $1F5 Snifit projectile-spawn smoke puff
+	dw $0000	; $1F6 Snifit / GreenGlove attack puff
+	dw $0037	; $1F7 ShyguyOnStilts wobble/balance/fall puff
+	dw $0049	; $1F8 Lakitu cloud-trail particle
+	dw $0000	; $1F9 GreenGlove ambient projectile particle
+	dw $0051	; $1FA HorizontalLavaDrop droplet trail puff
+	dw $0051	; $1FB VerticalLavaDrop droplet trail puff
+	dw $0000	; $1FC DanglingFang descent / attack puff
+	dw $0000	; $1FD FlopsyFish jump-splash puff
+	dw $0054	; $1FE FlopsyFish jump-arc anticipation flash
+	dw $002B	; $1FF Goonie aerial-patrol companion
+	dw $0057	; $200 RotatingArrowCloud charge-up sparkle
+	dw $0000	; $201 AquaLakitu fishing-rod water splash
+	dw $0056	; $202 Flutter spore-drift sparkle
+	dw $0000	; $203 Flutter secondary spore particle
+	dw $0058	; $204 SprayFish water-spray particle
+	dw $0058	; $205 SprayFish water-spray particle
+	dw $0058	; $206 SprayFish water-spray particle
+	dw $0000	; $207 Grunt walking-dust trail
+	dw $0000	; $208 Enemy death-pop OAM
+	dw $0000	; $209 BlowHard wind sparkle
+	dw $0000	; $20A ZeusGuyBlast lightning-impact mirror-flash
+	dw $0000	; $20B ChompRock smash debris
+	dw $0000	; $20C Hookbill-arena / ChompRock destruction debris
+	dw $004B	; $20D ThunderLakitu lightning-bolt sparkle
+	dw $0000	; $20E ThunderLakitu lightning-bolt sparkle
+	dw $004B	; $20F ThunderLakituFireball impact-blink
+	dw $005D	; $210 Mufti-Guy flower-disguise petal burst
+	dw $002B	; $211 Goonie attack-burst petals
+	dw $005D	; $212 Crazee Dayzee "happy notes" emote
+	dw $0000	; $213 WatermelonFlame smoke trail
+	dw $0000	; $214 GSU-only multi-tile burst
+	dw $0063	; $215 Skeleton Goonie patrol companion
+	dw $0063	; $216 Skeleton Goonie wing-loss puff
+	dw $0045	; $217 Salvo the Slime droplet ground-bounce
+	dw $0000	; $218 BowserFightGiantEgg bounce-debris
+	dw $0060	; $219 Little Skull Mouser appearance/disappearance...
+	dw $0000	; $21A KeyholeCork pop-out puff
+	dw $0066	; $21B HotLips fire-blast smoke
+	dw $0041	; $21C GSU-only timed puff
+	dw $0041	; $21D GSU-only timed decrement
+	dw $0066	; $21E HotLips fire-blast secondary smoke
+	dw $0000	; $21F Raphael the Raven death-twinkle sparkle
+	dw $0000	; $220 Kamek
+	dw $0000	; $221 Prince Froggy StomachAcid drip splash
+	dw $0000	; $222 Naval Piranha defeat-debris dirt chunk
+	dw $0000	; $223 Hookbill the Koopa dead-pancake squish particles
+	dw $0000	; $224 Sniff-detect sparkle
+	dw $0000	; $225 Dormant placeholder timer
+	dw $0000	; $226 Coin-pickup spinning-coin popup
+	dw $0000	; $227 BowserRoomKamek magic-spell launch sparkle
+	dw $0000	; $228 ZeusGuy lightning-spark particle
+	dw $0000	; $229 WatermelonSeed projectile trail dust
+	dw $0000	; $22A CoinCannon firing-blast cone
+	dw $0000	; $22B Bandit-minigame jackpot row head
+	dw $0000	; $22C Bandit-minigame regular-row head
+	dw $0000	; $22D Bandit-minigame jackpot popup tail
+	dw $0000	; $22E Bandit-minigame final fade -- last allocated...
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AB9FC, incbin, DATA_0AB9FC_YI_U2.bin)
@@ -3986,13 +7477,34 @@ CODE_0ACE92:
 CODE_0ACEC9:
 	STOP : NOP
 
+;-------------------------------------------------------------------------
+; Sprite terrain-collision ("BG check") point sets, read by CODE_0ACFED.
+; (Original source `chip/ys_msub0.asm`: ENBGCK_POINT_IN / ENBGCK_POINT.)
+; DATA_0ACECB: 31 x 2 bytes; entry N (N = $0FA2 & $1F, 1-31) is at +(N-1)*2:
+;   byte 0 = handler kind (0-14) -> DATA_0AD051
+;   byte 1 = start of the point set in DATA_0ACF09, counted in (X,Y) pairs
+; DATA_0ACF09: 114 signed (X,Y) byte pairs = pixel offsets from the slot X and
+;   from (slot Y + $1720 BG-check Y offset). Point order by set size:
+;   5-pt center,left,right,head,foot; 7-pt center,left,right,L-head,R-head,
+;   L-foot,R-foot; 4-pt TL,BR,BL,TR; 2-pt L-foot,R-foot; 3-pt center,left,
+;   right; 1-pt center. Set $01 (102 ids) = (8,5)(2,5)(13,5)(8,1)(8,16).
+; DATA_0AD051 kinds (names from the original source; only kind 1 fully traced):
+;   0 1-pt  1 5-pt standard  2/3/4 5/4/2-pt read-only  5 5-pt info-set
+;   6 1-pt info-set  7 4-pt info-set+read-only  8 5-pt Baby Mario  9 7-pt
+;   A 5-pt egg coin check  B 1-pt melon-seed coin check  C 5-pt info-set+read-only
+;   D 5-pt left/right-only  E 3-pt
+; Also read by CODE_0A8C48 (Prince Froggy stomach collision): index < $1C uses
+; the 4 non-center points, otherwise the center point only.
+;-------------------------------------------------------------------------
 DATA_0ACECB:
+DATA_sprite_terrain_pointset_index:                  ; descriptive alias
 	db $01,$00,$01,$05,$01,$0A,$05,$0F,$01,$14,$0C,$00,$09,$19,$01,$20
 	db $09,$25,$03,$2C,$03,$30,$04,$34,$02,$00,$0D,$36,$08,$00,$0D,$3B
 	db $0E,$3B,$02,$0A,$09,$40,$0A,$47,$09,$4C,$01,$53,$01,$58,$05,$00
 	db $01,$5D,$01,$62,$0C,$67,$00,$6C,$0B,$6C,$06,$6C,$01,$6D
 
 DATA_0ACF09:
+DATA_sprite_terrain_points:                          ; descriptive alias: signed (X,Y) byte pairs (see DATA_0ACECB header)
 	db $08,$05,$02,$05,$0D,$05,$08,$01,$08,$10,$08,$08,$05,$08,$0A,$08
 	db $08,$05,$08,$0B,$08,$08,$FC,$08,$14,$08,$08,$FC,$08,$14,$08,$0A
 	db $F8,$0A,$18,$0A,$08,$00,$08,$10,$08,$08,$00,$08,$0F,$08,$08,$FC
@@ -4009,7 +7521,21 @@ DATA_0ACF09:
 	db $00,$08,$0F,$08,$08,$00,$08,$0F,$08,$08,$08,$08,$EC,$04,$24,$04
 	db $08,$E8,$08,$20
 
+;-------------------------------------------------------------------------
+; CODE_0ACFED -- per-frame sprite terrain collision (original source M_ENBGCK).
+; Launched from CODE_handle_sprites (CODE_039802) before the sprite Mains run.
+; Walks 16 ambient + 24 normal slots as one 40-slot array (field bases are the
+; ambient-half addresses $0EC0/$0F62/$10A2/$1142/$16E0/$1820; normal = +$40).
+; Per slot: clears slope word $0F02; skips (result 0) if status < $0E or the
+; point-set index ($0FA2 & $1F) is 0; probes the DATA_0ACECB set at X and
+; Y+$1720, corrects X/Y, applies the $0FA2 wall/ledge bits 5-10, and stores the
+; contact word in $1860 (ambient $1820): $0001 ground, $0002 ceiling, $0004
+; right wall, $0008 left wall, $0020 center point in solid (kind 1; other kinds
+; unverified). The 65816 physics/bounce driver CODE_03AF23 only consumes this
+; result word; it never reads the behaviour bits itself.
+;-------------------------------------------------------------------------
 CODE_0ACFED:
+CODE_sprite_terrain_check:                           ; descriptive alias
 	IBT R0, #(DATA_0ACECB-$02)>>16
 	ROMB
 	IBT R1, #$00
@@ -4075,6 +7601,7 @@ CODE_0AD00D:
 	ADD R15 : db $FF
 
 DATA_0AD051:
+DATA_sprite_terrain_kind_ptrs:                       ; descriptive alias: 15 handler kinds (see DATA_0ACECB header)
 	dw CODE_0AD642 : NOP
 	dw CODE_0AD51C : NOP
 	dw CODE_0AD61B : NOP

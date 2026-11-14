@@ -60,10 +60,15 @@
 !RAM_YI_Level_PauseItemContinuousUseHi = !RAM_YI_Level_PauseItemContinuousUseLo+$01
 !RAM_YI_Level_ItemUseFrameCounter = $00039C				; frame counter during item use (after unpause)
 
-!RAM_YI_Level_StarCounterDigit1Lo = $0003A1				; first digit of on-screen star counter
+; Three decimal digits of the on-screen star counter, produced by the repeated-subtract
+; conversion in Bank00 CODE_00E32C (divisors DATA_00E234 = 100, 10): hundreds -> $03A1,
+; tens -> $03A3, remaining ones -> $03A5.
+!RAM_YI_Level_StarCounterDigit1Lo = $0003A1				; first digit (hundreds) of on-screen star counter
 !RAM_YI_Level_StarCounterDigit1Hi = !RAM_YI_Level_StarCounterDigit1Lo+$01
-!RAM_YI_Level_StarCounterDigit2Lo = $0003A3				; second digit
+!RAM_YI_Level_StarCounterDigit2Lo = $0003A3				; second digit (tens)
 !RAM_YI_Level_StarCounterDigit2Hi = !RAM_YI_Level_StarCounterDigit2Lo+$01
+!RAM_YI_Level_StarCounterDigit3Lo = $0003A5				; third digit (ones)
+!RAM_YI_Level_StarCounterDigit3Hi = !RAM_YI_Level_StarCounterDigit3Lo+$01
 
 !RAM_YI_Level_GameModeFrameCounterLo = $0003A9				; gm $0D/$0E (curtain out)/$0F/$10 (in-level)/$11; paused on pause, reset on stage entry + star auto-increase
 !RAM_YI_Level_GameModeFrameCounterHi = !RAM_YI_Level_GameModeFrameCounterLo+$01

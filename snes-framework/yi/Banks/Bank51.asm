@@ -1,7 +1,7 @@
 ;#############################################################################################################
 ;# Bank51.asm -- SNES bank $51 (HiROM-mirrored full 64 KB, original cart bank $21).
-;#               Mixed bank: per-level object/sprite data plus another chunk of pre-compiled
-;#               SuperFX code. Layout differs between V1.0 and V1.1; this is one of the banks
+;#               Mixed bank: per-level object/sprite data plus the game's message-box and
+;#               level-name text. Layout differs between V1.0 and V1.1; this is one of the banks
 ;#               that the V1.1 dump rearranged.
 ;#
 ;# Contents at a glance:
@@ -15,7 +15,12 @@
 ;#
 ;#   V1.0 layout:
 ;#       $510000  DATA_510000 .. $51106A -- six standard level-data blobs.
-;#       $5110DB  GSU code blob.
+;#       $5110DB  message-box text: DATA_message_box_text_ptrs then every DATA_msg_* string,
+;#                the 72-entry DATA_level_name_string_ptrs, and the level-name strings, ending
+;#                at DATA_level_name_garbage_sentinel ($51:532F, 25 bytes). Emitted here via
+;#                %InsertNextPreCompiledCodeBlock -- that macro streams the next chunk of
+;#                SuperFXCode_YI.bin, which is a contiguous dump, not a code-only blob; the
+;#                readable disassembly of this text region is yi/SuperFX/Banks/Bank51.asm.
 ;#       $515348+ ~44 KB freespace tail.
 ;#
 ;# Level-data blob naming: each DATA_XXxxxx is referenced from the level pointer table emitted
@@ -62,11 +67,11 @@ DATA_level_95_spr:							; level data
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($51567B, incbin, DATA_51567B_YI_U2.bin)	; V1.1 padding to bank-end alignment
 else
-	; Zero-byte close of the level-data run. The GSU block below is pinned at $5110DB,
+	; Zero-byte close of the level-data run. The text block below is pinned at $5110DB,
 	; so the run can't grow, but the blobs are label-addressed: dropping one pulls this
 	; boundary back and the fill pads the gap with $FF up to the pinned block.
-	%FREE_BYTES($5110DB, 0, $FF)				; V1.0: level-data run ends exactly at the GSU block
-	%InsertNextPreCompiledCodeBlock($5110DB, YI_SuperFXCode, "SuperFX/SuperFXCode_YI.bin")	; V1.0: more GSU code after the level data
+	%FREE_BYTES($5110DB, 0, $FF)				; V1.0: level-data run ends exactly at the text block
+	%InsertNextPreCompiledCodeBlock($5110DB, YI_SuperFXCode, "SuperFX/SuperFXCode_YI.bin")	; V1.0: message-box + level-name text after the level data
 	%FREE_BYTES($515348, 44216, $FF)			; V1.0: ~44 KB free tail
 endif
 %BANK_END(<EndBank>)

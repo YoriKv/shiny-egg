@@ -3602,7 +3602,8 @@ DATA_019EB2:
 ; State $5E: CODE_hookbill_begin_koopa_crouch. Crouching anim before shell
 ; spawns. While $7A98 ticks, $16,x cycles through 4 facing frames
 ; (DATA_019EB2: $0F/$0B/$0C/$0D). When $16 < 0, sets up Mode-7 sprite
-; via $6FA0/$6FA2/$7040 (sprite-2 OAM extension words), nudges Y up by 4,
+; via $6FA0/$6FA2/$7040 (the slot's collision / terrain / behaviour words, see
+; DATA_0A9320 / DATA_0A971E / DATA_0A9B1C headers), nudges Y up by 4,
 ; INC $1080 (boss is now in mid-animation phase 1), clears state regs,
 ; positions Hookbill at $1076/$1078 = $0050, calls CODE_018AC9/AB6/AE1/B15
 ; (set up SuperFX draw + Mode-7 matrix), INC $76. Final PLA + RTL
@@ -4587,8 +4588,9 @@ DATA_01A5E0:
 ; Calls CODE_georgette_jelly_per_frame_l (frozen/fuzzy-aware sprite update), then
 ; CODE_01A740 (per-frame egg/projectile damage detector + Yoshi
 ; bounce / mount logic), then dispatches state via DATA_01A5E0 on
-; $76,x. Final step writes OAM attr $6FA0 = $0620 (small) or $0660
-; (large) based on $76,x range.
+; $76,x. Final step writes the collision word $6FA0 = $0620 (small) or $0660
+; (large) based on $76,x range (DATA_0A9320 bits: projectile-immune + not
+; tongueable, plus sprite-collision target for $0620).
 ;
 ; INPUTS:   X = slot; $76,x = state; $7A36/$7A96/$7A98 timers
 ; OUTPUTS:  Per-state behaviour; OAM updated
@@ -5965,7 +5967,7 @@ CODE_01AF6D:
 ;   $0D = level fade-in post-pipe / post-door
 ;   $0E = (handled elsewhere -- transition glue)
 ;   $0F = the main per-frame in-level dispatcher (runs every frame
-;         while gameplay is active; sub-dispatches via DATA_levelmode_index)
+;         while gameplay is active)
 ;   $10 = victory cutscene
 ;=========================================================================
 
@@ -6000,10 +6002,17 @@ CODE_prepare_in_level_states:                ; Raidenthequick: CODE_prepare_in_l
 ;---------------------------------------------------------------------------
 
 ;-------------------------------------------------------------------------
-; DATA_levelmode_index: byte table mapping levelmode 00..0F -> dispatcher offset
-; into the gamemode-0F sub-dispatcher table. Each entry is the offset
-; (in bytes) into that table; offsets are 2 apart because the table
-; holds word pointers.
+; DATA_levelmode_index: byte table mapping levelmode $00..$0F -> the X value handed
+; to CODE_init_scene_regs, i.e. the BYTE offset into the WORD table
+; DATA_scene_layout_indices ($00:BBAF). Entry = levelmode*2 + 4, so
+;   LevelMode N selects scene_layout_indices word N+2 -> DATA_scene_register_layout ROW N+2.
+; NOT row N -- reading the layout table with the raw LevelMode is off by two rows (e.g.
+; mode $05, vanilla 1-1's, is row 7 with MainScreenLayers $15 = BG1+BG3+OBJ; row 5 is
+; mode $03's offset-per-tile row with $11). Rows 0/1 are the non-level scenes (title,
+; Nintendo-presents), which is why the level modes start at +2.
+; Every user feeds CODE_init_scene_regs: CODE_load_level_data_pointers ($01:B084),
+; the gm0c load-scene block ($01:B1BC), and CODE_retry_setup_shared ($01:E59A, which
+; takes the table's first entry outright = scene row 2). See docs/bg23rendering.md S3.
 ;-------------------------------------------------------------------------
 DATA_01AF80:
 DATA_levelmode_index:                        ; Raidenthequick: DATA_levelmode_index

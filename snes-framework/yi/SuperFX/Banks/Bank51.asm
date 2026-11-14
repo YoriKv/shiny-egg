@@ -434,9 +434,8 @@ DATA_message_box_text_ptrs:              ; message-ID -> message-text pointer (c
 ; are preserved. Messages are pointer-referenced (DATA_5110DB) so they relocate
 ; freely, and the region MAY grow past its original size: everything after it in
 ; the bank (the level-name table + strings) is label-addressed, so asar re-resolves,
-; and the host build pushes the bank's closing %FREE_BYTES boundary forward by the
-; growth (Banks/Bank51.asm's ~44 KB $FF tail). The editor caps that growth at
-; whatever the tail still has after relocated level data + the asm-patch pool.
+; and the bank's closing %FREE_BYTES boundary (Banks/Bank51.asm's ~44 KB $FF tail)
+; absorbs the growth.
 DATA_511333:
 DATA_msg_intro_paradise:                    ; "This paradise is Yoshi's Island..." -- intro cutscene
 	dw $05FF : db "This paradise is"
@@ -1731,11 +1730,10 @@ DATA_level_name_string_ptrs:                                       ; descriptive
 	dw DATA_51532F
 
 ;@editable:level-name-strings begin
-; Level-name display strings (2 centered lines each), edited by a host
-; string editor. Bodies are pointer-table-indexed (DATA_5149BC above), so they
-; relocate freely; only the text inside the quotes is editor-mutable. The total
+; Level-name display strings (2 centered lines each). Bodies are
+; pointer-table-indexed (DATA_5149BC above), so they relocate freely. The total
 ; byte size must not grow past its original (fixed asm budget before the GSU
-; blob) — the editor enforces this. The garbage sentinel is preserved verbatim.
+; blob). The garbage sentinel is preserved verbatim.
 DATA_514A4C:
 DATA_welcome_to_yoshis_island:                                     ; world-1 splash, slotted into level-name-ptrs table at index $0B
 	db $FF,$00,"      Welcome To"

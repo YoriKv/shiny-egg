@@ -83,7 +83,6 @@ namespace YI_LevelDataPtrsAndEntranceData
 ;-------------------------------------------------------------------------
 DATA_17F3E7:
 DATA_level_entrance_indexes:
-	; host-owned span (ROM importer / world-map remap); see scripts/world-map.ts
 	;@editable:world-map-entrance-indexes begin
 	dw $0000,$0004,$0008,$000C,$0010,$0014,$0018,$001C
 	dw $0020,$0000,$00D8,$00DC,$0024,$0028,$002C,$0030
@@ -113,7 +112,6 @@ DATA_level_entrance_indexes:
 ;-------------------------------------------------------------------------
 DATA_17F471:
 DATA_map_level_entrances:
-	; host-owned span (world-map remap); see scripts/asm/entrance-table.ts
 	;@editable:world-map-entrances begin
 	db $00,$07,$77,!Define_YI_LevelID_WatchOutBelow
 	db $01,$07,$7A,!Define_YI_LevelID_TheCaveOfChompRock
@@ -183,7 +181,6 @@ DATA_map_level_entrances:
 ;-------------------------------------------------------------------------
 DATA_17F551:
 DATA_level_midway_entrance_indexes:
-	; host-owned span (ROM importer / world-map remap); see scripts/world-map.ts
 	;@editable:world-map-midway-entrance-indexes begin
 	dw $0000,$0004,$000C,$0014,$001C,$0020,$0024,$0028
 	dw $0000,$0000,$0000,$0000,$0038,$003C,$0044,$004C
@@ -211,7 +208,6 @@ DATA_level_midway_entrance_indexes:
 ;-------------------------------------------------------------------------
 DATA_17F5DB:
 DATA_map_level_midway_entrances:
-	; host-owned span (world-map remap); see scripts/asm/entrance-table.ts
 	;@editable:world-map-midway-entrances begin
 	dw $7800,$0076,$8201,$007B,$093B,$0049,$0000,$0000
 	dw $753C,$0068,$F703,$0078,$EC6E,$0068,$0E04,$005B
@@ -269,9 +265,9 @@ Ptrs:
 level_pointer_table:              ; Raidenthequick: level_object_pointers / level_sprite_pointers
 ;$17F7C3
 	; Per-row identities below are derived from the cart entrance tables
-	; (record = entrance byte +0; editor-data/yi/level-map.json). Records and
+	; (record = entrance byte +0). Records and
 	; world-map slots (LevelIDs.asm translevels) are DIFFERENT id spaces that
-	; collide numerically -- e.g. 1-8’s tile plays record $9B, and record $07
+	; collide numerically -- e.g. 1-8's tile plays record $9B, and record $07
 	; is one of its sub-rooms.
 	dl DATA_level_00_obj,DATA_level_00_spr    ; $00 1-1 "Make Eggs, Throw Eggs" (map slot $00)
 	dl DATA_level_01_obj,DATA_level_01_spr    ; $01 1-2 "Watch Out Below!" (map slot $01)
@@ -298,7 +294,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_16_obj,DATA_level_16_spr    ; $16 3-5 "Jammin' Through The Trees" (map slot $1C)
 	dl DATA_level_17_obj,DATA_level_17_spr    ; $17 3-6 "The Cave Of Harry Hedgehog" (map slot $1D)
 	dl DATA_level_18_obj,DATA_level_18_spr    ; $18 3-7 "Monkeys' Favorite Lake" (map slot $1E)
-	dl DATA_level_19_obj,DATA_14C6C6-$02    ; $19 3-8 "Naval Piranha's Castle" (map slot $1F) -- sprite ptr biased -2 into DATA_level_51_spr’s terminator (de-couple to edit; pool-map.ts)
+	dl DATA_level_19_obj,DATA_14C6C6-$02    ; $19 3-8 "Naval Piranha's Castle" (map slot $1F) -- sprite ptr biased -2 into DATA_level_51_spr's terminator (de-couple before editing)
 	dl DATA_level_1A_obj,DATA_level_1A_spr    ; $1A 3-Extra "More Monkey Madness" (map slot $20)
 	dl DATA_level_1B_obj,DATA_level_1B_spr    ; $1B 4-1 "GO! GO! MARIO!!" (map slot $24)
 	dl DATA_level_1C_obj,DATA_level_1C_spr    ; $1C 4-2 "The Cave Of The Lakitus" (map slot $25)
@@ -330,7 +326,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_36_obj,DATA_level_36_spr    ; $36 sub-room of 1-1 "Make Eggs, Throw Eggs"
 	dl DATA_level_37_obj,DATA_level_37_spr    ; $37 sub-room of 1-3 "The Cave Of Chomp Rock"
 	dl DATA_level_38_obj,DATA_level_38_spr    ; $38 intro-cutscene level (played by map slot $0A via gm38)
-	dl DATA_level_39_obj,DATA_level_39_spr    ; $39 Welcome To Yoshi’s Island (played by map slot $0B -- the Bank04 hardcoded boot)
+	dl DATA_level_39_obj,DATA_level_39_spr    ; $39 Welcome To Yoshi's Island (played by map slot $0B -- the Bank04 hardcoded boot)
 	dl DATA_level_3A_obj,DATA_level_3A_spr    ; $3A sub-room of 1-1 "Make Eggs, Throw Eggs"
 	dl DATA_level_3B_obj,DATA_level_3B_spr    ; $3B sub-room of 1-2 "Watch Out Below!"
 	dl DATA_level_3C_obj,DATA_level_3C_spr    ; $3C sub-room of 1-3 "The Cave Of Chomp Rock"
@@ -479,7 +475,7 @@ level_pointer_table:              ; Raidenthequick: level_object_pointers / leve
 	dl DATA_level_C8_obj,DATA_level_C8_spr    ; $C8 sub-room of 2-8 "The Potted Ghost's Castle"
 	dl DATA_level_C9_obj,DATA_level_C9_spr    ; $C9 sub-room of 3-4 "Prince Froggy's Fort"
 	dl DATA_level_CA_obj,DATA_level_CA_spr    ; $CA sub-room of 5-3 "Danger - Icy Conditions Ahead"
-	dl DATA_level_CB_obj,DATA_16F097-$02    ; $CB sub-room of 5-8 "Raphael The Raven's Castle" -- sprite ptr biased -2 into DATA_level_C4_spr’s terminator (de-couple to edit; pool-map.ts)
+	dl DATA_level_CB_obj,DATA_16F097-$02    ; $CB sub-room of 5-8 "Raphael The Raven's Castle" -- sprite ptr biased -2 into DATA_level_C4_spr's terminator (de-couple before editing)
 	dl DATA_level_CC_obj,DATA_level_CC_spr    ; $CC sub-room of 6-4 "Tap-Tap The Red Nose's Fort"
 	dl DATA_level_CD_obj,DATA_level_CD_spr    ; $CD sub-room of 3-6 "The Cave Of Harry Hedgehog"
 	dl DATA_level_CE_obj,DATA_level_CE_spr    ; $CE sub-room of 2-4 "Bigger Boo's Fort" -- Mode7 "rotating platforms" room: drives BG3-offset HDMA (occupies HDMA ch 1-4/6)

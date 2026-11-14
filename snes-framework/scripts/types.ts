@@ -209,6 +209,18 @@ export interface ScreenExitMinibattle {
   returnLevelRecordId: number;
 }
 
+/**
+ * A warp destination: the four payload fields of a level-warp screen-exit
+ * record. The rotating-door table (`DATA_0F891F`) stores four records in this
+ * same layout, one per door the sprite can send Yoshi through.
+ */
+export interface RoomWarpDestination {
+  destLevelRecordId: number;
+  destX: number;
+  destY: number;
+  entranceType: number;
+}
+
 export interface LevelSprite {
   /** Editor-session-only stable identity — see `LevelObject.uid`. */
   uid?: number;

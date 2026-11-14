@@ -168,8 +168,9 @@ export const PANEL_HELP: PanelHelp = {
         on the loaded level (accent label), or jumping levels first on any other
         grid. Clicking an exit <i>or</i> an amber entrance on the loaded level also
         selects it in Properties; selecting either end highlights its connection
-        line. Compact boxes are destinations outside this cluster (other world-map
-        levels). To <i>add</i> an exit, use the Place panel&rsquo;s{' '}
+        line. Compact boxes show incoming sources outside the reachable rooms;
+        their entrances stay visible without expanding those entire stages.
+        To <i>add</i> an exit, use the Place panel&rsquo;s{' '}
         <b>Exit&nbsp;/&nbsp;Special</b> tab and click a screen.
       </p>
     </>

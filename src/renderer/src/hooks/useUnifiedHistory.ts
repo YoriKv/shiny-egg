@@ -63,12 +63,14 @@ export interface UnifiedHistoryParams {
   /** The reducer's monotonic commit counter (levelState.commits). */
   commits: number
   selectedLevelRecordId: number | null
-  rootLevelRecordId: number | null
+  projectScope: string
   incomingByLevel: Map<number, IncomingExit[]>
   dispatchLevel: Dispatch<LevelAction>
   appendLog: (line: string) => void
   setNeedsBuild: (v: boolean) => void
   setSelection: Dispatch<SetStateAction<Selection[]>>
+  /** A cross-level exit edit landed on disk for this source record. */
+  onCrossLevelSaved: (sourceLevelRecordId: number) => void
 }
 
 export interface UnifiedHistoryApi {
@@ -106,12 +108,13 @@ export interface UnifiedHistoryApi {
 export function useUnifiedHistory({
   commits,
   selectedLevelRecordId,
-  rootLevelRecordId,
+  projectScope,
   incomingByLevel,
   dispatchLevel,
   appendLog,
   setNeedsBuild,
-  setSelection
+  setSelection,
+  onCrossLevelSaved
 }: UnifiedHistoryParams): UnifiedHistoryApi {
   // Optimistic per-exit overrides for incoming markers, keyed by
   // `${sourceLevelRecordId}:${sourceScreenIndex}`. A cross-level exit edit writes
@@ -119,18 +122,36 @@ export function useUnifiedHistory({
   // same render as the drag overlay clears — no full BFS re-walk (which would
   // blank + repopulate every marker, the flicker). An entrance-type edit patches
   // the same map (the dropdown twin) so re-selecting the marker shows the new
-  // value. Cleared when the root changes (the BFS then re-reads disk, which
-  // already has the saved edit).
+  // value. Retained across stage switches until the project index catches up.
   const [incomingPatch, setIncomingPatch] = useState<Map<string, IncomingOverride>>(
     () => new Map()
   )
   const incomingPatchRef = useRef(incomingPatch)
   incomingPatchRef.current = incomingPatch
-  // Drop optimistic patches when the root changes — the BFS re-walks from disk,
-  // which already reflects any saved cross-level edits.
+  // Patches belong to one project, independently of the stage used to open it.
   useEffect(() => {
     setIncomingPatch(new Map())
-  }, [rootLevelRecordId])
+  }, [projectScope])
+  // Once the project index reflects an optimistic edit it no longer needs a
+  // patch. Also drop patches for a source opened in the level editor, whose
+  // draft now owns that exit (and can subsequently change it again).
+  useEffect(() => {
+    setIncomingPatch((patches) => {
+      const next = new Map(patches)
+      for (const [key, patch] of patches) {
+        const [source, screen] = key.split(':').map(Number)
+        const marker = [...incomingByLevel.values()].flat().find((i) =>
+          i.kind !== 'rotating-door' && i.sourceLevelRecordId === source && i.sourceScreenIndex === screen)
+        if (source === selectedLevelRecordId || (marker &&
+          (patch.x === undefined || patch.x === marker.destX) &&
+          (patch.y === undefined || patch.y === marker.destY) &&
+          (patch.entranceType === undefined || patch.entranceType === marker.entranceType))) {
+          next.delete(key)
+        }
+      }
+      return next.size === patches.size ? patches : next
+    })
+  }, [incomingByLevel, selectedLevelRecordId])
   const incoming = useMemo<IncomingExit[]>(() => {
     const base =
       selectedLevelRecordId !== null
@@ -142,7 +163,7 @@ export function useUnifiedHistory({
       // Entries sourced from the LOADED level are live (App overlays its
       // in-memory exits), so a leftover optimistic patch for them is stale by
       // definition — the disk edit it mirrored was read back at level load.
-      if (inc.sourceLevelRecordId === selectedLevelRecordId) return inc
+      if (inc.kind === 'rotating-door' || inc.sourceLevelRecordId === selectedLevelRecordId) return inc
       const p = incomingPatch.get(`${inc.sourceLevelRecordId}:${inc.sourceScreenIndex}`)
       if (!p) return inc
       const next = { ...inc }
@@ -231,6 +252,7 @@ export function useUnifiedHistory({
           return false
         }
         setNeedsBuild(true)
+        onCrossLevelSaved(edit.sourceLevelRecordId)
         return true
       } catch (err) {
         appendLog(`Exit edit failed — ${(err as Error).message}`)
@@ -238,7 +260,7 @@ export function useUnifiedHistory({
         return false
       }
     },
-    [appendLog, setNeedsBuild]
+    [appendLog, setNeedsBuild, onCrossLevelSaved]
   )
 
   // The entrance-type twin of applyCrossLevel: write the source exit's
@@ -269,6 +291,7 @@ export function useUnifiedHistory({
           return false
         }
         setNeedsBuild(true)
+        onCrossLevelSaved(edit.sourceLevelRecordId)
         return true
       } catch (err) {
         appendLog(`Exit entrance edit failed — ${(err as Error).message}`)
@@ -276,7 +299,7 @@ export function useUnifiedHistory({
         return false
       }
     },
-    [appendLog, setNeedsBuild]
+    [appendLog, setNeedsBuild, onCrossLevelSaved]
   )
 
   // Generic overlay-document channel. Documents (useOverlayDocument) register an
@@ -325,6 +348,7 @@ export function useUnifiedHistory({
   // selection snapshot would otherwise show the stale "Lands at").
   const onMoveIncoming = useCallback(
     async (inc: IncomingExit, destX: number, destY: number) => {
+      if (inc.kind === 'rotating-door') return
       if (inc.destX === destX && inc.destY === destY) return
       const edit: CrossLevelEdit = {
         sourceLevelRecordId: inc.sourceLevelRecordId,
@@ -346,6 +370,7 @@ export function useUnifiedHistory({
   // a snapshot, so the dropdown would otherwise show the stale entrance).
   const onSetIncomingEntrance = useCallback(
     async (inc: IncomingExit, entranceType: number) => {
+      if (inc.kind === 'rotating-door') return
       if (inc.entranceType === entranceType) return
       const edit: CrossLevelEntranceEdit = {
         sourceLevelRecordId: inc.sourceLevelRecordId,

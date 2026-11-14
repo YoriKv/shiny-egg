@@ -1,98 +1,171 @@
-// BFS over warp exits starting from a root translevel. Streams incremental
-// results so the UI can render partial lists as discovery progresses.
+// A project-wide warp index makes incoming markers independent of the stage
+// used to open a room. Room lists follow actual outgoing links.
 //
-// A "sub-room" is any reachable level that is NOT itself a catalog entry in
-// the main level dropdown. Catalog entries (other translevels) are pruned
-// from BOTH the result list AND BFS expansion — they're reachable via the
-// main menu and shouldn't get treated as sub-rooms of the current translevel.
-//
-// Side product: `incomingByLevel` is the reverse adjacency — "which sibling
-// rooms warp INTO this destination". Built alongside subLevels so the
-// canvas can show entry markers for one-way connections.
-
-import { useEffect, useState } from 'react'
-import { getLevel } from '../data/levels'
-import { walkWarpGraph, type WarpEdge } from '../lib/warp-graph'
+// The index is one entry per source record (its warp edges, possibly empty).
+// A full scan decodes every record over IPC, so it runs only when the project
+// scope / record count changes or on an explicit `refreshToken` bump (ROM
+// import). Every other change is incremental: a level save or reset replaces
+// that record from its in-memory data (`recordSavedLevel`), and a cross-level
+// exit edit re-reads just the edited source (`reloadLevelEdges`). Removed
+// records are filtered at read time, so removing one never rescans, and a
+// record that leaves the removed set is re-read on its own.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { LevelData, RoomWarpDestination } from '../../../preload/api'
+import { useLevelsCatalog, useRemovedRecords } from '../data/levels'
+import { loadWarpEdges, roomGraph, withLiveWarpEdges, type WarpEdge } from '../lib/warp-graph'
 import type { IncomingExit } from '../types'
+const EMPTY_DOORS: RoomWarpDestination[] = []
+const SCAN_CONCURRENCY = 8
 
 export interface SubLevelBFS {
-  /** Discovered sub-room IDs in BFS order. Root included at index 0. */
   subLevels: number[]
-  /** True while BFS is still in flight. */
   loading: boolean
-  /** Reverse map keyed by destination level ID. */
   incomingByLevel: Map<number, IncomingExit[]>
-  /** Every warp edge seen during the walk, in BFS order — the forward view the
-   *  Exits panel's network section renders (source → dest per room). */
   edges: WarpEdge[]
+  allEdges: WarpEdge[]
+  /** The complete project edge set (live edits of the loaded level included).
+   *  Resolves immediately when the index is complete, else once the running
+   *  scan finishes. Graph walks (Test Level's warp chain, owner lookup) read
+   *  this rather than re-reading disk. */
+  readEdges: () => Promise<WarpEdge[]>
+  /** Replace one record's edges from in-memory level data (after save / reset). */
+  recordSavedLevel: (level: LevelData) => void
+  /** Re-read one record's edges from disk (after a cross-level exit edit). */
+  reloadLevelEdges: (levelRecordId: number) => void
 }
 
-const EMPTY: SubLevelBFS = {
-  subLevels: [],
-  loading: false,
-  incomingByLevel: new Map(),
-  edges: []
-}
+type EdgeIndex = { scope: string; bySource: ReadonlyMap<number, WarpEdge[]> }
 
-export function useSubLevelBFS(rootLevelRecordId: number | null, refreshToken = 0): SubLevelBFS {
-  const [subLevels, setSubLevels] = useState<number[]>([])
-  const [loading, setLoading] = useState<boolean>(false)
-  const [incomingByLevel, setIncomingByLevel] = useState<Map<number, IncomingExit[]>>(
-    () => new Map()
-  )
-  const [edges, setEdges] = useState<WarpEdge[]>([])
+export function useSubLevelBFS(
+  root: number | null,
+  selected: number | null,
+  liveLevel: LevelData | null,
+  scope: string,
+  refreshToken = 0
+): SubLevelBFS {
+  const catalog = useLevelsCatalog()
+  const removed = useRemovedRecords()
+  const removedRef = useRef(removed)
+  removedRef.current = removed
+  const count = catalog.recordCount ?? 0x100
+  const enabled = catalog.groups.length > 0
+  const [index, setIndex] = useState<EdgeIndex | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [doorTable, setDoorTable] = useState<{ scope: string; destinations: RoomWarpDestination[] } | null>(null)
+  const doors = doorTable?.scope === scope ? doorTable.destinations : EMPTY_DOORS
+  const doorsRef = useRef(doors)
+  doorsRef.current = doors
 
+  /** Merge per-record entries into the index for `forScope` (dropped if the
+   *  scope moved on while they were loading). */
+  const mergeEntries = useCallback((forScope: string, entries: [number, WarpEdge[]][]) => {
+    if (entries.length === 0) return
+    setIndex((previous) => {
+      const bySource = new Map(previous?.scope === forScope ? previous.bySource : [])
+      for (const [id, edges] of entries) bySource.set(id, edges)
+      return { scope: forScope, bySource }
+    })
+  }, [])
+
+  const recordSavedLevel = useCallback((level: LevelData) => {
+    mergeEntries(scope, [[level.recordId, withLiveWarpEdges([], level.recordId, level.exits, level.sprites, doorsRef.current)]])
+  }, [scope, mergeEntries])
+
+  // Single-record reads in flight. A request while one is pending queues one
+  // follow-up read (the pending read may predate the newer write).
+  const pendingRef = useRef(new Map<string, boolean>())
+  const reloadLevelEdges = useCallback((levelRecordId: number) => {
+    const forScope = scope
+    const key = `${forScope}:${levelRecordId}`
+    if (pendingRef.current.has(key)) {
+      pendingRef.current.set(key, true)
+      return
+    }
+    const read = (): void => {
+      pendingRef.current.set(key, false)
+      void loadWarpEdges(levelRecordId, doorsRef.current)
+        .catch(() => [])
+        .then((edges) => {
+          mergeEntries(forScope, [[levelRecordId, edges]])
+          if (pendingRef.current.get(key)) read()
+          else pendingRef.current.delete(key)
+        })
+    }
+    read()
+  }, [scope, mergeEntries])
+
+  // Full scan. Partial results publish per batch so the room list and markers
+  // fill in as the scan runs; a refresh in the same scope keeps the previous
+  // entries visible until each is replaced.
   useEffect(() => {
-    if (rootLevelRecordId === null) {
-      setSubLevels([])
-      setIncomingByLevel(new Map())
-      setEdges([])
+    if (!enabled) {
       setLoading(false)
       return
     }
     let cancelled = false
-    setSubLevels([rootLevelRecordId])
-    setIncomingByLevel(new Map())
-    setEdges([])
     setLoading(true)
-    const result: number[] = [rootLevelRecordId]
-    const incomingBuild = new Map<number, IncomingExit[]>()
-    const edgesBuild: WarpEdge[] = []
-    ;(async () => {
-      // Shared warp-graph walk (lib/warp-graph). `shouldExpand` prunes catalog
-      // destinations — they're full translevels, not sub-rooms, so we don't
-      // descend into their sub-graph either.
-      for await (const { edge, expanded } of walkWarpGraph(rootLevelRecordId, {
-        shouldExpand: (id) => !getLevel(id)
-      })) {
+    void (async () => {
+      const destinations = await window.shinyEgg.editor.rotatingDoorEntrances().catch(() => [])
+      if (cancelled) return
+      setDoorTable({ scope, destinations })
+      for (let start = 0; start < count; start += SCAN_CONCURRENCY) {
         if (cancelled) return
-        // Record the incoming-reference for EVERY warp edge (independent of the
-        // catalog/visited gates that govern expansion) so one-way markers show.
-        const list = incomingBuild.get(edge.destLevelRecordId) ?? []
-        list.push({
-          sourceLevelRecordId: edge.sourceLevelRecordId,
-          destX: edge.destX,
-          destY: edge.destY,
-          sourceScreenIndex: edge.sourceScreenIndex,
-          entranceType: edge.entranceType
-        })
-        incomingBuild.set(edge.destLevelRecordId, list)
-        edgesBuild.push(edge)
-        // A newly-seen, expandable (non-catalog) destination is a sub-room.
-        if (expanded) result.push(edge.destLevelRecordId)
-        setSubLevels([...result])
-        setIncomingByLevel(new Map(incomingBuild))
-        setEdges([...edgesBuild])
+        // Include orphan/unused rooms for one-way links; removed records are
+        // read on restore instead.
+        const ids = Array.from({ length: Math.min(SCAN_CONCURRENCY, count - start) }, (_, i) => start + i)
+          .filter((id) => !removedRef.current.has(id))
+        const batch = await Promise.all(ids.map(async (id): Promise<[number, WarpEdge[]]> =>
+          [id, await loadWarpEdges(id, destinations).catch(() => [])]))
+        if (cancelled) return
+        mergeEntries(scope, batch)
       }
-      if (!cancelled) setLoading(false)
+      setLoading(false)
     })()
     return () => {
       cancelled = true
     }
-    // refreshToken: bumped after a level save / ROM import so the walk re-reads
-    // the now-changed disk state (cross-level incoming markers refresh).
-  }, [rootLevelRecordId, refreshToken])
+  }, [enabled, scope, count, refreshToken, mergeEntries])
 
-  if (rootLevelRecordId === null) return EMPTY
-  return { subLevels, loading, incomingByLevel, edges }
+  // A record leaving the removed set (restored, or a new level created in its
+  // slot) is re-read: the scan may have skipped it, or its cached edges predate
+  // the new content.
+  const prevRemovedRef = useRef(removed)
+  useEffect(() => {
+    const previous = prevRemovedRef.current
+    prevRemovedRef.current = removed
+    for (const id of previous) if (!removed.has(id)) reloadLevelEdges(id)
+  }, [removed, reloadLevelEdges])
+
+  const allEdges = useMemo(() => {
+    if (!enabled || index?.scope !== scope) return []
+    const live = liveLevel && !liveLevel.empty && !liveLevel.special && liveLevel.recordId === selected
+      ? liveLevel : null
+    const edges: WarpEdge[] = []
+    for (const [id, list] of index.bySource) if (!removed.has(id)) edges.push(...list)
+    return live ? withLiveWarpEdges(edges, live.recordId, live.exits, live.sprites, doors) : edges
+  }, [enabled, index, scope, liveLevel, selected, removed, doors])
+
+  // readEdges: resolve waiters once a scan completes (or the index is disabled).
+  const allEdgesRef = useRef(allEdges)
+  allEdgesRef.current = allEdges
+  const loadingRef = useRef(loading)
+  loadingRef.current = loading
+  const waitersRef = useRef<((edges: WarpEdge[]) => void)[]>([])
+  useEffect(() => {
+    if (loading) return
+    const waiters = waitersRef.current
+    waitersRef.current = []
+    for (const resolve of waiters) resolve(allEdgesRef.current)
+  }, [loading, allEdges])
+  const readEdges = useCallback((): Promise<WarpEdge[]> => {
+    if (!loadingRef.current) return Promise.resolve(allEdgesRef.current)
+    return new Promise((resolve) => waitersRef.current.push(resolve))
+  }, [])
+
+  return useMemo(() => {
+    const graph = root === null
+      ? { subLevels: [], edges: [], incomingByLevel: new Map<number, IncomingExit[]>() }
+      : roomGraph(root, selected, allEdges)
+    return { ...graph, allEdges, loading, readEdges, recordSavedLevel, reloadLevelEdges }
+  }, [root, selected, allEdges, loading, readEdges, recordSavedLevel, reloadLevelEdges])
 }

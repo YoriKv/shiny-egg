@@ -45,6 +45,7 @@ import {
   loadGradientEdits,
   loadGradientBaseColors,
   loadResource,
+  loadRotatingDoorEntrances,
   resetGfxEdit,
   resetGfxEditFile,
   resetLevelResource,
@@ -110,6 +111,7 @@ import type {
 } from '../../shared/ipc-types'
 
 export function registerEditorIpc(): void {
+  ipcMain.handle('editor:rotatingDoorEntrances', () => loadRotatingDoorEntrances())
   // Generic editable-resource dispatch (the registry) — the level editor and
   // all new tools load/save through this.
   // Per-sprite-type computed read-only properties (Properties panel).

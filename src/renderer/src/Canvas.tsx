@@ -34,7 +34,9 @@ import {
 import { MAX_LEVEL_SPRITES, clampCell, clampGroupMove, clampObjectMove, clampObjectResize, clampSpriteMove } from './canvas/limits'
 import { formatLevelId, getLevel } from './data/levels'
 import { hex0x } from './lib/hex'
-import type { IncomingExit, LayerVisibility, PlacementItem, Selection } from './types'
+import type { IncomingExit, LayerVisibility, PlacementItem, Selection, WorldMapSpawn } from './types'
+import { incomingIdentity } from './lib/warp-graph'
+import { getRoomMetadata, useRoomMetadata } from './data/room-metadata'
 import { useObjectInfluence } from './hooks/useObjectInfluence'
 import { usePlacementFootprint } from './hooks/usePlacementFootprint'
 import { useObjectCells } from './hooks/useObjectCells'
@@ -192,14 +194,12 @@ export interface CanvasProps {
   onSetTestSpawn: (cellX: number, cellY: number) => void
   /** Remove the spawn override (fired when a set/middle click lands on it). */
   onClearTestSpawn: () => void
-  /** Live world-map spawn position from the entrance-table draft (useWorldMapEditor)
-   *  for the loaded level. When set, the spawn marker draws here instead of the
-   *  base `level.spawn`, so an unsaved spawn edit moves the marker live. Null when
-   *  the level has no world-map entrance or the draft hasn't loaded. */
-  spawnOverride: { x: number; y: number } | null
+  /** All live world-map spawn markers in the loaded room. An empty list means
+   *  there is no wired entrance here; extract-time `level.spawn` is not used. */
+  spawnOverride: WorldMapSpawn[]
   /** Commit an absolute spawn cell to the entrance-table document (the marker
    *  drag's release). One undo step; the marker follows via `spawnOverride`. */
-  onSpawnCommit: (x: number, y: number) => void
+  onSpawnCommit: (x: number, y: number, entranceIndex?: number) => void
   /** The palette color-edit DRAFT (usePaletteEditor) — fed to the render layers
    *  as `paletteOverride` so the canvas previews unsaved palette edits live (no
    *  build). See hooks/useLevelRenderLayers. */
@@ -291,6 +291,7 @@ export function Canvas({
   // chosen 1×–4×.
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraSettings, setCameraSettings] = useState<CameraPreview>(() => CAMERA_SETTINGS_STORE.load())
+  const roomMetadata = useRoomMetadata()
   useEffect(() => {
     CAMERA_SETTINGS_STORE.save(cameraSettings)
   }, [cameraSettings])
@@ -498,6 +499,7 @@ export function Canvas({
         // the entrance-table document (NOT the level reducer — same shape as
         // moveIncoming). Preview rides a Canvas-local overlay; release commits.
         kind: 'moveSpawn'
+        entranceIndex?: number
         startX: number
         startY: number
         baseX: number
@@ -611,7 +613,7 @@ export function Canvas({
   // Live spawn-marker drag preview: the pending spawn cell. Drives the draw
   // effect to move the marker; `null` outside a moveSpawn drag. Commit on release
   // reads this back (preview == commit), then calls onSpawnCommit.
-  const [spawnDragOverlay, setSpawnDragOverlay] = useState<{ x: number; y: number } | null>(null)
+  const [spawnDragOverlay, setSpawnDragOverlay] = useState<WorldMapSpawn | null>(null)
   // Object-drag cell-highlight: per-cell provenance (footprint/neighbour/buried)
   // for the dragged object(s) at their pending position — single move/resize OR a
   // multi-select group move (one decode for the whole group). Null otherwise.
@@ -872,8 +874,9 @@ export function Canvas({
           setView(restore.view)
         } else if (focus && focus.levelRecordId === data.recordId && playable) {
           setView(focusViewFor(focus.x, focus.y, sizeRef.current, focus.zoom))
-        } else if (playable && data.spawn) {
-          setView(focusViewFor(data.spawn.x, data.spawn.y, sizeRef.current))
+        } else if (playable && spawnOverrideRef.current.length > 0) {
+          const spawn = spawnOverrideRef.current[0]
+          setView(focusViewFor(spawn.x, spawn.y, sizeRef.current))
         } else {
           setView(fitViewForLevel(data))
         }
@@ -952,7 +955,9 @@ export function Canvas({
     drawScene(canvasRef.current, {
       size, view, level, layers, gridColor, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
       spriteBounds, neighborStatus, behaviorProbes, generatorThumbs, renderValidity, influence, objOutlineBoxes, objectFootprints, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
-      incoming, testSpawn, spawnOverride: spawnDragOverlay ?? spawnOverride, paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
+      incoming, testSpawn, spawnOverride: spawnOverride.map((s) =>
+        spawnDragOverlay && spawnDragOverlay.entranceIndex === s.entranceIndex ? spawnDragOverlay : s),
+      paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
       exitDrag, incomingOverlay, marquee, paintDrag,
       placementPreview: placement && previewCell ? { item: placement, x: previewCell.x, y: previewCell.y } : null,
       cameraPreview: cameraOn ? cameraSettings : null,
@@ -1002,7 +1007,8 @@ export function Canvas({
     previewCell,
     cameraOn,
     cameraSettings,
-    renderOnly
+    renderOnly,
+    roomMetadata
   ])
 
   /**
@@ -1249,12 +1255,12 @@ export function Canvas({
           }
         }
       }
-      if (!placing && sel && sel.kind === 'incoming') {
+      if (!placing && sel && sel.kind === 'incoming' && sel.incoming.kind !== 'rotating-door') {
         // Drag the selected incoming marker — match it in the live array by its
         // (source level, source screen) identity so we grab it where it's drawn.
-        const key = `${sel.incoming.sourceLevelRecordId}:${sel.incoming.sourceScreenIndex}`
+        const key = incomingIdentity(sel.incoming)
         const inc = incomingRef.current.find(
-          (i) => `${i.sourceLevelRecordId}:${i.sourceScreenIndex}` === key
+          (i) => incomingIdentity(i) === key
         )
         const wrap = wrapRef.current
         if (inc && wrap) {
@@ -1283,13 +1289,14 @@ export function Canvas({
       // regrabbed marker still hits. Commit goes to the entrance-table document on
       // release (moveIncoming shape). Suppressed under Place / Set-Spawn tools.
       if (!placing && !spawnTool && sel && sel.kind === 'spawn' && level) {
-        const eff = spawnOverride ?? level.spawn
+        const eff = spawnOverride.find((s) => s.entranceIndex === sel.spawn.entranceIndex)
         const wrap = wrapRef.current
         if (eff && wrap) {
           const rect = wrap.getBoundingClientRect()
           if (hitTestSpawn(level, view, layers, rect, e.clientX, e.clientY, eff)) {
             dragRef.current = {
               kind: 'moveSpawn',
+              entranceIndex: eff.entranceIndex,
               startX: e.clientX,
               startY: e.clientY,
               baseX: eff.x,
@@ -1494,7 +1501,8 @@ export function Canvas({
         // (x 0..255, y 0..127). Commit reads this overlay back on release.
         const { cellDx, cellDy } = snapCellDelta(dx, dy, viewRef.current.zoom)
         const { x: nx, y: ny } = clampCell(d.baseX + cellDx, d.baseY + cellDy)
-        setSpawnDragOverlay((cur) => (cur && cur.x === nx && cur.y === ny ? cur : { x: nx, y: ny }))
+        setSpawnDragOverlay((cur) => (cur && cur.x === nx && cur.y === ny ? cur :
+          { x: nx, y: ny, entranceIndex: d.entranceIndex }))
       } else if (d.kind === 'erase') {
         // Sweep: add whatever the cursor is now over to the kill set. Mutate the
         // drag's sets in place (authoritative for the commit) and mirror them to
@@ -1677,7 +1685,7 @@ export function Canvas({
         const key = `${d.sourceLevelRecordId}:${d.sourceScreenIndex}`
         if (ov && ov.key === key && (ov.x !== d.baseX || ov.y !== d.baseY)) {
           const inc = incomingRef.current.find(
-            (i) => `${i.sourceLevelRecordId}:${i.sourceScreenIndex}` === key
+            (i) => incomingIdentity(i) === key
           )
           if (inc) onMoveIncomingRef.current(inc, ov.x, ov.y)
         }
@@ -1689,7 +1697,7 @@ export function Canvas({
         // undo step; the marker follows via spawnOverride). Skip a same-cell drop.
         const ov = spawnDragOverlayRef.current
         if (ov && (ov.x !== d.baseX || ov.y !== d.baseY)) {
-          onSpawnCommitRef.current(ov.x, ov.y)
+          onSpawnCommitRef.current(ov.x, ov.y, d.entranceIndex)
         }
         endDrag()
         return
@@ -1806,7 +1814,7 @@ export function Canvas({
           e.clientY,
           spriteBoundsRef.current,
           objectFootprintsRef.current,
-          spawnOverrideRef.current ?? levelRef.current?.spawn
+          spawnOverrideRef.current
         )
         const now = Date.now()
         const lc = lastClickRef.current
@@ -1832,10 +1840,13 @@ export function Canvas({
             endDrag()
             return
           }
-          const incHit = hits.find(
+          const incomingHits = hits.filter(
             (h): h is { kind: 'incoming'; incoming: IncomingExit } =>
               h.kind === 'incoming'
           )
+          const selectedIncoming = selectionRef.current.find((s) => s.kind === 'incoming')
+          const incHit = (selectedIncoming?.kind === 'incoming' ? incomingHits.find((h) =>
+            incomingIdentity(h.incoming) === incomingIdentity(selectedIncoming.incoming)) : undefined) ?? incomingHits[0]
           if (incHit) {
             // Source exit lives at the screen-center of its sourceScreenIndex.
             // Convert to cell coords for focusViewFor (which adds the half-cell
@@ -1965,7 +1976,7 @@ export function Canvas({
       setHoveredSprite(hitTestSprite(lvl, v, layers, rect, e.clientX, e.clientY, spriteBoundsRef.current))
       setHoveredExit(hitTestExit(lvl, v, layers, rect, e.clientX, e.clientY))
       setHoveredSpawn(
-        hitTestSpawn(lvl, v, layers, rect, e.clientX, e.clientY, spawnOverrideRef.current ?? lvl?.spawn)
+        hitTestSpawn(lvl, v, layers, rect, e.clientX, e.clientY, spawnOverrideRef.current)
       )
       setHoveredIncoming(
         hitTestIncoming(lvl, v, layers, incomingRef.current, rect, e.clientX, e.clientY)
@@ -2301,7 +2312,9 @@ function buildStatusLine(
   // Slot label: the catalog slot ("1-3") for a playable level; the record id
   // ("0x3D") for a warp-reached sub-room (not in the catalog, so getLevel →
   // undefined — which used to fall through to "no level selected").
-  const slot = levelInfo?.slot ?? formatLevelId(selectedLevelRecordId)
+  const name = getRoomMetadata(selectedLevelRecordId)?.name
+  const slot = name ? `${name} (${formatLevelId(selectedLevelRecordId)})` :
+    levelInfo?.slot ?? formatLevelId(selectedLevelRecordId)
   if (!level) return `loading ${slot}…`
   if (level.empty) return `${slot} · empty slot`
   if (level.special) return `${slot} · hardcoded level`

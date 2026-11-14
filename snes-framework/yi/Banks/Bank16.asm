@@ -74,10 +74,9 @@ DATA_169D23:							; level $7D obj stream (225 bytes). It ends at the object-lis
 								; (DATA_level_A5_obj's first, $F4) as the first exit screen, and its
 								; bit 7 (CODE_108BAF: LDA $1C / BMI) means "no exits". So $7D has no
 								; screen exits, and DATA_level_A5_obj must stay right after this
-								; slice. Kept as DATA_169D23 (not DATA_level_7D_obj): the editor's
-								; DATA_level_7D_obj.bin is the same stream + an explicit $FF (226
-								; bytes, self-contained), which a migration places in free space
-								; before repointing the Ptrs row (pool-map.ts REPOINT_MIGRATIONS).
+								; slice. Kept as DATA_169D23 (not DATA_level_7D_obj): a self-contained
+								; copy of this stream needs its own trailing $FF (226 bytes), so any
+								; relocated level $7D must carry one and have its Ptrs row repointed.
 	incbin "LevelData/DATA_169D23.bin"
 
 DATA_level_A5_obj:

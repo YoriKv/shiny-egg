@@ -14,7 +14,8 @@ import type {
     RenderImage,
     ScreenExit
 } from '../../../../preload/api'
-import type {IncomingExit, LayerVisibility, PlacementItem, Selection} from '../../types'
+import type {IncomingExit, LayerVisibility, PlacementItem, Selection, WorldMapSpawn} from '../../types'
+import { incomingIdentity } from '../../lib/warp-graph'
 import type {View} from '../view'
 import type {SpriteBoundsMap} from '../hit-test'
 import {LEVEL_PX_W, LEVEL_PX_H, SPAWN_MARKER_DY, type ObjectOutlineBox} from '../geometry'
@@ -146,10 +147,8 @@ export interface SceneParams {
     propTable: Uint8Array | null
     incoming: IncomingExit[]
     testSpawn: { x: number; y: number } | null
-    /** Live override for the world-map spawn marker — the unsaved entrance-table
-     *  draft (useWorldMapEditor). When set, the marker draws here instead of
-     *  `level.spawn` (which is the base, extract-time position). */
-    spawnOverride: { x: number; y: number } | null
+    /** All wired spawn markers from the live entrance-table draft. */
+    spawnOverride: WorldMapSpawn[]
     paintTool: boolean
     paintHeights: ReadonlyMap<number, number>
     moveOverlay: MoveOverlay | null
@@ -471,8 +470,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // landmark glyphs); its selectable outline rides Sprite Editing below.
         // The world-map draft overrides the base spawn so an unsaved edit moves
         // the marker live.
-        const spawn = spawnOverride ?? level.spawn
-        if (spriteAnnotations && spawn) {
+        if (spriteAnnotations) for (const spawn of spawnOverride) {
             // Markers sit on Yoshi's feet cell, one below the stored head cell.
             drawSpawnGlyph(ctx, spawn.x, spawn.y + SPAWN_MARKER_DY, view.zoom)
         }
@@ -528,9 +526,10 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // Spawn's sprite-style selectable outline (Sprite Editing layer). Drawn in
         // both editing modes ('detailed' + 'render') since it's hover/select-gated
         // already; only 'off' (which also disables its hit-test) hides it.
-        if (layers.spriteOutlines !== 'off' && spawn) {
+        if (layers.spriteOutlines !== 'off') for (const spawn of spawnOverride) {
             drawSpawnOutline(
-                ctx, spawn.x, spawn.y + SPAWN_MARKER_DY, hoveredSpawn, primary?.kind === 'spawn', view.zoom
+                ctx, spawn.x, spawn.y + SPAWN_MARKER_DY, hoveredSpawn,
+                primary?.kind === 'spawn' && primary.spawn.entranceIndex === spawn.entranceIndex, view.zoom
             )
         }
         if (layers.exits) {
@@ -555,7 +554,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             let drawIncomingArr = incoming
             if (incomingOverlay) {
                 const idx = incoming.findIndex(
-                    (i) => `${i.sourceLevelRecordId}:${i.sourceScreenIndex}` === incomingOverlay.key
+                    (i) => incomingIdentity(i) === incomingOverlay.key
                 )
                 if (idx >= 0) {
                     drawIncomingArr = incoming.slice()

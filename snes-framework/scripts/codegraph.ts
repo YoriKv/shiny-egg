@@ -7,7 +7,11 @@
 //   - the .asm file + line where it's defined
 //   - the other labels sharing its address (aliases)
 //   - the labels it calls / is called by (via JSL/JSR/JML/JMP)
-//   - the `!RAM_*` / `!EXRAM_*` / `!s_*` defines it reads / writes
+//   - the `!RAM_*` / `!EXRAM_*` / `!s_*` defines it reads / writes, from
+//     65816 operands, GSU static RAM ops (LM/LMS/SM/SMS) AND GSU
+//     register-indirect RAM ops whose pointer register was loaded with a
+//     constant earlier in the routine (`IWT R0,#$0F62 ; ADD R1 ; LDW (R0)`
+//     is indexed as a read of $70:0F62 -- see trackGsuIndirectAccesses)
 //
 // Cache lives next to the .sym as `<sym-basename>.graph.json` with an
 // embedded `symMd5`. If the MD5 of the .sym at load time matches the cache,
@@ -122,7 +126,7 @@ export interface LoadOrBuildOptions {
   onProgress?: (msg: string) => void;
 }
 
-const SCHEMA_VERSION = 6; // 6: GSU LM/LMS/SM/SMS memory indexing + $6000-window ↔ $70:xxxx bridging
+const SCHEMA_VERSION = 7; // 6: GSU LM/LMS/SM/SMS memory indexing + $6000-window ↔ $70:xxxx bridging; 7: GSU register-indirect (LDW/LDB/STW/STB (Rn), SBK) via constant tracking + dual-issue second op
 const DEFAULT_ASM_ROOTS = ['yi', 'global'];
 
 // -----------------------------------------------------------------------------
@@ -275,15 +279,253 @@ const RMW_MNEMONICS = new Set([
  * the $00:6000-$7FFF window (`STA $60AC`). Both forms are indexed and bridged
  * so define- and address-keyed queries surface accesses from EITHER CPU
  * (the gap that hid CODE_0BDC20's pipe-entry PlayerState write).
- * Register-indirect GSU forms (STB/STW/LDB/LDW via `(Rm)`), `SBK` (re-store
- * to the last-used address), and the second op of a dual-issue `X : Y` line
- * have no statically-known address and are NOT indexed — same caveat as
- * 65816 indirect stores.
+ * Register-indirect GSU forms (STB/STW/LDB/LDW via `(Rn)`) and `SBK` have no
+ * operand address; they are resolved by `trackGsuIndirectAccesses`, a forward
+ * constant-propagation pass over each routine block (schema 7+). Both ops of a
+ * dual-issue `X : Y` line are analysed.
  */
 const GSU_READ_MNEMONICS = new Set(['LM', 'LMS']);
 const GSU_WRITE_MNEMONICS = new Set(['SM', 'SMS']);
 /** GSU RAM bank base — YI maps the GSU's RAM to cart SRAM $70:0000. */
 const GSU_RAM_BASE = 0x700000;
+
+/** The addresses a GSU-RAM byte offset is indexed under: the cart-SRAM form
+ * ($70:xxxx, where the !EXRAM_* defines live) and, inside the 65816's
+ * $6000-$7FFF window, the window form ($00:6000+off). */
+function gsuRamAddrCandidates(off: number): number[] {
+  const o = off & 0xFFFF;
+  const out = [GSU_RAM_BASE | o];
+  if (o < 0x2000) out.push(0x006000 + o);
+  return out;
+}
+
+/** One GSU register-indirect RAM access resolved by the tracker. `addr` is the
+ * GSU-RAM byte offset the pointer register held (the static BASE when the
+ * register was `base + index`, mirroring how 65816 `,x` operands attribute to
+ * their base). */
+export interface GsuIndirectAccess { kind: 'r' | 'w'; addr: number; indexed: boolean }
+
+/** A tracked GSU register value: a known 16-bit constant, optionally with an
+ * unknown runtime index added (`IWT R0,#$0F62 ; ADD R1`). */
+interface GsuRegVal { base: number; indexed: boolean }
+
+/**
+ * Forward constant-propagation over one routine body (the lines of ONE block,
+ * in source order) that resolves GSU register-indirect RAM accesses:
+ *   `IWT Rn,#$addr` / `IBT Rn,#imm`           Rn := constant
+ *   `ADD/ADC Rm|#imm`, `SUB/SBC #imm`, `INC/DEC Rn`, `MOVE/MOVES Rd,Rs`
+ *                                             propagate (an unknown register
+ *                                             added to a known one keeps the
+ *                                             known BASE, flagged indexed)
+ *   `TO/FROM/WITH Rn`                         prefixes select Sreg/Dreg (R0 default)
+ *   `LDW/LDB (Rn)` with Rn known               -> read  of Rn
+ *   `STW/STB (Rn)` with Rn known               -> write of Rn
+ *   `SBK`                                     -> write of the last RAM address
+ *                                             touched (LDx/STx/LM/LMS/SM/SMS)
+ * Every other Dreg-writing instruction forgets Dreg; labels inside the block
+ * do not reset state (a base set before a loop label is live inside the loop).
+ *
+ * Loops: a register defined BEFORE a loop and modified INSIDE it is
+ * loop-variant. A STRIDE modification (register-operand `ADD`/`SUB`, the `LOOP`
+ * counter R12) resets it to its loop-entry value flagged indexed, so code after
+ * or across the loop sees `base + unknown` rather than `base + one stride`; a
+ * WALK (`INC`/`DEC`, `ADD/SUB #imm`, e.g. half-width -> half-height) is applied
+ * arithmetically, which is exact for iteration 0 and the right base for all.
+ * Loops are recognised from `IWT R13,#label` / `MOVE R13,R15` paired with
+ * `LOOP`, and from backward `Bcc`/`BRA` branches to a label in `labelIdx`
+ * (label name -> index into `bodies` of the line that declares it).
+ *
+ * This is the GSU cousin of assuming DP=0 on the 65816: a static approximation
+ * that is right for the dominant idiom (`IWT base ; ADD slot ; LDW`).
+ *
+ * Returns a map from 0-based index into `bodies` to the accesses on that line.
+ * Exported for unit tests.
+ */
+export function trackGsuIndirectAccesses(bodies: string[], labelIdx: Map<string, number> = new Map()): Map<number, GsuIndirectAccess[]> {
+  const out = new Map<number, GsuIndirectAccess[]>();
+  const regs: Array<GsuRegVal | null> = new Array(16).fill(null);
+  const defLine: number[] = new Array(16).fill(-1);
+
+  // Pass 1: loop ranges [start, end] (indices into bodies).
+  const loops: Array<[number, number]> = [];
+  {
+    let r13Target: number | null = null;
+    for (let i = 0; i < bodies.length; i++) {
+      for (const op of bodies[i]!.split(/\s:\s/)) {
+        const m = op.trim().match(/^([A-Za-z]+)(?:\s+(.*))?$/);
+        if (!m) continue;
+        const mnem = m[1]!.toUpperCase();
+        const args = (m[2] ?? '').split(',').map((x) => x.trim());
+        if (mnem === 'IWT' && /^R13$/i.test(args[0] ?? '')) {
+          const lm = (args[1] ?? '').match(/^#([A-Za-z_]\w*)/);
+          r13Target = lm ? (labelIdx.get(lm[1]!) ?? null) : null;
+        } else if ((mnem === 'MOVE' || mnem === 'MOVES') && /^R13$/i.test(args[0] ?? '') && /^R15$/i.test(args[1] ?? '')) {
+          r13Target = i + 1;
+        } else if (mnem === 'LOOP') {
+          if (r13Target !== null && r13Target <= i) loops.push([r13Target, i]);
+        } else if (BRANCH_MNEMONICS.has(mnem) || mnem === 'BLT' || mnem === 'BGE') {
+          const lm = (args[0] ?? '').match(/^([A-Za-z_]\w*)/);
+          const t = lm ? labelIdx.get(lm[1]!) : undefined;
+          if (t !== undefined && t <= i) loops.push([t, i]);
+        }
+      }
+    }
+  }
+  /** Outermost loop containing line `i` that register-definition `def` predates. */
+  const enclosingLoop = (def: number, i: number): number | null => {
+    let best: number | null = null;
+    for (const [s, e] of loops) if (i >= s && i <= e && def < s && (best === null || s < best)) best = s;
+    return best;
+  };
+  /** Value a pre-loop register had when first modified inside a loop, keyed "loopStart:reg". */
+  const entryVal = new Map<string, GsuRegVal>();
+  /** Record the arithmetic result for register `n` modified at line `i`. */
+  const modify = (n: number, i: number, oldVal: GsuRegVal | null, newVal: GsuRegVal | null, kind: 'stride' | 'walk'): void => {
+    const loopStart = oldVal ? enclosingLoop(defLine[n]!, i) : null;
+    if (loopStart !== null) {
+      const key = `${loopStart}:${n}`;
+      let entry = entryVal.get(key);
+      if (!entry) { entry = oldVal!; entryVal.set(key, entry); }
+      // Loop-variant: the definition line stays pre-loop so every later in-loop
+      // modification is still recognised as such.
+      regs[n] = kind === 'stride' ? { base: entry.base, indexed: true } : newVal;
+      return;
+    }
+    regs[n] = newVal;
+    defLine[n] = i;
+  };
+  let sreg = 0;
+  let dreg = 0;
+  let lastRam: GsuRegVal | null = null;
+
+  const emit = (idx: number, kind: 'r' | 'w', v: GsuRegVal | null): void => {
+    if (!v) return;
+    let arr = out.get(idx);
+    if (!arr) { arr = []; out.set(idx, arr); }
+    arr.push({ kind, addr: v.base & 0xFFFF, indexed: v.indexed });
+  };
+  const resetPrefix = (): void => { sreg = 0; dreg = 0; };
+  const regNum = (tok: string | undefined): number | null => {
+    const m = tok?.trim().match(/^R(\d{1,2})$/i);
+    if (!m) return null;
+    const n = parseInt(m[1]!, 10);
+    return n >= 0 && n <= 15 ? n : null;
+  };
+  const imm = (tok: string | undefined): number | null => {
+    const t = tok?.trim();
+    if (!t || t[0] !== '#') return null;
+    const m = t.slice(1).match(/^(?:\$([0-9A-Fa-f]+)|(\d+))$/);
+    if (!m) return null; // label-based immediates (ROM pointers) stay unknown
+    return m[1] !== undefined ? parseInt(m[1], 16) : parseInt(m[2]!, 10);
+  };
+  const add = (a: GsuRegVal | null, b: GsuRegVal | null): GsuRegVal | null => {
+    if (a && b) return { base: (a.base + b.base) & 0xFFFF, indexed: a.indexed || b.indexed };
+    const k = a ?? b;
+    return k ? { base: k.base, indexed: true } : null;
+  };
+
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i]!;
+    if (body.length === 0 || body[0] === '%' || body[0] === '!') continue;
+    // Dual-issue `X : Y` (branch + delay slot) runs both ops in order.
+    for (const op of body.split(/\s:\s/)) {
+      const m = op.trim().match(/^([A-Za-z]+)(?:\s+(.*))?$/);
+      if (!m) continue;
+      const mnem = m[1]!.toUpperCase();
+      const args = (m[2] ?? '').split(',').map((x) => x.trim());
+      const a0 = args[0];
+      const a1 = args[1];
+      switch (mnem) {
+        case 'TO': { const n = regNum(a0); if (n !== null) dreg = n; continue; }
+        case 'FROM': { const n = regNum(a0); if (n !== null) sreg = n; continue; }
+        case 'WITH': { const n = regNum(a0); if (n !== null) { sreg = n; dreg = n; } continue; }
+        case 'ALT1': case 'ALT2': case 'ALT3': continue;
+        case 'IWT': case 'IBT': {
+          const n = regNum(a0); const v = imm(a1);
+          if (n !== null) {
+            if (v === null) regs[n] = null;
+            else {
+              let val = v & 0xFFFF;
+              if (mnem === 'IBT' && (val & 0x80) && val < 0x100) val = (val | 0xFF00) & 0xFFFF;
+              regs[n] = { base: val, indexed: false };
+            }
+            defLine[n] = i;
+          }
+          break;
+        }
+        case 'MOVE': case 'MOVES': {
+          const d = regNum(a0); const sN = regNum(a1);
+          if (d !== null && d !== 15) { regs[d] = sN !== null ? regs[sN] : null; defLine[d] = i; }
+          break;
+        }
+        case 'ADD': case 'ADC': {
+          const n = regNum(a0); const v = imm(a0);
+          if (n !== null) modify(dreg, i, regs[dreg], add(regs[sreg], regs[n]), 'stride');
+          else if (v !== null) modify(dreg, i, regs[dreg], regs[sreg] ? { base: (regs[sreg]!.base + v) & 0xFFFF, indexed: regs[sreg]!.indexed } : null, 'walk');
+          else { regs[dreg] = null; defLine[dreg] = i; }
+          break;
+        }
+        case 'SUB': case 'SBC': {
+          const n = regNum(a0); const v = imm(a0);
+          const sv = regs[sreg];
+          if (v !== null) modify(dreg, i, regs[dreg], sv ? { base: (sv.base - v) & 0xFFFF, indexed: sv.indexed } : null, 'walk');
+          else if (n !== null && sv && regs[n] && !regs[n]!.indexed && !sv.indexed) modify(dreg, i, regs[dreg], { base: (sv.base - regs[n]!.base) & 0xFFFF, indexed: false }, 'stride');
+          else { regs[dreg] = null; defLine[dreg] = i; }
+          break;
+        }
+        case 'INC': case 'DEC': {
+          const n = regNum(a0);
+          if (n !== null && regs[n]) modify(n, i, regs[n], { base: (regs[n]!.base + (mnem === 'INC' ? 1 : -1)) & 0xFFFF, indexed: regs[n]!.indexed }, 'walk');
+          resetPrefix();
+          continue; // register-form op: no Sreg/Dreg involvement
+        }
+        case 'LDW': case 'LDB': {
+          const n = regNum(a0?.replace(/[()]/g, ''));
+          const v = n !== null ? regs[n] : null;
+          emit(i, 'r', v);
+          lastRam = v;
+          regs[dreg] = null; defLine[dreg] = i;
+          break;
+        }
+        case 'STW': case 'STB': {
+          const n = regNum(a0?.replace(/[()]/g, ''));
+          const v = n !== null ? regs[n] : null;
+          emit(i, 'w', v);
+          lastRam = v;
+          break;
+        }
+        case 'LM': case 'LMS': case 'SM': case 'SMS': {
+          const pm = op.match(/\(\s*\$([0-9A-Fa-f]+)\s*\)/);
+          lastRam = pm ? { base: parseInt(pm[1]!, 16) & 0xFFFF, indexed: false } : null;
+          if (mnem === 'LM' || mnem === 'LMS') { const n = regNum(a0); if (n !== null) { regs[n] = null; defLine[n] = i; } }
+          break;
+        }
+        case 'SBK': {
+          emit(i, 'w', lastRam);
+          break;
+        }
+        case 'LINK': regs[11] = null; defLine[11] = i; break;
+        case 'LOOP': if (regs[12]) modify(12, i, regs[12], { base: (regs[12]!.base - 1) & 0xFFFF, indexed: regs[12]!.indexed }, 'stride'); break;
+        case 'PLOT': regs[1] = null; defLine[1] = i; break;
+        case 'LMULT': regs[dreg] = null; defLine[dreg] = i; regs[4] = null; defLine[4] = i; break;
+        // Branches / jumps / flag-only / bank ops: no register effect.
+        case 'BRA': case 'BCC': case 'BCS': case 'BEQ': case 'BNE': case 'BMI': case 'BPL': case 'BVC': case 'BVS':
+        case 'BLT': case 'BGE': case 'JMP': case 'LJMP': case 'CMP': case 'STOP': case 'NOP': case 'CACHE':
+        case 'ROMB': case 'RAMB': case 'COLOR': case 'CMODE': case 'GETC':
+          break;
+        default:
+          // Data directives / assembler keywords: ignore. Anything else is an
+          // ALU op that writes Dreg (AND/OR/XOR/BIC/LSR/ASL/ROL/ROR/SWAP/SEX/
+          // NOT/HIB/LOB/MERGE/MULT/UMULT/FMULT/GETB*/RPIX/DIV2/...): forget it.
+          if (/^(DB|DW|DL|DD|INCBIN|ORG|IF|ELSE|ELSEIF|ENDIF|HEX|WORD|BYTE)$/.test(mnem)) continue;
+          regs[dreg] = null; defLine[dreg] = i;
+          break;
+      }
+      resetPrefix();
+    }
+  }
+  return out;
+}
 /**
  * Branches that take a label operand and stay within a routine boundary.
  * Conditional branches (Bcc) almost always do; the unconditional BRA/BRL
@@ -746,11 +988,38 @@ function buildGraph(args: BuildArgs): CodeGraph {
         addrRmw: new Set(accumAddrRmw),
       });
 
+      // GSU register-indirect accesses need FORWARD constant propagation
+      // (a pointer register is loaded before the loop label it is used
+      // under), so resolve them in a pre-pass over the block body and fold
+      // the results into the backward accumulation walk below.
+      const blockBodies: string[] = [];
+      const blockLabels = new Map<string, number>();
+      for (let ln = firstEntry.line + 1; ln <= blockEnd; ln++) {
+        const bl = file.body[ln - 1];
+        blockBodies.push(bl?.body ?? '');
+        for (const name of bl?.labels ?? []) blockLabels.set(name, blockBodies.length - 1);
+      }
+      const indirect = trackGsuIndirectAccesses(blockBodies, blockLabels);
+      const applyIndirect = (ln: number): void => {
+        const accs = indirect.get(ln - (firstEntry.line + 1));
+        if (!accs) return;
+        for (const acc of accs) {
+          const defineDest = acc.kind === 'r' ? accumReads : accumWrites;
+          const addrDest = acc.kind === 'r' ? accumAddrReads : accumAddrWrites;
+          for (const addr of gsuRamAddrCandidates(acc.addr)) {
+            addrDest.add(addr);
+            const bucket = addrIndex.get(addr);
+            if (bucket) for (const name of bucket) defineDest.add(name);
+          }
+        }
+      };
+
       let entryIdx = 0;
       for (let ln = blockEnd; ln >= firstEntry.line + 1; ln--) {
         const line = file.body[ln - 1];
         if (line && line.body.length > 0) {
           analyzeInstruction(line.body, accumCalls, accumRefs, accumReads, accumWrites, accumRmw, accumAddrReads, accumAddrWrites, accumAddrRmw, unresolvedTargets, sym, addrIndex);
+          applyIndirect(ln);
         }
         while (entryIdx < entriesByLineDesc.length && entriesByLineDesc[entryIdx]!.line + 1 === ln) {
           snapshots.set(entriesByLineDesc[entryIdx]!.name, snapshotHere());
@@ -988,6 +1257,13 @@ function analyzeInstruction(
   // and macro calls (`%Foo(...)`) — none of those are control-flow or
   // RAM-access in the sense we care about for the call graph.
   if (body[0] === '%' || body[0] === '!') return;
+  // GSU dual-issue `X : Y` (branch + delay-slot op): analyse both ops.
+  if (/\s:\s/.test(body)) {
+    for (const op of body.split(/\s:\s/)) {
+      if (op.trim().length > 0) analyzeInstruction(op.trim(), calls, refs, reads, writes, rmw, addrReads, addrWrites, addrRmw, unresolved, sym, addrIndex);
+    }
+    return;
+  }
   const m = body.match(/^([A-Za-z]+)(\.[bwl])?(?:\s+(.*))?$/);
   if (!m) return;
   const mnem = m[1]!.toUpperCase();
@@ -1036,9 +1312,7 @@ function analyzeInstruction(
     const pm = operand.match(/\(\s*\$([0-9A-Fa-f]+)\s*\)/);
     if (!pm) return;
     const off = parseInt(pm[1]!, 16) & 0xFFFF;
-    const candidates = [GSU_RAM_BASE | off];
-    if (off < 0x2000) candidates.push(0x006000 + off);
-    for (const addr of candidates) {
+    for (const addr of gsuRamAddrCandidates(off)) {
       addrDest.add(addr);
       const bucket = addrIndex.get(addr);
       if (bucket) for (const name of bucket) defineDest.add(name);

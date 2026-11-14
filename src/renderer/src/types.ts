@@ -110,13 +110,23 @@ export interface LayerVisibility {
   grid: GridMode
 }
 
+/** Where a warp comes from. Screen exits are identified by their screen; a
+ *  rotating door's generated exits also carry the door sprite + door slot. */
+export interface WarpOrigin {
+  sourceLevelRecordId: number
+  sourceScreenIndex: number
+  kind?: 'rotating-door'
+  sourceSpriteIndex?: number
+  doorIndex?: number
+}
+
 /**
  * "Someone else's exit lands here." Computed by walking the sub-level graph
  * at the App level and handed to the Canvas so we can draw entry markers
  * for one-way connections (where a sibling room exits into this one but the
  * current room has no return exit).
  */
-export interface IncomingExit {
+export interface IncomingExit extends WarpOrigin {
   /** Level ID of the room whose outgoing exit lands here. */
   sourceLevelRecordId: number
   /** Cell-grid position where the player materializes in THIS level. */
@@ -144,12 +154,19 @@ export interface IncomingExit {
 // stays valid as the stream reindexes under add/delete and across undo/redo.
 // Resolve uid → live entity against the current `LevelData`. Incoming markers
 // and the spawn flag aren't stream entities, so they carry their data inline.
+export interface WorldMapSpawn {
+  x: number
+  y: number
+  /** Stable identity when several world-map entrances share a room. */
+  entranceIndex?: number
+}
+
 export type Selection =
   | { kind: 'object'; uid: number }
   | { kind: 'sprite'; uid: number }
   | { kind: 'exit'; uid: number }
   | { kind: 'incoming'; incoming: IncomingExit }
-  | { kind: 'spawn'; spawn: { x: number; y: number } }
+  | { kind: 'spawn'; spawn: WorldMapSpawn }
 
 /**
  * An entity armed in the Add-picker for click-to-place on the canvas. Objects

@@ -44,9 +44,15 @@ table** for the slot currently being processed. Slots are 4 bytes apart, so
 valid X values are `0, 4, 8, ..., $5C`. Every per-slot field accessed via
 `,x` indexing assumes this convention.
 
-For the 16-slot ambient-sprite table (`$70:0EC0+`), the engine flips into a
-different X range (4-byte stride, base offset $80) for the duration of the
-ambient-sprite tick. Family docs note this when relevant; sprite Mains
+For the 16-slot ambient-sprite table (`$70:0EC0+`), the ambient tick
+(`CODE_handle_ambient_sprites`, Bank00) uses the same 4-byte stride with X =
+`0, 4, ..., $3C`, but every per-slot field is addressed at the **ambient half**
+of its page (`$0F60`, `$1000`, `$1140`, ... = the regular address minus `$40`).
+There is no extra base offset on the 65816 side. The GSU instead treats both
+tables as one 40-slot array: a single index `$00-$3C` (ambient) / `$40-$9C`
+(regular) applied to the ambient-half base addresses, which is why the shared
+GSU passes (terrain check `CODE_0ACFED`, speed integrator `CODE_09884C`, cull +
+OAM `CODE_0989C1`) read both tables with the same instructions. Sprite Mains
 themselves never see ambient X values.
 
 When code uses `Y` for a slot index instead of `X`, it's almost always
@@ -433,6 +439,59 @@ special-table indices 0-15) are documented in full in `renderingpipeline.md`
 §1.1. See also `levelloader.md` §1 (sprite-stream spawn).
 
 ---
+
+### 4.2 The per-ID property tables (what a fresh slot is seeded with)
+
+Besides the four handler-pointer tables, every normal sprite has **eight
+per-ID data words** in SuperFX Bank0A that the spawn routines copy into the
+slot before the Init handler runs. These are the game's real "sprite property
+tables": they decide a sprite's hitbox, gravity, how Yoshi's body / tongue /
+eggs interact with it, how it reacts to terrain, whether fire or ice affect it,
+when it despawns off-screen, and how it is drawn. Handlers only *override*
+these seeds afterwards (hundreds of `AND`/`ORA` sites), and a re-spawn re-seeds
+them. The full bit legends, with the consumer routine for every bit, live in
+the table headers in `yi/SuperFX/Banks/Bank0A.asm`; the slot-side view is in
+`yi/Memory/SRAM_SpriteSlots.asm` pages 2, 3, 10, 11, 12, 23, 24.
+
+Seeding sites (all perform the same copies): `CODE_spawn_sprite_clear_slot_fields`
+(`$03:A395`, runtime spawns), `CODE_check_new_sprites` (`$03:9628`, level-stream
+spawns), and the GSU spawns `CODE_0ADF33` / `CODE_0BF01A`. The original source
+names (`ENMODE0/1/2`, `ENDATA0/1`, `ENCRDT`, `ENCHR_BNK`, `ETCADR`) are given for
+cross-reference with the `family-*.md` docs that quote them.
+
+| Table (alias) | Addr | Source | Seeds slot field | What it controls |
+|---|---|---|---|---|
+| `DATA_0A9320` `DATA_sprite_collision_flags_table` | `$0A:9320` | `ENMODE0` | `$0FA0` word (`!EXRAM_YI_Level_NorSpr_CollisionFlags`) | bits 0-4 hitbox shape (index into `DATA_0A9220`); bit 5 projectile-immune (eggs / thrown sprites don't kill it); bit 6 not tongueable; bit 7 inedible (tongue bounces off, `SoundID3C`); bit 8 freed when Yoshi dies; bits 9/10 sprite-vs-sprite collision target / checker; bits 11-13 **stomp reaction** (0 defeat-if-jumping-else-hurt, 1 head-bop → `StompRt`, 4 pop, 5 hurt Yoshi, 6 platform, 7 killed) via `DATA_sprite_stomp_reaction_ptrs` `$03:A655`; bits 14-15 **side-contact reaction** (0 solid push, 1 hurt, 2 knocked away, 3 none) via `DATA_sprite_side_contact_ptrs` `$03:A665` |
+| `DATA_0A9220` `DATA_sprite_hitbox_shapes` | `$0A:9220` | `ENCRDT` | `$1B56/$1B58` center offset, `$1BB6/$1BB8` half-extents | 32 shapes × 4 words; shape 0 (12×12 px) covers 346 of 442 ids |
+| `DATA_0A971E` `DATA_sprite_terrain_flags_table` | `$0A:971E` | `ENMODE1` | `$0FA2` word (`…TerrainCollisionFlags` / `…SpriteClassFlags`) | bits 0-4 terrain point-set index into `DATA_0ACECB` (0 = no terrain collision, 227 ids); bit 5 keep Y speed on landing; bits 6/7 turn / stop at walls; bits 8/9 turn / stop at ledges; bit 10 zero X on turn; bit 11 knock-out-able by other sprites; bit 12 cannot be swallowed (held until spat); bits 13-14 class (0 enemy, any = not an enemy, bit 14 = contact-kill immune, both = item); bit 15 no egg when swallowed |
+| `DATA_0A9B1C` `DATA_sprite_render_control_table` | `$0A:9B1C` | `ENMODE2` | `$1040` word (`…BehaviorFlags` / `…OAMByteCount`) | bits 0-1 draw method (single record / cel walker / handler-filled / walker+32); bits 2-3 off-screen **despawn** class (margins in `DATA_sprite_despawn_margins` `$09:8C87`, 0 = never); bit 4 **can be burned** (melon flame → state `$12`); bit 5 launched by the air bubble; bit 6 **can be frozen** (icy melon → `$1D96` timer); bit 7 swallowed instantly; bit 8 egg-aim target (reader unreachable); bits 9-10 defeat reward (reader not found); bits 11-15 OAM record count |
+| `DATA_0A9F1A` `DATA_sprite_priority_attr_table` | `$0A:9F1A` | `ENDATA0` | lo → `$14A2` draw priority; hi `EOR #$20` → `$1042` OAM attribute | draw layer 0-7 (0 frontmost, `$FF` never drawn); attribute `vhoopppN` (flips, OBJ priority with bit 5 inverted, palette row) |
+| `DATA_0AA318` `DATA_sprite_gravity_table` | `$0A:A318` | `ENDATA1` | lo → `$1542` Y accel step; hi × 16 → `$15E2` Y target speed | the GSU integrator `FXCODE_09884C` moves Y speed by ± step toward the target each frame, with **no clamp** (the default `$40` / `$0400` pair dithers `$0400`/`$0440`). Negative targets rise (bubbles, Sluggies, BVZ) |
+| `DATA_0AA716` `DATA_sprite_gfx_file_table` | `$0A:A716` | `ENCHR_BNK` | → `$1180` OBJ tile base | which sprite-GFX file the sprite draws from, resolved against the level's six spriteset slots |
+| `DATA_0AAB14` `DATA_sprite_spit_graphic_table` | `$0A:AB14` | `ETCADR` | read at spit-out, not seeded | packed texel code of the spinning spat-out bitmap (bit 15 = 32×32; 0 = none) |
+
+Each table holds 442 words (`$000-$1B9`) plus 138 bytes of padding. The asm
+lists one entry per line with the sprite name, so `DATA_0A9B1C` row `$01E`
+*is* Shyguy's behaviour word. Our values match the original source's tables
+row for row (USA branch where the source has region conditionals).
+
+**Ambient sprites** have the same family at `$0A:AF12-$0A:B912`
+(`DATA_ambient_*`, 117 entries indexed by `id - $1BA`), seeded by
+`CODE_spawn_ambient_sprite`. The GSU reads both systems with the same code
+because it treats the 16 ambient + 24 normal slots as one 40-slot array (§0.1),
+so `EXMODE1`/`EXMODE2` share the `ENMODE1`/`ENMODE2` layouts. `EXMODE0`
+(`$0F60`) is seeded but never read.
+
+**Consequences for reading handler code.** A `STA $6FA0,x` / `$6FA2,x` /
+`$7040,x` in a handler is a *runtime override* of one of these words, not an
+OAM write (several older comments called them "OAM extension words"). Common
+idioms: `AND #$F9FF` on `$6FA0` = stop colliding with other sprites (stomped /
+fallen); `AND #$FFE0` on `$6FA2` = no terrain check; `AND #$FFF3` on `$7040` =
+never despawn off-screen; the spit-out path forces `$6FA2` bits 6-10 to "turn
+at walls, fall off ledges" and re-seeds the despawn class from the table.
+Known gaps: `ENMODE2` bits 8-10 have no reachable reader; `ENMODE1` bit 13 is
+never tested apart from bit 14; the sprite-vs-sprite scan is skipped on any
+frame the slot touches Yoshi.
 
 ## 5. State handlers in detail
 

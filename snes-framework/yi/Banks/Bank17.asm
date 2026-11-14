@@ -10996,12 +10996,14 @@ DATA_17E005:
 ; Called from CODE_gm22_inner_dispatcher's idle path (state $1118 == 0).
 ;
 ; Two early-exits before falling into CODE_level_select:
-;   - If $093D & $20 set (cursor freeze flag): jump to CODE_gm22_no_press_idle_tick
-;     (animation idle without input poll).
-;   - If A/B held over special "score button" tiles ($1112 == $0A or $0B):
-;     load $1118 with the corresponding extended-state ($18 for tile $0A
-;     -> show-scores cinematic, $28 for tile $0B -> extended-scene start)
-;     then JMP CODE_17E17F (transition entry).
+;   - $093D & $20 = SELECT held ($093D is Controller1 Data2, byetUDLR): jump to
+;     CODE_gm22_no_press_idle_tick, where the Select-held X,X,Y,B,A unlock sequence
+;     (DATA_mini_battle_unlock_sequence) is matched. So holding Select suppresses
+;     the normal cursor/level-select poll.
+;   - A/B held over the two signpost tiles ($1112 == $0A/$0B; CODE_gm20_prepare_overworld
+;     writes $0B/$0C into every world's map-tile bytes 10/11, so they are always
+;     selectable): set $1118 to the extended state ($18 = show-scores cinematic,
+;     $28 = extended-scene start) then JMP CODE_17E17F.
 ; Otherwise: fall through to CODE_level_select.
 ;-------------------------------------------------------------------------
 CODE_17E00F:

@@ -9092,7 +9092,8 @@ DATA_02D191:
 ;   - Plays MusicFade, spawns Kamek (sprite $48) at Sluggy's position via
 ;     CODE_spawn_sprite_init, arms $7A96 = $80 (Kamek-floats-in timer).
 ;   - At halfway through ($7A96 == $40), starts boss music ID $09.
-;   - At $7A96 == 0, sets $6FA2 bit-0 (Kamek-done flag).
+;   - At $7A96 == 0, sets $6FA2 bit-0 (Kamek-done flag; Sluggy has no terrain
+;     collision, so it reuses the terrain point-set index bits of $6FA2 as state).
 ;   - Plays CastleAboutToExplode rumble (sound $87), bumps Sluggy X by +10px,
 ;     primes the SuperFX palette ramp (DATA_02D109) via JSR CODE_sluggy_run_enlarge_gsu,
 ;     INCs $18,x to advance to state 1 (enlarge).
@@ -9442,7 +9443,7 @@ CODE_02D3C2:
 	AND.w #$FF3F
 	STA.w $7042,x
 	LDA.w $6FA2,x
-	AND.w #$FFE0                                ; clear all arrival flags
+	AND.w #$FFE0                                ; clear all arrival flags (= the terrain point-set index bits, reused as state here)
 	STA.w $6FA2,x
 	LDA.w $7040,x
 	CLC

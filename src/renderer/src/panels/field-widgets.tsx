@@ -6,7 +6,7 @@
 // `onCommit(value)`; the panels own how a commit turns into a reducer dispatch.
 
 import { useEffect, useState, type JSX, type ReactNode } from 'react'
-import { getLevel, getLevelGroups, levelLabel, type LevelLabelFallback } from '../data/levels'
+import { getRecordCount, getLevelGroups, levelLabel, roomLabel, type LevelLabelFallback } from '../data/levels'
 import type { EnumOption, FieldKind } from '../data/property-schema'
 import { hex } from '../lib/hex'
 
@@ -113,7 +113,10 @@ export function LevelPicker({
   disabled?: boolean
   onCommit: (v: number) => void
 }): JSX.Element {
-  const inSet = source.kind === 'catalog' ? getLevel(value) !== undefined : source.ids.includes(value)
+  const stages = getLevelGroups().map((g) => ({ ...g, levels: g.levels.filter((l) =>
+    l.translevelId !== undefined && l.recordId !== null) })).filter((g) => g.levels.length > 0)
+  const stageIds = new Set(stages.flatMap((g) => g.levels.map((l) => l.recordId)))
+  const inSet = source.kind === 'catalog' ? value >= 0 && value < getRecordCount() : source.ids.includes(value)
   return (
     <select
       className="se-input se-props__select"
@@ -123,17 +126,22 @@ export function LevelPicker({
     >
       {!inSet && <option value={value}>{levelLabel(value, fallback)}</option>}
       {source.kind === 'catalog'
-        ? getLevelGroups().map((g) => (
+        ? <>{stages.map((g) => (
             <optgroup key={g.label} label={g.label}>
               {g.levels
                 .filter((l) => l.recordId !== null)
                 .map((l) => (
                   <option key={`${g.label}:${l.slot}:${l.recordId}`} value={l.recordId as number}>
-                    {levelLabel(l.recordId as number, fallback)}
+                    {roomLabel(l.recordId as number)}
                   </option>
                 ))}
             </optgroup>
-          ))
+          ))}
+          <optgroup label="Rooms">
+            {Array.from({ length: getRecordCount() }, (_, id) => id).filter((id) => !stageIds.has(id))
+              .map((id) => <option key={id} value={id}>{roomLabel(id)}</option>)}
+          </optgroup>
+          </>
         : source.ids.map((id) => (
             <option key={id} value={id}>
               {levelLabel(id, fallback)}

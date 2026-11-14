@@ -5,6 +5,8 @@
 // loads and saves through the `kind:'level'` backend).
 
 import * as path from 'node:path'
+import { parseRotatingDoorEntrances } from 'snes-framework/rotating-doors'
+import type { RoomWarpDestination } from 'snes-framework/types'
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import {
@@ -250,6 +252,10 @@ export function loadLevelResource(levelRecordId: number): LevelData {
     levelRecordId,
     overlayRoot: projectId ? overlayRoot(projectId) : undefined
   })
+}
+
+export function loadRotatingDoorEntrances(): RoomWarpDestination[] {
+  return parseRotatingDoorEntrances(readOverlayFirst('yi/Banks/Bank0F.asm').contentText)
 }
 
 /**

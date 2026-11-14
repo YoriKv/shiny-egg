@@ -6,7 +6,8 @@ import type {
   RemovalPreview,
   RemovedLevelEntry
 } from '../../../preload/api'
-import { getLevel } from '../data/levels'
+import { getLevel, roomLabel } from '../data/levels'
+import { getRoomMetadata } from '../data/room-metadata'
 import { hex0x } from '../lib/hex'
 import { persistedState } from '../lib/persisted-state'
 import { DiscardChangesModal } from '../DiscardChangesModal'
@@ -57,7 +58,7 @@ function LevelJump({
     >
       <span className="se-banks__level-id">{hex0x(id, 2)}</span>
       <span className="se-banks__level-name">
-        {name ?? (entry ? entry.slot : 'sub-room')}
+        {getRoomMetadata(id)?.name ?? name ?? (entry ? entry.slot : 'sub-room')}
         {here && <span className="se-banks__here"> · here</span>}
       </span>
       {bytes != null && <span className="se-banks__level-bytes">{bytes} B</span>}
@@ -127,8 +128,7 @@ function RemoveButton({ disabled, onClick }: { disabled: boolean; onClick: () =>
 
 /** `0x12 (World 3 3-1 — Welcome To Monkey World)`, falling back to the bare id. */
 function levelLabel(id: number): string {
-  const e = getLevel(id)
-  return e ? `${hex0x(id, 2)} (${e.world} ${e.slot} — ${e.name})` : hex0x(id, 2)
+  return roomLabel(id)
 }
 
 /** Compose the confirm-dialog body for a removal preview. */

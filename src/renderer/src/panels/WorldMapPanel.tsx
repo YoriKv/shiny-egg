@@ -27,8 +27,8 @@ import type {
   WorldMapMidwayEntrance,
   WorldMapModel
 } from '../../../preload/api'
-import { getAllLevels, getLevel, getLevelByTranslevel, getRecordCount, useLevelsCatalog } from '../data/levels'
-import { useSubLevelBFS } from '../hooks/useSubLevelBFS'
+import { getAllLevels, getLevel, getLevelByTranslevel, getRecordCount, roomLabel, useLevelsCatalog } from '../data/levels'
+import { roomGraph, type WarpEdge } from '../lib/warp-graph'
 import { ENTRANCE_TYPES } from '../data/property-schema'
 import { EnumField, LevelPicker, NumberField } from './field-widgets'
 import { bgr15ToHex } from '../lib/bgr15'
@@ -231,7 +231,7 @@ function slotShapeLabel(world: number, pos: number, translevelId: number): strin
 /** Display name for the record a slot plays (catalog name, else the raw id —
  *  removed records aren't in the catalog but stay editable here). */
 function recordName(recordId: number): string {
-  return getLevel(recordId)?.name ?? `record ${hex0x(recordId, 2)}`
+  return roomLabel(recordId)
 }
 
 /** A world-map slot's display name, resolved by TRANSLEVEL slot — the name is a
@@ -397,13 +397,15 @@ export function WorldMapBody({
   yoshi,
   paths,
   paletteDraft,
+  warpEdges,
   onJump
 }: {
   editor: WorldMapEditorApi
+  warpEdges: WarpEdge[]
   yoshi: YoshiColorsEditorApi
   paths: WorldMapPathsEditorApi
   paletteDraft: Map<number, number>
-  onJump?: (recordId: number, x: number, y: number) => void
+  onJump?: (recordId: number, x: number, y: number, translevelId?: number) => void
 }): JSX.Element {
   const catalog = useLevelsCatalog()
   const [nav, setNav] = useState<WmNav>({ view: 'worlds' })
@@ -443,7 +445,8 @@ export function WorldMapBody({
     const e = idx === undefined ? undefined : model.entrances.find((x) => x.index === idx)
     return e ? e.levelDataId : null
   })()
-  const subBfs = useSubLevelBFS(drilledRecordId)
+  const subLevels = useMemo(() => drilledRecordId === null ? [] :
+    roomGraph(drilledRecordId, null, warpEdges).subLevels, [drilledRecordId, warpEdges])
 
   if (editor.error) {
     return (
@@ -694,7 +697,7 @@ export function WorldMapBody({
               <span className="se-worldmap__cell-label">Y</span>
               <NumberField value={curSlot.e.spawnY} min={0} max={255} onCommit={(v) => editor.setEntranceField(curSlot.e.index, { spawnY: v })} />
             </label>
-            {onJump && <JumpButton onClick={() => onJump(curSlot.e.levelDataId, curSlot.e.spawnX, curSlot.e.spawnY)} />}
+            {onJump && <JumpButton onClick={() => onJump(curSlot.e.levelDataId, curSlot.e.spawnX, curSlot.e.spawnY, curSlot.translevelId)} />}
           </div>
 
           {/* A room's Middle Ring sprite (edited on the level canvas) and its
@@ -738,7 +741,7 @@ export function WorldMapBody({
                 <span className="se-worldmap__name se-worldmap__cell--prog" title="Re-entry level Yoshi restarts in past this checkpoint (this level + its sub-rooms)">
                   <LevelPicker
                     value={p.levelDataId}
-                    source={{ kind: 'ids', ids: subBfs.subLevels }}
+                    source={{ kind: 'ids', ids: subLevels }}
                     fallback="subroom"
                     onCommit={(v) => editor.setMidwayField(p.index, { levelDataId: v })}
                   />
@@ -755,7 +758,7 @@ export function WorldMapBody({
                   <span className="se-worldmap__cell-label">via</span>
                   <EnumField value={p.entranceState} options={ENTRANCE_TYPES} onCommit={(v) => editor.setMidwayField(p.index, { entranceState: v })} />
                 </span>
-                {onJump && <JumpButton onClick={() => onJump(p.levelDataId, p.spawnX, p.spawnY)} />}
+                {onJump && <JumpButton onClick={() => onJump(p.levelDataId, p.spawnX, p.spawnY, curSlot.translevelId)} />}
                 <RowButton
                   label="−"
                   title="Remove this checkpoint (zero the record back to an unused page)"

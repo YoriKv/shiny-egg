@@ -8,7 +8,7 @@ import type {
   ScreenExit,
   SpriteProperty
 } from '../../../preload/api'
-import { getLevel } from '../data/levels'
+import { getLevel, roomLabel } from '../data/levels'
 import { getObjectInfo, getSprite, getSpriteNeighborDeps } from '../data/obj-metadata'
 import { neighborSummary } from '../data/sprite-neighbor-text'
 import { parityVariantRows } from '../data/sprite-parity-variants'
@@ -35,6 +35,7 @@ import { FieldRow, NumberField } from './field-widgets'
 import type { LevelAction } from '../canvas/level-reducer'
 import { spriteSpinDirection } from '../canvas/draw/sprite-variant-hints'
 import type { IncomingExit, Selection } from '../types'
+import { incomingIdentity } from '../lib/warp-graph'
 import { hex } from '../lib/hex'
 
 
@@ -62,11 +63,14 @@ export interface PropertiesBodyProps {
    *  is the play context's `CurrentLevelFromMap` — needed by sprite providers like
    *  the message box, whose behaviour keys off the translevel, not the sub-room. */
   rootLevelRecordId: number | null
+  rootTranslevelId: number | null
   /** Dispatch field edits for the selected entity. */
   dispatchLevel: Dispatch<LevelAction>
   /** Live world-map spawn cell for the loaded level (entrance-table draft), shown
    *  + edited when a spawn is selected. Null when the level has no entrance. */
   worldMapSpawn?: { x: number; y: number } | null
+  worldMapSpawnLabel?: string
+  incoming?: IncomingExit[]
   /** Commit an absolute spawn cell to the entrance-table document. Absent → the
    *  spawn shows read-only. */
   onSpawnCommit?: (x: number, y: number) => void
@@ -80,9 +84,12 @@ export function PropertiesBody({
   level,
   currentLevelRecordId,
   rootLevelRecordId,
+  rootTranslevelId,
   selectedObjectInfluence,
   dispatchLevel,
   worldMapSpawn,
+  worldMapSpawnLabel,
+  incoming,
   onSpawnCommit,
   onIncomingEntranceCommit
 }: PropertiesBodyProps): JSX.Element {
@@ -115,8 +122,8 @@ export function PropertiesBody({
       // The play context's translevel = the root (world-map) level's slot;
       // CurrentLevelFromMap persists across sub-room warps, so a sub-room's own
       // (missing) translevel is irrelevant.
-      const translevelId =
-        rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId ?? null : null
+      const translevelId = rootTranslevelId ??
+        (rootLevelRecordId !== null ? getLevel(rootLevelRecordId)?.translevelId ?? null : null)
       return spr ? (
         <SpriteProps
           spr={spr}
@@ -132,8 +139,16 @@ export function PropertiesBody({
       const exit = level?.exits.find((e) => e.uid === sel.uid)
       return exit ? <ExitProps exit={exit} dispatchLevel={dispatchLevel} /> : nothing
     }
-    case 'incoming': return <IncomingProps incoming={sel.incoming} onEntranceCommit={onIncomingEntranceCommit} />
-    case 'spawn':    return <SpawnProps spawn={worldMapSpawn ?? sel.spawn} onCommit={onSpawnCommit} />
+    case 'incoming': {
+      const marker = incoming === undefined ? sel.incoming : incoming.find((i) =>
+        incomingIdentity(i) === incomingIdentity(sel.incoming))
+      return marker ? <IncomingProps incoming={marker}
+        onEntranceCommit={marker.kind === 'rotating-door' ? undefined : onIncomingEntranceCommit} /> : nothing
+    }
+    case 'spawn': {
+      const spawn = worldMapSpawn === undefined ? sel.spawn : worldMapSpawn
+      return spawn ? <SpawnProps spawn={spawn} label={worldMapSpawnLabel} onCommit={onSpawnCommit} /> : nothing
+    }
   }
 }
 
@@ -387,15 +402,14 @@ function IncomingProps({
   onEntranceCommit?: (inc: IncomingExit, entranceType: number) => void
 }): JSX.Element {
   const screen = `${incoming.sourceScreenIndex & 0x0f},${(incoming.sourceScreenIndex >> 4) & 0x0f}`
-  const source = getLevel(incoming.sourceLevelRecordId)
   return (
     <dl className="se-props__list">
       <dt>Kind</dt>
-      <dd><span className="se-props__id-kind">Incoming entrance</span></dd>
+      <dd><span className="se-props__id-kind">{incoming.kind === 'rotating-door'
+        ? `Rotating door ${(incoming.doorIndex ?? 0) + 1} entrance (table-defined)` : 'Incoming entrance'}</span></dd>
       <dt>From level</dt>
       <dd>
-        {source ? `${source.slot} ${source.name}` : '—'}{' '}
-        <code>0x{hex(incoming.sourceLevelRecordId)}</code>
+        {roomLabel(incoming.sourceLevelRecordId)}
       </dd>
       <dt>From screen</dt>
       <dd>
@@ -432,11 +446,13 @@ function IncomingProps({
 
 function SpawnProps({
   spawn,
+  label,
   onCommit
 }: {
   /** Effective spawn cell — the world-map draft when editing (so live edits show
    *  here), else the selection's base position. */
   spawn: { x: number; y: number }
+  label?: string
   /** Commit an absolute spawn cell to the entrance-table document. Absent when
    *  the document isn't available (no project / not loaded) → read-only. */
   onCommit?: (x: number, y: number) => void
@@ -445,6 +461,7 @@ function SpawnProps({
     <dl className="se-props__list">
       <dt>Kind</dt>
       <dd><span className="se-props__id-kind">World-map spawn</span></dd>
+      {label && <><dt>Stage</dt><dd>{label}</dd></>}
       {onCommit ? (
         <>
           <FieldRow

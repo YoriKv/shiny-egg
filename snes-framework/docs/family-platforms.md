@@ -1069,8 +1069,8 @@ init_balloon:
     BEQ .first_spawn
     AND #$FFE0 : STA $701902,x        ; cache rest Y
     LDA #$00FF : STA $74A2,x           ; full inflation
-    LDA #$0060 : STA $6FA0,x           ; OAM size
-    LDA #$4000 : STA $6FA2,x           ; OAM priority
+    LDA #$0060 : STA $6FA0,x           ; collision word: projectile-immune + not tongueable (spritestateengine.md §4.2)
+    LDA #$4000 : STA $6FA2,x           ; terrain/class word: not-an-enemy, contact-kill immune; no terrain check
     LDA #$0002 : STA $7040,x           ; flags
     STZ $7542,x : INC $76,x
     LDY !RAM_YI_Level_NorSpr_BalloonGeneratorActiveFlagLo

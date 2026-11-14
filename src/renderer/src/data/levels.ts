@@ -17,11 +17,15 @@ import { useSyncExternalStore } from 'react'
 import type {
   LevelCatalogEntry,
   LevelCatalogGroup,
-  LevelsCatalog
+  LevelsCatalog,
+  WorldMapModel
 } from '../../../preload/api'
 import { hex0x } from '../lib/hex'
+import { getRoomMetadata } from './room-metadata'
 
 let current: LevelsCatalog = { groups: [] }
+let savedCatalog = current
+let worldMapDraft: WorldMapModel | null = null
 let byId = indexById(current)
 let byTranslevel = indexByTranslevel(current)
 const listeners = new Set<() => void>()
@@ -59,7 +63,15 @@ function indexById(cat: LevelsCatalog): Map<number, LevelCatalogEntry> {
   // Only real-data entries are keyed by id; null-id slots (bonus / mini-game /
   // intro) are excluded so they can't collide with or shadow a real level.
   for (const group of cat.groups) {
-    for (const lvl of group.levels) if (lvl.recordId !== null) out.set(lvl.recordId, lvl)
+    for (const lvl of group.levels) {
+      if (lvl.recordId === null) continue
+      const previous = out.get(lvl.recordId)
+      // A remapped world-map stage can also occur in the baked unused-room
+      // group. Its stage name takes precedence over the generic room entry.
+      if (!previous || (previous.translevelId === undefined && lvl.translevelId !== undefined)) {
+        out.set(lvl.recordId, lvl)
+      }
+    }
   }
   return out
 }
@@ -132,11 +144,20 @@ export type LevelLabelFallback = 'hex' | 'subroom' | 'dash'
  * catalog (sub-rooms, raw records) render per `fallback`.
  */
 export function levelLabel(id: number, fallback: LevelLabelFallback = 'hex'): string {
+  const name = getRoomMetadata(id)?.name
+  if (name) return `${name} (${hex0x(id, 2)})`
   const l = getLevel(id)
   if (l) return `${l.slot} ${l.name}`
   if (fallback === 'dash') return '—'
   if (fallback === 'subroom') return `sub-room ${hex0x(id, 2)}`
   return hex0x(id, 2)
+}
+
+/** A room label with its ID, including when the fallback is a stage name. */
+export function roomLabel(id: number): string {
+  if (getRoomMetadata(id)?.name) return levelLabel(id)
+  const stage = getLevel(id)
+  return stage?.translevelId !== undefined ? `${stage.slot} ${stage.name} (${hex0x(id, 2)})` : `Room ${hex0x(id, 2)}`
 }
 
 function notify(): void {
@@ -145,9 +166,33 @@ function notify(): void {
 
 /** Replace the active catalog and notify subscribers. */
 export function setCatalog(next: LevelsCatalog): void {
-  current = next
-  byId = indexById(next)
-  byTranslevel = indexByTranslevel(next)
+  savedCatalog = next
+  publishCatalog()
+}
+
+/** Project the entrance draft onto the saved catalog, including undo/discard. */
+export function setWorldMapCatalogDraft(model: WorldMapModel | null): void {
+  worldMapDraft = model
+  publishCatalog()
+}
+
+function publishCatalog(): void {
+  const entrances = new Map(worldMapDraft?.entrances.map((e) => [e.index, e]))
+  current = {
+    ...savedCatalog,
+    groups: savedCatalog.groups.map((g) => ({
+      ...g,
+      levels: g.levels.map((l) => {
+        if (!worldMapDraft || l.translevelId === undefined || l.recordId === null) return l
+        const key = hex0x(l.translevelId, 2)
+        const index = worldMapDraft.translevelToRecordIndex[key]
+        const entrance = index === undefined ? undefined : entrances.get(index)
+        return { ...l, recordId: entrance?.levelDataId ?? null }
+      })
+    }))
+  }
+  byId = indexById(current)
+  byTranslevel = indexByTranslevel(current)
   notify()
 }
 

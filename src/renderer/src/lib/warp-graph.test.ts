@@ -6,7 +6,7 @@
 // Run via Vitest (renderer config): `pnpm run test:renderer`.
 
 import { describe, test, expect } from 'vitest'
-import { walkWarpGraph, findWarpChain, findOwningTranslevel, type WarpEdge } from './warp-graph'
+import { edgeLoader, walkWarpGraph, findWarpChain, findOwningTranslevel, type WarpEdge } from './warp-graph'
 
 /**
  * Build an injectable loader from an adjacency map. `adj[id]` is the list of
@@ -113,5 +113,23 @@ describe('findOwningTranslevel', () => {
     // 10→50→99 but 50 (a catalog level) is pruned → 99 is not owned by 10.
     const load = loaderFrom({ 10: [[50]], 50: [[99]], 99: [] })
     expect(await findOwningTranslevel(99, [10], { loadEdges: load, shouldExpand: (id) => id !== 50 })).toBeNull()
+  })
+})
+
+describe('edgeLoader (the in-memory project index as the walkers\' edge source)', () => {
+  const e = (source: number, dest: number, screen = 0): WarpEdge => ({
+    sourceLevelRecordId: source, sourceScreenIndex: screen, destLevelRecordId: dest, destX: 1, destY: 2, entranceType: 0
+  })
+
+  test('groups edges by source; a record with no edges is a dead end, not an error', async () => {
+    const load = edgeLoader([e(0, 1), e(1, 2), e(0, 3, 4)])
+    expect((await load(0)).map((x) => x.destLevelRecordId)).toEqual([1, 3])
+    expect(await load(7)).toEqual([])
+  })
+
+  test('drives findWarpChain and findOwningTranslevel without any disk reads', async () => {
+    const load = edgeLoader([e(10, 11), e(11, 12), e(20, 30)])
+    expect((await findWarpChain(10, 12, { loadEdges: load }))?.map((s) => s.destLevelRecordId)).toEqual([11, 12])
+    expect(await findOwningTranslevel(12, [20, 10], { loadEdges: load })).toBe(10)
   })
 })

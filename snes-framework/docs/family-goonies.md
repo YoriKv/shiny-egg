@@ -89,7 +89,7 @@ Three logical subgroups share little code across the boundary:
 | `$02`   | `CODE_0E98EF` | **Launch / climb.** Pumps $7402 from $00..$0C with $75E2 = $0100 (lift Y). On $7402 == $09 with the $16,x random-seed exhausted, hands off to state $02 with X-speed locked in. |
 | `$04`   | `CODE_0E9939` | **Cruise / horizontal flight.** Sets a 6-frame cooldown (random +0/+1) and zeroes the anim frame; cleared by `CODE_0E983D` once the cruise window ends, transitioning back to state $00. |
 | `$06`   | `CODE_0E995F` | **Dive-aim.** Animates $7402 through 0..$08 every 1 frame; $75E2 ramps Y-velocity downward by 1 per tick, floored at -$0020. Sub-hitbox $7542 set to $40 (large) when Yoshi is above ($7223). |
-| `$08`   | `CODE_0E999B` | **Get-eaten / on-tongue.** Picks one of two horizontal velocities from `DATA_0E9997` (-$0200/+$0200) based on $7400, flips $6FA2 to $0841 (highest priority sprite block), and animates $7402 between $0C..$0F. The dispatcher's tail-call branches to `JSL CODE_0DC0F0` (`$0D:C0F0`) -- the tongue-eat hook -- when state is $04 and $7AF8 is 0. |
+| `$08`   | `CODE_0E999B` | **Get-eaten / on-tongue.** Picks one of two horizontal velocities from `DATA_0E9997` (-$0200/+$0200) based on $7400, writes the terrain/class word $6FA2 = $0841 (terrain point-set 1, turn at walls, bit 11 knock-out-able; see `spritestateengine.md` §4.2), and animates $7402 between $0C..$0F. The dispatcher's tail-call branches to `JSL CODE_0DC0F0` (`$0D:C0F0`) -- the tongue-eat hook -- when state is $04 and $7AF8 is 0. |
 | `$0A`   | `CODE_0E99D0` | **Yoshi-approach trigger.** When $7680 (offscreen-X delta) plus $0020 falls inside the screen and the sign of $7680 vs $70E2 indicates approach, sets `$74A2 = 5` (forces gfx-priority dim), arms $7400 facing from `$77C2,x` (Yoshi-facing reference), and switches to state $01. If sprite-ID is $153 (Goonie-with-Shy-Guy), calls the inline `CODE_0E94C4` which spawns the Shy Guy passenger *here*, not in init. |
 | `$0C`   | `CODE_0E9A2F` | **Shy Guy drop / landing.** Used only by $153. Reads the linked Shy Guy slot from `$78,x`; if the Shy Guy is still alive, statused, and tagged `7019D6 = 3` ("riding the goonie"), checks the player-relative X/Y. When the goonie is overhead and falling, it zeros Shy Guy Y-velocity and synchronizes the Shy Guy's X-speed with the goonie's, letting the Shy Guy land. Updates own anim frame in $7402 (cycles $0F..$11 every 5 frames). |
 
@@ -133,8 +133,8 @@ slot fields (all accessed via X):
 | `$7A98,x`                     | Generic per-slot countdown #2 (anim pace + state expiry). |
 | `$7AF6,x`                     | Drift-on-stomp cooldown -- set to $40 by stomp branch. |
 | `$7AF8,x`                     | Tongue-eat gate; cleared by `CODE_0DC0F0` when Yoshi licks. |
-| `$74A2,x`                     | Gfx priority byte. $FF = highest priority (visible above terrain). |
-| `$75E2,x`                     | Sub-Y-velocity (sub-pixels per frame). Drives lift/dive smoothness. |
+| `$74A2,x`                     | Draw-priority layer 0-7 (0 = frontmost). $FF = not drawn at all (the off-screen despawn also writes it). |
+| `$75E2,x`                     | Y target speed the integrator walks toward by the `$7542,x` step each frame (seeded from `DATA_0AA318`, `spritestateengine.md` §4.2). Drives lift/dive smoothness. |
 | `$7542,x`                     | Hitbox Y-half-size. $40 = large (cruise), $20 = small (stomp). |
 | `$6FA0,x`, `$6FA2,x`          | OAM tile/palette base pair (gfx pattern for the current frame). |
 | `$0C7C` (global)              | **Flock spawn counter** -- shared by all $0E8 instances. Init sets to 1; cruise sub-state in `CODE_0E9561` won't decrement until the goonie is despawning; spawn block (`CODE_0E957A`) requires this be non-zero to spawn a fresh $0E8 from the same edge. |
