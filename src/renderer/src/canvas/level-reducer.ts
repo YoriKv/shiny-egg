@@ -39,7 +39,8 @@ import {
   clampGroupMove,
   clampHeaderField,
   clampObjectMove,
-  clampObjectResize,
+  clampObjectPlacement,
+  isObjectPlacementSafe,
   clampSpriteMove
 } from './limits'
 
@@ -293,7 +294,7 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       // spatial bounds. Shared with the live drag overlay (Canvas) so the
       // committed move matches the preview; also the defensive backstop for
       // any other dispatcher of `moveObject`.
-      const { dx, dy } = clampObjectMove(o, action.dx, action.dy)
+      const { dx, dy } = clampObjectMove(o, action.dx, action.dy, state.level.header)
       if (dx === 0 && dy === 0) return state
       const moved: LevelObject = { ...o, x: o.x + dx, y: o.y + dy }
       const nextObjs = objs.slice()
@@ -331,13 +332,14 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       // Offset the clone one cell (clamped into bounds) so it's visibly
       // distinct, and insert it right after the source so it sits one step
       // higher in paint order (later in the stream = drawn on top).
-      const { dx, dy } = clampObjectMove(src, 1, 1)
+      const { dx, dy } = clampObjectMove(src, 1, 1, state.level.header)
       const clone: LevelObject = {
         ...src,
         uid: state.nextUid,
         x: src.x + dx,
         y: src.y + dy
       }
+      if (!isObjectPlacementSafe(clone, state.level.header)) return state
       const nextObjs = objs.slice()
       nextObjs.splice(idx + 1, 0, clone)
       return {
@@ -402,9 +404,8 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       const merged: LevelObject = { ...o, ...action.patch }
       // num 0 = extended; it must carry an exnum to serialize.
       if (merged.num === 0 && merged.exnum === undefined) merged.exnum = 0
-      const { x, y } = clampCell(merged.x, merged.y)
-      const { w, h } = clampObjectResize({ ...merged, x, y }, merged.w, merged.h)
-      const next: LevelObject = { ...merged, x, y, w, h }
+      const next = clampObjectPlacement(merged, state.level.header)
+      if (!isObjectPlacementSafe(next, state.level.header)) return state
       if (
         next.x === o.x && next.y === o.y && next.w === o.w && next.h === o.h &&
         next.num === o.num && next.exnum === o.exnum
@@ -619,7 +620,7 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       const sprs = state.level.sprites.filter((s) => sprSet.has(s.uid!))
       if (objs.length === 0 && sprs.length === 0) return state
       // One group-clamped delta for the whole set — matches the drag overlay.
-      const { dx, dy } = clampGroupMove(objs, sprs, action.dx, action.dy)
+      const { dx, dy } = clampGroupMove(objs, sprs, action.dx, action.dy, state.level.header)
       if (dx === 0 && dy === 0) return state
       const next: LevelData = { ...state.level }
       if (objs.length > 0) {
@@ -643,8 +644,8 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
         const { x, y } = clampCell(o.x, o.y)
         const e: LevelObject = { ...o, x, y, uid: uid++ }
         if (e.num === 0 && e.exnum === undefined) e.exnum = 0
-        return e
-      })
+        return clampObjectPlacement(e, state.level!.header)
+      }).filter(o => isObjectPlacementSafe(o, state.level!.header))
       // Drop sprites that won't fit under the per-level cap (callers trim first,
       // so this is the defensive backstop — keeps uid assignment in step).
       const room = Math.max(0, MAX_LEVEL_SPRITES - state.level.sprites.length)
@@ -674,7 +675,9 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       }
       if (t.exnum !== undefined) obj.exnum = t.exnum
       if (obj.num === 0 && obj.exnum === undefined) obj.exnum = 0
-      const nextObjs = [...state.level.objects, obj]
+      const placed = clampObjectPlacement(obj, state.level.header)
+      if (!isObjectPlacementSafe(placed, state.level.header)) return state
+      const nextObjs = [...state.level.objects, placed]
       return {
         ...commit(state, { ...state.level, objects: reindex(nextObjs) }),
         nextUid: state.nextUid + 1

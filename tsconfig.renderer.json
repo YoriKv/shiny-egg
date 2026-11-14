@@ -15,6 +15,7 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "paths": {
       "@renderer/*": ["./src/renderer/src/*"]
     }

@@ -20,7 +20,6 @@ import {
   isDirty,
   levelReducer
 } from './canvas/level-reducer'
-import { clampObjectResize } from './canvas/limits'
 import { objectSizeMode } from './data/object-record'
 import { useObjectPropertyTable } from './hooks/useObjectPropertyTable'
 import { useLevelKeyboardShortcuts } from './hooks/useLevelKeyboardShortcuts'
@@ -670,17 +669,9 @@ export default function App(): JSX.Element {
       if (!placement) return
       const newUid = levelState.nextUid
       if (placement.kind === 'object') {
-        // Clamp the (possibly Shift+arrow-resized) extents to the drop cell so a
-        // grown preview can't place an out-of-bounds box (addObject doesn't clamp
-        // w/h — same anchor-relative clamp the resize handles use).
-        const { w, h } = clampObjectResize(
-          { x: cx, y: cy, w: placement.w, h: placement.h } as LevelObject,
-          placement.w,
-          placement.h
-        )
         dispatchLevel({
           type: 'addObject',
-          template: { num: placement.num, exnum: placement.exnum, x: cx, y: cy, w, h }
+          template: { num: placement.num, exnum: placement.exnum, x: cx, y: cy, w: placement.w, h: placement.h }
         })
         if (!keepPlacing) {
           setSelection([{ kind: 'object', uid: newUid }])

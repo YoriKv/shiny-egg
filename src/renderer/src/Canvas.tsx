@@ -1429,7 +1429,7 @@ export function Canvas({
         let { cellDx, cellDy } = snapCellDelta(dx, dy, viewRef.current.zoom)
         const dragObj = levelRef.current?.objects.find((o) => o.uid === d.objUid)
         if (dragObj) {
-          const c = clampObjectMove(dragObj, cellDx, cellDy)
+          const c = clampObjectMove(dragObj, cellDx, cellDy, levelRef.current?.header)
           cellDx = c.dx
           cellDy = c.dy
         }
@@ -1462,7 +1462,7 @@ export function Canvas({
         const o = levelRef.current?.objects.find((obj) => obj.uid === d.objUid)
         if (!o) return
         const ext = extentFromHandle(o, d.handle, wx, wy)
-        const c = clampObjectResize(o, ext.w, ext.h)
+        const c = clampObjectResize(o, ext.w, ext.h, levelRef.current?.header)
         setResizeOverlay((cur) =>
           cur && cur.uid === d.objUid && cur.w === c.w && cur.h === c.h
             ? cur
@@ -1568,7 +1568,7 @@ export function Canvas({
         const lvl = levelRef.current
         const objs = lvl ? lvl.objects.filter((o) => o.uid != null && d.objUids.has(o.uid)) : []
         const sprs = lvl ? lvl.sprites.filter((s) => s.uid != null && d.sprUids.has(s.uid)) : []
-        const c = clampGroupMove(objs, sprs, cellDx, cellDy)
+        const c = clampGroupMove(objs, sprs, cellDx, cellDy, levelRef.current?.header)
         setGroupMove((cur) =>
           cur && cur.dx === c.dx && cur.dy === c.dy
             ? cur
@@ -1638,7 +1638,7 @@ export function Canvas({
         const lvl = levelRef.current
         const objs = lvl ? lvl.objects.filter((o) => o.uid != null && d.objUids.has(o.uid)) : []
         const sprs = lvl ? lvl.sprites.filter((s) => s.uid != null && d.sprUids.has(s.uid)) : []
-        const c = clampGroupMove(objs, sprs, cellDx, cellDy)
+        const c = clampGroupMove(objs, sprs, cellDx, cellDy, levelRef.current?.header)
         if (c.dx !== 0 || c.dy !== 0) {
           dispatchLevel({
             type: 'moveEntities',

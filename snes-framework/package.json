@@ -62,6 +62,7 @@
     "./symbol-map": "./scripts/engine/symbol-map.ts",
     "./rom-read": "./scripts/engine/rom-read.ts",
     "./object-decode": "./scripts/engine/object-decode/index.ts",
+    "./object-placement": "./scripts/engine/object-placement.ts",
     "./surface-fit": "./scripts/engine/surface-fit.ts",
     "./fit-metadata": "./scripts/engine/fit-metadata.ts",
     "./scene-regs": "./scripts/engine/scene-regs.ts",

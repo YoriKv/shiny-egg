@@ -597,7 +597,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // is committed until the click; this is purely a display shadow.
         if (placementPreview) {
             drawPlacementPreview(
-                ctx, placementPreview.item, placementPreview.x, placementPreview.y, view.zoom, spriteBounds
+                ctx, placementPreview.item, placementPreview.x, placementPreview.y, view.zoom, spriteBounds, level?.header
             )
         }
         // Shift-drag marquee box on top of everything — a transient selection UI
