@@ -829,6 +829,7 @@ UNK_standard_object_padding:                                    ; descriptive al
 ; corresponds to an object ID and contains some information about that
 ; object". Raidenthequick did not document the bit layout further.
 ;=========================================================================
+;@editable:object-properties begin
 DATA_1284EC:
 DATA_object_property_table:                                      ; descriptive alias
 	db $FF,$02,$01,$01,$02,$02,$02,$02,$02,$02,$01,$01,$01,$00,$01,$01
@@ -847,6 +848,7 @@ DATA_object_property_table:                                      ; descriptive a
 	db $80,$01,$00,$02,$01,$01,$00,$00,$00,$00,$02,$02,$02,$02,$01,$00
 	db $01,$02,$01,$02,$02,$C2,$C2,$C2,$02,$02,$02,$02,$02,$C2,$02,$02
 	db $02,$02,$02,$02,$41,$02,$02,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+;@editable:object-properties end
 
 ;=========================================================================
 ; CODE_object_stream_walk -- INTRA-OBJECT MAP16 WALKER (CODE_object_stream_walk)

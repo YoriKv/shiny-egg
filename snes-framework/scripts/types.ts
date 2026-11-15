@@ -32,8 +32,15 @@ export type EditableResource =
  *  resource kind. */
 export interface RomTableModels {
   'spriteset-files': SpritesetFilesModel;
+  'object-properties': ObjectPropertiesModel;
 }
 export type RomTablePatchKind = keyof RomTableModels;
+
+/** The cart's standard-object property table (`DATA_object_property_table`
+ *  in Bank12.asm): one byte per standard-object ID, 256 in all. */
+export interface ObjectPropertiesModel {
+  bytes: number[];
+}
 
 /** The cart's 128 sprite tilesets. Each row selects six 8-bit graphics file
  *  IDs from `DATA_spriteset_files` in Bank00.asm. */

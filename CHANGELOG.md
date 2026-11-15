@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.11 - 2026-11-14
+
+- Merged in: https://github.com/YoriKv/shiny-egg/pull/6
+-   Objects can no longer be placed, moved, pasted or resized so that they spill past the level edge and hang the game on load
+
 ## v0.7.10 - 2026-11-14
 
 - Merged in: https://github.com/YoriKv/shiny-egg/pull/4

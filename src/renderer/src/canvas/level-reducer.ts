@@ -38,10 +38,39 @@ import {
   clampCell,
   clampGroupMove,
   clampHeaderField,
+  clampObjectEdit,
   clampObjectMove,
-  clampObjectResize,
+  clampObjectPlacement,
+  isObjectPlacementSafe,
   clampSpriteMove
 } from './limits'
+
+/**
+ * The object `addObject` / `addEntities` would store for `o` (anchor clamped,
+ * relocated or shrunk to a loader-safe placement), or null when no safe
+ * placement exists and the reducer would drop it. Callers that predict the
+ * uids an add assigns pre-filter with this so the prediction matches.
+ */
+export function placeNewObject(level: LevelData, o: LevelObject): LevelObject | null {
+  const e: LevelObject = { ...o, ...clampCell(o.x, o.y) }
+  if (e.num === 0 && e.exnum === undefined) e.exnum = 0
+  const placed = clampObjectPlacement(e, level.header)
+  return isObjectPlacementSafe(placed, level.header) ? placed : null
+}
+
+/**
+ * The clone `duplicateObject` would insert for object `uid` (one cell
+ * down-right, clamped), or null when the reducer would refuse (no such object,
+ * or the source itself isn't loader-safe). Callers check it before predicting
+ * the clone's uid.
+ */
+export function duplicateObjectClone(level: LevelData, uid: number): LevelObject | null {
+  const src = level.objects.find((o) => o.uid === uid)
+  if (!src) return null
+  const { dx, dy } = clampObjectMove(src, 1, 1, level.header)
+  const clone: LevelObject = { ...src, x: src.x + dx, y: src.y + dy }
+  return isObjectPlacementSafe(clone, level.header) ? clone : null
+}
 
 export interface LevelState {
   /** The current (possibly edited) level. */
@@ -293,7 +322,7 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       // spatial bounds. Shared with the live drag overlay (Canvas) so the
       // committed move matches the preview; also the defensive backstop for
       // any other dispatcher of `moveObject`.
-      const { dx, dy } = clampObjectMove(o, action.dx, action.dy)
+      const { dx, dy } = clampObjectMove(o, action.dx, action.dy, state.level.header)
       if (dx === 0 && dy === 0) return state
       const moved: LevelObject = { ...o, x: o.x + dx, y: o.y + dy }
       const nextObjs = objs.slice()
@@ -326,18 +355,12 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       if (!state.level) return state
       const objs = state.level.objects
       const idx = objs.findIndex((o) => o.uid === action.uid)
-      const src = objs[idx]
-      if (idx < 0 || !src) return state
       // Offset the clone one cell (clamped into bounds) so it's visibly
       // distinct, and insert it right after the source so it sits one step
       // higher in paint order (later in the stream = drawn on top).
-      const { dx, dy } = clampObjectMove(src, 1, 1)
-      const clone: LevelObject = {
-        ...src,
-        uid: state.nextUid,
-        x: src.x + dx,
-        y: src.y + dy
-      }
+      const placed = idx < 0 ? null : duplicateObjectClone(state.level, action.uid)
+      if (!placed) return state
+      const clone: LevelObject = { ...placed, uid: state.nextUid }
       const nextObjs = objs.slice()
       nextObjs.splice(idx + 1, 0, clone)
       return {
@@ -402,9 +425,16 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       const merged: LevelObject = { ...o, ...action.patch }
       // num 0 = extended; it must carry an exnum to serialize.
       if (merged.num === 0 && merged.exnum === undefined) merged.exnum = 0
-      const { x, y } = clampCell(merged.x, merged.y)
-      const { w, h } = clampObjectResize({ ...merged, x, y }, merged.w, merged.h)
-      const next: LevelObject = { ...merged, x, y, w, h }
+      const next = clampObjectEdit(o, merged, state.level.header)
+      // Refuse an edit that makes a loader-safe object unsafe. An object that
+      // is already unsafe (e.g. from an imported level) stays editable so it
+      // can be fixed.
+      if (
+        !isObjectPlacementSafe(next, state.level.header) &&
+        isObjectPlacementSafe(o, state.level.header)
+      ) {
+        return state
+      }
       if (
         next.x === o.x && next.y === o.y && next.w === o.w && next.h === o.h &&
         next.num === o.num && next.exnum === o.exnum
@@ -619,7 +649,7 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
       const sprs = state.level.sprites.filter((s) => sprSet.has(s.uid!))
       if (objs.length === 0 && sprs.length === 0) return state
       // One group-clamped delta for the whole set — matches the drag overlay.
-      const { dx, dy } = clampGroupMove(objs, sprs, action.dx, action.dy)
+      const { dx, dy } = clampGroupMove(objs, sprs, action.dx, action.dy, state.level.header)
       if (dx === 0 && dy === 0) return state
       const next: LevelData = { ...state.level }
       if (objs.length > 0) {
@@ -637,13 +667,15 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
     case 'addEntities': {
       if (!state.level) return state
       // Assign uids objects-first (in array order), then sprites — the order
-      // callers predict to reselect the new group.
+      // callers predict to reselect the new group. An object with no safe
+      // placement is dropped but still consumes its uid, so a prediction never
+      // aliases a later entity (callers pre-filter with placeNewObject).
+      const level = state.level
       let uid = state.nextUid
-      const stampedObjs = action.objects.map((o) => {
-        const { x, y } = clampCell(o.x, o.y)
-        const e: LevelObject = { ...o, x, y, uid: uid++ }
-        if (e.num === 0 && e.exnum === undefined) e.exnum = 0
-        return e
+      const stampedObjs = action.objects.flatMap((o) => {
+        const placed = placeNewObject(level, o)
+        const stamped = uid++
+        return placed ? [{ ...placed, uid: stamped }] : []
       })
       // Drop sprites that won't fit under the per-level cap (callers trim first,
       // so this is the defensive backstop — keeps uid assignment in step).
@@ -652,7 +684,9 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
         const { x, y } = clampCell(s.x, s.y)
         return { ...s, x, y, num: s.num & 0x1ff, uid: uid++ } as LevelSprite
       })
-      if (stampedObjs.length === 0 && stampedSprs.length === 0) return state
+      if (stampedObjs.length === 0 && stampedSprs.length === 0) {
+        return uid === state.nextUid ? state : { ...state, nextUid: uid }
+      }
       const next: LevelData = { ...state.level }
       if (stampedObjs.length > 0) next.objects = reindex([...state.level.objects, ...stampedObjs])
       if (stampedSprs.length > 0) next.sprites = reindex([...state.level.sprites, ...stampedSprs])
@@ -673,8 +707,9 @@ export function levelReducer(state: LevelState, action: LevelAction): LevelState
         raw: []
       }
       if (t.exnum !== undefined) obj.exnum = t.exnum
-      if (obj.num === 0 && obj.exnum === undefined) obj.exnum = 0
-      const nextObjs = [...state.level.objects, obj]
+      const placed = placeNewObject(state.level, obj)
+      if (!placed) return state
+      const nextObjs = [...state.level.objects, placed]
       return {
         ...commit(state, { ...state.level, objects: reindex(nextObjs) }),
         nextUid: state.nextUid + 1

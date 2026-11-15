@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { LevelData } from '../../../preload/api'
-import { getCollisionTable } from '../data/collision-info'
+import { useCollisionTableData } from './useCollisionTableData'
 import type { BehaviorMark } from '../data/sprite-behavior-extents'
 import {
   hasProbe,
@@ -43,22 +43,25 @@ function makeMap16At(buf: Uint8Array, pageMap: Uint8Array): (cx: number, cy: num
  */
 export function useBehaviorProbes(level: LevelData | null, enabled: boolean): BehaviorProbeMap | null {
   const [probes, setProbes] = useState<BehaviorProbeMap | null>(null)
+  // A dependency, so a project switch / rebuild that changes the table re-runs
+  // the probes (an unchanged refresh keeps its identity: no re-run).
+  const collision = useCollisionTableData()
   useEffect(() => {
     if (!enabled || !level || level.empty || level.special) {
       setProbes(null)
       return
     }
+    if (!collision) return // re-runs once the table loads
     const relevant = level.sprites.filter((s) => s.uid !== undefined && hasProbe(s.num))
     if (relevant.length === 0) {
       setProbes(new Map())
       return
     }
     let cancelled = false
-    void Promise.all([
-      window.shinyEgg.render.decodeLevelLayout({ levelRecordId: level.recordId, override: level }),
-      getCollisionTable()
-    ])
-      .then(([layout, table]) => {
+    const table = collision.table
+    void window.shinyEgg.render
+      .decodeLevelLayout({ levelRecordId: level.recordId, override: level })
+      .then((layout) => {
         if (cancelled) return
         if (!layout) {
           setProbes(new Map())
@@ -86,6 +89,6 @@ export function useBehaviorProbes(level: LevelData | null, enabled: boolean): Be
     return () => {
       cancelled = true
     }
-  }, [level, enabled])
+  }, [level, enabled, collision])
   return probes
 }

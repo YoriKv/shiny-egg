@@ -1,22 +1,13 @@
-import { useEffect, useState } from 'react'
-import { getObjectPropertyTable } from '../data/object-record'
+import { objectPropertyTableCache } from '../data/object-record'
+import { useRefetchableCache } from './useRefetchableCache'
 
 /**
- * The cart object-property table (per-cart static, cached by
- * `getObjectPropertyTable`). Three components inlined the same
- * fetch-into-state effect; this is the shared hook. `null` until the cached
- * promise resolves — callers treat null as permissive (`objectSizeMode` → 'wh').
+ * The cart object-property table (from the render ROM; App invalidates it on a
+ * project switch or render refresh). Shared by every component that gates size
+ * fields / resize handles. `null` until the first fetch resolves — callers
+ * treat null as permissive (`objectSizeMode` → 'wh'). Re-renders only when a
+ * refetch returns new bytes.
  */
 export function useObjectPropertyTable(): Uint8Array | null {
-  const [propTable, setPropTable] = useState<Uint8Array | null>(null)
-  useEffect(() => {
-    let alive = true
-    void getObjectPropertyTable().then((t) => {
-      if (alive) setPropTable(t)
-    })
-    return () => {
-      alive = false
-    }
-  }, [])
-  return propTable
+  return useRefetchableCache(objectPropertyTableCache)
 }

@@ -114,6 +114,7 @@ export function getCurrentMap16Tile(s: DecodeState): void {
   // LDX $1C ; JSR resolve_screen_page ; STX $1D
   const x = resolveScreenPage(s, s.zp1C & 0xff);
   s.zp1D = x;
+  s.visitCell?.(x);
   // LDA !LevelDataBuffer,x ; STA $12  -- 16-bit (REP #$30 caller context)
   const lo = s.levelDataBuffer[x] ?? 0;
   const hi = s.levelDataBuffer[(x + 1) & 0xffff] ?? 0;

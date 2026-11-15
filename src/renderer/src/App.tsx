@@ -18,10 +18,11 @@ import { Canvas } from './Canvas'
 import {
   INITIAL_LEVEL_STATE,
   isDirty,
-  levelReducer
+  levelReducer,
+  placeNewObject
 } from './canvas/level-reducer'
-import { clampObjectResize } from './canvas/limits'
-import { objectSizeMode } from './data/object-record'
+import { objectPropertyTableCache, objectSizeMode } from './data/object-record'
+import { collisionTableCache } from './data/collision-info'
 import { useObjectPropertyTable } from './hooks/useObjectPropertyTable'
 import { useLevelKeyboardShortcuts } from './hooks/useLevelKeyboardShortcuts'
 import { BlockerBar } from './BlockerBar'
@@ -670,18 +671,13 @@ export default function App(): JSX.Element {
       if (!placement) return
       const newUid = levelState.nextUid
       if (placement.kind === 'object') {
-        // Clamp the (possibly Shift+arrow-resized) extents to the drop cell so a
-        // grown preview can't place an out-of-bounds box (addObject doesn't clamp
-        // w/h — same anchor-relative clamp the resize handles use).
-        const { w, h } = clampObjectResize(
-          { x: cx, y: cy, w: placement.w, h: placement.h } as LevelObject,
-          placement.w,
-          placement.h
-        )
-        dispatchLevel({
-          type: 'addObject',
-          template: { num: placement.num, exnum: placement.exnum, x: cx, y: cy, w, h }
-        })
+        const template = { num: placement.num, exnum: placement.exnum, x: cx, y: cy, w: placement.w, h: placement.h }
+        // No loader-safe placement near this cell (the ghost is hidden too):
+        // the reducer would refuse, so stay armed instead of selecting a uid
+        // that never gets created.
+        const lvl = levelState.level
+        if (!lvl || !placeNewObject(lvl, { ...template, index: 0, raw: [] })) return
+        dispatchLevel({ type: 'addObject', template })
         if (!keepPlacing) {
           setSelection([{ kind: 'object', uid: newUid }])
           setPlacement(null)
@@ -1026,6 +1022,18 @@ export default function App(): JSX.Element {
   // place of the bare projectId — those consumers use it only as a reload key /
   // effect trigger, never for IPC (which reads the active project main-side).
   const projectScope = projectId === null ? null : `${projectId}#${projectRev}`
+  // Cart tables cached renderer-side come from the render ROM, which changes
+  // with the project, a ROM import, a rebuild or a table edit: refetch them on
+  // any of those. Skips the first run; each cache's hook fetches on mount.
+  const romTablesScopeRef = useRef<string | null>(null)
+  useEffect(() => {
+    const scope = `${projectScope}|${renderRefresh}`
+    if (romTablesScopeRef.current !== null && romTablesScopeRef.current !== scope) {
+      objectPropertyTableCache.invalidate()
+      collisionTableCache.invalidate()
+    }
+    romTablesScopeRef.current = scope
+  }, [projectScope, renderRefresh])
   useRoomMetadata()
   const [allRoomsOpen, setAllRoomsOpen] = useState(false)
   const [editingRoom, setEditingRoom] = useState<number | null>(null)

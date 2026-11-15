@@ -7,9 +7,14 @@
 
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import type { LevelObject, LevelSprite } from '../../../preload/api'
-import type { LevelAction, LevelState } from '../canvas/level-reducer'
+import {
+  duplicateObjectClone,
+  placeNewObject,
+  type LevelAction,
+  type LevelState
+} from '../canvas/level-reducer'
 import type { PlacementItem, Selection } from '../types'
-import { MAX_LEVEL_SPRITES } from '../canvas/limits'
+import { MAX_LEVEL_SPRITES, stepObjectResize } from '../canvas/limits'
 import { objectSizeMode } from '../data/object-record'
 import { LEVEL_SCREENS_H, LEVEL_SCREENS_W, screenCol, screenRow } from '../canvas/geometry'
 import { isCellOnScreen, viewportCenterCell, type View } from '../canvas/view'
@@ -79,8 +84,9 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
       setSelection(sel)
     }
     // Shared by Duplicate (entities offset from the live selection) and Paste
-    // (from the clipboard): clone, offset by (dx, dy), trim sprites to the cap so
-    // the predicted reselect matches what the reducer actually adds.
+    // (from the clipboard): clone, offset by (dx, dy), drop objects with no
+    // loader-safe placement and trim sprites to the cap, so the predicted
+    // reselect matches what the reducer actually adds.
     const addCloned = (
       srcObjs: LevelObject[],
       srcSprs: LevelSprite[],
@@ -89,12 +95,14 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
     ): void => {
       const lvl = levelStateRef.current.level
       if (!lvl) return
-      const objects = srcObjs.map((o) => ({
-        ...o,
-        raw: o.raw ? o.raw.slice() : o.raw,
-        x: o.x + dx,
-        y: o.y + dy
-      }))
+      const objects = srcObjs
+        .map((o) => ({
+          ...o,
+          raw: o.raw ? o.raw.slice() : o.raw,
+          x: o.x + dx,
+          y: o.y + dy
+        }))
+        .filter((o) => placeNewObject(lvl, o) !== null)
       const room = Math.max(0, MAX_LEVEL_SPRITES - lvl.sprites.length)
       const sprites = srcSprs.map((s) => ({ ...s, x: s.x + dx, y: s.y + dy })).slice(0, room)
       if (objects.length === 0 && sprites.length === 0) return
@@ -172,7 +180,7 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
       // (`negWAllowed`/`negHAllowed` are informational only, unenforced elsewhere).
       // The extent is left UNCLAMPED and may go negative (an anchor-relative
       // "grow back" extent), exactly like the placed-object resize + drag handles;
-      // App.onPlaceAt's clampObjectResize bounds it (sign-preserving) at the drop.
+      // The reducer validates the signed size and loader walk at the drop.
       // Sprites/exits have no size, so it's a no-op. Claims Shift+Arrow entirely in
       // place mode so it never leaks to a lingering selection's resize.
       if (placementRef.current && e.shiftKey && e.key.startsWith('Arrow')) {
@@ -184,11 +192,14 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
           const vert = e.key === 'ArrowUp' || e.key === 'ArrowDown'
           setPlacement((prev) => {
             if (!prev || prev.kind !== 'object') return prev
+            // No drop anchor exists yet; probe zero at an interior position.
+            const probe: LevelObject = { ...prev, x: 64, y: 64, index: 0, raw: [] }
+            const header = levelStateRef.current.level?.header
             if (horiz && (sm === 'w' || sm === 'wh')) {
-              return { ...prev, w: prev.w + (e.key === 'ArrowRight' ? 1 : -1) }
+              return { ...prev, w: stepObjectResize(probe, 'w', e.key === 'ArrowRight' ? 1 : -1, header) }
             }
             if (vert && (sm === 'h' || sm === 'wh')) {
-              return { ...prev, h: prev.h + (e.key === 'ArrowDown' ? 1 : -1) }
+              return { ...prev, h: stepObjectResize(probe, 'h', e.key === 'ArrowDown' ? 1 : -1, header) }
             }
             return prev
           })
@@ -304,6 +315,9 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
           e.preventDefault()
           const newUid = levelStateRef.current.nextUid
           if (primarySelection.kind === 'object') {
+            // Refused (source not loader-safe): keep the source selected.
+            const lvl = levelStateRef.current.level
+            if (!lvl || !duplicateObjectClone(lvl, primarySelection.uid)) return
             dispatchLevel({ type: 'duplicateObject', uid: primarySelection.uid })
           } else {
             dispatchLevel({ type: 'duplicateSprite', uid: primarySelection.uid })
@@ -354,10 +368,10 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
             const sm = objectSizeMode(o.num, o.exnum, propTable)
             if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && (sm === 'w' || sm === 'wh')) {
               const dw = e.key === 'ArrowRight' ? 1 : -1
-              dispatchLevel({ type: 'setObjectFields', uid: o.uid!, patch: { w: o.w + dw } })
+              dispatchLevel({ type: 'setObjectFields', uid: o.uid!, patch: { w: stepObjectResize(o, 'w', dw, levelStateRef.current.level?.header) } })
             } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && (sm === 'h' || sm === 'wh')) {
               const dh = e.key === 'ArrowDown' ? 1 : -1
-              dispatchLevel({ type: 'setObjectFields', uid: o.uid!, patch: { h: o.h + dh } })
+              dispatchLevel({ type: 'setObjectFields', uid: o.uid!, patch: { h: stepObjectResize(o, 'h', dh, levelStateRef.current.level?.header) } })
             }
           }
           return

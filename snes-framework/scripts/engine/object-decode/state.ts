@@ -93,6 +93,8 @@ export const TEMPLATE_WORD_COUNT = 0x300; // covers $19DA..$1FDA — wider than 
  * everything's mutable and the asm freely walks through it.
  */
 export class DecodeState {
+  /** Optional loader-footprint probe. Includes visited blank/transparent cells. */
+  visitCell: ((byteOffset: number) => void) | null = null;
   // --- Backing storage --------------------------------------------------
   /** The Map16 ID grid (cart `!RAM_YI_Level_LevelDataBuffer`, $7F:8000). */
   readonly levelDataBuffer = new Uint8Array(LEVEL_DATA_BUFFER_BYTES);
@@ -278,5 +280,6 @@ export class DecodeState {
     this.provenanceTargets = null;
     this.provenanceCells = null;
     this.cellStampers = null;
+    this.visitCell = null;
   }
 }

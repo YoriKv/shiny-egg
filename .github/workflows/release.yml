@@ -38,7 +38,11 @@ jobs:
             artifacts: |
               dist/*-setup.exe
               dist/*-win.zip
-          - os: ubuntu-latest
+          # Pinned, not ubuntu-latest: electron-builder's AppImage tools wrap
+          # mksquashfs with LD_LIBRARY_PATH pointing at a bundled old libm, so
+          # host binaries (basename, libsystemd) fail on Ubuntu 26.04's newer
+          # glibc ("GLIBC_2.43 not found"). Also keeps the AppImage's glibc floor low.
+          - os: ubuntu-24.04
             script: build:linux
             artifacts: |
               dist/*-x86_64.AppImage

@@ -24,7 +24,15 @@ import {
   parseSpritesetFiles,
   spritesetFilesBytes,
 } from './spriteset-files.ts';
-import type { RomTablePatchKind, SpritesetFilesModel } from './types.ts';
+import {
+  OBJECT_PROPERTIES_BANK_FILE,
+  OBJECT_PROPERTIES_LABEL,
+  OBJECT_PROPERTIES_REGION,
+  OBJECT_PROPERTIES_SIZE,
+  objectPropertiesBytes,
+  objectPropertiesFromAsm,
+} from './object-properties.ts';
+import type { ObjectPropertiesModel, RomTablePatchKind, SpritesetFilesModel } from './types.ts';
 
 export interface RomTablePatch {
   kind: RomTablePatchKind;
@@ -53,6 +61,18 @@ export const ROM_TABLE_PATCHES: readonly RomTablePatch[] = [
     fromAsm: (text) =>
       findRegion(text, SPRITESET_FILES_REGION) ? spritesetFilesBytes(parseSpritesetFiles(text)) : null,
     fromModel: (model) => spritesetFilesBytes(model as SpritesetFilesModel),
+  },
+  {
+    // Has no editor of its own: enrolled so a hand edit to a project's overlay
+    // Bank12.asm reaches the object decode (which sizes each record from this
+    // table) and the editor's object size/placement checks without a rebuild.
+    kind: 'object-properties',
+    file: OBJECT_PROPERTIES_BANK_FILE,
+    region: OBJECT_PROPERTIES_REGION,
+    label: OBJECT_PROPERTIES_LABEL,
+    size: OBJECT_PROPERTIES_SIZE,
+    fromAsm: objectPropertiesFromAsm,
+    fromModel: (model) => objectPropertiesBytes(model as ObjectPropertiesModel),
   },
 ];
 

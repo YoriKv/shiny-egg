@@ -9,6 +9,7 @@
 // bytes live (the loader-time `LevelObject.raw` goes stale once edited).
 
 import type { LevelObject } from '../../../preload/api'
+import { createRefetchableCache } from '../lib/refetchable-cache'
 
 export type SizeMode = 'none' | 'w' | 'h' | 'wh'
 
@@ -74,19 +75,23 @@ export function encodeObjectRecord(o: LevelObject, sizeMode: SizeMode): number[]
 }
 
 // ── Cached cart property table ──────────────────────────────────────────────
-// Per-cart static, ~256 bytes — fetch once, reuse for every object. Same
-// pattern as the collision-table cache in PropertiesPanel.
+// ~256 bytes, read from the render ROM: the project's build with any saved or
+// draft overlay edit to the table patched in (it is enrolled in
+// ROM_TABLE_PATCHES). It can change, so it lives in a refetchable cache that
+// App invalidates (lib/refetchable-cache.ts); an unchanged table keeps its
+// identity, which also keeps the placement probe's per-table cache warm.
 
-let propTableCache: Uint8Array | null = null
-let propTableFetching: Promise<Uint8Array> | null = null
+const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
+  a.length === b.length && a.every((v, i) => v === b[i])
 
-/** The cart's 256-byte standard-object property table (cached after first use). */
-export function getObjectPropertyTable(): Promise<Uint8Array> {
-  if (propTableCache) return Promise.resolve(propTableCache)
-  if (propTableFetching) return propTableFetching
-  propTableFetching = window.shinyEgg.render.objectPropertyTable().then((t) => {
-    propTableCache = t
-    return t
-  })
-  return propTableFetching
+export const objectPropertyTableCache = createRefetchableCache(
+  'Object property table',
+  () => window.shinyEgg.render.objectPropertyTable(),
+  sameBytes
+)
+
+/** The last fetched property table (possibly being refreshed), else null. For
+ * synchronous callers (edit clamps in the reducer) that can't await it. */
+export function cachedObjectPropertyTable(): Uint8Array | null {
+  return objectPropertyTableCache.current()
 }

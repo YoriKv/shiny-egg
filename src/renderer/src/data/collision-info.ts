@@ -24,6 +24,7 @@ import type {
   DecodedObjectInfluence
 } from '../../../preload/api'
 import { hex } from '../lib/hex'
+import { createRefetchableCache } from '../lib/refetchable-cache'
 
 // ── Secondary-tag tooltip copy ────────────────────────────────────────────
 // Hover descriptions for the 5-bit secondary tags (the per-page behaviour
@@ -100,27 +101,23 @@ export function secondaryTagTooltip(tag: number): string | undefined {
 }
 
 // ── Shared cart-table fetch ───────────────────────────────────────────────
-// The collision table + pipe-entry bits are static per cart (~5 KB), so fetch
-// once and share the promise across every consumer (Properties panel,
-// neighbour-dep resolver) instead of each keeping its own cache.
+// The collision table + pipe-entry bits (~5 KB) come from the render ROM, so
+// they change with the project / build. One refetchable cache shared by every
+// consumer (Properties panel, neighbour-dep resolver, behaviour probes), which
+// App invalidates (lib/refetchable-cache.ts); read it with
+// `useCollisionTableData`. An unchanged table keeps its identity, so consumers
+// keyed on it don't recompute after a refresh.
 
-let dataCache: CollisionTableResult | null = null
-let dataFetching: Promise<CollisionTableResult> | null = null
+const sameCollisionData = (a: CollisionTableResult, b: CollisionTableResult): boolean =>
+  a.pipeEntryBits.length === b.pipeEntryBits.length &&
+  a.pipeEntryBits.every((v, i) => v === b.pipeEntryBits[i]) &&
+  JSON.stringify(a.table) === JSON.stringify(b.table)
 
-export function getCollisionTableData(): Promise<CollisionTableResult> {
-  if (dataCache) return Promise.resolve(dataCache)
-  dataFetching ??= window.shinyEgg.render.collisionTable().then((d) => {
-    dataCache = d
-    return d
-  })
-  return dataFetching
-}
-
-/** Just the per-page `bg_type_table` — for consumers that don't need the
- *  pipe-entry bits (the neighbour-dep resolver's page→tag lookup). */
-export function getCollisionTable(): Promise<CollisionEntry[]> {
-  return getCollisionTableData().then((d) => d.table)
-}
+export const collisionTableCache = createRefetchableCache(
+  'Collision table',
+  () => window.shinyEgg.render.collisionTable(),
+  sameCollisionData
+)
 
 // ── Classification (mirrors render-collision.ts) ──────────────────────────
 

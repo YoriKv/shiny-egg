@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { LevelData } from '../../../preload/api'
-import { getCollisionTable } from '../data/collision-info'
 import { getSpriteNeighborDeps } from '../data/obj-metadata'
 import {
   resolveDep,
@@ -8,23 +7,11 @@ import {
   type NeighborContext,
   type PlacedSprite
 } from '../lib/sprite-neighbor-deps'
+import { useCollisionTableData } from './useCollisionTableData'
 
 /** Per-sprite dependency results, keyed by the sprite's editor uid. Only sprites
  *  that actually have neighbour-dependencies appear. */
 export type NeighborStatusMap = Map<number, DepResult[]>
-
-// Class-F (pipe-spawner) deps match a cell's page collision secondary-tag, so
-// the resolver needs page→tag; all other classes resolve without it. Derived
-// from the shared cached table fetch (data/collision-info.ts).
-function getCollisionTagOfPage(): Promise<(page: number) => number | undefined> {
-  return getCollisionTable().then((table) => (page: number) => table[page]?.tag)
-}
-
-// `matchSolid` deps (the grinder monkeys' grab-any-wall path) need page→side-solid:
-// the collision byte-0 AL flag. Shares the same cached table fetch as the tag lookup.
-function getIsSolidPage(): Promise<(page: number) => boolean> {
-  return getCollisionTable().then((table) => (page: number) => table[page]?.flags.al ?? false)
-}
 
 // Sprite nums placed anywhere in the warp-reachable level group: forward BFS
 // over screen-exit warps from the current record (live `level` for the edited
@@ -91,11 +78,15 @@ export function useNeighborDependencies(
   enabled: boolean
 ): NeighborStatusMap | null {
   const [status, setStatus] = useState<NeighborStatusMap | null>(null)
+  // The shared collision table (data/collision-info.ts). A dependency, so a
+  // project switch / rebuild that changes it re-resolves.
+  const collision = useCollisionTableData()
   useEffect(() => {
     if (!enabled || !level || level.empty || level.special) {
       setStatus(null)
       return
     }
+    if (!collision) return // re-runs once the table loads
     const relevant = level.sprites.filter(
       (s) => s.uid !== undefined && getSpriteNeighborDeps(s.num).length > 0
     )
@@ -107,13 +98,17 @@ export function useNeighborDependencies(
     const needsGroup = relevant.some((s) =>
       getSpriteNeighborDeps(s.num).some((d) => d.spatial === 'carried')
     )
+    const table = collision.table
+    // Class-F (pipe-spawner) deps match a cell's page collision secondary-tag;
+    // `matchSolid` deps (the grinder monkeys' grab-any-wall path) need the
+    // page's side-solid AL flag. All other classes resolve without the table.
+    const collisionTagOfPage = (page: number): number | undefined => table[page]?.tag
+    const isSolidPage = (page: number): boolean => table[page]?.flags.al ?? false
     void Promise.all([
       window.shinyEgg.render.decodeLevelLayout({ levelRecordId: level.recordId, override: level }),
-      getCollisionTagOfPage(),
-      needsGroup ? carriedGroupNums(level) : Promise.resolve(undefined),
-      getIsSolidPage()
+      needsGroup ? carriedGroupNums(level) : Promise.resolve(undefined)
     ])
-      .then(([layout, collisionTagOfPage, groupNums, isSolidPage]) => {
+      .then(([layout, groupNums]) => {
         if (cancelled) return
         if (!layout) {
           setStatus(new Map())
@@ -144,6 +139,6 @@ export function useNeighborDependencies(
     return () => {
       cancelled = true
     }
-  }, [level, enabled])
+  }, [level, enabled, collision])
   return status
 }

@@ -7,7 +7,15 @@
 // Run via Vitest (renderer config): `pnpm run test:renderer`.
 
 import { describe, test, expect } from 'vitest'
-import { levelReducer, INITIAL_LEVEL_STATE, isDirty, type LevelState } from './level-reducer'
+import {
+  duplicateObjectClone,
+  levelReducer,
+  INITIAL_LEVEL_STATE,
+  isDirty,
+  placeNewObject,
+  type LevelState
+} from './level-reducer'
+import { isObjectPlacementSafe, stepObjectResize } from './limits'
 import type { LevelData, LevelObject, LevelSprite } from '../../../preload/api'
 
 function obj(num: number, x: number, y: number, w = 1, h = 1): LevelObject {
@@ -20,6 +28,123 @@ function loaded(objects: LevelObject[], sprites: LevelSprite[] = []): LevelState
   const data = { recordId: 0x10, empty: false, special: false, header: [], objects, sprites, exits: [] }
   return levelReducer(INITIAL_LEVEL_STATE, { type: 'load', data: data as unknown as LevelData })
 }
+
+describe('loader bounds at edit entry points', () => {
+  test.each([0x07, 0x08, 0x09, 0x27, 0x28])('keyboard height resize crosses both signs for slope %i', num => {
+    let state = loaded([obj(num, 64, 64, 4, 1)])
+    const step = (delta: number) => {
+      const o = state.level!.objects[0]!
+      state = levelReducer(state, {
+        type: 'setObjectFields', uid: o.uid!, patch: { h: stepObjectResize(o, 'h', delta, state.level!.header) }
+      })
+      expect(isObjectPlacementSafe(state.level!.objects[0]!)).toBe(true)
+    }
+    step(-1)
+    step(-1)
+    expect(state.level!.objects[0]!.h).toBeLessThan(0)
+    for (let i = 0; i < 4; i++) step(1)
+    expect(state.level!.objects[0]!.h).toBeGreaterThan(0)
+  })
+
+  test('keyboard resizing preserves supported zero extents on either axis', () => {
+    const coin = obj(0x68, 64, 64, 1, 1)
+    expect(stepObjectResize(coin, 'h', -1)).toBe(0)
+    expect(stepObjectResize(coin, 'w', -1)).toBe(0)
+  })
+
+  test('standard-object loader checks apply to placement, properties, paste, and duplication', () => {
+    const placed = levelReducer(loaded([]), {
+      type: 'addObject', template: { num: 0x12, x: 64, y: 127, w: 8, h: 1 }
+    })
+    const wire = placed.level!.objects[0]!
+    expect(wire.y).toBeLessThan(127)
+    expect(isObjectPlacementSafe(wire)).toBe(true)
+    const edited = levelReducer(placed, {
+      type: 'setObjectFields', uid: wire.uid!, patch: { y: 127, w: 16 }
+    })
+    expect(isObjectPlacementSafe(edited.level!.objects[0]!)).toBe(true)
+    const pasted = levelReducer(loaded([]), {
+      type: 'addEntities', objects: [obj(0x28, 64, 127, 8, -4)], sprites: []
+    })
+    expect(pasted.level!.objects[0]!.h).toBe(-4)
+    expect(isObjectPlacementSafe(pasted.level!.objects[0]!)).toBe(true)
+
+    // A pre-existing invalid object must not be duplicated unchanged when
+    // there is no safe position on the one-cell duplicate offset.
+    const invalid = loaded([obj(0x8c, 64, 127, 8, 1)])
+    expect(levelReducer(invalid, { type: 'duplicateObject', uid: invalid.level!.objects[0]!.uid! })).toBe(invalid)
+    expect(duplicateObjectClone(invalid.level!, invalid.level!.objects[0]!.uid!)).toBeNull()
+  })
+
+  test('size and position edits never relocate the object', () => {
+    // Shift+Arrow / Properties w: capped at the anchor, like a drag resize.
+    const s0 = loaded([obj(0x12, 64, 116, 4, 1)])
+    const uid = s0.level!.objects[0]!.uid!
+    const grown = levelReducer(s0, { type: 'setObjectFields', uid, patch: { w: 32 } }).level!.objects[0]!
+    expect([grown.x, grown.y]).toEqual([64, 116])
+    expect(grown.w).toBeLessThan(32)
+    expect(isObjectPlacementSafe(grown)).toBe(true)
+    // Properties y: stops at the furthest safe row on the way, same column.
+    const moved = levelReducer(s0, { type: 'setObjectFields', uid, patch: { y: 127 } }).level!.objects[0]!
+    expect(moved.x).toBe(64)
+    expect(moved.y).toBeGreaterThanOrEqual(116)
+    expect(moved.y).toBeLessThan(127)
+    expect(isObjectPlacementSafe(moved)).toBe(true)
+  })
+
+  test('an already-unsafe object (e.g. imported) stays editable', () => {
+    const invalid = loaded([obj(0x8c, 64, 127, 8, 1)])
+    const uid = invalid.level!.objects[0]!.uid!
+    const edited = levelReducer(invalid, { type: 'setObjectFields', uid, patch: { w: 7 } })
+    expect(edited.level!.objects[0]!.w).toBe(7)
+  })
+
+  test('an object with no safe placement is refused, and a dropped add still consumes its uid', () => {
+    // Object 0x5C at zero width overflows at every anchor (and exhausts the
+    // placement search budget).
+    const s0 = loaded([])
+    expect(placeNewObject(s0.level!, obj(0x5c, 64, 64, 0, 1))).toBeNull()
+    expect(levelReducer(s0, { type: 'addObject', template: { num: 0x5c, x: 64, y: 64, w: 0, h: 1 } })).toBe(s0)
+    const mixed = levelReducer(s0, {
+      type: 'addEntities', objects: [obj(0x5c, 64, 64, 0, 1), obj(1, 10, 10)], sprites: []
+    })
+    expect(mixed.level!.objects.map((o) => o.uid)).toEqual([s0.nextUid + 1])
+    expect(mixed.nextUid).toBe(s0.nextUid + 2)
+    // All dropped: no commit, but the predicted uid is still retired.
+    const none = levelReducer(s0, { type: 'addEntities', objects: [obj(0x5c, 64, 64, 0, 1)], sprites: [] })
+    expect(none.level).toBe(s0.level)
+    expect(none.commits).toBe(s0.commits)
+    expect(none.nextUid).toBe(s0.nextUid + 1)
+  })
+
+  test('placement, properties, and paste keep blank tiles inside their hidden border', () => {
+    const placed = levelReducer(loaded([]), {
+      type: 'addObject', template: { num: 0xa8, x: 255, y: 127, w: 1, h: 1 }
+    })
+    const tile = placed.level!.objects[0]!
+    expect([tile.x, tile.y]).toEqual([254, 126])
+    const edited = levelReducer(placed, {
+      type: 'setObjectFields', uid: tile.uid!, patch: { x: 0, y: 0, w: 4, h: 5 }
+    })
+    expect(edited.level!.objects[0]).toMatchObject({ x: 1, y: 1, w: 4, h: 5 })
+    const pasted = levelReducer(loaded([]), {
+      type: 'addEntities', objects: [obj(0xa8, 255, 127, 4, 5)], sprites: []
+    })
+    // Shifted inside the grid with its authored size kept (border included).
+    expect(pasted.level!.objects[0]).toMatchObject({ x: 251, y: 122, w: 4, h: 5 })
+  })
+
+  test('extended object movement and duplication stop at the fixed footprint boundary', () => {
+    const placed = levelReducer(loaded([]), {
+      type: 'addObject', template: { num: 0, exnum: 0x50, x: 255, y: 127, w: 1, h: 1 }
+    })
+    const sign = placed.level!.objects[0]!
+    expect(sign).toMatchObject({ x: 254, y: 126 })
+    expect(levelReducer(placed, { type: 'moveObject', uid: sign.uid!, dx: 10, dy: 10 })).toBe(placed)
+    const duplicated = levelReducer(placed, { type: 'duplicateObject', uid: sign.uid! })
+    expect(duplicated.level!.objects[1]).toMatchObject({ x: 254, y: 126 })
+  })
+})
 
 describe('load', () => {
   test('stamps sequential uids (objects then sprites) and sets nextUid', () => {
@@ -118,7 +243,7 @@ describe('add / delete', () => {
     const o = s1.level!.objects[0]!
     expect(o.x).toBeGreaterThanOrEqual(0)
     expect(o.x).toBeLessThan(256)
-    expect(o.y).toBe(0) // -5 clamps up to 0
+    expect(o.y).toBe(1) // object 04's loader slope also needs a row above its anchor
   })
 
   test('deleteObject removes by uid and reindexes the survivors', () => {
@@ -249,7 +374,7 @@ describe('addEntities (multi Duplicate / Paste batch add)', () => {
     const o = s1.level!.objects[0]!
     expect(o.x).toBeLessThan(256)
     expect(o.x).toBeGreaterThanOrEqual(0)
-    expect(o.y).toBe(0)
+    expect(o.y).toBe(1) // object 04's loader slope needs a row above its anchor
   })
 })
 

@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type Dispatch, type JSX } from 'react'
 import type {
-  CollisionTableResult,
   DecodedObjectInfluence,
   LevelData,
   LevelObject,
@@ -14,11 +13,8 @@ import { neighborSummary } from '../data/sprite-neighbor-text'
 import { parityVariantRows } from '../data/sprite-parity-variants'
 import { behaviorRows } from '../data/sprite-behavior-extents'
 import { capStatus } from '../data/sprite-level-caps'
-import {
-  getCollisionTableData,
-  summarizeObjectCollision,
-  type CollisionChip
-} from '../data/collision-info'
+import { summarizeObjectCollision, type CollisionChip } from '../data/collision-info'
+import { useCollisionTableData } from '../hooks/useCollisionTableData'
 import {
   encodeObjectRecord,
   objectSizeMode
@@ -294,15 +290,8 @@ function ObjectProps({
 
   // Collision block: join the object's provenance cells (exact stamps, live —
   // the influence decode runs with `override: level`) against the cart's
-  // collision table + pipe-entry bits (static, shared cached fetch).
-  const [collisionData, setCollisionData] = useState<CollisionTableResult | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void getCollisionTableData()
-      .then((d) => { if (!cancelled) setCollisionData(d) })
-      .catch(() => { if (!cancelled) setCollisionData(null) })
-    return () => { cancelled = true }
-  }, [])
+  // collision table + pipe-entry bits (shared cache, refreshed with the build).
+  const collisionData = useCollisionTableData()
   const collision = useMemo(
     () => summarizeObjectCollision(influence, collisionData),
     [influence, collisionData]
