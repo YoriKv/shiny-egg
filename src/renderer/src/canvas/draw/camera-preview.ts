@@ -1,8 +1,7 @@
 // Camera Preview overlay — the virtual-camera box, the optional black mask outside
 // it, and the screen-relative sky gradient. The box represents the camera's world
 // rect (256×224 SNES px at the selected 1×–4× zoom, possibly screen-snapped); the
-// gradient + mask + outline are drawn in CSS-px SCREEN space, so each entry point
-// resets the canvas transform to `dpr` and restores after.
+// gradient and outline use CSS pixels. The mask uses whole backing-canvas pixels.
 
 import { CAMERA_W, CAMERA_H, CAMERA_BAR_PX, type CameraSnap } from '../parallax'
 import type { View } from '../view'
@@ -76,35 +75,40 @@ export function drawCameraGradient(
   ctx.restore()
 }
 
-/** Draw the camera box outline, plus (when `mask`) a black fill over everything
- *  outside it. Both in CSS-px screen space, clamped to the viewport. */
+/** Draw the camera frame and black bars, with an optional mask outside the frame. */
 export function drawCameraOverlay(
   ctx: CanvasRenderingContext2D,
   dpr: number,
-  size: { w: number; h: number },
   box: BoxRect,
   mask: boolean
 ): void {
   ctx.save()
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  if (mask) {
-    // The box may be partly off-screen (snap / zoom) — clamp the hole to the viewport.
-    const x0 = Math.max(0, box.x)
-    const y0 = Math.max(0, box.y)
-    const x1 = Math.min(size.w, box.x + box.w)
-    const y1 = Math.min(size.h, box.y + box.h)
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, size.w, y0) // above
-    ctx.fillRect(0, y1, size.w, size.h - y1) // below
-    ctx.fillRect(0, y0, x0, y1 - y0) // left
-    ctx.fillRect(x1, y0, size.w - x1, y1 - y0) // right
-  }
-  // Force-blank black bars at the top + bottom of the camera (8 SNES px each, scaled
-  // with zoom) — the game blanks those scanlines, leaving a 208px play area.
+  // The game blanks the top and bottom 8 SNES px of the 224px camera.
   const bar = (box.h / CAMERA_H) * CAMERA_BAR_PX
   ctx.fillStyle = '#000'
-  ctx.fillRect(box.x, box.y, box.w, bar)
-  ctx.fillRect(box.x, box.y + box.h - bar, box.w, bar)
+  if (mask) {
+    // Mask everything around the playable area, including the black bars. Use
+    // whole backing pixels so fractional CSS coordinates cannot leave seams.
+    ctx.resetTransform()
+    const { width, height } = ctx.canvas
+    const x0 = Math.max(0, Math.ceil(box.x * dpr))
+    const y0 = Math.max(0, Math.ceil((box.y + bar) * dpr))
+    const x1 = Math.min(width, Math.floor((box.x + box.w) * dpr))
+    const y1 = Math.min(height, Math.floor((box.y + box.h - bar) * dpr))
+    if (x0 >= x1 || y0 >= y1) {
+      ctx.fillRect(0, 0, width, height)
+    } else {
+      ctx.fillRect(0, 0, width, y0)
+      ctx.fillRect(0, y1, width, height - y1)
+      ctx.fillRect(0, y0, x0, y1 - y0)
+      ctx.fillRect(x1, y0, width - x1, y1 - y0)
+    }
+  } else {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.fillRect(box.x, box.y, box.w, bar)
+    ctx.fillRect(box.x, box.y + box.h - bar, box.w, bar)
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.strokeStyle = 'rgba(255, 210, 64, 0.95)'
   ctx.lineWidth = 2
   ctx.strokeRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2)

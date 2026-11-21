@@ -30,6 +30,13 @@ import type {
   MusicSetsModel,
   SpritesetFilesModel,
   RomTablePatchKind,
+  AutoscrollCheckpoint,
+  AutoscrollModel,
+  AutoscrollSequence,
+  AutoscrollTrackStart,
+  SpriteHitboxShape,
+  SpritePropertiesModel,
+  SpritePropertyTableKey,
   RomTableModels,
   PoolBudgetReport,
   PoolOverview,
@@ -228,6 +235,13 @@ export type {
   MusicSetsModel,
   SpritesetFilesModel,
   RomTablePatchKind,
+  AutoscrollCheckpoint,
+  AutoscrollModel,
+  AutoscrollSequence,
+  AutoscrollTrackStart,
+  SpriteHitboxShape,
+  SpritePropertiesModel,
+  SpritePropertyTableKey,
   RomTableModels,
   ValidationIssue,
   ValidationSeverity,
@@ -658,6 +672,8 @@ export interface EditorAPI {
   loadResource(resource: { kind: 'yoshi-colors' }): Promise<YoshiColorsModel>
   loadResource(resource: { kind: 'music-sets' }): Promise<MusicSetsModel>
   loadResource(resource: { kind: 'spriteset-files' }): Promise<SpritesetFilesModel>
+  loadResource(resource: { kind: 'autoscroll' }): Promise<AutoscrollModel>
+  loadResource(resource: { kind: 'sprite-properties' }): Promise<SpritePropertiesModel>
   loadResource(resource: EditableResource): Promise<unknown>
   /** Per-sprite-type computed read-only properties (Properties panel) — `[]` for
    *  a sprite type with no provider. */

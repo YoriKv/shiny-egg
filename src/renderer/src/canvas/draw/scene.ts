@@ -54,6 +54,7 @@ import {drawExits, drawIncomingExits, strokeScreenOutline} from './exits'
 import {drawSpawnGlyph, drawSpawnOutline, drawTestSpawnGlyph} from './glyphs'
 import {drawPlacementPreview} from './placement-preview'
 import {selectionAccent} from './selection'
+import {drawAutoscrollOverlay, type AutoscrollOverlay} from './autoscroll'
 
 // Live drag/preview overlays the draw effect shadows (formerly inline useState
 // shapes in Canvas.tsx — named here so SceneParams and that state share a type).
@@ -166,6 +167,8 @@ export interface SceneParams {
      *  to `.zoom` (caller-enforced) and BG2/BG3/gradient parallax-align to the virtual
      *  camera box (centred, screen-snapped per `.snap`); `.mask` blacks out the rest. */
     cameraPreview: CameraPreview | null
+    /** Scripted playback uses the cart position directly, including out-of-bounds edits. */
+    cameraPosition?: { x: number; y: number } | null
     /** Render Only: hide every editor annotation drawn on the still-visible Sprites
      *  layer (landmark glyphs, entrance arrows, command / generator badges, the spawn
      *  marker) so only the rendered level shows. The outline / exit / collision overlays
@@ -173,6 +176,9 @@ export interface SceneParams {
      *  off); this flag covers the annotations that share the Sprites layer with the real
      *  sprite pixels — which stay visible — so `layers.sprites` alone can't gate them. */
     renderOnly: boolean
+    /** Autoscroll paths to draw (App resolves which tracks), or null. Rides the
+     *  Sprite-editing layer; hidden in Render Only. See draw/autoscroll.ts. */
+    autoscroll: AutoscrollOverlay | null
 }
 
 /** Paint the full scene. `canvas` may be null (effect runs before mount). */
@@ -217,7 +223,9 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         paintDrag,
         placementPreview,
         cameraPreview,
-        renderOnly
+        cameraPosition,
+        renderOnly,
+        autoscroll
     } = p
     if (!canvas) return
     const dpr = window.devicePixelRatio || 1
@@ -329,7 +337,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         if (cameraPreview) {
             // Snap, then clamp the 256×224 camera inside the level extent so the
             // preview never shows past the edges (clamp last keeps a snapped X on grid).
-            const cam = clampCamera(
+            const cam = cameraPosition ?? clampCamera(
                 applyCameraSnap(cameraOrigin(view, size), cameraPreview.snap),
                 LEVEL_PX_W,
                 LEVEL_PX_H
@@ -567,6 +575,11 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
             }
             drawIncomingExits(ctx, drawIncomingArr, primary, view.zoom)
         }
+        // Autoscroll paths (selected autoscroll sprite / the Autoscroll window's
+        // track): above sprites + exits so the draggable nodes stay grabbable.
+        if (autoscroll && layers.spriteOutlines !== 'off' && !renderOnly) {
+            drawAutoscrollOverlay(ctx, autoscroll, view.zoom)
+        }
         // Test Level spawn override ("Set Spawn"): an editor-only overlay drawn
         // above the level layers regardless of layer toggles, so the user always
         // sees where the next Test Level boot will drop Yoshi. App passes a
@@ -620,7 +633,7 @@ export function drawScene(canvas: HTMLCanvasElement | null, p: SceneParams): voi
         // Camera Preview box (+ optional black mask) — a screen-space overlay on top
         // of everything, at the camera box's screen rect.
         if (cameraPreview && camBox) {
-            drawCameraOverlay(ctx, dpr, size, camBox, cameraPreview.mask)
+            drawCameraOverlay(ctx, dpr, camBox, cameraPreview.mask)
         }
     }
 }

@@ -25,16 +25,90 @@ export type EditableResource =
   | { kind: 'world-map-paths' }
   | { kind: 'yoshi-colors' }
   | { kind: 'music-sets' }
-  | { kind: 'spriteset-files' };
+  | { kind: 'spriteset-files' }
+  | { kind: 'autoscroll' }
+  | { kind: 'sprite-properties' };
 
 /** The editor model of each fixed-size cart table that can be patched into a
  *  built ROM image without reassembling (`rom-table-patches.ts`), keyed by its
- *  resource kind. */
+ *  resource kind. The three `sprite-*` kinds are the render-affecting tables
+ *  of the shared {@link SpritePropertiesModel}. */
 export interface RomTableModels {
   'spriteset-files': SpritesetFilesModel;
   'object-properties': ObjectPropertiesModel;
+  'sprite-priority-attr': SpritePropertiesModel;
+  'sprite-gfx-files': SpritePropertiesModel;
+  'sprite-render-control': SpritePropertiesModel;
 }
 export type RomTablePatchKind = keyof RomTableModels;
+
+// ── Autoscroll (Bank03 DATA_autoscroller_indices / _values) ──────────────
+
+/** One autoscroll checkpoint: the camera's top-left target and the speed it
+ *  travels there at. `x`/`y` are 16-px cells (camera X = x*16, camera Y =
+ *  y*16 + $1C); `speed` is a signed byte, the dominant-axis velocity in 1/16 px
+ *  per frame. See scripts/autoscroll.ts. */
+export interface AutoscrollCheckpoint {
+  x: number;
+  y: number;
+  speed: number;
+}
+
+/** A run of checkpoints ending in an end command: $FE = hand scrolling back to
+ *  the player, $FF = lock the camera at the last checkpoint. */
+export interface AutoscrollSequence {
+  checkpoints: AutoscrollCheckpoint[];
+  end: 0xfe | 0xff;
+}
+
+/** Where a track (one autoscroll special sprite) starts: a checkpoint in a
+ *  sequence. Tracks may share a sequence (1-5's two sprites, 6-5's two). */
+export interface AutoscrollTrackStart {
+  sequence: number;
+  checkpoint: number;
+}
+
+/** The autoscroll tables: `tracks[i]` belongs to special sprite $1CA + i
+ *  (12 tracks, $1CA-$1D5). The checkpoint stream has a fixed byte budget
+ *  (`AUTOSCROLL_VALUES_SIZE`); each sequence costs 3 bytes per checkpoint + 1. */
+export interface AutoscrollModel {
+  sequences: AutoscrollSequence[];
+  tracks: AutoscrollTrackStart[];
+  /** Pristine base-cart tables, for restore-to-reference. Load-only. */
+  reference?: { sequences: AutoscrollSequence[]; tracks: AutoscrollTrackStart[] };
+}
+
+// ── Sprite property tables (SuperFX Bank0A DATA_0A9320 … DATA_0AAB14) ────
+
+/** The seven per-ID normal-sprite property word tables (442 words each,
+ *  sprite $000-$1B9) that seed a fresh sprite slot. See
+ *  snes-framework/docs/spritestateengine.md §4.2 and scripts/sprite-property-tables.ts. */
+export type SpritePropertyTableKey =
+  | 'collision'
+  | 'terrain'
+  | 'render'
+  | 'priorityAttr'
+  | 'gravity'
+  | 'gfxFile'
+  | 'spitGraphic';
+
+/** One `DATA_sprite_hitbox_shapes` entry (signed px): center offset from the
+ *  sprite position + half-extents. */
+export interface SpriteHitboxShape {
+  cx: number;
+  cy: number;
+  hw: number;
+  hh: number;
+}
+
+export interface SpritePropertiesModel {
+  /** `tables[key][spriteId]` = the 16-bit seed word. */
+  tables: Record<SpritePropertyTableKey, number[]>;
+  /** The 32 hitbox shapes collision bits 0-4 index (read-only). */
+  hitboxShapes: SpriteHitboxShape[];
+  /** Pristine base-cart tables, for restore-to-reference. Load-only. */
+  reference?: Record<SpritePropertyTableKey, number[]>;
+}
 
 /** The cart's standard-object property table (`DATA_object_property_table`
  *  in Bank12.asm): one byte per standard-object ID, 256 in all. */

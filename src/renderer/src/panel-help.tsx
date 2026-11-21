@@ -13,6 +13,51 @@ import type { WindowDef } from './hooks/useFloatingWindows'
 export type PanelHelp = Partial<Record<WindowDef['kind'], ReactNode>>
 
 export const PANEL_HELP: PanelHelp = {
+  autoscroll: (
+    <>
+      <p>
+        Autoscroll sprites <b>$1CA&ndash;$1D5</b> each run a <b>track</b>: a list of
+        checkpoints the camera scrolls to, in order. A checkpoint is the camera&rsquo;s
+        top-left in 16-px cells (X, Y) plus the <b>speed</b> it travels there at
+        (01&ndash;7F; 08 &asymp; half a pixel per frame). The last checkpoint&rsquo;s
+        end command either locks the camera ($FF) or hands scrolling back ($FE).
+      </p>
+      <p>
+        On the canvas, select an autoscroll sprite (or keep this window open) to see
+        its path. <b>Drag</b> a numbered node to move it. Select one and press <b>Delete</b>
+        to remove it. Right-click a node to edit it or empty space to append a checkpoint.
+        The dashed box is the screen the camera shows at that checkpoint.
+      </p>
+      <p>
+        Choose a checkpoint and click <b>Play autoscroll</b> to watch the camera move
+        through the current room at game speed. Press <b>Esc</b> to return to editing.
+        The preview starts at rest and holds the starting height for horizontal-only tracks.
+      </p>
+      <p>
+        All tracks share one fixed 376-byte table, and some share checkpoints (1-5,
+        6-5) &mdash; use <b>Detach</b> to edit one on its own. Changes are global to the
+        ROM; Save and rebuild to test.
+      </p>
+    </>
+  ),
+  'sprite-props': (
+    <>
+      <p>
+        Change how a sprite reacts to Yoshi and the level, as well as its colours and
+        gravity. <b>Terrain collision preset</b> chooses where and how it checks for
+        level tiles. The dots show the check points next to a 16&times;16 tile guide.
+      </p>
+      <p>
+        Changes apply to every copy of that sprite in the project. Some sprites change
+        their settings during play, so test your edits in the emulator.
+      </p>
+      <p>
+        Turn on <b>Show advanced</b> for graphics files, drawing settings, the spit-out
+        image, and raw hexadecimal values. Colour, flip, and graphics file changes
+        preview on the canvas.
+      </p>
+    </>
+  ),
   tiles: (
     <>
       <p>

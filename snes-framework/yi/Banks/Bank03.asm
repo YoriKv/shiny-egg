@@ -11494,6 +11494,11 @@ CODE_main_autoscrolls:                               ; Raidenthequick: CODE_main
 	PLB
 	RTL
 
+; ;@editable region: the editor's Autoscroll window rewrites both tables
+; (12 track start offsets + the fixed 376-byte checkpoint stream; see
+; snes-framework/scripts/autoscroll.ts). Code follows at $03:D83D, so the
+; stream must never grow: the editor pads unused bytes with $FF.
+;@editable:autoscroll begin
 DATA_03D6AD:
 DATA_autoscroller_indices:                           ; Raidenthequick: DATA_autoscroller_indices (per-track start offsets into values table)
 	dw $0000,$000D,$0028,$008C,$00AF,$003E,$0090,$00BC
@@ -11525,6 +11530,7 @@ DATA_autoscroller_values:                            ; Raidenthequick: DATA_auto
 	dw $708F,$9808,$0467,$5B8F,$9006,$032E,$2C94,$9D08
 	dw $082C,$2CA6,$AD08,$0A2F,$36B6,$CA08,$0836,$3AD4
 	dw $E204,$0843,$3FF0,$FF08
+;@editable:autoscroll end
 
 CODE_03D83D:
 CODE_init_autoscroller:                              ; Raidenthequick: CODE_init_autoscroller (autoscroll-region Init)

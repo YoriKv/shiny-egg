@@ -71,6 +71,8 @@ import type {
   PoolBudgetReport,
   PoolOverview,
   SpritesetFilesModel,
+  AutoscrollModel,
+  SpritePropertiesModel,
   RomVersion
 } from 'snes-framework/types'
 import type { GfxEditEntry, GfxEditKind, GfxFileRole, ResetGfxEditResult, ResetLevelResult, SetExitDestResult, SetExitEntranceResult } from '../shared/ipc-types'
@@ -124,6 +126,12 @@ import {
   parseSpritesetFiles,
   serializeSpritesetFiles
 } from 'snes-framework/spriteset-files'
+import { AUTOSCROLL_BANK_FILE, parseAutoscroll, serializeAutoscroll } from 'snes-framework/autoscroll'
+import {
+  SPRITE_PROPERTIES_BANK_FILE,
+  parseSpriteProperties,
+  serializeSpriteProperties
+} from 'snes-framework/sprite-property-tables'
 import {
   parseWorldMapPaths,
   serializeWorldMapPaths,
@@ -1557,6 +1565,10 @@ export async function loadResource(resource: EditableResource): Promise<unknown>
       return loadMusicSetsResource()
     case 'spriteset-files':
       return loadSpritesetFilesResource()
+    case 'autoscroll':
+      return loadAutoscrollResource()
+    case 'sprite-properties':
+      return loadSpritePropertiesResource()
     default: {
       const _never: never = resource
       throw new Error(`Unknown resource: ${JSON.stringify(_never)}`)
@@ -1627,6 +1639,44 @@ export async function saveSpritesetFilesResource(model: unknown): Promise<SaveRe
 
   await saveOverlayFile(projectId, SPRITESET_FILES_BANK_FILE, result.text)
   return { ok: true, files: [SPRITESET_FILES_BANK_FILE] }
+}
+
+/** Load the autoscroll tables (Bank03, overlay-first) + the base-cart copy for
+ *  restore-to-reference. */
+export function loadAutoscrollResource(): AutoscrollModel {
+  const { contentText, baseText } = readOverlayFirst(AUTOSCROLL_BANK_FILE)
+  const base = parseAutoscroll(baseText)
+  const model = contentText === baseText ? structuredClone(base) : parseAutoscroll(contentText)
+  return { ...model, reference: { sequences: base.sequences, tracks: base.tracks } }
+}
+
+/** Load the normal-sprite property tables (Bank0A, overlay-first) + the base
+ *  tables for restore-to-reference. */
+export function loadSpritePropertiesResource(): SpritePropertiesModel {
+  const { contentText, baseText } = readOverlayFirst(SPRITE_PROPERTIES_BANK_FILE)
+  const base = parseSpriteProperties(baseText)
+  const model = contentText === baseText ? structuredClone(base) : parseSpriteProperties(contentText)
+  return { ...model, reference: base.tables }
+}
+
+/** Save tail shared by the fixed-size table editors: splice into the active
+ *  project's overlay copy of `file` (only changed words rewrite, so sibling
+ *  regions in the same file keep their edits). */
+async function saveFixedTableResource(
+  file: string,
+  serialize: (text: string) => { ok: true; text: string } | { ok: false; error: string }
+): Promise<SaveResourceResult> {
+  const projectId = getCurrentProjectId()
+  if (!projectId) return { ok: false, error: 'No active project to save into.' }
+  const compat = ensureProjectBaseCompatible(projectId)
+  if (!compat.ok) return { ok: false, error: compat.error ?? 'Project base mismatch.' }
+
+  const { contentText } = readOverlayFirst(file)
+  const result = serialize(contentText)
+  if (!result.ok) return { ok: false, error: result.error }
+  if (result.text === contentText) return { ok: true, files: [] }
+  await saveOverlayFile(projectId, file, result.text)
+  return { ok: true, files: [file] }
 }
 
 // ── World-map entrance table ───────────────────────────────────────────────
@@ -1870,6 +1920,11 @@ export async function saveResource(
       return saveMusicSetsResource(model)
     case 'spriteset-files':
       return saveSpritesetFilesResource(model)
+    case 'autoscroll':
+      return saveFixedTableResource(AUTOSCROLL_BANK_FILE, (text) => serializeAutoscroll(text, model as AutoscrollModel))
+    case 'sprite-properties':
+      return saveFixedTableResource(SPRITE_PROPERTIES_BANK_FILE, (text) =>
+        serializeSpriteProperties(text, model as SpritePropertiesModel))
     default: {
       const _never: never = resource
       return { ok: false, error: `Unknown resource: ${JSON.stringify(_never)}` }

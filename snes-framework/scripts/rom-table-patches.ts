@@ -32,7 +32,39 @@ import {
   objectPropertiesBytes,
   objectPropertiesFromAsm,
 } from './object-properties.ts';
-import type { ObjectPropertiesModel, RomTablePatchKind, SpritesetFilesModel } from './types.ts';
+import {
+  SPRITE_PROPERTIES_BANK_FILE,
+  SPRITE_PROPERTY_COUNT,
+  spritePropertyTableBytes,
+  spritePropertyTableDef,
+  spritePropertyTableFromAsm,
+} from './sprite-property-tables.ts';
+import type {
+  ObjectPropertiesModel,
+  RomTablePatchKind,
+  SpritePropertiesModel,
+  SpritePropertyTableKey,
+  SpritesetFilesModel,
+} from './types.ts';
+
+/** A render-affecting sprite property table (sprite-property-tables.ts): the
+ *  sprite renderer reads the palette/flip attr, the gfx-file id and the OAM
+ *  record count straight from the ROM, so their drafts preview live. */
+function spritePropertyPatch(kind: RomTablePatchKind, key: SpritePropertyTableKey, label: string): RomTablePatch {
+  const def = spritePropertyTableDef(key);
+  return {
+    kind,
+    file: SPRITE_PROPERTIES_BANK_FILE,
+    region: def.region,
+    label,
+    size: SPRITE_PROPERTY_COUNT * 2,
+    fromAsm: (text) => {
+      const words = spritePropertyTableFromAsm(text, key);
+      return words ? spritePropertyTableBytes({ tables: { [key]: words } } as unknown as SpritePropertiesModel, key) : null;
+    },
+    fromModel: (model) => spritePropertyTableBytes(model as SpritePropertiesModel, key),
+  };
+}
 
 export interface RomTablePatch {
   kind: RomTablePatchKind;
@@ -74,6 +106,10 @@ export const ROM_TABLE_PATCHES: readonly RomTablePatch[] = [
     fromAsm: objectPropertiesFromAsm,
     fromModel: (model) => objectPropertiesBytes(model as ObjectPropertiesModel),
   },
+  // Labels the vendored symbol map carries (engine/symbol-map.ts).
+  spritePropertyPatch('sprite-priority-attr', 'priorityAttr', 'DATA_0A9F1A'),
+  spritePropertyPatch('sprite-gfx-files', 'gfxFile', 'DATA_sprite_gfx_file_table'),
+  spritePropertyPatch('sprite-render-control', 'render', 'DATA_sprite_render_control_table'),
 ];
 
 export function romTablePatch(kind: RomTablePatchKind): RomTablePatch {

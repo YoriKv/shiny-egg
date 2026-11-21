@@ -493,6 +493,52 @@ Known gaps: `ENMODE2` bits 8-10 have no reachable reader; `ENMODE1` bit 13 is
 never tested apart from bit 14; the sprite-vs-sprite scan is skipped on any
 frame the slot touches Yoshi.
 
+**Editing.** The seven per-ID tables sit in `;@editable:sprite-*` regions in
+Bank0A.asm (one per table; hitbox shapes are read-only). Codec:
+`scripts/sprite-property-tables.ts`; editor: the Sprite Properties window. The
+priority/attr, gfx-file and render-control tables are enrolled in
+`rom-table-patches.ts` because the sprite renderer reads them from the ROM.
+
+**Terrain collision presets.** The low five bits of `ENMODE1` form one index.
+Zero skips the built-in terrain check in `CODE_0ACFED`. Presets 1–31 select
+both a routine in `DATA_0AD051` and a starting pair in `DATA_0ACF09` through
+`DATA_0ACECB`. `CODE_0AD08D` adds each signed pixel pair to sprite X and
+(sprite Y + its terrain Y offset). Preset 1 (Shy Guy) checks the centre, left,
+right, head, and foot at (8,5), (2,5), (13,5), (8,1), and (8,16). Presets 6,
+13, 15, and 24 share those offsets and use different routines.
+
+Kind `$0D` (presets 14 and 16) records centre and side tile details and
+continues to ceiling and floor checks via `CODE_0AE284`. Kind `$0E`
+(preset 17, Snowball) computes its side checks from the sprite's size via
+`CODE_0AD387` and reads only the fourth stored pair, (8,-6), for the floor.
+The editor plots the fixed points on a 16×16 tile guide. The guide uses the
+point set's origin and the in-game check can be shifted by the sprite's Y
+offset.
+
+### 4.3 Autoscroll special sprites (`$1CA-$1D5`)
+
+`CODE_init_autoscroller` (`$03:D83D`) / `CODE_main_autoscroller` (`$03:D8D7`).
+Track index = `id - $1CA` (init: `($0C04,y) - $11`), into
+`DATA_autoscroller_indices` (`$03:D6AD`, 12 words = byte offsets) →
+`DATA_autoscroller_values` (`$03:D6C5`, **376 bytes, code follows** — fixed size).
+
+| Item | Rule |
+|---|---|
+| Checkpoint | 3 bytes `x, y, speed`; target camera top-left = `x*16`, `y*16 + $1C` |
+| Speed | signed byte ×16 → R6 of GSU `CODE_09907C`. Recomputed from the current whole-pixel position every tick. The dominant axis (Y on ties) receives full speed and the other axis receives the integer ratio. Each velocity ramps by one unit per tick in 1/256 pixel units |
+| Arrival | `CODE_03D8D7` snaps an axis on crossing its target while keeping its fractional byte. Both axes must arrive to advance. Fraction and velocity carry into the next segment |
+| End | at arrival, byte `+3` (next record's x) `>= $FE` ends: `$FE` clears `$0C1E/$0C20` (normal scrolling back), `$FF` keeps the camera locked |
+| Sharing | tracks are just offsets: `$1CC` starts mid-`$1CB` (1-5 midway), `$1CD` is the tail of `$1CF` (6-5) |
+| Horizontal-only | `$1CA`, `$1D4` skip the `$0C20` store → player keeps vertical scroll |
+| `$1D5` | has data but its init is `CODE_init_horizontal_scroll_stop` — unused unless patched |
+
+Editing: `;@editable:autoscroll` region (both tables) in Bank03.asm; codec
+`scripts/autoscroll.ts` (asm-free half `autoscroll-model.ts`); editor: the
+Autoscroll window + canvas overlay. Camera Preview playback starts at the selected
+checkpoint at rest, runs the scripted motion at NTSC frame cadence, and holds the
+starting screen height for horizontal-only tracks. Player-driven scroll and
+gameplay pauses are outside the preview. Unused stream bytes are padded with `$FF`.
+
 ## 5. State handlers in detail
 
 All nine engine handlers live in Bank03 at the addresses below. Every

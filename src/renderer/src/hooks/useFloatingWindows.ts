@@ -41,6 +41,8 @@ export interface WindowDef {
     | 'exits'
     | 'validation'
     | 'audio'
+    | 'autoscroll'
+    | 'sprite-props'
 }
 
 // Start positions are driven by each window's `anchor` (resolved against the
@@ -238,6 +240,31 @@ const INITIAL_WINDOWS: WindowDef[] = [
     open: false,
     anchor: 'top-center',
     kind: 'audio'
+  },
+  {
+    id: 'autoscroll',
+    title: 'Autoscroll',
+    // Opened from an autoscroll sprite (Properties / right-click) or Global
+    // Panels. Fixed height so the checkpoint table scrolls inside the body.
+    pos: { x: 800, y: 160 },
+    width: 620,
+    height: 560,
+    z: 8,
+    open: false,
+    anchor: 'top-center',
+    kind: 'autoscroll'
+  },
+  {
+    id: 'sprite-props',
+    title: 'Sprite Properties',
+    // Opened from a sprite (Properties / right-click) or Global Panels.
+    pos: { x: 800, y: 160 },
+    width: 640,
+    height: 620,
+    z: 8,
+    open: false,
+    anchor: 'top-center',
+    kind: 'sprite-props'
   },
   // Paint Surface window — hidden from the UI for now (kept for later). Body is
   // panels/PaintPanel.tsx, rendered by App.tsx's w.kind === 'paint' branch. The

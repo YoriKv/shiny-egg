@@ -94,9 +94,17 @@ import { useLevelRenderLayers } from './hooks/useLevelRenderLayers'
 import { drawScene } from './canvas/draw/scene'
 import { objectOutlineBoxes } from './canvas/draw/objects'
 import type { CameraPreview } from './canvas/draw/camera-preview'
-import { clampPanToCamera } from './canvas/parallax'
+import { CAMERA_H, CAMERA_W, clampPanToCamera } from './canvas/parallax'
 import { CameraPreviewControl } from './canvas/CameraPreviewControl'
 import { persistedState } from './lib/persisted-state'
+import type { AutoscrollModel } from '../../preload/api'
+import { AUTOSCROLL_MAX_X, AUTOSCROLL_MAX_Y, isAutoscrollSprite } from 'snes-framework/autoscroll-model'
+import { hitTestCheckpoint, type AutoscrollOverlay } from './canvas/draw/autoscroll'
+import { appendMenuItems, checkpointMenuItems } from './canvas/autoscroll-menu'
+import { setCheckpoint, spriteTrack, type CheckpointRef } from './lib/autoscroll-edit'
+import { AUTOSCROLL_FRAME_MS, createAutoscrollPlayback, type AutoscrollPlaybackRequest } from './lib/autoscroll-playback'
+import { hasSpriteProperties } from './data/sprite-property-fields'
+import { hex } from './lib/hex'
 
 /** Camera Preview popup settings (mask / zoom / snap) — persisted; the on/off
  *  checkbox is session-only (a transient inspection mode). */
@@ -226,6 +234,26 @@ export interface CanvasProps {
   canvasBackground: string
   /** App-wide grid line color (rgba string, with alpha) — see draw/grid.ts. */
   gridColor: string
+  /** Autoscroll paths to draw (App picks the tracks) + their edit callbacks,
+   *  or null when none are shown. Nodes drag to move a checkpoint (one commit
+   *  on release); right-click edits. See canvas/draw/autoscroll.ts. */
+  autoscroll: CanvasAutoscroll | null
+  autoscrollPlayback: AutoscrollPlaybackRequest | null
+  onStopAutoscroll: () => void
+  onClearCheckpoint: () => void
+  /** Open the Sprite Properties window at a sprite ID (sprite context menu). */
+  onOpenSpriteProperties: (num: number) => void
+  /** Open the Autoscroll window at a track (autoscroll sprite / node menu). */
+  onOpenAutoscroll: (track: number) => void
+}
+
+export interface CanvasAutoscroll {
+  overlay: Omit<AutoscrollOverlay, 'drag'>
+  /** Commit an edited model (null = refused op; `reason` explains why). */
+  onCommit: (next: AutoscrollModel | null, reason?: string) => void
+  /** A quiet click on a node: make it the active checkpoint. */
+  onSelectCheckpoint: (track: number, ref: CheckpointRef) => void
+  onDeleteCheckpoint: (ref: CheckpointRef) => void
 }
 
 /** Mouse movement (px) past which a press becomes a drag, not a click. */
@@ -281,7 +309,13 @@ export function Canvas({
   renderRefresh,
   prngSeed,
   canvasBackground,
-  gridColor
+  gridColor,
+  autoscroll,
+  autoscrollPlayback,
+  onStopAutoscroll,
+  onClearCheckpoint,
+  onOpenSpriteProperties,
+  onOpenAutoscroll
 }: CanvasProps): JSX.Element {
   // Place mode is driven purely by an armed picker entity — `placement !== null`
   // is the single source of truth (there is no separate "place tool" flag). The
@@ -296,12 +330,42 @@ export function Canvas({
   // chosen 1×–4×.
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraSettings, setCameraSettings] = useState<CameraPreview>(() => CAMERA_SETTINGS_STORE.load())
+  const [playbackFrame, setPlaybackFrame] = useState<ReturnType<typeof createAutoscrollPlayback>['frame'] | null>(null)
+  const playingPreview = autoscrollPlayback !== null
+  useLayoutEffect(() => {
+    if (!autoscrollPlayback) {
+      setPlaybackFrame(null)
+      return
+    }
+    const playback = createAutoscrollPlayback(autoscrollPlayback)
+    let previous = playback.frame
+    setPlaybackFrame(previous)
+    if (previous.status !== 'playing') return
+    let last = performance.now()
+    let elapsed = 0
+    let handle = requestAnimationFrame(function tick(now) {
+      // Fixed NTSC simulation steps regardless of the monitor refresh rate.
+      // Limit catch-up when Chromium resumes a suspended window.
+      elapsed += Math.max(0, Math.min(now - last, 250))
+      last = now
+      const steps = Math.floor(elapsed / AUTOSCROLL_FRAME_MS)
+      elapsed -= steps * AUTOSCROLL_FRAME_MS
+      playback.advance(steps)
+      const next = playback.frame
+      if (next.x !== previous.x || next.y !== previous.y || next.status !== previous.status) {
+        setPlaybackFrame(next)
+        previous = next
+      }
+      if (next.status === 'playing') handle = requestAnimationFrame(tick)
+    })
+    return () => cancelAnimationFrame(handle)
+  }, [autoscrollPlayback])
   const roomMetadata = useRoomMetadata()
   useEffect(() => {
     CAMERA_SETTINGS_STORE.save(cameraSettings)
   }, [cameraSettings])
   const cameraOnRef = useRef(cameraOn)
-  cameraOnRef.current = cameraOn
+  cameraOnRef.current = cameraOn || playingPreview
   // Render Only: a session-only override that hides every editor overlay (object
   // outlines, sprite outlines, exits, collision) for a clean look at the rendered
   // level — WITHOUT touching the toolbar layer toggles. It rides over `layers`
@@ -311,15 +375,20 @@ export function Canvas({
   // also stop capturing clicks while Render Only is on (nothing to select behind a
   // hidden outline).
   const [renderOnly, setRenderOnly] = useState(false)
+  useEffect(() => {
+    if (renderOnly || layersProp.spriteOutlines === 'off') onClearCheckpoint()
+  }, [onClearCheckpoint, renderOnly, layersProp.spriteOutlines])
   // Effective layer visibility: the prop, with the overlay layers forced off while
   // Render Only is active. EVERY internal consumer (drawScene + all hit-tests) reads
   // this `layers`, so the override is total and single-sourced.
   const layers = useMemo<LayerVisibility>(
     () =>
-      renderOnly
+      playingPreview
+        ? { ...layersProp, bg1: true, bg2: true, bg3: true, backdrop: true, sprites: true, grid: 'off', bg1Outlines: 'off', spriteOutlines: 'off', exits: false, collision: false }
+        : renderOnly
         ? { ...layersProp, bg1Outlines: 'off', spriteOutlines: 'off', exits: false, collision: false }
         : layersProp,
-    [renderOnly, layersProp]
+    [renderOnly, playingPreview, layersProp]
   )
   // Space toggles Render Only; Shift+Space toggles Camera Preview. Both are
   // canvas-local view overrides, so their shortcut lives here (next to their
@@ -329,6 +398,7 @@ export function Canvas({
   // Ctrl/Cmd/Alt are left alone so other chords keep working.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (playingPreview) return
       if (e.key !== ' ' && e.code !== 'Space') return
       if (e.ctrlKey || e.metaKey || e.altKey) return
       const t = e.target as HTMLElement | null
@@ -347,7 +417,7 @@ export function Canvas({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [playingPreview])
   // Pin the view zoom to the selected 1×–4× whenever Camera Preview is on. Zoom ABOUT
   // THE VIEWPORT CENTRE (not by keeping pan) so the camera keeps the same level
   // position when the zoom changes — the camera is the viewport-centre world point,
@@ -512,6 +582,19 @@ export function Canvas({
         moved: boolean
       }
     | {
+        // Drag an autoscroll checkpoint node (Bank03 document, not the level
+        // reducer). Base is the checkpoint's stored cell; preview rides
+        // `checkpointDrag`; release commits one undo step.
+        kind: 'moveCheckpoint'
+        track: number
+        ref: CheckpointRef
+        startX: number
+        startY: number
+        baseX: number
+        baseY: number
+        moved: boolean
+      }
+    | {
         // Erase sweep: accumulate every object/sprite uid the cursor passes over
         // (objUids/sprUids mutated in place across mousemoves — authoritative for
         // the commit) and batch-delete on release. A plain click works too: the
@@ -619,6 +702,14 @@ export function Canvas({
   // effect to move the marker; `null` outside a moveSpawn drag. Commit on release
   // reads this back (preview == commit), then calls onSpawnCommit.
   const [spawnDragOverlay, setSpawnDragOverlay] = useState<WorldMapSpawn | null>(null)
+  // Live autoscroll-checkpoint drag preview (moveCheckpoint); null otherwise.
+  const [checkpointDrag, setCheckpointDrag] = useState<AutoscrollOverlay['drag']>(null)
+  const checkpointDragRef = useRef(checkpointDrag)
+  checkpointDragRef.current = checkpointDrag
+  const autoscrollRef = useRef(autoscroll)
+  autoscrollRef.current = autoscroll
+  // Context menu for an autoscroll node / empty space beside a shown path.
+  const [autoscrollMenu, setAutoscrollMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
   // Object-drag cell-highlight: per-cell provenance (footprint/neighbour/buried)
   // for the dragged object(s) at their pending position — single move/resize OR a
   // multi-select group move (one decode for the whole group). Null otherwise.
@@ -957,16 +1048,25 @@ export function Canvas({
 
   // Render loop: redraws on view/level/size change.
   useEffect(() => {
+    const cam = playingPreview ? playbackFrame : null
+    const zoom = Math.max(1, Math.min(cameraSettings.zoom, Math.floor(size.w / CAMERA_W), Math.floor(size.h / CAMERA_H)))
+    const displayView = cam ? {
+      zoom,
+      panX: size.w / 2 - (cam.x + CAMERA_W / 2) * zoom,
+      panY: size.h / 2 - (cam.y + CAMERA_H / 2) * zoom
+    } : view
     drawScene(canvasRef.current, {
-      size, view, level, layers, gridColor, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
+      size, view: displayView, level, layers, gridColor, bg1Canvas, spriteCanvas, collisionCanvas, bgLayers,
       spriteBounds, neighborStatus, behaviorProbes, generatorThumbs, renderValidity, influence, objOutlineBoxes, objectFootprints, hovered, hoveredSprite, hoveredSpawn, selObjUids, selSprUids, primary, propTable,
-      incoming, testSpawn, spawnOverride: spawnOverride.map((s) =>
+      incoming, testSpawn: cam ? null : testSpawn, spawnOverride: spawnOverride.map((s) =>
         spawnDragOverlay && spawnDragOverlay.entranceIndex === s.entranceIndex ? spawnDragOverlay : s),
-      paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
+      paintTool: !cam && paintTool, paintHeights, moveOverlay, resizeOverlay, groupMove, erasePreview,
       exitDrag, incomingOverlay, marquee, paintDrag,
-      placementPreview: placement && previewCell ? { item: placement, x: previewCell.x, y: previewCell.y } : null,
-      cameraPreview: cameraOn ? cameraSettings : null,
-      renderOnly
+      placementPreview: !cam && placement && previewCell ? { item: placement, x: previewCell.x, y: previewCell.y } : null,
+      cameraPreview: cam ? { ...cameraSettings, zoom, mask: true } : cameraOn ? cameraSettings : null,
+      cameraPosition: cam,
+      renderOnly: renderOnly || playingPreview,
+      autoscroll: autoscroll ? { ...autoscroll.overlay, drag: checkpointDrag } : null
     })
   }, [
     view,
@@ -1002,6 +1102,8 @@ export function Canvas({
     testSpawn,
     spawnOverride,
     spawnDragOverlay,
+    autoscroll,
+    checkpointDrag,
     erasePreview,
     marquee,
     groupMove,
@@ -1012,6 +1114,8 @@ export function Canvas({
     previewCell,
     cameraOn,
     cameraSettings,
+    playingPreview,
+    playbackFrame,
     renderOnly,
     roomMetadata
   ])
@@ -1160,6 +1264,28 @@ export function Canvas({
             setIsPanning(true)
             return
           }
+        }
+      }
+      // Grab an autoscroll checkpoint node (shown paths only). Checked before the
+      // selection drags: nodes sit on top of everything they overlap.
+      if (!placing && !spawnTool && autoscroll && layers.spriteOutlines !== 'off' && wrapRef.current) {
+        const rect = wrapRef.current.getBoundingClientRect()
+        const { x: wx, y: wy } = clientToWorld(view, e.clientX - rect.left, e.clientY - rect.top)
+        const hit = hitTestCheckpoint({ ...autoscroll.overlay, drag: null }, wx, wy, view.zoom)
+        const c = hit ? autoscroll.overlay.model.sequences[hit.sequence]?.checkpoints[hit.checkpoint] : undefined
+        if (hit && c) {
+          dragRef.current = {
+            kind: 'moveCheckpoint',
+            track: hit.track,
+            ref: { sequence: hit.sequence, checkpoint: hit.checkpoint },
+            startX: e.clientX,
+            startY: e.clientY,
+            baseX: c.x,
+            baseY: c.y,
+            moved: false
+          }
+          setIsPanning(true)
+          return
         }
       }
       // Drag-move when the press lands on the (single) selected object's box or
@@ -1322,7 +1448,7 @@ export function Canvas({
       }
       setIsPanning(true)
     },
-    [view.panX, view.panY, view.zoom, primary, selection, selObjUids, selSprUids, level, placing, spawnTool, eraseTool, paintTool, layers, propTable, spawnOverride]
+    [view.panX, view.panY, view.zoom, primary, selection, selObjUids, selSprUids, level, placing, spawnTool, eraseTool, paintTool, layers, propTable, spawnOverride, autoscroll]
   )
 
   useEffect(() => {
@@ -1508,6 +1634,13 @@ export function Canvas({
         const { x: nx, y: ny } = clampCell(d.baseX + cellDx, d.baseY + cellDy)
         setSpawnDragOverlay((cur) => (cur && cur.x === nx && cur.y === ny ? cur :
           { x: nx, y: ny, entranceIndex: d.entranceIndex }))
+      } else if (d.kind === 'moveCheckpoint') {
+        // Checkpoints are 16-px cells of the camera position; clamp to the
+        // camera-safe range (hex entry in the window can go further).
+        const { cellDx, cellDy } = snapCellDelta(dx, dy, viewRef.current.zoom)
+        const nx = Math.max(0, Math.min(AUTOSCROLL_MAX_X, d.baseX + cellDx))
+        const ny = Math.max(0, Math.min(AUTOSCROLL_MAX_Y, d.baseY + cellDy))
+        setCheckpointDrag((cur) => (cur && cur.x === nx && cur.y === ny ? cur : { ref: d.ref, x: nx, y: ny }))
       } else if (d.kind === 'erase') {
         // Sweep: add whatever the cursor is now over to the kill set. Mutate the
         // drag's sets in place (authoritative for the commit) and mirror them to
@@ -1592,6 +1725,7 @@ export function Canvas({
       setExitDrag(null)
       setIncomingOverlay(null)
       setSpawnDragOverlay(null)
+      setCheckpointDrag(null)
       setPaintDrag(null)
       setErasePreview(null)
       setMarquee(null)
@@ -1703,6 +1837,20 @@ export function Canvas({
         const ov = spawnDragOverlayRef.current
         if (ov && (ov.x !== d.baseX || ov.y !== d.baseY)) {
           onSpawnCommitRef.current(ov.x, ov.y, d.entranceIndex)
+        }
+        endDrag()
+        return
+      }
+      // Autoscroll node: a drag commits the moved checkpoint (one undo step); a
+      // quiet click makes it the active checkpoint. Never falls into selection.
+      if (d && d.kind === 'moveCheckpoint') {
+        const as = autoscrollRef.current
+        const ov = checkpointDragRef.current
+        if (as) {
+          as.onSelectCheckpoint(d.track, d.ref)
+          if (d.moved && ov && (ov.x !== d.baseX || ov.y !== d.baseY)) {
+            as.onCommit(setCheckpoint(as.overlay.model, d.ref, { x: ov.x, y: ov.y }))
+          }
         }
         endDrag()
         return
@@ -2019,6 +2167,19 @@ export function Canvas({
       const wrap = wrapRef.current
       if (!wrap || !levelRef.current) return
       const rect = wrap.getBoundingClientRect()
+      setAutoscrollMenu(null)
+      // Autoscroll nodes win over entities (they're drawn on top).
+      const as = autoscroll && layers.spriteOutlines !== 'off' ? autoscroll : null
+      if (as) {
+        const { x: wx, y: wy } = clientToWorld(view, e.clientX - rect.left, e.clientY - rect.top)
+        const hit = hitTestCheckpoint({ ...as.overlay, drag: null }, wx, wy, view.zoom)
+        if (hit) {
+          setCtxMenu(null)
+          as.onSelectCheckpoint(hit.track, hit)
+          setAutoscrollMenu({ x: e.clientX, y: e.clientY, items: checkpointMenuItems(as, hit, onOpenAutoscroll) })
+          return
+        }
+      }
       const hits = hitTestAll(
         levelRef.current,
         viewRef.current,
@@ -2035,12 +2196,17 @@ export function Canvas({
       )
       if (!hit || (hit.kind !== 'object' && hit.kind !== 'sprite' && hit.kind !== 'exit')) {
         setCtxMenu(null)
+        // Empty space beside a shown path → append a checkpoint there.
+        if (as && as.overlay.tracks.length > 0) {
+          const { x: wx, y: wy } = clientToWorld(view, e.clientX - rect.left, e.clientY - rect.top)
+          setAutoscrollMenu({ x: e.clientX, y: e.clientY, items: appendMenuItems(as, wx, wy) })
+        }
         return
       }
       onSelect([{ kind: hit.kind, uid: hit.uid } as Selection])
       setCtxMenu({ x: e.clientX, y: e.clientY, kind: hit.kind, uid: hit.uid })
     },
-    [layers, onSelect, placing, onCancelPlacement]
+    [layers, onSelect, placing, onCancelPlacement, autoscroll, view, onOpenAutoscroll]
   )
 
   // Context-menu items for the targeted entity. Duplicate + Delete for all;
@@ -2097,6 +2263,13 @@ export function Canvas({
     } else if (kind === 'sprite') {
       const sprs = levelState.level?.sprites ?? []
       const idx = sprs.findIndex((s) => s.uid === uid)
+      const num = sprs[idx]?.num
+      if (num !== undefined && hasSpriteProperties(num)) {
+        items.push({ label: `Sprite Properties ($${hex(num, 3)})…`, onClick: () => onOpenSpriteProperties(num) })
+      }
+      if (num !== undefined && isAutoscrollSprite(num)) {
+        items.push({ label: `Edit Autoscroll ($${hex(num, 3)})…`, onClick: () => onOpenAutoscroll(spriteTrack(num)) })
+      }
       items.push(
         {
           label: 'Update index',
@@ -2167,9 +2340,9 @@ export function Canvas({
           : '')
       }
       style={resizeCursor ? { cursor: resizeCursor } : undefined}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onContextMenu={onContextMenu}
+      onMouseDown={playingPreview ? undefined : onMouseDown}
+      onMouseMove={playingPreview ? undefined : onMouseMove}
+      onContextMenu={playingPreview ? undefined : onContextMenu}
       onMouseLeave={() => {
         setHovered(null)
         setHoveredSprite(null)
@@ -2182,19 +2355,27 @@ export function Canvas({
       }}
     >
       <canvas ref={canvasRef} className="se-canvas__el" />
-      <Minimap
+      {!playingPreview && <Minimap
         bg1Canvas={bg1Canvas}
         renderVersion={renderVersion}
         view={view}
         viewportSize={size}
         onNavigate={navigateToWorldPixel}
-      />
-      {ctxMenu && (
+      />}
+      {!playingPreview && ctxMenu && (
         <ContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}
           items={buildCtxItems(ctxMenu.kind, ctxMenu.uid, ctxMenu.x, ctxMenu.y)}
           onClose={() => setCtxMenu(null)}
+        />
+      )}
+      {!playingPreview && autoscrollMenu && (
+        <ContextMenu
+          x={autoscrollMenu.x}
+          y={autoscrollMenu.y}
+          items={autoscrollMenu.items}
+          onClose={() => setAutoscrollMenu(null)}
         />
       )}
       {reorderPopover && (
@@ -2244,12 +2425,26 @@ export function Canvas({
       </div>
 
       {/* Bottom-right cursor coords / marquee size readout */}
-      {level && !level.empty && !level.special && coordsText && (
+      {!playingPreview && level && !level.empty && !level.special && coordsText && (
         <div className="se-canvas__coords">{coordsText}</div>
       )}
 
       {/* Top-right view controls: Render Only + Camera Preview (left) + Reset view (right) */}
       <div className="se-canvas__viewbtns">
+        {playingPreview ? (
+          <>
+            <span className="se-canvas__autoscroll-status" role="status">
+              {playbackFrame?.status === 'locked' ? 'Finished · camera locks here'
+                : playbackFrame?.status === 'released' ? 'Finished · player regains camera control'
+                : playbackFrame?.status === 'stalled' ? 'Stopped · zero checkpoint speed'
+                : playbackFrame?.status === 'negative-speed' ? 'Stopped · negative checkpoint speed'
+                : 'Playing autoscroll'}
+            </span>
+            <button type="button" className="se-canvas__reset" onClick={onStopAutoscroll} title="Return to the editor (Esc)">
+              {!playbackFrame || playbackFrame.status === 'playing' ? 'Stop preview' : 'Back to editor'}
+            </button>
+          </>
+        ) : <>
         {level && !level.empty && !level.special && (
           <label
             className={`se-canvas__renderonly${renderOnly ? ' is-active' : ''}`}
@@ -2278,6 +2473,7 @@ export function Canvas({
             Reset view
           </button>
         )}
+        </>}
       </div>
     </div>
   )
