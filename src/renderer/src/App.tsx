@@ -57,6 +57,14 @@ import { useWorldMapPathsEditor } from './edit-session/useWorldMapPathsEditor'
 import { useYoshiColorsEditor } from './edit-session/useYoshiColorsEditor'
 import { useMusicSetsEditor } from './edit-session/useMusicSetsEditor'
 import { useSpritesetFilesEditor } from './edit-session/useSpritesetFilesEditor'
+import { useSpritePropertiesEditor } from './edit-session/useSpritePropertiesEditor'
+import { useAutoscrollEditor } from './edit-session/useAutoscrollEditor'
+import { AutoscrollBody } from './panels/AutoscrollPanel'
+import { SpritePropertiesBody } from './panels/SpritePropertiesPanel'
+import { isAutoscrollSprite } from 'snes-framework/autoscroll-model'
+import { getCheckpoint, spriteTrack, type CheckpointRef } from './lib/autoscroll-edit'
+import type { AutoscrollPlaybackRequest } from './lib/autoscroll-playback'
+import type { CanvasAutoscroll } from './Canvas'
 import { WorldMapBody } from './panels/WorldMapPanel'
 import { PickerBody } from './panels/PickerPanel'
 import { ExitsBody } from './panels/ExitsPanel'
@@ -250,14 +258,16 @@ const PANEL_TOGGLES = [
   { kind: 'world-map', label: 'World Map', title: 'World-map entrances' },
   { kind: 'banks', label: 'Level Banks', title: 'Bank byte budgets' },
   { kind: 'validation', label: 'Validation', title: 'Validate levels for playability issues' },
-  { kind: 'patches', label: 'Patches', title: 'Custom patches' }
+  { kind: 'patches', label: 'Patches', title: 'Custom patches' },
+  { kind: 'autoscroll', label: 'Autoscroll', title: 'Autoscroll tracks + checkpoints (sprites $1CA-$1D5)' },
+  { kind: 'sprite-props', label: 'Sprite Properties', title: 'Per-sprite-ID property tables (global spawn defaults)' }
 ] as const
 type PanelKind = (typeof PANEL_TOGGLES)[number]['kind']
 // Panel toggles collapsed behind toolbar "panel group" dropdowns instead of
 // inline buttons: the ROM-global panels (cart-wide data, not the loaded level)
 // under "Global Panels", and the art panels under "Graphics Panels". Everything
 // else stays an inline toggle button.
-const GLOBAL_PANEL_KINDS = new Set<string>(['strings', 'world-map', 'banks', 'patches', 'validation', 'audio'])
+const GLOBAL_PANEL_KINDS = new Set<string>(['strings', 'world-map', 'banks', 'patches', 'validation', 'audio', 'autoscroll', 'sprite-props'])
 const GRAPHICS_PANEL_KINDS = new Set<string>(['graphics', 'tiles', 'palette'])
 
 // Resolve a finder jump's (kind, id, cell) to the loaded level's matching
@@ -1143,6 +1153,95 @@ export default function App(): JSX.Element {
     bumpRenderRefresh()
   }, [markRomDirty, bumpRenderRefresh])
   const spritesetFilesEditor = useSpritesetFilesEditor(projectScope, onSpritesetFilesSaved, docHistory, bumpRenderRefresh)
+  // Per-ID sprite property tables (Bank0A) — global spawn defaults, edited in
+  // the Sprite Properties window. Palette/flip, gfx-file and OAM-count drafts
+  // preview on the canvas (useTablePreview); a save also refreshes the render.
+  const spritePropsEditor = useSpritePropertiesEditor(projectScope, onSpritesetFilesSaved, docHistory, bumpRenderRefresh)
+  const { setSpriteId: setSpritePropsId } = spritePropsEditor
+  const openSpriteProperties = useCallback((num: number): void => {
+    setSpritePropsId(num)
+    openWindow('sprite-props')
+  }, [setSpritePropsId, openWindow])
+  // Autoscroll tables (Bank03) — edited in the Autoscroll window AND on the
+  // canvas (path overlay below). Asm edit, no render impact → markRomDirty.
+  const autoscrollEditor = useAutoscrollEditor(projectScope, markRomDirty, docHistory)
+  const { setUi: setAutoscrollUi, apply: applyAutoscroll, deleteCheckpoint, ui: autoscrollUi, model: autoscrollModel } = autoscrollEditor
+  const [autoscrollPlayback, setAutoscrollPlayback] = useState<AutoscrollPlaybackRequest | null>(null)
+  const stopAutoscroll = useCallback(() => setAutoscrollPlayback(null), [])
+  useEffect(() => {
+    stopAutoscroll()
+    setAutoscrollUi({ checkpoint: null })
+  }, [selectedLevelRecordId, projectScope, stopAutoscroll, setAutoscrollUi])
+  // A checkpoint index can refer to a different node after a structural edit or undo.
+  const checkpointLayout = autoscrollModel?.sequences.map((s) => s.checkpoints.length).join(',')
+  useEffect(() => {
+    setAutoscrollUi({ checkpoint: null })
+  }, [checkpointLayout, setAutoscrollUi])
+  const selectCheckpoint = useCallback((track: number, ref: CheckpointRef): void => {
+    setSelection([])
+    setAutoscrollUi({ track, checkpoint: { sequence: ref.sequence, checkpoint: ref.checkpoint } })
+  }, [setAutoscrollUi])
+  const clearCheckpoint = useCallback((): void => setAutoscrollUi({ checkpoint: null }), [setAutoscrollUi])
+  const selectFromCanvas = useCallback((next: Selection[]): void => {
+    clearCheckpoint()
+    setSelection(next)
+  }, [clearCheckpoint])
+  const removeAutoscrollCheckpoint = (ref: CheckpointRef): void => {
+    const reason = deleteCheckpoint(ref)
+    if (reason) appendLog(`Autoscroll: ${reason}`)
+  }
+  const openAutoscroll = useCallback((track: number): void => {
+    setAutoscrollUi({ track, checkpoint: null })
+    openWindow('autoscroll')
+  }, [setAutoscrollUi, openWindow])
+  const autoscrollWindowOpen = windows.some((w) => w.kind === 'autoscroll' && w.open)
+  const levelSprites = levelState.level?.sprites
+  // Selecting one autoscroll sprite points the window at its track.
+  const selectedAutoscrollTrack = useMemo(() => {
+    if (selection.length !== 1 || selection[0]!.kind !== 'sprite') return null
+    const uid = selection[0]!.uid
+    const s = levelSprites?.find((spr) => spr.uid === uid)
+    return s && isAutoscrollSprite(s.num) ? spriteTrack(s.num) : null
+  }, [selection, levelSprites])
+  useEffect(() => {
+    if (selection.length > 0) {
+      setAutoscrollUi(selectedAutoscrollTrack === null
+        ? { checkpoint: null }
+        : { track: selectedAutoscrollTrack, checkpoint: null })
+    }
+  }, [selection, selectedAutoscrollTrack, setAutoscrollUi])
+  // Which autoscroll paths the canvas draws (see AutoscrollShowMode): the
+  // selected autoscroll sprite's, the open window's track, or every placed one.
+  const canvasAutoscroll = useMemo<CanvasAutoscroll | null>(() => {
+    if (!autoscrollModel || autoscrollUi.show === 'off') return null
+    const placed = (levelSprites ?? [])
+      .filter((s) => isAutoscrollSprite(s.num))
+      .map((s) => ({ track: spriteTrack(s.num), x: s.x, y: s.y }))
+    const tracks = new Set<number>()
+    if (autoscrollUi.show === 'all') placed.forEach((p) => tracks.add(p.track))
+    if (selectedAutoscrollTrack !== null) tracks.add(selectedAutoscrollTrack)
+    if (autoscrollWindowOpen || autoscrollUi.checkpoint) tracks.add(autoscrollUi.track)
+    if (tracks.size === 0) return null
+    return {
+      overlay: { model: autoscrollModel, tracks: [...tracks], active: autoscrollUi.checkpoint, sprites: placed },
+      onCommit: (next, reason) => {
+        if (next) applyAutoscroll(next)
+        else if (reason) appendLog(`Autoscroll: ${reason}`)
+      },
+      onSelectCheckpoint: selectCheckpoint,
+      onDeleteCheckpoint: removeAutoscrollCheckpoint
+    }
+  }, [autoscrollModel, autoscrollUi, levelSprites, selectedAutoscrollTrack, autoscrollWindowOpen, applyAutoscroll, selectCheckpoint, removeAutoscrollCheckpoint, appendLog])
+  const deleteSelectedCheckpoint = (): boolean => {
+    const ref = autoscrollUi.checkpoint
+    if (selection.length > 0 || !ref || !autoscrollModel || !getCheckpoint(autoscrollModel, ref)) return false
+    if (!autoscrollWindowOpen && !canvasAutoscroll?.overlay.tracks.some((track) => {
+      const start = autoscrollModel.tracks[track]
+      return start?.sequence === ref.sequence && start.checkpoint <= ref.checkpoint
+    })) return false
+    removeAutoscrollCheckpoint(ref)
+    return true
+  }
   // Cross-panel "open the Audio panel at a tab" request (the Header panel's
   // Edit-sets button); seq bumps so a repeat click re-applies.
   const [audioTabRequest, setAudioTabRequest] = useState<{ tab: 'sets'; seq: number } | null>(null)
@@ -1203,8 +1302,12 @@ export default function App(): JSX.Element {
               ? [musicSetsEditor]
               : kind === 'graphics'
                 ? [spritesetFilesEditor]
+              : kind === 'autoscroll'
+                ? [autoscrollEditor]
+              : kind === 'sprite-props'
+                ? [spritePropsEditor]
               : [],
-    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor, yoshiColorsEditor, worldMapPathsEditor, musicSetsEditor, spritesetFilesEditor]
+    [paletteEditor, gradientEditor, levelNameStrings, messageStrings, messagePtrs, introStory, endingText, worldMapEditor, yoshiColorsEditor, worldMapPathsEditor, musicSetsEditor, spritesetFilesEditor, autoscrollEditor, spritePropsEditor]
   )
   const requestCloseWindow = useCallback(
     (w: WindowDef): void => {
@@ -1406,7 +1509,10 @@ export default function App(): JSX.Element {
     propTable,
     clipboardRef,
     cameraRef,
-    viewportRef
+    viewportRef,
+    deleteSelectedCheckpoint,
+    clearCheckpoint,
+    stopPreview: autoscrollPlayback ? stopAutoscroll : undefined
   })
 
   // App-wide shortcuts: Ctrl/Cmd+S = Save all, Ctrl/Cmd+R = Test Level. Handled
@@ -1808,7 +1914,7 @@ export default function App(): JSX.Element {
           hasAssets={hasAssets}
           selectedLevelRecordId={selectedLevelRecordId}
           selection={selection}
-          onSelect={setSelection}
+          onSelect={selectFromCanvas}
           onJumpToLevel={(id) => requestNav(() => navigateTo(rootLevelRecordId, id))}
           layers={layers}
           incoming={incoming}
@@ -1850,6 +1956,12 @@ export default function App(): JSX.Element {
           prngSeed={rngSeed}
           canvasBackground={canvasBg}
           gridColor={gridColor}
+          autoscroll={canvasAutoscroll}
+          autoscrollPlayback={autoscrollPlayback}
+          onStopAutoscroll={stopAutoscroll}
+          onClearCheckpoint={clearCheckpoint}
+          onOpenSpriteProperties={openSpriteProperties}
+          onOpenAutoscroll={openAutoscroll}
         />
         {/* Rendered after the canvas (so it sits above the level visuals) but with
             auto z-index, so the positive-z floating panels stay above it. Shows the
@@ -1863,7 +1975,7 @@ export default function App(): JSX.Element {
           }}
         />
         {windows
-          .filter((w) => w.open)
+          .filter((w) => w.open && !(autoscrollPlayback && w.kind === 'autoscroll'))
           .map((w) => (
             <FloatingWindow
               key={w.id}
@@ -2010,6 +2122,19 @@ export default function App(): JSX.Element {
                   spritesetEditor={spritesetFilesEditor}
                 />
 
+              ) : w.kind === 'autoscroll' ? (
+                <AutoscrollBody
+                  editor={autoscrollEditor}
+                  projectActive={projectId !== null}
+                  canPlay={!!levelState.level && !levelState.level.empty && !levelState.level.special && levelState.level.recordId === selectedLevelRecordId}
+                  onPlay={setAutoscrollPlayback}
+                  onSelectCheckpoint={selectCheckpoint}
+                  onJump={(x, y) => {
+                    if (selectedLevelRecordId !== null) focusCell(selectedLevelRecordId, x, y)
+                  }}
+                />
+              ) : w.kind === 'sprite-props' ? (
+                <SpritePropertiesBody editor={spritePropsEditor} projectActive={projectId !== null} levelSprites={levelSprites ?? []} />
               ) : (
                 <PropertiesBody
                   selection={selection}
@@ -2024,6 +2149,8 @@ export default function App(): JSX.Element {
                   incoming={incoming}
                   onSpawnCommit={onSpawnCommit}
                   onIncomingEntranceCommit={onSetIncomingEntranceLive}
+                  onOpenSpriteProperties={openSpriteProperties}
+                  onOpenAutoscroll={openAutoscroll}
                 />
               )}
             </FloatingWindow>

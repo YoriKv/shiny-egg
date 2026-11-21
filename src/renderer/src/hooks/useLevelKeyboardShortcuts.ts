@@ -41,6 +41,9 @@ export interface LevelKeyboardShortcutsParams {
    *  centre instead). */
   cameraRef: RefObject<View>
   viewportRef: RefObject<{ w: number; h: number }>
+  deleteSelectedCheckpoint: () => boolean
+  clearCheckpoint: () => void
+  stopPreview?: () => void
 }
 
 export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void {
@@ -57,6 +60,8 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
   // `placement` each press) doesn't re-bind the whole key listener.
   const placementRef = useRef(placement)
   placementRef.current = placement
+  const autoscrollRef = useRef(p)
+  autoscrollRef.current = p
   useEffect(() => {
     // Deep-copy the selected objects/sprites into the clipboard (raw bytes too,
     // so a later edit/delete can't mutate what was copied).
@@ -151,6 +156,14 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
       // the form-field guard swallowed it until the select lost focus.
       const inTextField =
         !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      const autoscroll = autoscrollRef.current
+      if (autoscroll.stopPreview) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          autoscroll.stopPreview()
+        }
+        return
+      }
       const mod = e.ctrlKey || e.metaKey
       if (mod && !inTextField && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
@@ -168,6 +181,7 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
       // arrow / type-ahead keys must navigate options, not nudge entities.
       if (inTextField || t?.tagName === 'SELECT') return
       if (e.key === 'Escape') {
+        autoscroll.clearCheckpoint()
         setSelection([])
         setPlacement(null)
         cancelPlacement()
@@ -278,7 +292,9 @@ export function useLevelKeyboardShortcuts(p: LevelKeyboardShortcutsParams): void
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (hasEntities) {
+        if (autoscroll.deleteSelectedCheckpoint()) {
+          e.preventDefault()
+        } else if (hasEntities) {
           e.preventDefault()
           dispatchLevel({ type: 'deleteEntities', objectUids: objUids, spriteUids: sprUids })
           setSelection([])

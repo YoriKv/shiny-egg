@@ -2750,6 +2750,7 @@ DATA_sprite_hitbox_shapes:                           ; descriptive alias (main-s
 ; Yoshi-vs-sprite contact itself is NOT gated here (every slot with status >= 3
 ; is box-tested); these bits only pick the reaction.
 ;-------------------------------------------------------------------------
+;@editable:sprite-collision-flags begin
 DATA_0A9320:
 DATA_sprite_collision_flags_table:                   ; descriptive alias (main-side: FXDATA_0A9320)
 	dw $0040	; $000 LavaLog
@@ -3194,6 +3195,7 @@ DATA_sprite_collision_flags_table:                   ; descriptive alias (main-s
 	dw $0660	; $1B7 SeedSpittingMinigameBandit
 	dw $0060	; $1B8 WatermelonPot
 	dw $0660	; $1B9 P2SeedSpittingMinigameBandit
+;@editable:sprite-collision-flags end
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0A9694, incbin, DATA_0A9694_YI_U2.bin)
@@ -3237,6 +3239,7 @@ endif
 ; Spit-out (CODE_039D09: AND #$F83F / ORA #$0040) forces bits 6-10 to "turn at
 ; walls, fall off ledges" for the spat sprite.
 ;-------------------------------------------------------------------------
+;@editable:sprite-terrain-flags begin
 DATA_0A971E:
 DATA_sprite_terrain_flags_table:                     ; descriptive alias (main-side: FXDATA_0A971E)
 	dw $4484	; $000 LavaLog
@@ -3681,6 +3684,7 @@ DATA_sprite_terrain_flags_table:                     ; descriptive alias (main-s
 	dw $0441	; $1B7 SeedSpittingMinigameBandit
 	dw $0000	; $1B8 WatermelonPot
 	dw $0481	; $1B9 P2SeedSpittingMinigameBandit
+;@editable:sprite-terrain-flags end
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0A9A92, incbin, DATA_0A9A92_YI_U2.bin)
@@ -3729,6 +3733,7 @@ endif
 ;                      $181 Crazee Dayzee = 5. Some handlers test the hi byte as a
 ;                      mode flag (LDY $7041 : BPL = count >= 16).
 ;-------------------------------------------------------------------------
+;@editable:sprite-render-control begin
 DATA_0A9B1C:
 DATA_sprite_render_control_table:                    ; descriptive alias (main-side: FXDATA_0A9B1C)
 	dw $2009	; $000 LavaLog
@@ -4173,6 +4178,7 @@ DATA_sprite_render_control_table:                    ; descriptive alias (main-s
 	dw $3851	; $1B7 SeedSpittingMinigameBandit
 	dw $0100	; $1B8 WatermelonPot
 	dw $3811	; $1B9 P2SeedSpittingMinigameBandit
+;@editable:sprite-render-control end
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0A9E90, incbin, DATA_0A9E90_YI_U2.bin)
@@ -4197,6 +4203,7 @@ endif
 ;                (cel_attr & mask) XOR this byte.
 ; Ambient equivalent: DATA_0AB512 -> $1462 / $1002 (EOR #$30 instead).
 ;-------------------------------------------------------------------------
+;@editable:sprite-priority-attr begin
 DATA_0A9F1A:
 DATA_sprite_priority_attr_table:                     ; descriptive alias (main-side: FXDATA_0A9F1A)
 	dw $0805	; $000 LavaLog
@@ -4641,6 +4648,7 @@ DATA_sprite_priority_attr_table:                     ; descriptive alias (main-s
 	dw $0004	; $1B7 SeedSpittingMinigameBandit
 	dw $0005	; $1B8 WatermelonPot
 	dw $0004	; $1B9 P2SeedSpittingMinigameBandit
+;@editable:sprite-priority-attr end
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AA28E, incbin, DATA_0AA28E_YI_U2.bin)
@@ -4666,6 +4674,7 @@ endif
 ; platforms); ($28,$0280) 11; ($60,$0600) 6; ($2C,$02C0) 6; ($20,$0200) 6.
 ; Ambient equivalent: DATA_0AB712 -> $1502 / $15A2.
 ;-------------------------------------------------------------------------
+;@editable:sprite-gravity begin
 DATA_0AA318:
 DATA_sprite_gravity_table:                           ; descriptive alias (main-side: FXDATA_0AA318)
 	dw $4010	; $000 LavaLog
@@ -5110,6 +5119,7 @@ DATA_sprite_gravity_table:                           ; descriptive alias (main-s
 	dw $4040	; $1B7 SeedSpittingMinigameBandit
 	dw $0000	; $1B8 WatermelonPot
 	dw $4040	; $1B9 P2SeedSpittingMinigameBandit
+;@editable:sprite-gravity end
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AA68C, incbin, DATA_0AA68C_YI_U2.bin)
@@ -5126,6 +5136,7 @@ endif
 ; which sets its OBJ tile base. $0000 = the sprite draws from the always-loaded
 ; common sprite-GFX page (no spriteset slot).
 ;-------------------------------------------------------------------------
+;@editable:sprite-gfx-files begin
 DATA_0AA716:
 DATA_sprite_gfx_file_table:                          ; descriptive alias (main-side: FXDATA_0AA716)
 	dw $0000	; $000 LavaLog
@@ -5570,6 +5581,7 @@ DATA_sprite_gfx_file_table:                          ; descriptive alias (main-s
 	dw $004E	; $1B7 SeedSpittingMinigameBandit
 	dw $0000	; $1B8 WatermelonPot
 	dw $004E	; $1B9 P2SeedSpittingMinigameBandit
+;@editable:sprite-gfx-files end
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AAA8A, incbin, DATA_0AAA8A_YI_U2.bin)
@@ -5593,6 +5605,7 @@ endif
 ; docs/graphicsassets.md). E.g. $014A Cannonball -> $54:6050 low nibble;
 ; $8388 Giant Egg -> 32x32 at $54:40C0, high nibble. 28 ids are non-zero.
 ;-------------------------------------------------------------------------
+;@editable:sprite-spit-graphics begin
 DATA_0AAB14:
 DATA_sprite_spit_graphic_table:                      ; descriptive alias (main-side: FXDATA_0AAB14)
 	dw $0000            	; $000 LavaLog
@@ -6037,6 +6050,7 @@ DATA_sprite_spit_graphic_table:                      ; descriptive alias (main-s
 	dw $0000            	; $1B7 SeedSpittingMinigameBandit
 	dw $0000            	; $1B8 WatermelonPot
 	dw $0000            	; $1B9 P2SeedSpittingMinigameBandit
+;@editable:sprite-spit-graphics end
 
 if !Define_Global_ROMToAssemble&(!ROM_YI_U2) != $00
 	%InsertGarbageData($0AAE88, incbin, DATA_0AAE88_YI_U2.bin)

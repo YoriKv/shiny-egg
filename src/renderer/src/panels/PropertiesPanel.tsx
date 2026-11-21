@@ -30,6 +30,9 @@ import {
 import { FieldRow, NumberField } from './field-widgets'
 import type { LevelAction } from '../canvas/level-reducer'
 import { spriteSpinDirection } from '../canvas/draw/sprite-variant-hints'
+import { hasSpriteProperties } from '../data/sprite-property-fields'
+import { isAutoscrollSprite } from 'snes-framework/autoscroll-model'
+import { spriteTrack } from '../lib/autoscroll-edit'
 import type { IncomingExit, Selection } from '../types'
 import { incomingIdentity } from '../lib/warp-graph'
 import { hex } from '../lib/hex'
@@ -73,6 +76,10 @@ export interface PropertiesBodyProps {
   /** Commit an entrance-type change on an incoming marker → rewrites the source
    *  room's exit entranceType (auto-saves it; undoable). Absent → read-only. */
   onIncomingEntranceCommit?: (inc: IncomingExit, entranceType: number) => void
+  /** Open the Sprite Properties window at a sprite ID (normal sprites). */
+  onOpenSpriteProperties?: (num: number) => void
+  /** Open the Autoscroll window at a track (autoscroll sprites $1CA-$1D5). */
+  onOpenAutoscroll?: (track: number) => void
 }
 
 export function PropertiesBody({
@@ -87,7 +94,9 @@ export function PropertiesBody({
   worldMapSpawnLabel,
   incoming,
   onSpawnCommit,
-  onIncomingEntranceCommit
+  onIncomingEntranceCommit,
+  onOpenSpriteProperties,
+  onOpenAutoscroll
 }: PropertiesBodyProps): JSX.Element {
   if (selection.length === 0) {
     return <p className="se-props__empty">Nothing selected.</p>
@@ -128,6 +137,8 @@ export function PropertiesBody({
           dispatchLevel={dispatchLevel}
           levelRecordId={currentLevelRecordId}
           translevelId={translevelId}
+          onOpenSpriteProperties={onOpenSpriteProperties}
+          onOpenAutoscroll={onOpenAutoscroll}
         />
       ) : nothing
     }
@@ -494,7 +505,9 @@ function SpriteProps({
   allSprites,
   dispatchLevel,
   levelRecordId,
-  translevelId
+  translevelId,
+  onOpenSpriteProperties,
+  onOpenAutoscroll
 }: {
   spr: LevelSprite
   /** Total sprites in the level — the stream-index upper bound. */
@@ -505,6 +518,8 @@ function SpriteProps({
   /** Loaded level + play-context translevel — fed to per-sprite-type providers. */
   levelRecordId: number | null
   translevelId: number | null
+  onOpenSpriteProperties?: (num: number) => void
+  onOpenAutoscroll?: (track: number) => void
 }): JSX.Element {
   const info = getSprite(spr.num)
   const neighborDeps = getSpriteNeighborDeps(spr.num)
@@ -539,6 +554,37 @@ function SpriteProps({
           onCommit={(v) => dispatchLevel({ type: 'setSpriteIndex', uid: spr.uid!, index: v })}
         />
       </dd>
+
+      {/* Global per-ID editors: the sprite-ID property tables (normal sprites)
+          and the autoscroll track (autoscroll sprites). Both edit cart-wide
+          data, not this placement. */}
+      {(hasSpriteProperties(spr.num) && onOpenSpriteProperties) || (isAutoscrollSprite(spr.num) && onOpenAutoscroll) ? (
+        <>
+          <dt>Global</dt>
+          <dd className="se-props__actions">
+            {hasSpriteProperties(spr.num) && onOpenSpriteProperties && (
+              <button
+                type="button"
+                className="se-banks__act"
+                onClick={() => onOpenSpriteProperties(spr.num)}
+                title="Edit this sprite ID's property tables (hitbox, contact, terrain, despawn, palette, gravity …). Changes apply to EVERY sprite of this ID in every level, and the sprite's own code may override them."
+              >
+                Sprite Properties…
+              </button>
+            )}
+            {isAutoscrollSprite(spr.num) && onOpenAutoscroll && (
+              <button
+                type="button"
+                className="se-banks__act"
+                onClick={() => onOpenAutoscroll(spriteTrack(spr.num))}
+                title="Edit this autoscroll track's checkpoints (shared by every level that places this sprite)"
+              >
+                Edit Autoscroll…
+              </button>
+            )}
+          </dd>
+        </>
+      ) : null}
 
       {/* Level-data dependencies this sprite needs placed nearby — listed
           directly below the primary fields (no section divider). */}
